@@ -1,0 +1,152 @@
+# Deployment ("Deployment targets" in .docs/architecture.md). After every
+# merge to main it deploys that commit to staging; /deploy starts it by hand
+# with a version and a target:
+#   gh workflow run deploy.yml --ref main -f target=staging -f version=v1.2.0
+# In order: the database migrations, the api's runtime variables copied from
+# the target's GitHub environment into its Vercel project, the api, the
+# web's vercel.json generated from API_ORIGIN, the web, then the smoke tests
+# against the target (only the @production-safe ones on production). There
+# are no data to rebuild yet. Every value comes from the target's GitHub
+# environment; a secret reaches a command only through the environment or
+# standard input, never its command line.
+#
+# The Vercel projects have their Root Directory set to apps/api and apps/web,
+# so the CLI runs from the repository root and the build traces the
+# workspace packages outside each app.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Git ref to deploy (a tag such as v1.2.0, a branch or a commit); empty deploys the commit the run starts from
+        type: string
+        required: false
+      target:
+        description: Deployment target
+        type: choice
+        options: [staging]
+        default: staging
+        required: true
+
+permissions: {}
+
+# One deployment per target at a time; a running one is never cancelled, so
+# a migration is not cut off halfway.
+concurrency:
+  group: deploy-${{ inputs.target || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  VERCEL_CLI_VERSION: 66.5.0
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment:
+      name: ${{ inputs.target || 'staging' }}
+      url: ${{ vars.STAGING_URL }}
+    permissions:
+      contents: read
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.version || github.sha }}
+
+      # A deployment builds from a clean install, without a restored cache.
+      - uses: ./.github/actions/setup
+        with:
+          cache: 'false'
+
+      # The Vercel CLI is installed at its pinned version (Renovate updates
+      # VERCEL_CLI_VERSION) rather than from pnpm-lock.yaml: its build
+      # helpers pin dependencies with high-severity advisories that would
+      # fail the dependency vulnerability check of every pull request, and
+      # nothing but this job runs it.
+      - name: Install the Vercel CLI
+        run: npm install --global "vercel@$VERCEL_CLI_VERSION" # zizmor: ignore[adhoc-packages]
+
+      - name: Apply the database migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: pnpm exec task migrate
+
+      # Each value goes to the CLI on standard input; printf is a shell
+      # builtin, so the value is never on a command line.
+      - name: Copy the api's runtime variables into Vercel
+        env:
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          S3_REGION: ${{ vars.S3_REGION }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
+        run: |
+          copy() {
+            local name="$1" kind="$2"
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set in this GitHub environment."
+              return 1
+            fi
+            printf '%s' "${!name}" \
+              | vercel env add "$name" --environment production --force "$kind" --non-interactive > /dev/null
+            echo "$name written."
+          }
+          for name in DATABASE_URL S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+            copy "$name" --sensitive
+          done
+          for name in S3_ENDPOINT S3_REGION S3_BUCKET S3_FORCE_PATH_STYLE; do
+            copy "$name" --no-sensitive
+          done
+
+      - name: Deploy the api
+        env:
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+        run: |
+          vercel pull --yes --environment production
+          vercel build --prod
+          vercel deploy --prebuilt --prod
+          rm -rf .vercel
+
+      - name: Generate the web's vercel.json
+        env:
+          API_ORIGIN: ${{ vars.API_ORIGIN }}
+        run: pnpm --filter web run vercel-config
+
+      - name: Deploy the web
+        env:
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEB_PROJECT_ID }}
+        run: |
+          vercel pull --yes --environment production
+          vercel build --prod
+          vercel deploy --prebuilt --prod
+          rm -rf .vercel
+
+      - name: Install Chromium for the smoke tests
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run the smoke tests
+        env:
+          BASE_URL: ${{ vars.STAGING_URL }}
+          PRODUCTION_SAFE: ${{ (inputs.target || 'staging') == 'production' }}
+        run: pnpm exec task test-smoke BASE_URL="$BASE_URL" PRODUCTION_SAFE="$PRODUCTION_SAFE"
+
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-report
+          path: |
+            playwright-report/
+            test-results/e2e/
+          if-no-files-found: ignore
+          retention-days: 14

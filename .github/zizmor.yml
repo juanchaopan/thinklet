@@ -1,0 +1,11 @@
+# zizmor configuration (`task workflows`).
+rules:
+  # The self-repository audit asks for `uses: $/...` instead of `./...` for
+  # the repository's own actions. actionlint, the other workflow check, does
+  # not accept `$/` yet (https://github.com/rhysd/actionlint/issues/711), so
+  # the workflows keep `./`. The risk the audit guards against, a step
+  # replacing the local action before it runs, does not apply here: each job
+  # loads .github/actions/ straight from its own checkout of the commit
+  # under test. Turn the audit on again once actionlint accepts `$/`.
+  self-repository:
+    disable: true

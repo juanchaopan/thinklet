@@ -12,6 +12,7 @@
     "**/fixtures/**",
     "apps/api/drizzle/**",
     "pnpm-lock.yaml",
-    ".docs/**"
+    ".docs/**",
+    ".github/**"
   ]
 }

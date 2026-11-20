@@ -1,0 +1,31 @@
+# Node.js from .node-version, pnpm from the root package.json's
+# packageManager, and the workspace dependencies from pnpm-lock.yaml. Every
+# job that runs a Task command uses it, so CI installs exactly what a
+# developer machine does.
+name: Set up Node.js and pnpm
+description: Installs Node.js and pnpm at the project's pinned versions, then the workspace dependencies
+
+inputs:
+  cache:
+    description: Whether to restore and save the pnpm store; jobs that deploy or release turn it off
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .node-version
+        # The pnpm store is cached by pnpm/action-setup below.
+        package-manager-cache: false
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      with:
+        cache: ${{ inputs.cache }}
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

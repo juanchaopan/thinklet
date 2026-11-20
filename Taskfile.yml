@@ -163,11 +163,16 @@ tasks:
       - node tools/bin/step-check.ts --base {{.BASE}}
 
   pr-title:
-    desc: 'Check a PR title against the rules of its head branch, e.g. `task pr-title TITLE="feat(order): filter orders (#12)" BRANCH=feature/12-order-filter`'
+    desc: 'Check a PR title against the rules of its head branch, e.g. `task pr-title TITLE="feat(order): filter orders (#12)" BRANCH=feature/12-order-filter`; CI sets TITLE and BRANCH in the environment'
     requires:
       vars: [TITLE, BRANCH]
+    # A title is free text, so it reaches the script through the environment
+    # and never becomes part of the command line the shell parses.
+    env:
+      PR_TITLE: '{{.TITLE}}'
+      PR_BRANCH: '{{.BRANCH}}'
     cmds:
-      - node tools/bin/pr-title.ts --title "{{.TITLE}}" --branch "{{.BRANCH}}"
+      - node tools/bin/pr-title.ts --title "$PR_TITLE" --branch "$PR_BRANCH"
 
   risk:
     desc: Print the risk tier (low, medium or high) of the changes since BASE (default origin/main) from risk-rules.yml; RULES=<file> reads other rules

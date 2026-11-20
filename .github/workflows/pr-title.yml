@@ -1,0 +1,37 @@
+# The PR title check, a required check: the title follows the rules of the
+# head branch's kind (tools/bin/pr-title.ts). An issue branch's title has
+# the commit type of its issue type and ends with " (#<n>)"; release/<version>
+# is exactly "chore(release): <version>"; renovate/* is "fix(deps): ..." or
+# "chore(deps): ..." with no issue number. It runs again when the title is
+# edited and on every new commit, so the check is on the head commit.
+name: pr-title
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The title is written by whoever opens the pull request, so it reaches
+      # the check only through the environment, never the script's text.
+      - run: pnpm exec task pr-title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.head_ref }}

@@ -13,4 +13,7 @@
   "globs": ["**/*.md"],
   // Skips everything in .gitignore (node_modules, build output, reports).
   "gitignore": true,
+  // CLAUDE.md is the single line `@AGENTS.md` that Claude Code reads as an
+  // import, not a document with a heading.
+  "ignores": ["CLAUDE.md"],
 }
