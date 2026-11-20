@@ -11,6 +11,8 @@ export const worker = setupWorker();
 
 const unhandledApiRequests: string[] = [];
 
+let started: Promise<void> | undefined;
+
 /** Whether a path belongs to the api: `/api` itself or anything below it. */
 function isApiPath(pathname: string): boolean {
   return pathname === '/api' || pathname.startsWith('/api/');
@@ -25,7 +27,19 @@ export function takeUnhandledApiRequests(): string[] {
   return unhandledApiRequests.splice(0);
 }
 
-export async function startWorker(): Promise<void> {
+/**
+ * Starts the worker once per test page. Test files are not isolated (the
+ * Angular unit-test builder's default), so several files can run one after
+ * another on the same page: they share this module and its worker, while
+ * setup.ts calls this before each of them. Every call after the first returns
+ * the same start.
+ */
+export function startWorker(): Promise<void> {
+  started ??= start();
+  return started;
+}
+
+async function start(): Promise<void> {
   await worker.start({
     quiet: true,
     onUnhandledFrame({ frame }) {
