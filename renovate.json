@@ -1,0 +1,66 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates as decided in .docs/architecture.md (依赖更新). Renovate never merges; /issue next merges by the risk rules.",
+  "extends": ["config:best-practices"],
+  "timezone": "Asia/Shanghai",
+  "schedule": ["* 6-11 * * 1"],
+  "minimumReleaseAge": "3 days",
+  "automerge": false,
+  "semanticCommits": "enabled",
+  "semanticCommitScope": "deps",
+  "dependencyDashboard": {
+    "enabled": true
+  },
+  "major": {
+    "dependencyDashboardApproval": true
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Container images pinned by tag and digest in the Taskfile's vars.",
+      "managerFilePatterns": ["/^Taskfile\\.yml$/"],
+      "matchStrings": [
+        "_IMAGE: (?<depName>[^\\s:@]+):(?<currentValue>[^\\s@]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The Vercel CLI version the deployment workflow installs.",
+      "managerFilePatterns": ["/^\\.github/workflows/deploy\\.yml$/"],
+      "matchStrings": ["VERCEL_CLI_VERSION: (?<currentValue>\\S+)"],
+      "depNameTemplate": "vercel",
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Everything that only builds, checks, tests or deploys the product: devDependencies, GitHub Actions, development and test images, pnpm, the Vercel CLI.",
+      "matchPackageNames": ["*"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "What the product runs: the packages' dependencies.",
+      "matchDepTypes": ["dependencies"],
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "Node.js (.node-version and every engines field) moves only to LTS lines, in one pull request, and is something the product runs.",
+      "matchDepNames": ["node"],
+      "matchDatasources": ["node-version"],
+      "versioning": "node",
+      "ignoreUnstable": true,
+      "groupName": "Node.js",
+      "semanticCommitType": "fix"
+    },
+    {
+      "description": "The Playwright image and packages share a version, so the browsers in and out of the container match.",
+      "matchPackageNames": ["mcr.microsoft.com/playwright", "playwright", "@playwright/test"],
+      "groupName": "Playwright"
+    }
+  ]
+}

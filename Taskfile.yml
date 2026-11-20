@@ -1,0 +1,337 @@
+# Entry point for every routine command: `pnpm exec task <name>`
+# (`pnpm exec task --list` shows them all).
+version: '3'
+
+# Local values for development; on CI the variables come from the environment.
+# Variables that are already set are not overridden.
+dotenv: ['.env']
+
+vars:
+  # Pinned by tag and digest. The Playwright image's version matches the
+  # playwright and @playwright/test packages, so the browsers are the same.
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
+  ZAP_IMAGE: zaproxy/zap-stable:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+  # The static checks that are not npm packages run from their official
+  # images, so the same command works on Windows, macOS, Linux and CI.
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+  ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
+  OSV_SCANNER_IMAGE: ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde
+  # Docker volume that keeps the Linux node_modules and downloads of the
+  # component tests between runs.
+  COMPONENT_TEST_VOLUME: thinklet-component-tests
+  # The branch a change is compared with: the checks of commits, steps, new
+  # migrations and risk look at what HEAD adds since it left BASE.
+  BASE: '{{.BASE | default "origin/main"}}'
+  # The repository, read-only at /repo, for the checks that run from an image.
+  REPO_MOUNT: --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
+  # Git inside a container refuses a repository owned by another user, as a
+  # mounted one is; this trusts it for that one command.
+  GIT_TRUST_MOUNT: --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env "GIT_CONFIG_VALUE_0=*"
+
+tasks:
+  dev:
+    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    preconditions:
+      - sh: test -f .env
+        msg: Copy .env.example to .env first
+    cmds:
+      - docker compose up --detach --wait
+      - task: build-contracts
+      - task: migrate
+      - task: dev-servers
+
+  check:
+    desc: Run every static check in turn, stopping at the first that fails
+    cmds:
+      - task: format
+      - task: lint
+      - task: typecheck
+      - task: build
+      - task: architecture
+      - task: duplicates
+      - task: migrations-lint
+      - task: secrets
+      - task: workflows
+      - task: licenses
+      - task: vulnerabilities
+      - task: docs
+      - task: commits
+      - task: step-check
+
+  format:
+    desc: Check the format of every file with Prettier, or only the files given after `--`
+    cmds:
+      - pnpm exec prettier --check --ignore-unknown {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
+  format-fix:
+    desc: Rewrite every file in Prettier's format, or only the files given after `--`
+    cmds:
+      - pnpm exec prettier --write --ignore-unknown {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
+  lint:
+    desc: Lint every file with ESLint (typescript-eslint with type information, angular-eslint, complexity and length limits), or only the files given after `--`
+    deps: [build-contracts]
+    cmds:
+      - pnpm exec eslint --max-warnings 0 --no-warn-ignored {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
+  typecheck:
+    desc: Type-check every package, the end-to-end tests and tools/ with tsc --noEmit
+    deps: [build-contracts]
+    cmds:
+      - pnpm --recursive run typecheck
+      - pnpm exec tsc -p e2e/tsconfig.json
+      - pnpm exec tsc -p tools/tsconfig.json
+
+  build:
+    desc: Build every package (contracts with tsc, api with nest build, web with ng build)
+    cmds:
+      - pnpm --recursive run build
+
+  architecture:
+    desc: Check the architecture rules of the code structure (layers, modules, features, apps and contracts, no cycles) with dependency-cruiser
+    deps: [build-contracts]
+    cmds:
+      - pnpm exec depcruise apps packages e2e tools
+
+  duplicates:
+    desc: Look for duplicated code with jscpd (generated migrations, fixtures and baselines left out)
+    cmds:
+      - pnpm exec jscpd .
+
+  migrations-lint:
+    desc: Lint the migration scripts added since BASE (default origin/main) with Squawk; passes when there are none
+    cmds:
+      - node tools/bin/migrations-lint.ts --base {{.BASE}}
+
+  secrets:
+    desc: Scan the git history for secrets with gitleaks; `task secrets LOG_OPTS=origin/main..HEAD` scans only those commits
+    cmds:
+      - >-
+        docker run --rm {{.REPO_MOUNT}} {{.GIT_TRUST_MOUNT}} {{.GITLEAKS_IMAGE}}
+        git --redact --no-banner {{if .LOG_OPTS}}"--log-opts={{.LOG_OPTS}}"{{end}} /repo
+
+  secrets-staged:
+    desc: Scan the staged changes for secrets with gitleaks (the pre-commit hook)
+    cmds:
+      - >-
+        docker run --rm {{.REPO_MOUNT}} {{.GIT_TRUST_MOUNT}} {{.GITLEAKS_IMAGE}}
+        git --pre-commit --staged --redact --no-banner /repo
+
+  workflows:
+    desc: Check the GitHub Actions workflows with actionlint and zizmor (zizmor's online audits too when GH_TOKEN is set); passes when there are none
+    cmds:
+      - >-
+        if [ -d .github/workflows ]; then
+        docker run --rm {{.REPO_MOUNT}} --workdir /repo {{.ACTIONLINT_IMAGE}} -color &&
+        docker run --rm {{.REPO_MOUNT}} --workdir /repo --env GH_TOKEN {{.ZIZMOR_IMAGE}} .;
+        else echo "No GitHub Actions workflows to check."; fi
+
+  licenses:
+    desc: Check that every production dependency has a license from license-allowlist.json
+    cmds:
+      - node tools/bin/licenses.ts
+
+  vulnerabilities:
+    desc: Scan pnpm-lock.yaml with OSV-Scanner, failing on high or critical vulnerabilities
+    env:
+      OSV_SCANNER_IMAGE: '{{.OSV_SCANNER_IMAGE}}'
+    cmds:
+      - node tools/bin/vulnerabilities.ts
+
+  docs:
+    desc: Check the Markdown files (Prettier's format, markdownlint-cli2) and the "Last changed:" line every document under .docs/ ends with
+    cmds:
+      - pnpm exec prettier --check "**/*.md"
+      - pnpm exec markdownlint-cli2
+      - node tools/bin/last-changed.ts
+
+  commits:
+    desc: Check the messages of the commits since BASE (default origin/main) with commitlint and the project's rules for the branch
+    cmds:
+      - pnpm exec commitlint --from {{.BASE}} --to HEAD
+
+  step-check:
+    desc: Check that each commit since BASE (default origin/main) changes only what its step may change
+    cmds:
+      - node tools/bin/step-check.ts --base {{.BASE}}
+
+  pr-title:
+    desc: 'Check a PR title against the rules of its head branch, e.g. `task pr-title TITLE="feat(order): filter orders (#12)" BRANCH=feature/12-order-filter`; CI sets TITLE and BRANCH in the environment'
+    requires:
+      vars: [TITLE, BRANCH]
+    # A title is free text, so it reaches the script through the environment
+    # and never becomes part of the command line the shell parses.
+    env:
+      PR_TITLE: '{{.TITLE}}'
+      PR_BRANCH: '{{.BRANCH}}'
+    cmds:
+      - node tools/bin/pr-title.ts --title "$PR_TITLE" --branch "$PR_BRANCH"
+
+  risk:
+    desc: Print the risk tier (low, medium or high) of the changes since BASE (default origin/main) from risk-rules.yml; RULES=<file> reads other rules
+    vars:
+      RULES: '{{.RULES | default "risk-rules.yml"}}'
+    cmds:
+      - node tools/bin/risk.ts --base {{.BASE}} --rules "{{.RULES}}"
+
+  # Each package's test:unit script knows its own Vitest configuration and
+  # project; these tasks add only what differs between a full and a partial
+  # run.
+  test-unit:
+    desc: Run the unit tests of every package and of tools/ with statement coverage thresholds
+    deps: [build-contracts]
+    cmds:
+      - pnpm --recursive --if-present run test:unit --coverage
+      - pnpm exec vitest run --config tools/vitest.config.ts --coverage
+
+  test-unit-changed:
+    desc: Run only the unit tests affected by the changes since SINCE (default origin/main), as the pre-push hook does
+    deps: [build-contracts]
+    vars:
+      SINCE: '{{.SINCE | default "origin/main"}}'
+    cmds:
+      - pnpm --recursive --if-present run test:unit --changed {{.SINCE}} --passWithNoTests
+      - pnpm exec vitest run --config tools/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
+
+  test-component:
+    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the pinned Playwright Docker image
+    cmds:
+      - task: component-tests-in-container
+        vars: { UPDATE_SCREENSHOTS: 'false' }
+
+  test-component-update:
+    desc: Run the web component tests like test-component and rewrite the screenshot baselines with what they capture
+    cmds:
+      - task: component-tests-in-container
+        vars: { UPDATE_SCREENSHOTS: 'true' }
+
+  test-integration:
+    desc: Run the api integration tests against throwaway PostgreSQL and SeaweedFS containers
+    deps: [build-contracts]
+    cmds:
+      - pnpm --filter api run test:integration
+
+  test-security:
+    desc: Run the api security test cases against the built api and throwaway containers
+    deps: [build-api]
+    cmds:
+      - pnpm --filter api run test:security
+
+  test-migration:
+    desc: Run the migration tests against a throwaway PostgreSQL container
+    cmds:
+      - pnpm --filter api run test:migration
+
+  test-e2e:
+    desc: Run the end-to-end tests in Chromium against a throwaway environment (containers, migrations, the built api and web on random ports) that is removed afterwards
+    deps:
+      - build
+      - task: install-browsers
+        vars: { BROWSERS: chromium }
+    cmds:
+      - node e2e/scripts/run-e2e.ts --project=chromium {{.CLI_ARGS}}
+
+  test-e2e-all-browsers:
+    desc: Run the end-to-end tests like test-e2e in Chromium, Firefox, WebKit and an emulated touch phone (before a release)
+    deps:
+      - build
+      - task: install-browsers
+        vars: { BROWSERS: chromium firefox webkit }
+    cmds:
+      - node e2e/scripts/run-e2e.ts {{.CLI_ARGS}}
+
+  test-smoke:
+    desc: Run the @smoke tests against a running web origin, e.g. `task test-smoke BASE_URL=https://...`; add PRODUCTION_SAFE=true to run only the @production-safe ones
+    requires:
+      vars: [BASE_URL]
+    vars:
+      PRODUCTION_SAFE: '{{.PRODUCTION_SAFE | default "false"}}'
+    deps:
+      - task: install-browsers
+        vars: { BROWSERS: chromium }
+    env:
+      BASE_URL: '{{.BASE_URL}}'
+    cmds:
+      - pnpm exec playwright test --config e2e/playwright.config.ts --project=chromium --grep {{if eq .PRODUCTION_SAFE "true"}}@production-safe{{else}}@smoke{{end}}
+
+  test-security-scan:
+    desc: Run the ZAP baseline scan against a throwaway environment, failing on high-risk alerts (reports in test-results/zap)
+    deps: [build]
+    env:
+      ZAP_IMAGE: '{{.ZAP_IMAGE}}'
+    cmds:
+      - node e2e/scripts/security-scan.ts
+
+  migrate:
+    desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
+    cmds:
+      - pnpm --filter api run migrate
+
+  # Many tasks need the contracts built; within one `task` run they are
+  # built once, however many of those tasks run.
+  build-contracts:
+    internal: true
+    run: once
+    cmds:
+      - pnpm --filter @thinklet/contracts run build
+
+  build-api:
+    internal: true
+    cmds:
+      - pnpm --filter "api..." run build
+
+  install-browsers:
+    internal: true
+    cmds:
+      - pnpm exec playwright install {{.BROWSERS}}
+
+  component-tests-in-container:
+    internal: true
+    # The repository is mounted at /repo. Each workspace package's
+    # node_modules is covered by its own subpath of one Docker volume, so the
+    # Linux install inside never touches the host's; a new workspace package
+    # needs a line here too. Subpaths must exist before they are mounted.
+    cmds:
+      - >-
+        docker run --rm
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/volume
+        {{.PLAYWRIGHT_IMAGE}}
+        mkdir -p /volume/cache /volume/root /volume/web /volume/api /volume/contracts
+      - >-
+        docker run --rm --init --ipc=host
+        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo"
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/cache,volume-subpath=cache
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/node_modules,volume-subpath=root
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/apps/web/node_modules,volume-subpath=web
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/apps/api/node_modules,volume-subpath=api
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/packages/contracts/node_modules,volume-subpath=contracts
+        --mount type=tmpfs,dst=/repo/apps/web/.angular
+        --env CI=true
+        --env UPDATE_SCREENSHOTS={{.UPDATE_SCREENSHOTS}}
+        {{.PLAYWRIGHT_IMAGE}}
+        bash /repo/apps/web/scripts/run-component-tests.sh
+
+  dev-servers:
+    internal: true
+    deps: [dev-contracts, dev-api, dev-web]
+
+  dev-contracts:
+    internal: true
+    cmds:
+      - pnpm --filter @thinklet/contracts exec tsc -p tsconfig.build.json --watch --preserveWatchOutput
+
+  dev-api:
+    internal: true
+    cmds:
+      - pnpm --filter api run start:dev
+
+  dev-web:
+    internal: true
+    # ng serve also reads PORT, which .env sets for the api; keep the web
+    # dev server on Angular's default port instead. proxy.conf.mjs forwards
+    # /api to API_ORIGIN.
+    env:
+      PORT: '4200'
+    cmds:
+      - pnpm --filter web run start

@@ -1,0 +1,45 @@
+# Risk rules for pull requests, from the "风险规则" section of
+# .docs/architecture.md. tools/bin/risk.ts reads them from the target branch:
+# a PR is high risk when it changes any file on a high-risk path, low risk
+# when every file it changes is on a low-risk path, medium otherwise; a
+# release PR is always high risk. A file on both lists counts as high risk.
+#
+# The file is a small subset of YAML that the script reads itself: the two
+# lists below, one quoted glob pattern per item, and comment lines.
+
+high:
+  - '.github/**'
+  - 'lefthook.yml'
+  - '.claude/**'
+  - 'AGENTS.md'
+  - 'CLAUDE.md'
+  - 'REVIEW.md'
+  - 'risk-rules.yml'
+  - 'Taskfile.yml'
+  - 'eslint.config.*'
+  - '.prettierrc*'
+  - '.prettierignore'
+  - '.markdownlint-cli2.*'
+  - '.dependency-cruiser.*'
+  - '.jscpd.json'
+  - 'commitlint.config.*'
+  - '.gitleaks.toml'
+  - '.squawk.toml'
+  - '**/vitest.config.*'
+  - '**/playwright.config.*'
+  - '**/tsconfig*.json'
+  - 'license-allowlist.json'
+  - 'tools/**'
+  - '**/__screenshots__/**'
+  - '**/auth/**'
+  - 'apps/api/drizzle/**'
+  - '**/*.sql'
+  - '**/.env*'
+  - '**/vercel.json'
+  - 'apps/api/src/infrastructure/**'
+
+low:
+  - '.docs/**'
+  - '**/*.md'
+  - '**/*.txt'
+  - 'LICENSE'

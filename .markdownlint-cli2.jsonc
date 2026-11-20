@@ -1,0 +1,19 @@
+// markdownlint-cli2 checks every Markdown file in the repository
+// (`task docs`). Prettier formats the same files, so the rules that only
+// restate formatting are turned off by the library's Prettier style.
+{
+  "config": {
+    "extends": "markdownlint/style/prettier",
+    // Tables, code blocks and long Chinese sentences make lines of any length.
+    "line-length": false,
+    // Prettier aligns table pipes by display width, where a Chinese character
+    // counts twice; this rule counts characters, so the two would disagree.
+    "table-column-style": false,
+  },
+  "globs": ["**/*.md"],
+  // Skips everything in .gitignore (node_modules, build output, reports).
+  "gitignore": true,
+  // CLAUDE.md is the single line `@AGENTS.md` that Claude Code reads as an
+  // import, not a document with a heading.
+  "ignores": ["CLAUDE.md"],
+}

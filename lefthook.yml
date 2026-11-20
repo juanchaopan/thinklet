@@ -1,0 +1,57 @@
+# Git hooks, installed by `pnpm install` (lefthook's install script).
+# Each hook runs the same Task command or tool as CI, on as little as the
+# moment needs: pre-commit on the staged files, commit-msg on the message,
+# pre-push on the whole build and the affected unit tests. CI runs every
+# check again, as `git commit --no-verify` skips the hooks.
+#
+# A scratch branch is never merged and only its commit messages are checked,
+# so pre-commit and pre-push skip it; the step check skips every branch that
+# is not an issue branch by itself.
+
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  skip:
+    - merge
+    - ref: scratch/*
+  jobs:
+    - name: format
+      run: pnpm exec task format -- {staged_files}
+
+    - name: lint
+      glob: '**/*.{ts,mjs,cjs,js,html}'
+      run: pnpm exec task lint -- {staged_files}
+
+    - name: secrets
+      run: pnpm exec task secrets-staged
+
+    - name: workflows
+      glob: '.github/workflows/*.{yml,yaml}'
+      run: pnpm exec task workflows
+
+    - name: docs
+      glob: '**/*.md'
+      run: pnpm exec markdownlint-cli2 --no-globs {staged_files} && node tools/bin/last-changed.ts {staged_files}
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+
+    - name: step-check
+      run: node tools/bin/step-check.ts --message-file {1}
+
+pre-push:
+  piped: true
+  skip:
+    - ref: scratch/*
+  jobs:
+    - name: typecheck
+      run: pnpm exec task typecheck
+
+    - name: build
+      run: pnpm exec task build
+
+    - name: unit tests affected by the push
+      run: pnpm exec task test-unit-changed

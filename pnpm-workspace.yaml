@@ -1,0 +1,21 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  '@go-task/cli': true
+  '@parcel/watcher': false
+  cpu-features: false
+  esbuild: false
+  lefthook: true
+  lmdb: false
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false
+
+overrides:
+  # @go-task/cli's downloader pins get-uri 8.0.1, whose basic-ftp 5.x has a
+  # high-severity advisory (GHSA-c475-qrg2-pj4r); 8.0.2 depends on the fixed
+  # basic-ftp 6.2.4 and later. The selector stops matching once the chain
+  # moves past 8.0.1.
+  get-uri@8.0.1: 8.0.2

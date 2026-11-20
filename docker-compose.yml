@@ -1,0 +1,45 @@
+# Local development services. Host ports and the storage bucket and
+# credentials come from the environment (the root .env file), with defaults
+# that match .env.example. Tests do not use this file: they start their own
+# containers from the same images with Testcontainers.
+name: thinklet
+
+services:
+  postgres:
+    # Same major version as the staging database on Neon.
+    image: postgres:18.7-alpine@sha256:ff64c9e3bdf8e2120107d3559de8db314e8305f7e38c5105903c6295876738ff
+    environment:
+      POSTGRES_USER: thinklet
+      POSTGRES_PASSWORD: thinklet
+      POSTGRES_DB: thinklet
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD', 'pg_isready', '--username=thinklet', '--dbname=thinklet']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.54@sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15
+    # `mini` runs every SeaweedFS component in one process and creates the
+    # bucket at start; the AWS_* variables define the only S3 identity.
+    command: ['mini', '-dir=/data', '-bucket=${S3_BUCKET:-thinklet}']
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-thinklet}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-thinklet-secret}
+    ports:
+      - '${S3_PORT:-8333}:8333'
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '--quiet', '--spider', 'http://127.0.0.1:8333/healthz']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres-data:
+  seaweedfs-data:

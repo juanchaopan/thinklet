@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+
+# Build output and caches
+dist/
+out-tsc/
+tmp/
+bazel-out/
+*.tsbuildinfo
+.angular/
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.vitest/
+testem.log
+
+# Screenshot baselines are made only on Linux (task test-component-update);
+# baselines from a native run on another system are never committed.
+__screenshots__/**/*-win32.png
+__screenshots__/**/*-darwin.png
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets.local.env
+
+# Vercel
+.vercel/
+apps/web/vercel.json
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+libpeerconnection.log
+connect.lock
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/mcp.json
+.history/
+.sass-cache/
+typings/
+
+# System files
+.DS_Store
+Thumbs.db

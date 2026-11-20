@@ -1,0 +1,65 @@
+# After a release pull request (release/<version>) is merged: tags the merge
+# commit v<version> and creates the GitHub release, with the version's
+# section of CHANGELOG.md as its notes. VERSION on main must hold the same
+# version as the branch name. Deploying the release is /deploy.
+name: release
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  release:
+    name: release
+    if: github.event.pull_request.merged && startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag and the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - name: Tag the version and create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REF: ${{ github.head_ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          version="${HEAD_REF#release/}"
+          if [ "$(tr -d '[:space:]' < VERSION)" != "$version" ]; then
+            echo "::error::VERSION does not hold $version, the version of the branch $HEAD_REF."
+            exit 1
+          fi
+          # The notes are the lines under the CHANGELOG.md heading of this
+          # version, up to the next heading of the same level.
+          notes="$RUNNER_TEMP/release-notes.md"
+          if [ -f CHANGELOG.md ]; then
+            awk -v version="$version" '
+              /^## / {
+                if (found) exit
+                line = $0
+                gsub(/[][()]/, " ", line)
+                count = split(line, words, " ")
+                for (i = 2; i <= count; i++) {
+                  word = words[i]
+                  sub(/^v/, "", word)
+                  if (word == version) found = 1
+                }
+                next
+              }
+              found { print }
+            ' CHANGELOG.md > "$notes"
+          fi
+          if [ -s "$notes" ]; then
+            gh release create "v$version" --repo "$REPOSITORY" --target "$MERGE_SHA" --title "v$version" --notes-file "$notes"
+          else
+            echo "::warning::CHANGELOG.md has no section for $version; GitHub generates the release notes."
+            gh release create "v$version" --repo "$REPOSITORY" --target "$MERGE_SHA" --title "v$version" --generate-notes
+          fi

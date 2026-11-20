@@ -1,0 +1,245 @@
+# The static checks and tests at the "PR CI" and "合并后" timings of
+# .docs/architecture.md ("运行时机"). Every job runs the same Task command a
+# developer runs, and is named after it; on a pull request every job is a
+# required check. After a merge to main only the typecheck, build, unit,
+# component, integration, security and end-to-end jobs run again.
+#
+# A required check must report on every pull request, so no job is left out
+# by a path filter: a job that has nothing to do decides so in a step and
+# still succeeds. Jobs do not depend on each other, as a job skipped because
+# another failed would count as a passed check.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Checks that run on pull requests only and need nothing but the checkout.
+  pr-checks:
+    name: ${{ matrix.task }}
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [format, lint, architecture, duplicates, licenses, vulnerabilities, docs]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task "$TASK"
+        env:
+          TASK: ${{ matrix.task }}
+
+  # Checks and tests that run on pull requests and again after the merge.
+  # The component tests run inside the pinned Playwright image, which writes
+  # its output (coverage, screenshot diffs) into the checkout as root; no
+  # later step writes there, and every job gets a fresh runner.
+  checks-and-tests:
+    name: ${{ matrix.task }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [typecheck, build, test-unit, test-component, test-integration, test-security]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task "$TASK"
+        env:
+          TASK: ${{ matrix.task }}
+
+  # Commit messages, the step check and Squawk (which looks only at the
+  # migration scripts the pull request adds) read the pull request's own
+  # commits, so they check out its head with the history back to where the
+  # branch left main, rather than the merge with main. The branch kind comes
+  # from GITHUB_HEAD_REF, which the runner sets.
+  pr-commits:
+    name: ${{ matrix.task }}
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [commits, step-check, migrations-lint]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task "$TASK" BASE="$BASE_SHA"
+        env:
+          TASK: ${{ matrix.task }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+  # gitleaks scans the commits of the pull request; main was scanned when
+  # its own pull requests ran.
+  secrets:
+    name: secrets
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task secrets LOG_OPTS="$BASE_SHA..$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  # actionlint and zizmor; the token lets zizmor run its online audits
+  # (known vulnerable actions, impostor commits) with read access only.
+  workflows:
+    name: workflows
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # The migration tests run when the pull request changes a migration script
+  # or the migration tests, and always on a release pull request.
+  test-migration:
+    name: test-migration
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: changes
+        name: Decide whether the migration tests run
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" == release/* ]]; then
+            echo "Release pull request: the migration tests run."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA...HEAD" -- apps/api/drizzle apps/api/drizzle.config.ts apps/api/test/migration; then
+            echo "No migration script or migration test changed: nothing to run."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: ./.github/actions/setup
+      - if: steps.changes.outputs.run == 'true'
+        run: pnpm exec task test-migration
+
+  # Chromium only; the browsers run on the runner itself, so Playwright
+  # installs their system libraries first.
+  test-e2e:
+    name: test-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec task test-e2e
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            playwright-report/
+            test-results/e2e/
+          retention-days: 14
+
+  # Before a release: Chromium, Firefox, WebKit and an emulated touch phone.
+  # The job reports on every pull request and has work only on release/*.
+  test-e2e-all-browsers:
+    name: test-e2e-all-browsers
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - if: ${{ !startsWith(github.head_ref, 'release/') }}
+        run: echo "Not a release pull request; the all-browser end-to-end tests run before a release only."
+      - if: startsWith(github.head_ref, 'release/')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: startsWith(github.head_ref, 'release/')
+        uses: ./.github/actions/setup
+      - if: startsWith(github.head_ref, 'release/')
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - if: startsWith(github.head_ref, 'release/')
+        run: pnpm exec task test-e2e-all-browsers
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-all-browsers-report
+          path: |
+            playwright-report/
+            test-results/e2e/
+          retention-days: 14
+
+  # ZAP baseline scan of a throwaway environment; the reports are kept.
+  test-security-scan:
+    name: test-security-scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm exec task test-security-scan
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zap-report
+          path: test-results/zap/
+          if-no-files-found: ignore
+          retention-days: 14

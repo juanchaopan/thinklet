@@ -1,0 +1,155 @@
+# Risk tier and human approval of a pull request ("评审标准和风险规则" and
+# "人的批准" in .docs/architecture.md).
+#   risk             labels the pull request risk:low, risk:medium or risk:high from
+#                    the files it changes, with the rules (risk-rules.yml) and the
+#                    script (tools/bin/risk.ts) of the target branch, so changing
+#                    them in a pull request does not change that pull request's tier
+#   remove-approval  takes the human-reviewed label off when a new commit arrives
+#   risk-gate        the required check: passes for low risk, otherwise only while
+#                    the pull request has the human-reviewed label
+#
+# The rules and the script come from the target branch, but this workflow file
+# runs as the pull request has it, like every pull_request workflow, so a pull
+# request can change these jobs and make risk-gate pass without an approval.
+# risk-gate passing is therefore not the final guarantee: before merging, the
+# agent works out the tier with the target branch's script and rules and checks
+# that human-reviewed was added after the last push itself (AGENTS.md). Pull
+# requests from forks get a read-only token, cannot change labels and always
+# fail the gate.
+#
+# Labels changed with the workflow's own token start no new run, so the gate
+# reads the tier from the risk job and the labels from the API after the
+# approval has been taken off. A person adding or removing a label starts the
+# whole workflow again.
+#
+# The workflow has no concurrency group: a group keeps only one waiting run and
+# replaces it with a newer one, which could drop the run that takes the
+# approval off after a push. Runs for a push and for a label change may
+# overlap; an approval added before the last push is caught by the agent's
+# check before merging.
+name: risk
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  risk:
+    name: risk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # set the risk:* label
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+    steps:
+      - name: Check out the target branch (rules and script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: target
+      - name: Check out the pull request with its history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+      - if: hashFiles('target/tools/bin/risk.ts') != ''
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: target/.node-version
+          package-manager-cache: false
+      # The target branch's script reads the files the pull request changes
+      # from the pull request's checkout. A target branch without the rules
+      # yet (the pull request that brings them) counts as high risk.
+      - id: tier
+        name: Work out the risk tier
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ -f target/tools/bin/risk.ts ] && [ -f target/risk-rules.yml ]; then
+            tier="$(cd pr && node ../target/tools/bin/risk.ts --base "$BASE_SHA" --rules ../target/risk-rules.yml --branch "$HEAD_REF")"
+          else
+            echo "::notice::The target branch has no risk rules yet, so the pull request counts as high risk."
+            tier=high
+          fi
+          echo "Risk tier: $tier"
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+      - name: Set the risk label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TIER: ${{ steps.tier.outputs.tier }}
+        run: |
+          current="$(gh api "repos/$REPOSITORY/issues/$PR_NUMBER/labels" --jq '.[].name')"
+          for label in risk:low risk:medium risk:high; do
+            if [ "$label" != "risk:$TIER" ] && grep --quiet --line-regexp --fixed-strings "$label" <<< "$current"; then
+              gh api --method DELETE "repos/$REPOSITORY/issues/$PR_NUMBER/labels/$label" > /dev/null
+            fi
+          done
+          if ! grep --quiet --line-regexp --fixed-strings "risk:$TIER" <<< "$current"; then
+            gh api --method POST "repos/$REPOSITORY/issues/$PR_NUMBER/labels" -f "labels[]=risk:$TIER" > /dev/null
+          fi
+
+  remove-approval:
+    name: remove-approval
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # remove the human-reviewed label
+    steps:
+      - if: github.event.action == 'synchronize'
+        name: Take the human approval off after a new commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          labels="$(gh api "repos/$REPOSITORY/issues/$PR_NUMBER/labels" --jq '.[].name')"
+          if grep --quiet --line-regexp --fixed-strings human-reviewed <<< "$labels"; then
+            gh api --method DELETE "repos/$REPOSITORY/issues/$PR_NUMBER/labels/human-reviewed" > /dev/null
+            echo "A new commit arrived: the human-reviewed label is removed and needs adding again."
+          fi
+
+  # Runs even when a job it needs failed, so a failure there fails the gate
+  # instead of skipping it, which would count as passed.
+  risk-gate:
+    name: risk-gate
+    needs: [risk, remove-approval]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read # read the pull request's labels
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RISK_RESULT: ${{ needs.risk.result }}
+          REMOVE_APPROVAL_RESULT: ${{ needs.remove-approval.result }}
+          TIER: ${{ needs.risk.outputs.tier }}
+        run: |
+          if [ "$RISK_RESULT" != success ] || [ "$REMOVE_APPROVAL_RESULT" != success ]; then
+            echo "::error::The risk job ($RISK_RESULT) or the remove-approval job ($REMOVE_APPROVAL_RESULT) did not succeed."
+            exit 1
+          fi
+          if [ "$TIER" = low ]; then
+            echo "Low risk: no human approval needed."
+            exit 0
+          fi
+          labels="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.labels[].name')"
+          if grep --quiet --line-regexp --fixed-strings human-reviewed <<< "$labels"; then
+            echo "Risk $TIER: approved with the human-reviewed label."
+            exit 0
+          fi
+          echo "::error::Risk $TIER: a person must review the changes and add the human-reviewed label."
+          exit 1
