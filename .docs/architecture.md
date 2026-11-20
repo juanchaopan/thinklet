@@ -190,10 +190,10 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 
 ## Deployment targets
 
-| 名称       | 部署在哪里                                                                                     | 地址                                         | 用到的资源                                                                                                                                                                 |
-| ---------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 待 scaffold 步骤建好后填写（`*.vercel.app`） | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元） |
-| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                   | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                         |
+| 名称       | 部署在哪里                                                                                     | 地址                                                                           | 用到的资源                                                                                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 前端 `https://thinklet-web.vercel.app`，后端 `https://thinklet-api.vercel.app` | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元） |
+| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                                                     | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                         |
 
 部署方式：
 
@@ -214,16 +214,24 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 - `*.vercel.app` 在中国大陆经常打不开，要在国内访问测试环境，需要用代理。
 - Vercel Hobby 套餐只能用于个人、非商业用途；项目商用前要升级到 Pro。
 - Neon 免费套餐的数据库闲置 5 分钟后自动暂停，下一个请求要等不到一秒来唤醒。
+- 两个 Vercel 项目的根目录分别是 `apps/web` 和 `apps/api`，并允许构建读取根目录以外的文件，这样才能用到 `packages/contracts`。
+- 两个 Vercel 项目用标准保护：预览部署和各次部署自己的地址要登录 Vercel 才能打开，正式地址 `thinklet-web.vercel.app`、`thinklet-api.vercel.app` 公开访问，冒烟测试和 `/api/*` 转发才能用。
 
 基础设施直接用 `vercel` 和 `neonctl` 命令行创建，不用基础设施即代码工具。scaffold 步骤执行前先用 `--help` 核对参数：
 
 ```text
-npx neonctl@9.7.2 projects create --name thinklet-staging --region-id aws-ap-southeast-1 --no-secrets
-npx neonctl@9.7.2 connection-string <branch> --project-id <id> --pooled    # 输出直接写入 GitHub 密钥 DATABASE_URL，不显示
-npx neonctl@9.7.2 connection-string <branch> --project-id <id>             # 输出直接写入 GitHub 密钥 MIGRATION_DATABASE_URL，不显示
-（Neon 对象存储桶按 Neon 官方文档的命令创建，桶的凭据直接写入 GitHub 密钥，不显示）
+npx neonctl@9.7.2 projects create --name thinklet-staging --region-id aws-ap-southeast-1 --pg-version 18 --org-id <组织 id> --no-secrets
+npx neonctl@9.7.2 buckets create thinklet --project-id <id> --branch <branch>
+npx neonctl@9.7.2 api /projects/<id>/branches/<branch>/storage                 # 存储地址和区域，写入 GitHub 变量 S3_ENDPOINT、S3_REGION
+npx neonctl@9.7.2 credentials create --project-id <id> --branch <branch> --scope storage:read --scope storage:write --output json
+                                                                                 # token_id、s3_secret_access_key 直接写入 GitHub 密钥 S3_ACCESS_KEY_ID、S3_SECRET_ACCESS_KEY，不显示
+npx neonctl@9.7.2 connection-string <branch> --project-id <id> --pooled         # 输出直接写入 GitHub 密钥 DATABASE_URL，不显示
+npx neonctl@9.7.2 connection-string <branch> --project-id <id>                  # 输出直接写入 GitHub 密钥 MIGRATION_DATABASE_URL，不显示
 npx vercel@66.5.0 project create thinklet-web
 npx vercel@66.5.0 project create thinklet-api
+npx vercel@66.5.0 project update thinklet-web --root-directory apps/web --framework angular --source-files-outside-root-directory --yes
+npx vercel@66.5.0 project update thinklet-api --root-directory apps/api --framework nestjs --source-files-outside-root-directory --yes
+npx vercel@66.5.0 api /v9/projects/<项目名> -X PATCH --input <文件>             # 文件内容 {"ssoProtection":{"deploymentType":"prod_deployment_urls_and_all_previews"}}
 ```
 
 ## 数据迁移
