@@ -3,34 +3,26 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { chmod, mkdir, readFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { judgeAlerts, parseIgnoredAlerts, type ZapReport } from '../../tools/src/zap-alerts.ts';
 import { startEnvironment } from '../support/environment.ts';
 
 // `task test-security-scan`: runs the ZAP baseline scan (spider plus passive
-// scan) against a throwaway environment and fails when ZAP reports a
-// high-risk alert. Medium and lower alerts are listed but do not fail.
-// The reports are written to test-results/zap/.
+// scan) against a throwaway environment and fails when ZAP reports an alert
+// of medium risk or higher. Every alert is listed. An alert that genuinely
+// needs no fix is ignored by its alertRef, with the reason written next to
+// it, in e2e/zap-ignored-alerts.json; ignoring by alertRef rather than by
+// plugin keeps the plugin's other findings failing. The reports are written
+// to test-results/zap/.
 
 const image = process.env['ZAP_IMAGE'];
 if (!image) {
   throw new Error('Set ZAP_IMAGE to the pinned ZAP image (the task sets it)');
 }
 const reportDirectory = fileURLToPath(new URL('../../test-results/zap/', import.meta.url));
-const HIGH_RISK = '3';
-const RISK_NAMES: Record<string, string> = {
-  '0': 'Informational',
-  '1': 'Low',
-  '2': 'Medium',
-  '3': 'High',
-};
+const ignoreFile = new URL('../zap-ignored-alerts.json', import.meta.url);
 
-interface ZapAlert {
-  name: string;
-  riskcode: string;
-  count: string;
-}
-interface ZapReport {
-  site: Array<{ alerts: ZapAlert[] }>;
-}
+// The ignore list is read first, so a mistake in it fails before the scan.
+const ignored = parseIgnoredAlerts(JSON.parse(await readFile(ignoreFile, 'utf8')));
 
 await rm(reportDirectory, { recursive: true, force: true });
 await mkdir(reportDirectory, { recursive: true });
@@ -72,7 +64,8 @@ try {
       'report.json',
       '-r',
       'report.html',
-      // Warnings are judged below by risk, not by ZAP's exit code.
+      // Warnings are judged below by risk and the ignore list, not by ZAP's
+      // exit code.
       '-I',
     ],
     { stdio: 'inherit' },
@@ -88,15 +81,20 @@ if (scanExitCode !== 0) {
   process.exit(1);
 }
 const report = JSON.parse(await readFile(`${reportDirectory}report.json`, 'utf8')) as ZapReport;
-const alerts = report.site.flatMap((site) => site.alerts);
+const alerts = judgeAlerts(report, ignored);
 for (const alert of alerts) {
-  console.log(`[${RISK_NAMES[alert.riskcode] ?? alert.riskcode}] ${alert.name} (${alert.count})`);
+  const ignoredNote = alert.ignoredReason === undefined ? '' : ` ignored: ${alert.ignoredReason}`;
+  console.log(`[${alert.risk}] ${alert.name} (${alert.alertRef}, ${alert.count})${ignoredNote}`);
 }
-const highRisk = alerts.filter((alert) => alert.riskcode === HIGH_RISK);
-if (highRisk.length > 0) {
+const failing = alerts.filter((alert) => alert.failing).length;
+if (failing > 0) {
   console.error(
-    `ZAP found ${highRisk.length} high-risk alert(s); see test-results/zap/report.html`,
+    `ZAP found ${failing} alert(s) of medium risk or higher; see test-results/zap/report.html. ` +
+      'Fix each one, or, when it genuinely needs no fix, add its alertRef with the reason to ' +
+      'e2e/zap-ignored-alerts.json.',
   );
   process.exit(1);
 }
-console.log(`ZAP found no high-risk alerts (${alerts.length} alert(s) in total)`);
+console.log(
+  `ZAP found no alerts of medium risk or higher that are not ignored (${alerts.length} alert(s) in total)`,
+);
