@@ -49,12 +49,47 @@
   - 推送前：类型检查、构建、受影响的单元测试。
 - **开 PR 前**，代理在本机跑：架构规则、重复代码、迁移脚本检查；全部单元、组件、集成测试；经过改动页面或接口的端到端测试；改了迁移脚本时的迁移测试；再跑 `/simplify`、`/code-review`（medium）和 `/security-review`，每个问题都改掉，或者写明理由再关掉。CI 里不跑 AI 评审。
 - **PR 的 CI**（`.github/workflows/`）把每项检查和测试全部再跑一遍，都是必过检查：`ci` 里的各项、`codeql`、`pr-title` 和 `risk-gate`。用路径过滤跳过的任务也报告成功。
-- **风险和人的批准**：CI 任务 `risk` 按目标分支的 `risk-rules.yml` 给 PR 打上 `risk:low`、`risk:medium` 或 `risk:high`；中风险和高风险的 PR 要有人加上 `human-reviewed` 标签，`risk-gate` 才通过；推上新的提交时，这个标签会被自动去掉。发版 PR 一律是高风险。
+- **风险和人的批准**：CI 任务 `risk` 按目标分支的 `risk-rules.yml` 给 PR 打上 `risk:low`、`risk:medium` 或 `risk:high`；中风险和高风险的 PR 要有人加上 `human-reviewed` 标签，`risk-gate` 才通过；推上新的提交时，这个标签会被自动去掉。发版 PR 一律是高风险。这几个任务按 `pull_request` 事件运行，用的是 PR 自己带的工作流文件（`.github/workflows/risk.yml`），PR 能把它们改掉，所以 `risk-gate` 通过不是最终的保证。
+- **合并前**，代理不只看 `risk-gate`，自己核对下面两项。两项都成立、必过检查也都通过才合并；`risk-gate` 显示通过但核对不成立时不合并，把情况告诉用户。人自己在网页上合并时，要自己看风险标签和批准标签。
+
+  1. **用目标分支的脚本和规则算出风险等级**，不用 PR 里的。先切到 PR 的分支，并确认本地 HEAD 就是 PR 在 GitHub 上的最新提交；再把 `origin/main` 上的 `tools/` 和 `risk-rules.yml` 取到临时目录里运行。`origin/main` 还没有规则时，一律算高风险。
+
+     ```bash
+     n=<PR 编号>
+     git fetch origin main
+     [ "$(git rev-parse HEAD)" = "$(gh pr view "$n" --json headRefOid --jq .headRefOid)" ] || echo "本地 HEAD 不是 PR 的最新提交" >&2
+     target="$(mktemp -d)"
+     if git cat-file -e origin/main:risk-rules.yml 2>/dev/null && git cat-file -e origin/main:tools/bin/risk.ts 2>/dev/null; then
+       git archive origin/main tools risk-rules.yml | tar -x -C "$target"
+       node "$target/tools/bin/risk.ts" --base origin/main --rules "$target/risk-rules.yml" --branch "$(gh pr view "$n" --json headRefName --jq .headRefName)"
+     else
+       echo high
+     fi
+     rm -rf "$target"
+     ```
+
+     算出的等级和 PR 上的 `risk:*` 标签不一样时，说明 PR 可能改了风险的工作流，不合并，告诉用户。
+
+  2. **中风险和高风险的 PR 有 `human-reviewed` 标签，而且这个标签是在最后一次推送之后加上的。** 最后一次推送的时间取两者里较晚的一个：GitHub 第一次见到 PR 最新提交的时间（这个提交最早的 check suite），以及最后一次强推的时间。不用提交里的日期，因为提交日期可以随意填。
+
+     ```bash
+     n=<PR 编号>
+     head="$(gh pr view "$n" --json headRefOid --jq .headRefOid)"
+     pushed="$({
+       gh api "repos/{owner}/{repo}/commits/$head/check-suites" --paginate --jq '.check_suites[].created_at' | sort | head -n 1
+       gh api "repos/{owner}/{repo}/issues/$n/timeline" --paginate --jq '.[] | select(.event == "head_ref_force_pushed") | .created_at'
+     } | sort | tail -n 1)"
+     approved="$(gh api "repos/{owner}/{repo}/issues/$n/timeline" --paginate --jq '.[] | select(.event == "labeled" and .label.name == "human-reviewed") | .created_at' | sort | tail -n 1)"
+     labelled="$(gh pr view "$n" --json labels --jq '[.labels[].name] | index("human-reviewed") != null')"
+     echo "最后一次推送：$pushed；最后一次批准：${approved:-无}；现在有标签：$labelled"
+     if [ "$labelled" = true ] && [[ "$approved" > "$pushed" ]]; then echo 已批准; else echo 未批准; fi
+     ```
+
 - **合并到 `main` 后**：CI 再跑类型检查、构建和单元、组件、集成、端到端测试；CD 发布到测试环境 staging（迁移、发布后端和前端、冒烟测试）。发版 PR 合并后，CI 打上 `v<版本>` 标签并建 GitHub release。
 
 ## 分支和提交
 
-- 分支模型是 GitHub Flow：`main` 是唯一的长期分支。PR 用 squash 合并，PR 标题就是 `main` 上的提交信息。
+- 分支模型是 GitHub Flow：`main` 是唯一的长期分支。PR 用 squash 合并，PR 标题就是 `main` 上的提交信息。代理合并任何 PR 前，都先做上面“合并前”的核对。
 - **issue 分支**：`<issue 类型>/<编号>-<简短名称>`，例如 `feature/12-order-filter`。所有检查都适用。
 - **发版分支**：`release/<版本>`，PR 标题固定是 `chore(release): <版本>`，不带 issue 编号。
 - **依赖更新分支**：Renovate 开的 `renovate/*`，标题是 `fix(deps): ...`（产品运行时用到的）或 `chore(deps): ...`（其余），不带 issue 编号，也没有 `Step:`。
