@@ -5,6 +5,7 @@ import { createServer, request, type IncomingMessage, type ServerResponse } from
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { WEB_SECURITY_HEADERS } from '../../apps/web/scripts/security-headers.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -37,9 +38,11 @@ export interface StartedWebServer {
 /**
  * Serves the built web app the way the `thinklet-web` Vercel project does:
  * static files, `/api` and `/api/*` forwarded to the api, and `index.html`
- * for every other path so the router can handle it. A request that fails is
- * answered with 502 (api) or 500 (file) when nothing was sent yet, and cut
- * off otherwise.
+ * for every other path so the router can handle it. Every response outside
+ * `/api`, errors included, carries the web security headers from the same
+ * list as vercel.json; a forwarded `/api` response keeps the api's own. A
+ * request that fails is answered with 502 (api) or 500 (file) when nothing
+ * was sent yet, and cut off otherwise.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
   const server = createServer((incoming, outgoing) => {
@@ -47,6 +50,13 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
     // request line (`GET http://other-host/api/...`) names no other host.
     const { pathname, search } = new URL(incoming.url ?? '/', 'http://localhost');
     const toApi = pathname === '/api' || pathname.startsWith('/api/');
+    if (!toApi) {
+      // Set before any status is written, so writeHead merges them into the
+      // 200, 404 and 500 responses alike.
+      for (const [name, value] of Object.entries(WEB_SECURITY_HEADERS)) {
+        outgoing.setHeader(name, value);
+      }
+    }
     const handled = toApi
       ? forward(incoming, outgoing, apiTarget(options.apiOrigin, pathname, search))
       : serveFile(pathname, outgoing, options.root);

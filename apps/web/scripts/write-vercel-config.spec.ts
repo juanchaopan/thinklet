@@ -5,7 +5,18 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { main, parseApiOrigin, vercelConfig } from './write-vercel-config.ts';
+import { WEB_SECURITY_HEADERS } from './security-headers.ts';
+import { main, OUTSIDE_API_SOURCE, parseApiOrigin, vercelConfig } from './write-vercel-config.ts';
+
+/**
+ * Whether Vercel applies a `headers` entry with this source to a request path.
+ * Vercel compiles a source with path-to-regexp, case-sensitive and strict,
+ * anchored at both ends; a source made of one unnamed group compiles to the
+ * group's own regular expression.
+ */
+function sourceMatches(source: string, path: string): boolean {
+  return new RegExp(`^${source}$`).test(path);
+}
 
 describe('parseApiOrigin', () => {
   it.each([
@@ -32,15 +43,47 @@ describe('parseApiOrigin', () => {
 });
 
 describe('vercelConfig', () => {
-  it('forwards /api/* to the api and serves index.html for every other path', () => {
-    const config = vercelConfig('https://api.example.com');
+  const config = vercelConfig('https://api.example.com');
 
+  it('forwards /api/* to the api and serves index.html for every other path', () => {
     expect(config.outputDirectory).toBe('dist/web/browser');
     expect(config.rewrites).toEqual([
       { source: '/api/:path*', destination: 'https://api.example.com/api/:path*' },
       { source: '/(.*)', destination: '/index.html' },
     ]);
   });
+
+  it('sends every web security header, and only those, outside /api', () => {
+    expect(config.headers).toEqual([
+      {
+        source: OUTSIDE_API_SOURCE,
+        headers: Object.entries(WEB_SECURITY_HEADERS).map(([key, value]) => ({ key, value })),
+      },
+    ]);
+  });
+});
+
+describe('OUTSIDE_API_SOURCE', () => {
+  it.each([
+    '/',
+    '/index.html',
+    '/main-WLAKMSC5.js',
+    '/styles-HYYK3YF7.css',
+    '/favicon.ico',
+    '/books/1',
+    '/apiary',
+    '/api-docs',
+    '/books/api/1',
+  ])('covers %s', (path) => {
+    expect(sourceMatches(OUTSIDE_API_SOURCE, path)).toBe(true);
+  });
+
+  it.each(['/api', '/api/', '/api/health', '/api/books/1'])(
+    'leaves %s to the api headers',
+    (path) => {
+      expect(sourceMatches(OUTSIDE_API_SOURCE, path)).toBe(false);
+    },
+  );
 });
 
 describe('main', () => {
