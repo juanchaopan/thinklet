@@ -14,8 +14,13 @@ coverage/
 test-results/
 playwright-report/
 blob-report/
-__screenshots__/
+.vitest/
 testem.log
+
+# Screenshot baselines are made only on Linux (task test-component-update);
+# baselines from a native run on another system are never committed.
+__screenshots__/**/*-win32.png
+__screenshots__/**/*-darwin.png
 
 # Local environment and secrets
 .env

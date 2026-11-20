@@ -6,9 +6,18 @@ version: '3'
 # Variables that are already set are not overridden.
 dotenv: ['.env']
 
+vars:
+  # Pinned by tag and digest. The Playwright image's version matches the
+  # playwright and @playwright/test packages, so the browsers are the same.
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
+  ZAP_IMAGE: zaproxy/zap-stable:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+  # Docker volume that keeps the Linux node_modules and downloads of the
+  # component tests between runs.
+  COMPONENT_TEST_VOLUME: thinklet-component-tests
+
 tasks:
   dev:
-    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the api and web dev servers
+    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
@@ -19,10 +28,11 @@ tasks:
       - task: dev-servers
 
   typecheck:
-    desc: Type-check every package with tsc --noEmit
+    desc: Type-check every package and the end-to-end tests with tsc --noEmit
     deps: [build-contracts]
     cmds:
       - pnpm --recursive run typecheck
+      - pnpm exec tsc -p e2e/tsconfig.json
 
   build:
     desc: Build every package (contracts with tsc, api with nest build, web with ng build)
@@ -34,6 +44,18 @@ tasks:
     deps: [build-contracts]
     cmds:
       - pnpm --recursive --if-present run test:unit
+
+  test-component:
+    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the pinned Playwright Docker image
+    cmds:
+      - task: component-tests-in-container
+        vars: { UPDATE_SCREENSHOTS: 'false' }
+
+  test-component-update:
+    desc: Run the web component tests like test-component and rewrite the screenshot baselines with what they capture
+    cmds:
+      - task: component-tests-in-container
+        vars: { UPDATE_SCREENSHOTS: 'true' }
 
   test-integration:
     desc: Run the api integration tests against throwaway PostgreSQL and SeaweedFS containers
@@ -52,6 +74,46 @@ tasks:
     cmds:
       - pnpm --filter api run test:migration
 
+  test-e2e:
+    desc: Run the end-to-end tests in Chromium against a throwaway environment (containers, migrations, the built api and web on random ports) that is removed afterwards
+    deps:
+      - build
+      - task: install-browsers
+        vars: { BROWSERS: chromium }
+    cmds:
+      - node e2e/scripts/run-e2e.ts --project=chromium {{.CLI_ARGS}}
+
+  test-e2e-all-browsers:
+    desc: Run the end-to-end tests like test-e2e in Chromium, Firefox, WebKit and an emulated touch phone (before a release)
+    deps:
+      - build
+      - task: install-browsers
+        vars: { BROWSERS: chromium firefox webkit }
+    cmds:
+      - node e2e/scripts/run-e2e.ts {{.CLI_ARGS}}
+
+  test-smoke:
+    desc: Run the @smoke tests against a running web origin, e.g. `task test-smoke BASE_URL=https://...`; add PRODUCTION_SAFE=true to run only the @production-safe ones
+    requires:
+      vars: [BASE_URL]
+    vars:
+      PRODUCTION_SAFE: '{{.PRODUCTION_SAFE | default "false"}}'
+    deps:
+      - task: install-browsers
+        vars: { BROWSERS: chromium }
+    env:
+      BASE_URL: '{{.BASE_URL}}'
+    cmds:
+      - pnpm exec playwright test --config e2e/playwright.config.ts --project=chromium --grep {{if eq .PRODUCTION_SAFE "true"}}@production-safe{{else}}@smoke{{end}}
+
+  test-security-scan:
+    desc: Run the ZAP baseline scan against a throwaway environment, failing on high-risk alerts (reports in test-results/zap)
+    deps: [build]
+    env:
+      ZAP_IMAGE: '{{.ZAP_IMAGE}}'
+    cmds:
+      - node e2e/scripts/security-scan.ts
+
   migrate:
     desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
     cmds:
@@ -66,6 +128,37 @@ tasks:
     internal: true
     cmds:
       - pnpm --filter "api..." run build
+
+  install-browsers:
+    internal: true
+    cmds:
+      - pnpm exec playwright install {{.BROWSERS}}
+
+  component-tests-in-container:
+    internal: true
+    # The repository is mounted at /repo. Each workspace package's
+    # node_modules is covered by its own subpath of one Docker volume, so the
+    # Linux install inside never touches the host's; a new workspace package
+    # needs a line here too. Subpaths must exist before they are mounted.
+    cmds:
+      - >-
+        docker run --rm
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/volume
+        {{.PLAYWRIGHT_IMAGE}}
+        mkdir -p /volume/cache /volume/root /volume/web /volume/api /volume/contracts
+      - >-
+        docker run --rm --init --ipc=host
+        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo"
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/cache,volume-subpath=cache
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/node_modules,volume-subpath=root
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/apps/web/node_modules,volume-subpath=web
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/apps/api/node_modules,volume-subpath=api
+        --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/repo/packages/contracts/node_modules,volume-subpath=contracts
+        --mount type=tmpfs,dst=/repo/apps/web/.angular
+        --env CI=true
+        --env UPDATE_SCREENSHOTS={{.UPDATE_SCREENSHOTS}}
+        {{.PLAYWRIGHT_IMAGE}}
+        bash /repo/apps/web/scripts/run-component-tests.sh
 
   dev-servers:
     internal: true
@@ -84,7 +177,8 @@ tasks:
   dev-web:
     internal: true
     # ng serve also reads PORT, which .env sets for the api; keep the web
-    # dev server on Angular's default port instead.
+    # dev server on Angular's default port instead. proxy.conf.mjs forwards
+    # /api to API_ORIGIN.
     env:
       PORT: '4200'
     cmds:

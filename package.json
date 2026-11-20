@@ -8,8 +8,12 @@
     "node": "26.13.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@go-task/cli": "3.54.0",
+    "@playwright/test": "1.65.1",
     "@testcontainers/postgresql": "12.2.1",
+    "@thinklet/contracts": "workspace:*",
+    "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.1.1",
     "drizzle-kit": "0.31.11",
     "prettier": "3.10.1",
