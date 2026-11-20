@@ -33,9 +33,9 @@ flowchart LR
   vweb -->|"/api/* 转发"| vapi
   vapi -->|"连接池地址"| npg
   vapi -->|"S3 API"| ns3
-  gha["GitHub Actions<br/>CI / CD"] -->|"drizzle-kit migrate<br/>（直连地址）"| npg
+  gha["GitHub Actions<br/>CI / CD<br/>保存全部环境变量和密钥"] -->|"drizzle-kit migrate<br/>（直连地址）"| npg
   gha -->|"vercel deploy"| vweb
-  gha -->|"vercel deploy"| vapi
+  gha -->|"写入运行时变量<br/>vercel deploy"| vapi
 ```
 
 ## 指标
@@ -197,7 +197,13 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 
 部署方式：
 
-- **staging**：合并到 `main` 后，GitHub Actions 的 CD 任务按顺序做三件事：先用 Neon 的直连地址执行 `drizzle-kit migrate`，再用 `vercel build` 和 `vercel deploy --prebuilt --prod` 发布 `thinklet-api` 和 `thinklet-web`，最后跑全部冒烟测试。手动部署（`/deploy staging`）也走同一个任务。Vercel 不连接 Git 集成，PR 没有预览环境。
+- **staging**：合并到 `main` 后，GitHub Actions 的 CD 任务按顺序做这些事：
+  1. 用 Neon 的直连地址执行 `drizzle-kit migrate`。
+  2. 把后端运行时要用的环境变量从 GitHub 覆盖写进 Vercel 项目 `thinklet-api`，再用 `vercel build` 和 `vercel deploy --prebuilt --prod` 发布它。
+  3. 按 `API_ORIGIN` 生成 `thinklet-web` 的 `vercel.json`，里面是把 `/api/*` 转发到后端的规则，再同样发布 `thinklet-web`。`vercel.json` 读不了环境变量，所以转发规则在发布时生成，不提交到仓库。
+  4. 跑全部冒烟测试。
+
+  手动部署（`/deploy staging`）也走同一个任务。Vercel 不连接 Git 集成，PR 没有预览环境。
 - **production**：还没有部署任务。建生产环境的 issue 会加上一个手动启动的部署任务，之后才能用 `/deploy production`。
 
 说明：
@@ -212,9 +218,9 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 
 ```text
 neonctl projects create --name thinklet-staging --region-id aws-ap-southeast-1 --no-secrets
-neonctl connection-string <branch> --project-id <id> --pooled    # 输出直接写入 Vercel，不显示
-neonctl connection-string <branch> --project-id <id>             # 输出直接写入 GitHub 密钥，不显示
-（Neon 对象存储桶按 Neon 官方文档的命令创建，桶的凭据直接写入 Vercel，不显示）
+neonctl connection-string <branch> --project-id <id> --pooled    # 输出直接写入 GitHub 密钥 DATABASE_URL，不显示
+neonctl connection-string <branch> --project-id <id>             # 输出直接写入 GitHub 密钥 MIGRATION_DATABASE_URL，不显示
+（Neon 对象存储桶按 Neon 官方文档的命令创建，桶的凭据直接写入 GitHub 密钥，不显示）
 vercel project create thinklet-web
 vercel project create thinklet-api
 ```
@@ -424,22 +430,25 @@ LICENSE
 
 ### 环境变量和密钥
 
-公开仓库能按环境保存密钥，所以名称里不带环境。GitHub 上建一个 `staging` 环境。
+全部环境变量和密钥只在 GitHub 的 `staging` 环境里维护。公开仓库能按环境保存密钥，所以名称里不带环境。
 
-| 名称 | 用途 | 放在哪里 | 类型 | 值从哪来 |
+| 名称 | 用途 | 类型 | 谁用 | 值从哪来 |
 |---|---|---|---|---|
-| `VERCEL_TOKEN` | CD 用 vercel 命令行发布 | GitHub `staging` 环境 | 密钥 | 用户在 Vercel 网站上生成，存成不提交的文件，由代理从文件读入 GitHub |
-| `VERCEL_ORG_ID` | 指定 Vercel 账号 | GitHub `staging` 环境 | 变量 | 建 Vercel 项目时产生 |
-| `VERCEL_WEB_PROJECT_ID` | 指定前端的 Vercel 项目 | GitHub `staging` 环境 | 变量 | 建 Vercel 项目时产生 |
-| `VERCEL_API_PROJECT_ID` | 指定后端的 Vercel 项目 | GitHub `staging` 环境 | 变量 | 建 Vercel 项目时产生 |
-| `MIGRATION_DATABASE_URL` | CD 里执行 `drizzle-kit migrate`（Neon 的直连地址） | GitHub `staging` 环境 | 密钥 | 建 Neon 项目时产生 |
-| `STAGING_URL` | 冒烟测试访问的地址 | GitHub `staging` 环境 | 变量 | 建 Vercel 前端项目时产生 |
-| `API_ORIGIN` | 前端把 `/api/*` 转发到哪里 | Vercel 项目 `thinklet-web` | 变量 | 建 Vercel 后端项目时产生 |
-| `DATABASE_URL` | 后端连数据库（Neon 的连接池地址） | Vercel 项目 `thinklet-api` | 密钥 | 建 Neon 项目时产生 |
-| `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET` | 后端连对象存储 | Vercel 项目 `thinklet-api` | 变量 | 建 Neon 存储桶时产生 |
-| `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 对象存储的访问凭据 | Vercel 项目 `thinklet-api` | 密钥 | 建 Neon 存储桶时产生 |
+| `VERCEL_TOKEN` | 用 vercel 命令行发布、写入后端的运行时变量 | 密钥 | CD | 用户在 Vercel 网站上生成，存成不提交的文件，由代理从文件读入 GitHub |
+| `VERCEL_ORG_ID` | 指定 Vercel 账号 | 变量 | CD | 建 Vercel 项目时产生 |
+| `VERCEL_WEB_PROJECT_ID` | 指定前端的 Vercel 项目 | 变量 | CD | 建 Vercel 项目时产生 |
+| `VERCEL_API_PROJECT_ID` | 指定后端的 Vercel 项目 | 变量 | CD | 建 Vercel 项目时产生 |
+| `MIGRATION_DATABASE_URL` | 执行 `drizzle-kit migrate`（Neon 的直连地址） | 密钥 | CD | 建 Neon 项目时产生 |
+| `STAGING_URL` | 冒烟测试访问的地址 | 变量 | CD | 建 Vercel 前端项目时产生 |
+| `API_ORIGIN` | 生成前端的 `vercel.json`，把 `/api/*` 转发到这个地址 | 变量 | CD | 建 Vercel 后端项目时产生 |
+| `DATABASE_URL` | 后端连数据库（Neon 的连接池地址） | 密钥 | 后端运行时 | 建 Neon 项目时产生 |
+| `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET` | 后端连对象存储 | 变量 | 后端运行时 | 建 Neon 存储桶时产生 |
+| `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 对象存储的访问凭据 | 密钥 | 后端运行时 | 建 Neon 存储桶时产生 |
 
-- 由建资源产生的值，直接从命令输出写进 GitHub 或 Vercel，从不显示在对话里。
+- “后端运行时”那几项，后端作为 Vercel 函数运行时要从 Vercel 项目 `thinklet-api` 里读。CD 每次发布 `thinklet-api` 前，用 `vercel env add <名称> --environment production --force` 从标准输入把它们覆盖写进去，值不出现在命令行和日志里。
+- Vercel 上的这一份只是副本。改值要在 GitHub 里改，再重新部署一次（`/deploy staging`）才生效；直接在 Vercel 网站上改的，下次发布会被覆盖。
+- Vercel 项目 `thinklet-web` 不放环境变量。
+- 由建资源产生的值，直接从命令输出写进 GitHub，从不显示在对话里。
 - 不需要额外密钥的：去掉 `human-reviewed` 标签的任务用 GitHub 自带的令牌；Renovate 用 Mend 的 App；AI 评审只在本机跑。
 - 测试用的外部账号：现在没有。
 - 加密孩子个人信息用的密钥：等第一个存孩子信息的 issue 回到 architect 步骤时再加。
