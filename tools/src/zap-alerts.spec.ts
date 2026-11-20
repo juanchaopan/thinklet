@@ -5,6 +5,11 @@ function alert(alertRef: string, riskcode: string): ZapAlert {
   return { alertRef, name: `Alert ${alertRef}`, riskcode, count: '2' };
 }
 
+/** An alert as a report might hold it, with any riskcode or none at all. */
+function alertWithRiskcode(riskcode: unknown): ZapAlert {
+  return { alertRef: '1-1', name: 'Alert 1-1', count: '1', riskcode } as unknown as ZapAlert;
+}
+
 describe('judgeAlerts', () => {
   it.each([
     ['0', 'Informational', false],
@@ -14,6 +19,31 @@ describe('judgeAlerts', () => {
   ])('marks an alert of riskcode %s (%s) as failing: %s', (riskcode, risk, failing) => {
     expect(judgeAlerts({ site: [{ alerts: [alert('10038-1', riskcode)] }] }, [])).toEqual([
       { ...alert('10038-1', riskcode), risk, ignoredReason: undefined, failing },
+    ]);
+  });
+
+  it.each([
+    ['missing', undefined, 'Unknown'],
+    ['null', null, 'Unknown'],
+    ['empty', '', 'Unknown'],
+    ['blank', ' ', 'Unknown'],
+    ['not a number', 'Medium', 'Medium'],
+    ['out of range', '7', '7'],
+    ['negative', '-1', '-1'],
+    ['padded', ' 1', ' 1'],
+    ['a decimal', '1.0', '1.0'],
+    ['a JSON number', 1, 'Unknown'],
+    ['an object property name', 'constructor', 'constructor'],
+  ])('fails an alert whose riskcode is %s, showing it as %s', (_case, riskcode, risk) => {
+    expect(judgeAlerts({ site: [{ alerts: [alertWithRiskcode(riskcode)] }] }, [])).toEqual([
+      expect.objectContaining({ risk, failing: true }),
+    ]);
+  });
+
+  it('does not fail an ignored alert whose riskcode is unknown', () => {
+    const report = { site: [{ alerts: [alertWithRiskcode(undefined)] }] };
+    expect(judgeAlerts(report, [{ alertRef: '1-1', reason: 'Checked by hand' }])).toEqual([
+      expect.objectContaining({ ignoredReason: 'Checked by hand', failing: false }),
     ]);
   });
 
@@ -32,10 +62,6 @@ describe('judgeAlerts', () => {
   it('collects the alerts of every site', () => {
     const report = { site: [{ alerts: [alert('1-1', '1')] }, {}, { alerts: [alert('2-1', '3')] }] };
     expect(judgeAlerts(report, []).map((judged) => judged.alertRef)).toEqual(['1-1', '2-1']);
-  });
-
-  it('shows an unknown riskcode as it is', () => {
-    expect(judgeAlerts({ site: [{ alerts: [alert('1-1', '7')] }] }, [])[0]?.risk).toBe('7');
   });
 
   it('reports nothing for an empty report', () => {

@@ -38,11 +38,11 @@ export interface StartedWebServer {
 /**
  * Serves the built web app the way the `thinklet-web` Vercel project does:
  * static files, `/api` and `/api/*` forwarded to the api, and `index.html`
- * for every other path so the router can handle it. Every response outside
- * `/api`, errors included, carries the web security headers from the same
- * list as vercel.json; a forwarded `/api` response keeps the api's own. A
- * request that fails is answered with 502 (api) or 500 (file) when nothing
- * was sent yet, and cut off otherwise.
+ * for every other path so the router can handle it. Every response this
+ * server answers itself, errors included, carries the web security headers
+ * from the same list as vercel.json; a forwarded `/api` response keeps only
+ * the api's own. A request that fails is answered with 502 (api) or 500
+ * (file) when nothing was sent yet, and cut off otherwise.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
   const server = createServer((incoming, outgoing) => {
@@ -51,17 +51,16 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
     const { pathname, search } = new URL(incoming.url ?? '/', 'http://localhost');
     const toApi = pathname === '/api' || pathname.startsWith('/api/');
     if (!toApi) {
-      // Set before any status is written, so writeHead merges them into the
-      // 200, 404 and 500 responses alike.
-      for (const [name, value] of Object.entries(WEB_SECURITY_HEADERS)) {
-        outgoing.setHeader(name, value);
-      }
+      setWebSecurityHeaders(outgoing);
     }
     const handled = toApi
       ? forward(incoming, outgoing, apiTarget(options.apiOrigin, pathname, search))
       : serveFile(pathname, outgoing, options.root);
     handled.catch(() => {
       if (!outgoing.headersSent) {
+        // The error status comes from this server, not from the api, so it
+        // carries the web's headers even for an `/api` request.
+        setWebSecurityHeaders(outgoing);
         outgoing.writeHead(toApi ? 502 : 500);
       }
       outgoing.end();
@@ -76,6 +75,16 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
         server.close(() => resolve());
       }),
   };
+}
+
+/**
+ * Sets the web security headers on a response whose status is not written
+ * yet, so writeHead merges them into whatever status it sends.
+ */
+function setWebSecurityHeaders(outgoing: ServerResponse): void {
+  for (const [name, value] of Object.entries(WEB_SECURITY_HEADERS)) {
+    outgoing.setHeader(name, value);
+  }
 }
 
 /** The api URL for a request: always the configured origin, with the request's path and query. */

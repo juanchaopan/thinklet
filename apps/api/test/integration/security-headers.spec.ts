@@ -27,12 +27,17 @@ describe('security response headers', () => {
     await app?.close();
   });
 
-  it('are on the 503 of GET /api/health', async () => {
-    const response = await request(app.getHttpServer()).get('/api/health');
+  // The router matches paths without regard to case, so the health check
+  // answers under any casing of the prefix, with the same headers.
+  it.each(['/api/health', '/API/health', '/Api/Health'])(
+    'are on the 503 of GET %s',
+    async (path) => {
+      const response = await request(app.getHttpServer()).get(path);
 
-    expect(response.status).toBe(503);
-    expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
-  });
+      expect(response.status).toBe(503);
+      expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
+    },
+  );
 
   it('are on the 404 of an unknown /api path', async () => {
     const response = await request(app.getHttpServer()).get('/api/unknown');
@@ -44,13 +49,16 @@ describe('security response headers', () => {
   // Nest's not-found handler covers only /api; a path outside it must get
   // the same JSON 404 rather than Express's HTML page, which replaces the
   // Content-Security-Policy.
-  it.each(['/', '/unknown', '/apiary'])('are on the JSON 404 of %s, outside /api', async (path) => {
-    const response = await request(app.getHttpServer()).get(path);
+  it.each(['/', '/unknown', '/apiary', '/APIARY'])(
+    'are on the JSON 404 of %s, outside /api',
+    async (path) => {
+      const response = await request(app.getHttpServer()).get(path);
 
-    expect(response.status).toBe(404);
-    expect(response.headers['content-type']).toMatch(/^application\/json/);
-    expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
-  });
+      expect(response.status).toBe(404);
+      expect(response.headers['content-type']).toMatch(/^application\/json/);
+      expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
+    },
+  );
 
   it('are on the 400 of a body the api cannot parse', async () => {
     const response = await request(app.getHttpServer())

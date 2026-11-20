@@ -14,11 +14,14 @@ const GLOBAL_PREFIX = 'api';
  * handler, which Nest mounts at the root as well. Nest's own not-found
  * handler covers only the prefix, so without this such a request reaches
  * Express's final handler, which answers with an HTML page and replaces the
- * Content-Security-Policy set by the security headers middleware.
+ * Content-Security-Policy set by the security headers middleware. The prefix
+ * is matched without regard to case, as the Express router matches routes,
+ * so every path the router would hand to a controller passes.
  */
 function rejectOutsidePrefix(request: Request, _response: Response, next: NextFunction): void {
   const prefix = `/${GLOBAL_PREFIX}`;
-  if (request.path === prefix || request.path.startsWith(`${prefix}/`)) {
+  const path = request.path.toLowerCase();
+  if (path === prefix || path.startsWith(`${prefix}/`)) {
     next();
     return;
   }

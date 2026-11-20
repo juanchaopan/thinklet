@@ -21,21 +21,27 @@ export interface IgnoredAlert {
 }
 
 export interface JudgedAlert extends ZapAlert {
-  /** The risk's name, or the riskcode itself when ZAP reports an unknown one. */
+  /**
+   * The risk's name; for an unknown riskcode the riskcode itself, or
+   * `Unknown` when the report gives none.
+   */
   risk: string;
   /** Why the alert is ignored, when it is on the ignore list. */
   ignoredReason: string | undefined;
   failing: boolean;
 }
 
-/** Medium (2) and high (3) alerts fail the scan; informational and low do not. */
-const FAILING_RISK = 2;
-const RISK_NAMES: Record<string, string> = {
-  '0': 'Informational',
-  '1': 'Low',
-  '2': 'Medium',
-  '3': 'High',
-};
+/**
+ * ZAP's riskcodes. Medium (2) and high (3) alerts fail the scan;
+ * informational and low do not. A Map, so that no riskcode read from the
+ * report can match an inherited object property.
+ */
+const RISKS = new Map<unknown, { name: string; failing: boolean }>([
+  ['0', { name: 'Informational', failing: false }],
+  ['1', { name: 'Low', failing: false }],
+  ['2', { name: 'Medium', failing: true }],
+  ['3', { name: 'High', failing: true }],
+]);
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
@@ -76,8 +82,10 @@ export function parseIgnoredAlerts(value: unknown): IgnoredAlert[] {
 }
 
 /**
- * Every alert in the report, each marked failing when it is of medium risk
- * or higher and not on the ignore list.
+ * Every alert in the report, each marked failing when it is not on the
+ * ignore list and its risk is medium or higher. An alert whose riskcode is
+ * missing or not one ZAP defines fails as well, so a report the check cannot
+ * read never passes the scan.
  */
 export function judgeAlerts(report: ZapReport, ignored: IgnoredAlert[]): JudgedAlert[] {
   const reasons = new Map(ignored.map((entry) => [entry.alertRef, entry.reason]));
@@ -85,11 +93,12 @@ export function judgeAlerts(report: ZapReport, ignored: IgnoredAlert[]): JudgedA
     .flatMap((site) => site.alerts ?? [])
     .map((alert) => {
       const ignoredReason = reasons.get(alert.alertRef);
+      const known = RISKS.get(alert.riskcode);
       return {
         ...alert,
-        risk: RISK_NAMES[alert.riskcode] ?? alert.riskcode,
+        risk: known?.name ?? (nonEmptyString(alert.riskcode) ? alert.riskcode : 'Unknown'),
         ignoredReason,
-        failing: ignoredReason === undefined && Number(alert.riskcode) >= FAILING_RISK,
+        failing: ignoredReason === undefined && (known?.failing ?? true),
       };
     });
 }
