@@ -17,6 +17,7 @@ issue #1 的 ZAP 基线扫描报了两条中危：没有 Content-Security-Policy
 - 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份，放在 `apps/api/src/infrastructure/`。
 - 两边都加 Content-Security-Policy（含 `frame-ancestors`）、X-Content-Type-Options、Cross-Origin-Opener-Policy、Cross-Origin-Resource-Policy、Permissions-Policy。值写在 `.docs/design/interfaces.md`。
 - 前端的 CSP 里脚本只允许本站文件，样式允许内联（`'unsafe-inline'`）。
+- 前端的生产构建不内联关键 CSS（`angular.json` 里 `inlineCritical: false`）：内联关键 CSS 时，构建会在页面里加一段内联脚本来加载完整的样式表，`script-src 'self'` 会挡住它，完整的样式就用不上。
 - 暂不加 Cross-Origin-Embedder-Policy。
 - ZAP 基线扫描有中危及以上的告警就失败；确实不用修的告警，在扫描的配置里逐条写明理由后忽略。
 
@@ -31,6 +32,7 @@ issue #1 的 ZAP 基线扫描报了两条中危：没有 Content-Security-Policy
 
 - 以后要加或改响应头，要自己改清单和中间件。
 - 内联样式不受 CSP 限制，页面上如果出现注入，样式能被改掉。
+- 不内联关键 CSS，首屏要等样式表下载完才显示样式；页面内容多了以后，首屏会慢一点。
 - 前端的清单要同时用在三个地方，其中 `ng serve` 读的是 `angular.json`，要靠测试保证它和清单一致。
 - ZAP 以后新加的中危规则会让 CI 突然失败，要当场修好或写明理由忽略。
 
@@ -39,5 +41,6 @@ issue #1 的 ZAP 基线扫描报了两条中危：没有 Content-Security-Policy
 - 前端改成服务端渲染，或者换到能按请求生成随机数的托管方式。
 - 要引用外部的图片、字体或脚本。
 - 要加的安全响应头多到自己维护很麻烦。
+- Angular 的构建能在不用内联脚本的情况下内联关键 CSS。
 
 Last changed: #2 (2026-11-20)
