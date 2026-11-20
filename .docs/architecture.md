@@ -58,7 +58,7 @@ flowchart LR
 | 组件 | 种类 | 说明 |
 |---|---|---|
 | `apps/web` | 网页前端 | Angular 单页应用，在浏览器里渲染，一套自适应页面同时支持触屏和键鼠 |
-| `apps/api` | 后端服务 | NestJS，提供 `/api/*` 接口 |
+| `apps/api` | 后端服务 | NestJS，提供 `/api/*` 接口，包括健康检查 `GET /api/health`：在数据库上执行 `SELECT 1`，并确认存储桶能访问，两者都正常就返回 200 |
 | `packages/contracts` | 共用代码包（不单独运行） | 前后端共用的接口约定：Zod schema 和由它推出的类型。只放接口约定，不放业务逻辑 |
 | PostgreSQL | 数据库 | 存全部业务数据 |
 | 对象存储 | 对象存储 | 存书本和教学里的图片、音频等文件，代码只走 S3 接口 |
@@ -274,7 +274,7 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 | 组件 | Vitest 浏览器模式（Playwright 驱动的 Chromium）、Angular Testing Library、MSW、axe | 每个状态都跑 axe；每个状态、每种屏幕尺寸（手机、平板、电脑）各截一张图做对比 |
 | 集成 | Vitest、supertest、Testcontainers（PostgreSQL 和 SeaweedFS） | 数据库从空库开始，用 `drizzle-kit migrate` 建表 |
 | 端到端 | Playwright、axe | 测试自己起前后端和容器里的数据库、存储，测完删除；每个页面都跑 axe |
-| 冒烟 | Playwright，打了 `@smoke` 标签的端到端测试 | 部署后直接对测试环境的地址跑。现在只有一条：首页能正常打开。只读、不改数据的再打上 `@production-safe` 标签 |
+| 冒烟 | Playwright，打了 `@smoke` 标签的端到端测试 | 部署后直接对测试环境的地址跑。现在有两条：首页能正常打开；经过前端的 `/api` 转发调用 `GET /api/health` 返回 200。两条都只读、不改数据，都打上 `@production-safe` 标签 |
 | 安全 | 安全测试用例用集成测试的工具来写；另加 ZAP 基线扫描 | ZAP 在 CI 里扫测试临时起的环境 |
 | 迁移 | Vitest、Testcontainers | 每个有新迁移脚本的 issue 都要写：把临时库停在上一个版本，用原始 SQL 塞入旧格式的数据，再执行 `drizzle-kit migrate`，检查数据都在、格式正确 |
 | 契约 | 不做 | 前后端在同一个仓库，由同一个 CD 任务一起发布 |
@@ -293,7 +293,7 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 | 主流浏览器近两个大版本 | 端到端 | PR 上只跑 Chromium；发版前在 Chromium、Firefox、WebKit 上都跑 |
 | 手机、平板、电脑三种屏幕 | 组件 | 每种尺寸各截一张图 |
 | 触屏和键鼠两种操作 | 组件、端到端 | 组件测试用键盘操作；发版前的端到端测试再加上模拟手机的触屏操作 |
-| 规模、可用性、成本、维护能力 | — | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认服务能访问 |
+| 规模、可用性、成本、维护能力 | — | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认首页、后端、数据库和存储都能访问 |
 
 ### 运行时机
 
