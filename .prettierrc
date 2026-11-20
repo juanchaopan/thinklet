@@ -2,6 +2,8 @@
   "printWidth": 100,
   "singleQuote": true,
   "trailingComma": "all",
+  "plugins": ["prettier-plugin-tailwindcss"],
+  "tailwindStylesheet": "./apps/web/src/styles.css",
   "overrides": [
     {
       "files": "*.html",

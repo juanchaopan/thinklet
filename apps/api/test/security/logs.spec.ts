@@ -61,7 +61,7 @@ describe('Logs', () => {
     it('writes one JSON object per line', () => {
       expect(lines.length).toBeGreaterThan(0);
       for (const line of lines) {
-        expect(() => JSON.parse(line)).not.toThrow();
+        expect(() => JSON.parse(line) as unknown).not.toThrow();
       }
     });
 

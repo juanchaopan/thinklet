@@ -1,6 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { healthResponseSchema } from '@thinklet/contracts';
+import { healthResponseSchema, type HealthResponse } from '@thinklet/contracts';
 import request from 'supertest';
 import { startApp } from '../support/app.js';
 import {
@@ -10,6 +10,17 @@ import {
   startStorage,
   type StartedStorage,
 } from '../support/containers.js';
+
+/** Asserts that GET /api/health answers 503 with the given result of each check. */
+async function expectUnavailable(
+  app: NestExpressApplication,
+  checks: HealthResponse['checks'],
+): Promise<void> {
+  const response = await request(app.getHttpServer()).get('/api/health');
+
+  expect(response.status).toBe(503);
+  expect(response.body).toEqual({ status: 'error', checks });
+}
 
 describe('GET /api/health', () => {
   let database: StartedPostgreSqlContainer;
@@ -62,13 +73,7 @@ describe('GET /api/health', () => {
     });
 
     it('returns 503 with the storage check marked', async () => {
-      const response = await request(app.getHttpServer()).get('/api/health');
-
-      expect(response.status).toBe(503);
-      expect(response.body).toEqual({
-        status: 'error',
-        checks: { database: 'ok', storage: 'error' },
-      });
+      await expectUnavailable(app, { database: 'ok', storage: 'error' });
     });
   });
 
@@ -87,13 +92,7 @@ describe('GET /api/health', () => {
     });
 
     it('returns 503 with the database check marked', async () => {
-      const response = await request(app.getHttpServer()).get('/api/health');
-
-      expect(response.status).toBe(503);
-      expect(response.body).toEqual({
-        status: 'error',
-        checks: { database: 'error', storage: 'ok' },
-      });
+      await expectUnavailable(app, { database: 'error', storage: 'ok' });
     });
   });
 });

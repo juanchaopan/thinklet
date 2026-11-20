@@ -18,7 +18,7 @@ describe('StorageService', () => {
 
     await createService(send).checkBucket(signal);
 
-    const [command, options] = send.mock.calls[0];
+    const [command, options] = send.mock.calls[0] as [HeadBucketCommand, unknown];
     expect(command).toBeInstanceOf(HeadBucketCommand);
     expect(command.input).toEqual({ Bucket: 'configured-bucket' });
     expect(options).toEqual({ abortSignal: signal });

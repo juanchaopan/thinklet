@@ -11,9 +11,21 @@ vars:
   # playwright and @playwright/test packages, so the browsers are the same.
   PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
   ZAP_IMAGE: zaproxy/zap-stable:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
+  # The static checks that are not npm packages run from their official
+  # images, so the same command works on Windows, macOS, Linux and CI.
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+  ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+  ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
+  OSV_SCANNER_IMAGE: ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde
   # Docker volume that keeps the Linux node_modules and downloads of the
   # component tests between runs.
   COMPONENT_TEST_VOLUME: thinklet-component-tests
+  # The branch a change is compared with: the checks of commits, steps, new
+  # migrations and risk look at what HEAD adds since it left BASE.
+  BASE: '{{.BASE | default "origin/main"}}'
+  # Git inside a container refuses a repository owned by another user, as a
+  # mounted one is; this trusts it for that one command.
+  GIT_TRUST_MOUNT: --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env "GIT_CONFIG_VALUE_0=*"
 
 tasks:
   dev:
@@ -27,23 +39,160 @@ tasks:
       - task: migrate
       - task: dev-servers
 
+  check:
+    desc: Run every static check in turn, stopping at the first that fails
+    cmds:
+      - task: format
+      - task: lint
+      - task: typecheck
+      - task: build
+      - task: architecture
+      - task: duplicates
+      - task: migrations-lint
+      - task: secrets
+      - task: workflows
+      - task: licenses
+      - task: vulnerabilities
+      - task: docs
+      - task: commits
+      - task: step-check
+
+  format:
+    desc: Check the format of every file with Prettier, or only the files given after `--`
+    cmds:
+      - pnpm exec prettier --check --ignore-unknown {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
+  format-fix:
+    desc: Rewrite every file in Prettier's format, or only the files given after `--`
+    cmds:
+      - pnpm exec prettier --write --ignore-unknown {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
+  lint:
+    desc: Lint every file with ESLint (typescript-eslint with type information, angular-eslint, complexity and length limits), or only the files given after `--`
+    deps: [build-contracts]
+    cmds:
+      - pnpm exec eslint --max-warnings 0 --no-warn-ignored {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}.{{end}}
+
   typecheck:
-    desc: Type-check every package and the end-to-end tests with tsc --noEmit
+    desc: Type-check every package, the end-to-end tests and tools/ with tsc --noEmit
     deps: [build-contracts]
     cmds:
       - pnpm --recursive run typecheck
       - pnpm exec tsc -p e2e/tsconfig.json
+      - pnpm exec tsc -p tools/tsconfig.json
 
   build:
     desc: Build every package (contracts with tsc, api with nest build, web with ng build)
     cmds:
       - pnpm --recursive run build
 
+  architecture:
+    desc: Check the architecture rules of the code structure (layers, modules, features, apps and contracts, no cycles) with dependency-cruiser
+    deps: [build-contracts]
+    cmds:
+      - pnpm exec depcruise apps packages e2e tools
+
+  duplicates:
+    desc: Look for duplicated code with jscpd (generated migrations, fixtures and baselines left out)
+    cmds:
+      - pnpm exec jscpd .
+
+  migrations-lint:
+    desc: Lint the migration scripts added since BASE (default origin/main) with Squawk; passes when there are none
+    cmds:
+      - node tools/bin/migrations-lint.ts --base {{.BASE}}
+
+  secrets:
+    desc: Scan the git history for secrets with gitleaks; `task secrets LOG_OPTS=origin/main..HEAD` scans only those commits
+    cmds:
+      - >-
+        docker run --rm
+        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
+        {{.GIT_TRUST_MOUNT}}
+        {{.GITLEAKS_IMAGE}}
+        git --redact --no-banner {{if .LOG_OPTS}}"--log-opts={{.LOG_OPTS}}"{{end}} /repo
+
+  secrets-staged:
+    desc: Scan the staged changes for secrets with gitleaks (the pre-commit hook)
+    cmds:
+      - >-
+        docker run --rm
+        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
+        {{.GIT_TRUST_MOUNT}}
+        {{.GITLEAKS_IMAGE}}
+        git --pre-commit --staged --redact --no-banner /repo
+
+  workflows:
+    desc: Check the GitHub Actions workflows with actionlint and zizmor (zizmor's online audits too when GH_TOKEN is set); passes when there are none
+    cmds:
+      - >-
+        if [ -d .github/workflows ]; then
+        docker run --rm --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly" --workdir /repo
+        {{.ACTIONLINT_IMAGE}} -color &&
+        docker run --rm --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly" --workdir /repo
+        --env GH_TOKEN {{.ZIZMOR_IMAGE}} .;
+        else echo "No GitHub Actions workflows to check."; fi
+
+  licenses:
+    desc: Check that every production dependency has a license from license-allowlist.json
+    cmds:
+      - node tools/bin/licenses.ts
+
+  vulnerabilities:
+    desc: Scan pnpm-lock.yaml with OSV-Scanner, failing on high or critical vulnerabilities
+    env:
+      OSV_SCANNER_IMAGE: '{{.OSV_SCANNER_IMAGE}}'
+    cmds:
+      - node tools/bin/vulnerabilities.ts
+
+  docs:
+    desc: Check the Markdown files (Prettier's format, markdownlint-cli2) and the "Last changed:" line every document under .docs/ ends with
+    cmds:
+      - pnpm exec prettier --check "**/*.md"
+      - pnpm exec markdownlint-cli2
+      - node tools/bin/last-changed.ts
+
+  commits:
+    desc: Check the messages of the commits since BASE (default origin/main) with commitlint and the project's rules for the branch
+    cmds:
+      - pnpm exec commitlint --from {{.BASE}} --to HEAD
+
+  step-check:
+    desc: Check that each commit since BASE (default origin/main) changes only what its step may change
+    cmds:
+      - node tools/bin/step-check.ts --base {{.BASE}}
+
+  pr-title:
+    desc: 'Check a PR title against the rules of its head branch, e.g. `task pr-title TITLE="feat(order): filter orders (#12)" BRANCH=feature/12-order-filter`'
+    requires:
+      vars: [TITLE, BRANCH]
+    cmds:
+      - node tools/bin/pr-title.ts --title "{{.TITLE}}" --branch "{{.BRANCH}}"
+
+  risk:
+    desc: Print the risk tier (low, medium or high) of the changes since BASE (default origin/main) from risk-rules.yml; RULES=<file> reads other rules
+    vars:
+      RULES: '{{.RULES | default "risk-rules.yml"}}'
+    cmds:
+      - node tools/bin/risk.ts --base {{.BASE}} --rules "{{.RULES}}"
+
   test-unit:
-    desc: Run the unit tests of every package with statement coverage thresholds
+    desc: Run the unit tests of every package and of tools/ with statement coverage thresholds
     deps: [build-contracts]
     cmds:
       - pnpm --recursive --if-present run test:unit
+      - pnpm exec vitest run --config tools/vitest.config.ts --coverage
+
+  test-unit-changed:
+    desc: Run only the unit tests affected by the changes since SINCE (default origin/main), as the pre-push hook does
+    deps: [build-contracts]
+    vars:
+      SINCE: '{{.SINCE | default "origin/main"}}'
+    cmds:
+      - pnpm --filter @thinklet/contracts exec vitest run --changed {{.SINCE}} --passWithNoTests
+      - pnpm --filter api exec vitest run --project unit --changed {{.SINCE}} --passWithNoTests
+      - pnpm --filter web exec vitest run --config scripts/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
+      - pnpm exec vitest run --config tools/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
 
   test-component:
     desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the pinned Playwright Docker image

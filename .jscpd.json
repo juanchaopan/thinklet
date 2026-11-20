@@ -1,0 +1,17 @@
+{
+  "minTokens": 50,
+  "minLines": 5,
+  "exitCode": 1,
+  "reporters": ["console"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**",
+    "**/.angular/**",
+    "**/__screenshots__/**",
+    "**/fixtures/**",
+    "apps/api/drizzle/**",
+    "pnpm-lock.yaml",
+    ".docs/**"
+  ]
+}

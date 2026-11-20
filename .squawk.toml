@@ -1,0 +1,8 @@
+# Squawk checks the migration scripts a branch adds (`task migrations-lint`).
+
+# The major version of the PostgreSQL image in docker-compose.yml, which
+# matches the Neon project's.
+pg_version = "18.0"
+
+# drizzle-kit migrate applies the pending scripts inside one transaction.
+assume_in_transaction = true

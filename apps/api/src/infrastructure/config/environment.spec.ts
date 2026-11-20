@@ -39,8 +39,7 @@ describe('environmentSchema', () => {
   });
 
   it.each(Object.keys(valid))('names %s when it is missing', (name) => {
-    const input: Record<string, unknown> = { ...valid };
-    delete input[name];
+    const input = Object.fromEntries(Object.entries(valid).filter(([key]) => key !== name));
 
     expect(failingVariables(input)).toEqual([name]);
   });

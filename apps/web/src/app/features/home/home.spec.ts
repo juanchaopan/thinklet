@@ -9,7 +9,7 @@ describe('Home', () => {
 
     expect(container.childElementCount).toBe(0);
     expect(container.textContent).toBe('');
-    await expectNoAxeViolations(container as Element);
+    await expectNoAxeViolations(container);
     await expectScreenshotsAtEverySize('home-blank');
   });
 });

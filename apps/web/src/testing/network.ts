@@ -28,6 +28,9 @@ export async function startWorker(): Promise<void> {
       const request = (frame.data as { request?: unknown }).request;
       if (request instanceof Request && new URL(request.url).pathname.startsWith('/api/')) {
         unhandledApiRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+        // MSW answers a request with the Response its handler throws; a
+        // Response.error() reaches the page as a network error.
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw Response.error();
       }
     },

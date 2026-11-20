@@ -1,16 +1,4 @@
 {
-  "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "target": "ES2023",
-    "strict": true,
-    "noEmit": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true,
-    "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
-    "types": ["node"]
-  },
+  "extends": "../../../tsconfig.node.json",
   "include": ["*.ts"]
 }

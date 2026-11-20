@@ -1,0 +1,11 @@
+# Prettier also skips everything in .gitignore (build output, coverage,
+# test reports, local environment files).
+
+# Written by pnpm
+pnpm-lock.yaml
+
+# Screenshot baselines
+**/__screenshots__/
+
+# Written by drizzle-kit next to the migration scripts
+apps/api/drizzle/meta/

@@ -1,0 +1,19 @@
+{
+  // Shared by the TypeScript that Node.js runs directly, with its built-in
+  // type stripping: the end-to-end tests and their scripts, tools/, the web
+  // app's scripts and its Vitest configuration. Each extends this and names
+  // its own files.
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "ES2023",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  }
+}

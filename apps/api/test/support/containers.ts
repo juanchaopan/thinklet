@@ -14,8 +14,8 @@ const S3_PORT = 8333;
 
 /** Image references are read from docker-compose.yml so tests and development use the same pinned images. */
 function composeImage(name: string): string {
-  const match = readFileSync(composeFile, 'utf8').match(
-    new RegExp(`^\\s*image:\\s*['"]?((?:\\S+/)?${name}:\\S+?)['"]?\\s*$`, 'm'),
+  const match = new RegExp(`^\\s*image:\\s*['"]?((?:\\S+/)?${name}:\\S+?)['"]?\\s*$`, 'm').exec(
+    readFileSync(composeFile, 'utf8'),
   );
   if (!match?.[1]) {
     throw new Error(`No ${name} image in docker-compose.yml`);

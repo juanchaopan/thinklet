@@ -89,7 +89,7 @@ describe('loggerOptions', () => {
 
     logger.info('plain message');
 
-    expect(JSON.parse(output()).msg).toBe('plain message');
+    expect((JSON.parse(output()) as { msg: unknown }).msg).toBe('plain message');
   });
 });
 

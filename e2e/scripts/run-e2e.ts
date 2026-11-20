@@ -16,7 +16,7 @@ const stopOnSignal = () => void environment.stop().then(() => process.exit(130))
 process.once('SIGINT', stopOnSignal);
 process.once('SIGTERM', stopOnSignal);
 
-let exitCode = 1;
+let exitCode: number;
 try {
   const playwright = spawn(
     process.execPath,
