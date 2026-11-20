@@ -433,6 +433,7 @@ LICENSE
 - **人的批准**：靠 `risk-gate` 和 `human-reviewed` 标签，不设“必须有几人批准”，因为 GitHub 不让 PR 作者批准自己的 PR。
   - `risk-gate` 在标签的加上和去掉时都会重新运行。
   - 新的提交推上来时，另一个任务会去掉这个标签。
+  - 这几个任务按 `pull_request` 事件运行，用的是 PR 自己带的工作流文件，PR 能把它们改掉。所以 `risk-gate` 通过不是最终的保证：代理合并前，自己用目标分支的脚本和 `risk-rules.yml` 算出风险等级，中风险和高风险的 PR 还要确认 `human-reviewed` 是在最后一次提交之后加上的。
 - **远程 issue 分支**：合并后永久保留；本地分支合并后删除。
 - **App**：只装 Renovate（Mend）。不装 Claude App，因为 AI 评审只在本机跑；也不装 Vercel App，因为发布只走 GitHub Actions。
 - **GitHub 的安全功能**：Dependabot 告警、推送保护和 CodeQL 都打开。
