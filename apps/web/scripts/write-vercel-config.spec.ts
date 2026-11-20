@@ -9,14 +9,12 @@ import { WEB_SECURITY_HEADERS } from './security-headers.ts';
 import { main, OUTSIDE_API_SOURCE, parseApiOrigin, vercelConfig } from './write-vercel-config.ts';
 
 /**
- * Whether Vercel applies a `headers` entry with this source to a request path.
+ * The request paths Vercel applies the OUTSIDE_API_SOURCE `headers` entry to.
  * Vercel compiles a source with path-to-regexp, case-sensitive and strict,
  * anchored at both ends; a source made of one unnamed group compiles to the
  * group's own regular expression.
  */
-function sourceMatches(source: string, path: string): boolean {
-  return new RegExp(`^${source}$`).test(path);
-}
+const OUTSIDE_API = new RegExp(`^${OUTSIDE_API_SOURCE}$`);
 
 describe('parseApiOrigin', () => {
   it.each([
@@ -54,12 +52,12 @@ describe('vercelConfig', () => {
   });
 
   it('sends every web security header, and only those, outside /api', () => {
-    expect(config.headers).toEqual([
-      {
-        source: OUTSIDE_API_SOURCE,
-        headers: Object.entries(WEB_SECURITY_HEADERS).map(([key, value]) => ({ key, value })),
-      },
-    ]);
+    expect(config.headers.map((entry) => entry.source)).toEqual([OUTSIDE_API_SOURCE]);
+    const sent = config.headers.flatMap((entry) => entry.headers);
+    expect(sent).toHaveLength(Object.keys(WEB_SECURITY_HEADERS).length);
+    expect(Object.fromEntries(sent.map(({ key, value }) => [key, value]))).toEqual(
+      WEB_SECURITY_HEADERS,
+    );
   });
 });
 
@@ -75,13 +73,13 @@ describe('OUTSIDE_API_SOURCE', () => {
     '/api-docs',
     '/books/api/1',
   ])('covers %s', (path) => {
-    expect(sourceMatches(OUTSIDE_API_SOURCE, path)).toBe(true);
+    expect(OUTSIDE_API.test(path)).toBe(true);
   });
 
   it.each(['/api', '/api/', '/api/health', '/api/books/1'])(
     'leaves %s to the api headers',
     (path) => {
-      expect(sourceMatches(OUTSIDE_API_SOURCE, path)).toBe(false);
+      expect(OUTSIDE_API.test(path)).toBe(false);
     },
   );
 });

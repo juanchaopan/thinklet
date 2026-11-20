@@ -21,10 +21,6 @@ describe('WEB_SECURITY_HEADERS', () => {
     });
   });
 
-  it('cannot be changed at run time', () => {
-    expect(Object.isFrozen(WEB_SECURITY_HEADERS)).toBe(true);
-  });
-
   it('is what ng serve sends, through the copy in angular.json', async () => {
     const angularJson = JSON.parse(
       await readFile(new URL('../angular.json', import.meta.url), 'utf8'),

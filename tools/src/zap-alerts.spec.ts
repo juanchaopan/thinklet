@@ -13,22 +13,20 @@ describe('judgeAlerts', () => {
     ['3', 'High', true],
   ])('marks an alert of riskcode %s (%s) as failing: %s', (riskcode, risk, failing) => {
     expect(judgeAlerts({ site: [{ alerts: [alert('10038-1', riskcode)] }] }, [])).toEqual([
-      { alertRef: '10038-1', name: 'Alert 10038-1', risk, count: '2', failing },
+      { ...alert('10038-1', riskcode), risk, ignoredReason: undefined, failing },
     ]);
   });
 
   it('keeps an ignored alert in the list with its reason, without failing', () => {
     const report = { site: [{ alerts: [alert('10055-6', '2'), alert('10055-4', '2')] }] };
-    const judged = judgeAlerts(report, [{ alertRef: '10055-6', reason: 'Needed by the app' }]);
-    expect(judged).toEqual([
+    expect(judgeAlerts(report, [{ alertRef: '10055-6', reason: 'Needed by the app' }])).toEqual([
       expect.objectContaining({
         alertRef: '10055-6',
         ignoredReason: 'Needed by the app',
         failing: false,
       }),
-      expect.objectContaining({ alertRef: '10055-4', failing: true }),
+      expect.objectContaining({ alertRef: '10055-4', ignoredReason: undefined, failing: true }),
     ]);
-    expect(judged[1]).not.toHaveProperty('ignoredReason');
   });
 
   it('collects the alerts of every site', () => {
@@ -59,11 +57,6 @@ describe('parseIgnoredAlerts', () => {
     ['an entry without alertRef', [{ reason: 'x' }], /needs an alertRef/],
     ['an entry without reason', [{ alertRef: '10055-6' }], /10055-6 needs a reason/],
     ['an entry with a blank reason', [{ alertRef: '10055-6', reason: '  ' }], /needs a reason/],
-    [
-      'an entry with an unknown field',
-      [{ alertRef: '1-1', reason: 'x', pluginid: '1' }],
-      /pluginid/,
-    ],
     [
       'an alertRef listed twice',
       [

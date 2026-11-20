@@ -15,17 +15,15 @@ export const API_SECURITY_HEADERS: Readonly<Record<string, string>> = Object.fre
   'Cross-Origin-Resource-Policy': 'same-origin',
   // The same device features the web app turns off.
   'Permissions-Policy': [
-    'accelerometer',
-    'camera',
-    'geolocation',
-    'gyroscope',
-    'magnetometer',
-    'microphone',
-    'payment',
-    'usb',
-  ]
-    .map((feature) => `${feature}=()`)
-    .join(', '),
+    'accelerometer=()',
+    'camera=()',
+    'geolocation=()',
+    'gyroscope=()',
+    'magnetometer=()',
+    'microphone=()',
+    'payment=()',
+    'usb=()',
+  ].join(', '),
 });
 
 /**

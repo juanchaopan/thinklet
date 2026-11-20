@@ -20,13 +20,11 @@ export interface IgnoredAlert {
   reason: string;
 }
 
-export interface JudgedAlert {
-  alertRef: string;
-  name: string;
+export interface JudgedAlert extends ZapAlert {
+  /** The risk's name, or the riskcode itself when ZAP reports an unknown one. */
   risk: string;
-  count: string;
   /** Why the alert is ignored, when it is on the ignore list. */
-  ignoredReason?: string;
+  ignoredReason: string | undefined;
   failing: boolean;
 }
 
@@ -38,7 +36,6 @@ const RISK_NAMES: Record<string, string> = {
   '2': 'Medium',
   '3': 'High',
 };
-const ENTRY_KEYS = new Set(['alertRef', 'reason']);
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== '';
@@ -48,12 +45,7 @@ function parseEntry(entry: unknown, index: number): IgnoredAlert {
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
     throw new Error(`Ignored alert ${index} must be an object with alertRef and reason`);
   }
-  const fields = entry as Record<string, unknown>;
-  const unknownKey = Object.keys(fields).find((key) => !ENTRY_KEYS.has(key));
-  if (unknownKey !== undefined) {
-    throw new Error(`Ignored alert ${index} has an unknown field "${unknownKey}"`);
-  }
-  const { alertRef, reason } = fields;
+  const { alertRef, reason } = entry as Record<string, unknown>;
   if (!nonEmptyString(alertRef)) {
     throw new Error(`Ignored alert ${index} needs an alertRef, such as "10055-6"`);
   }
@@ -94,11 +86,9 @@ export function judgeAlerts(report: ZapReport, ignored: IgnoredAlert[]): JudgedA
     .map((alert) => {
       const ignoredReason = reasons.get(alert.alertRef);
       return {
-        alertRef: alert.alertRef,
-        name: alert.name,
+        ...alert,
         risk: RISK_NAMES[alert.riskcode] ?? alert.riskcode,
-        count: alert.count,
-        ...(ignoredReason === undefined ? {} : { ignoredReason }),
+        ignoredReason,
         failing: ignoredReason === undefined && Number(alert.riskcode) >= FAILING_RISK,
       };
     });
