@@ -6,23 +6,23 @@
 
 ## 比较过的方案
 
-| 检查 | 选项 |
-|---|---|
-| 格式 | Prettier；Biome |
-| 代码规范 | ESLint 加 typescript-eslint 和 angular-eslint；Oxlint |
-| 类型和构建 | 严格模式的 tsc 加各自的构建命令；只用构建命令 |
-| 架构规则 | dependency-cruiser；eslint-plugin-boundaries；Sheriff |
-| 重复代码 | jscpd；不检查 |
-| 代码安全扫描 | CodeQL；Semgrep CE；Opengrep |
-| 依赖漏洞 | OSV-Scanner；pnpm audit |
-| 密钥泄漏 | gitleaks 加 GitHub 推送保护；Betterleaks 加推送保护；只用推送保护 |
-| 许可证 | license-checker-rseidelsohn；Trivy；不检查 |
-| 部署配置 | actionlint 加 zizmor；只用 actionlint |
-| 提交信息 | commitlint 加项目自己的规则；只用项目自己的脚本 |
-| 文档格式 | markdownlint-cli2 加 Prettier；只用 Prettier |
-| 迁移脚本 | Squawk；不检查 |
-| AI 简化 | 开 PR 前跑 `/simplify`；不做 |
-| AI 安全评审 | 开 PR 前跑 `/security-review`；本机和 CI 都跑；不做 |
+| 检查         | 选项                                                              |
+| ------------ | ----------------------------------------------------------------- |
+| 格式         | Prettier；Biome                                                   |
+| 代码规范     | ESLint 加 typescript-eslint 和 angular-eslint；Oxlint             |
+| 类型和构建   | 严格模式的 tsc 加各自的构建命令；只用构建命令                     |
+| 架构规则     | dependency-cruiser；eslint-plugin-boundaries；Sheriff             |
+| 重复代码     | jscpd；不检查                                                     |
+| 代码安全扫描 | CodeQL；Semgrep CE；Opengrep                                      |
+| 依赖漏洞     | OSV-Scanner；pnpm audit                                           |
+| 密钥泄漏     | gitleaks 加 GitHub 推送保护；Betterleaks 加推送保护；只用推送保护 |
+| 许可证       | license-checker-rseidelsohn；Trivy；不检查                        |
+| 部署配置     | actionlint 加 zizmor；只用 actionlint                             |
+| 提交信息     | commitlint 加项目自己的规则；只用项目自己的脚本                   |
+| 文档格式     | markdownlint-cli2 加 Prettier；只用 Prettier                      |
+| 迁移脚本     | Squawk；不检查                                                    |
+| AI 简化      | 开 PR 前跑 `/simplify`；不做                                      |
+| AI 安全评审  | 开 PR 前跑 `/security-review`；本机和 CI 都跑；不做               |
 
 ## 决定
 
@@ -48,4 +48,4 @@
 - 仓库改成私有。
 - 某个工具停止维护或改了许可证。
 
-Last changed: #1 (2026-11-19)
+Last changed: #1 (2026-11-20)
