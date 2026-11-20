@@ -430,7 +430,7 @@ LICENSE
 
 ### 环境变量和密钥
 
-全部环境变量和密钥只在 GitHub 的 `staging` 环境里维护。公开仓库能按环境保存密钥，所以名称里不带环境。
+测试环境用到的全部环境变量和密钥只在 GitHub 的 `staging` 环境里维护。公开仓库能按环境保存密钥，所以名称里不带环境。
 
 | 名称 | 用途 | 类型 | 谁用 | 值从哪来 |
 |---|---|---|---|---|
@@ -443,7 +443,9 @@ LICENSE
 | `API_ORIGIN` | 生成前端的 `vercel.json`，把 `/api/*` 转发到这个地址 | 变量 | CD | 建 Vercel 后端项目时产生 |
 | `DATABASE_URL` | 后端连数据库（Neon 的连接池地址） | 密钥 | 后端运行时 | 建 Neon 项目时产生 |
 | `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET` | 后端连对象存储 | 变量 | 后端运行时 | 建 Neon 存储桶时产生 |
+| `S3_FORCE_PATH_STYLE` | 对象存储用路径式地址（`<endpoint>/<桶名>/<文件>`）。Neon 和 SeaweedFS 只支持路径式；只支持 `<桶名>.<endpoint>` 的云设成 `false` | 变量 | 后端运行时 | 测试环境固定为 `true` |
 | `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 对象存储的访问凭据 | 密钥 | 后端运行时 | 建 Neon 存储桶时产生 |
+| `PORT` | 后端以常驻进程运行时监听的端口，可选，默认 3000 | 变量 | 开发机和常驻进程 | 只写在 `.env.example`；GitHub 和 Vercel 都不放，Vercel 函数用不到 |
 
 - “后端运行时”那几项，后端作为 Vercel 函数运行时要从 Vercel 项目 `thinklet-api` 里读。CD 每次发布 `thinklet-api` 前，用 `vercel env add <名称> --environment production --force` 从标准输入把它们覆盖写进去，值不出现在命令行和日志里。
 - Vercel 上的这一份只是副本。改值要在 GitHub 里改，再重新部署一次（`/deploy staging`）才生效；直接在 Vercel 网站上改的，下次发布会被覆盖。
@@ -454,4 +456,4 @@ LICENSE
 - 加密孩子个人信息用的密钥：等第一个存孩子信息的 issue 回到 architect 步骤时再加。
 - 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里。
 
-Last changed: #1 (2026-11-19)
+Last changed: #1 (2026-11-20)
