@@ -436,6 +436,7 @@ LICENSE
 - **远程 issue 分支**：合并后永久保留；本地分支合并后删除。
 - **App**：只装 Renovate（Mend）。不装 Claude App，因为 AI 评审只在本机跑；也不装 Vercel App，因为发布只走 GitHub Actions。
 - **GitHub 的安全功能**：Dependabot 告警、推送保护和 CodeQL 都打开。
+- **`staging` 环境**：只允许 `main` 分支上的工作流使用；手动部署只接受已经在 `main` 上的提交。
 
 ### 环境变量和密钥
 
