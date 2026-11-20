@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiDirectory } from './containers.js';
+import type { WatchedProcess } from './process.js';
 
 /**
  * Starts the Nest application in this test process with the given
@@ -20,24 +20,10 @@ export async function startApp(
   return app;
 }
 
-/** A TCP port on this machine that nothing listens on. */
-export async function freePort(): Promise<number> {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  if (address === null || typeof address === 'string') {
-    throw new Error('No free port');
-  }
-  return address.port;
-}
-
-export interface RunningProcess {
+export interface RunningProcess extends WatchedProcess {
   child: ChildProcess;
   /** Everything the process wrote to stdout and stderr so far. */
   output: () => string;
-  /** Resolves with the exit code once the process has exited. */
-  exited: Promise<number | null>;
 }
 
 /**
@@ -59,23 +45,4 @@ export function runBuiltApp(environment: Record<string, string>): RunningProcess
   child.stderr?.on('data', (chunk: Buffer) => chunks.push(chunk));
   const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
   return { child, output: () => Buffer.concat(chunks).toString('utf8'), exited };
-}
-
-/** Waits until the process answers HTTP on the port, failing if it exits first. */
-export async function waitForHttp(running: RunningProcess, port: number): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  let exitCode: number | null | undefined;
-  void running.exited.then((code) => (exitCode = code));
-  while (Date.now() < deadline) {
-    if (exitCode !== undefined) {
-      throw new Error(`The api exited with code ${exitCode}:\n${running.output()}`);
-    }
-    try {
-      await fetch(`http://127.0.0.1:${port}/api/unknown`);
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
-  throw new Error(`The api did not answer on port ${port}:\n${running.output()}`);
 }

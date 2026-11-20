@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "migrate": "drizzle-kit migrate",
     "test": "vitest --project unit",
-    "test:unit": "vitest run --project unit --coverage",
+    "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:security": "vitest run --project security",
     "test:migration": "vitest run --project migration"

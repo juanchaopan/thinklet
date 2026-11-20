@@ -1,13 +1,14 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFile, execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { parseArgs } from 'node:util';
+import { parseArgs, promisify } from 'node:util';
 import { disallowedPackages, type LicensedPackage } from '../src/licenses.ts';
 
 // The license check: every production dependency of every workspace package
 // has a license from the allowlist. The workspace packages themselves are
-// private and left out.
+// private and left out. The packages are checked side by side, as each check
+// walks its own dependency tree.
 //   --allowlist <file>  the allowed SPDX ids as a JSON array (default license-allowlist.json)
 
 interface WorkspacePackage {
@@ -31,15 +32,17 @@ const workspacePackages = JSON.parse(
   execSync('pnpm ls --recursive --depth -1 --json', { encoding: 'utf8' }),
 ) as WorkspacePackage[];
 
-const problems = workspacePackages.flatMap(({ name, path }) => {
-  const output = execFileSync(
+async function packageProblems({ name, path }: WorkspacePackage): Promise<string[]> {
+  const { stdout } = await promisify(execFile)(
     process.execPath,
     [checker, '--start', path, '--production', '--excludePrivatePackages', '--json'],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
-  const packages = JSON.parse(output) as Record<string, LicensedPackage>;
+  const packages = JSON.parse(stdout) as Record<string, LicensedPackage>;
   return disallowedPackages(packages, allowed).map((problem) => `${name}: ${problem}`);
-});
+}
+
+const problems = (await Promise.all(workspacePackages.map(packageProblems))).flat();
 
 if (problems.length > 0) {
   console.error(

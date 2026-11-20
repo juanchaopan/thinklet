@@ -1,7 +1,8 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { freePort, startApp } from '../support/app.js';
+import { startApp } from '../support/app.js';
 import { apiEnvironment } from '../support/containers.js';
+import { freePort } from '../support/process.js';
 
 // Words and fragments that only appear when an error leaks into a response.
 const LEAK_MARKERS = [

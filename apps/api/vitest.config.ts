@@ -2,7 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 // One project per test subject, each run on its own command
 // (`vitest run --project <name>`). Integration, security and migration tests
-// start their own throwaway containers with Testcontainers.
+// live under test/<subject>/ and start their own throwaway containers with
+// Testcontainers, so they get longer timeouts.
+const CONTAINER_SUBJECTS = ['integration', 'security', 'migration'];
 const containerTimeouts = { testTimeout: 60_000, hookTimeout: 180_000 };
 
 export default defineConfig({
@@ -32,30 +34,10 @@ export default defineConfig({
         extends: true,
         test: { name: 'unit', include: ['src/**/*.spec.ts'] },
       },
-      {
+      ...CONTAINER_SUBJECTS.map((name) => ({
         extends: true,
-        test: {
-          name: 'integration',
-          include: ['test/integration/**/*.spec.ts'],
-          ...containerTimeouts,
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: 'security',
-          include: ['test/security/**/*.spec.ts'],
-          ...containerTimeouts,
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: 'migration',
-          include: ['test/migration/**/*.spec.ts'],
-          ...containerTimeouts,
-        },
-      },
+        test: { name, include: [`test/${name}/**/*.spec.ts`], ...containerTimeouts },
+      })),
     ],
   },
 });

@@ -1,12 +1,13 @@
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import request from 'supertest';
-import { freePort, runBuiltApp, waitForHttp, type RunningProcess } from '../support/app.js';
+import { runBuiltApp, type RunningProcess } from '../support/app.js';
 import {
   apiEnvironment,
   startDatabase,
   startStorage,
   type StartedStorage,
 } from '../support/containers.js';
+import { freePort, waitForHttp } from '../support/process.js';
 
 function nonEmptyLines(text: string): string[] {
   return text.split('\n').filter((line) => line.trim() !== '');

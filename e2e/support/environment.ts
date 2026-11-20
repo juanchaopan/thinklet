@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -10,6 +9,7 @@ import {
   startDatabase,
   startStorage,
 } from '../../apps/api/test/support/containers.ts';
+import { freePort, waitForHttp } from '../../apps/api/test/support/process.ts';
 import { startWebServer } from './web-server.ts';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -60,6 +60,8 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     const databaseUrl = database.value.getConnectionUri();
     await migrate(databaseUrl);
 
+    // The api's errors go straight to this process's stderr, so its output
+    // is not kept in memory for the length of the tests.
     const apiPort = await freePort();
     const api = spawn(process.execPath, [join(apiDirectory, 'dist', 'main.js')], {
       cwd: apiDirectory,
@@ -71,10 +73,14 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       stdio: ['ignore', 'ignore', 'inherit'],
     });
     stops.push(() => stopProcess(api));
-    const apiOrigin = `http://127.0.0.1:${apiPort}`;
-    await waitForApi(api, apiOrigin);
+    const exited = new Promise<number | null>((resolveExit) => api.on('exit', resolveExit));
+    await waitForHttp({ exited }, apiPort);
 
-    const web = await startWebServer({ root: webRoot, apiOrigin, host: options.webHost });
+    const web = await startWebServer({
+      root: webRoot,
+      apiOrigin: `http://127.0.0.1:${apiPort}`,
+      host: options.webHost,
+    });
     stops.push(() => web.close());
 
     return { baseUrl: `http://127.0.0.1:${web.port}`, stop };
@@ -82,34 +88,6 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     await stop();
     throw error;
   }
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer();
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const address = server.address();
-  server.close();
-  if (address === null || typeof address === 'string') {
-    throw new Error('No free port');
-  }
-  return address.port;
-}
-
-async function waitForApi(api: ChildProcess, origin: string): Promise<void> {
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (api.exitCode !== null) {
-      throw new Error(`The api exited with code ${api.exitCode}`);
-    }
-    try {
-      await fetch(`${origin}/api/health`);
-      return;
-    } catch {
-      await new Promise((resolveWait) => setTimeout(resolveWait, 200));
-    }
-  }
-  throw new Error(`The api did not answer at ${origin}`);
 }
 
 async function stopProcess(child: ChildProcess): Promise<void> {

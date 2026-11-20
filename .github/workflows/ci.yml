@@ -67,9 +67,11 @@ jobs:
         env:
           TASK: ${{ matrix.task }}
 
-  # Commit messages and the step check read the pull request's own commits,
-  # so they check out its head rather than the merge with main. The branch
-  # kind comes from GITHUB_HEAD_REF, which the runner sets.
+  # Commit messages, the step check and Squawk (which looks only at the
+  # migration scripts the pull request adds) read the pull request's own
+  # commits, so they check out its head with the history back to where the
+  # branch left main, rather than the merge with main. The branch kind comes
+  # from GITHUB_HEAD_REF, which the runner sets.
   pr-commits:
     name: ${{ matrix.task }}
     if: github.event_name == 'pull_request'
@@ -80,7 +82,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        task: [commits, step-check]
+        task: [commits, step-check, migrations-lint]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,25 +93,6 @@ jobs:
       - run: pnpm exec task "$TASK" BASE="$BASE_SHA"
         env:
           TASK: ${{ matrix.task }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-
-  # Squawk looks only at the migration scripts the pull request adds, which
-  # needs the history back to where the branch left main.
-  migrations-lint:
-    name: migrations-lint
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: ./.github/actions/setup
-      - run: pnpm exec task migrations-lint BASE="$BASE_SHA"
-        env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
   # gitleaks scans the commits of the pull request; main was scanned when

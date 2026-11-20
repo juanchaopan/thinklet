@@ -1,26 +1,16 @@
+import conventional from '@commitlint/config-conventional';
 import { COMMIT_TYPE, type Branch } from './branch.ts';
 
 /** The steps every issue goes through, in order. */
 export const STEPS = ['kickoff', 'architect', 'design', 'scaffold', 'implement'] as const;
 export type Step = (typeof STEPS)[number];
 
-/** Commit types of Conventional Commits, as @commitlint/config-conventional allows them. */
-export const COMMIT_TYPES = [
-  'build',
-  'chore',
-  'ci',
-  'docs',
-  'feat',
-  'fix',
-  'perf',
-  'refactor',
-  'revert',
-  'style',
-  'test',
-];
-
-/** The longest a title or a line of a message may be, unless the line holds a URL. */
-export const MAX_LINE_LENGTH = 100;
+// The commit types and line limits are read from the commitlint preset that
+// checks commit messages, so PR titles follow exactly the same rules.
+const COMMIT_TYPES: readonly string[] = conventional.rules['type-enum'][2];
+const MAX_TITLE_LENGTH = conventional.rules['header-max-length'][2];
+/** The longest a line after the title may be, unless it holds a URL. */
+const MAX_LINE_LENGTH = conventional.rules['body-max-line-length'][2];
 
 const CONVENTIONAL_TITLE = /^([a-z]+)(?:\([^()\s][^()]*\))?!?: \S/;
 const ISSUE_REFERENCE = / \(#(\d+)\)$/;
@@ -83,9 +73,9 @@ export function isMergeFromMain(raw: string): boolean {
 /** Problems of a title (a commit's first line or a PR title) that hold on every branch. */
 export function conventionalTitleProblems(title: string): string[] {
   const problems: string[] = [];
-  if (title.length > MAX_LINE_LENGTH) {
+  if (title.length > MAX_TITLE_LENGTH) {
     problems.push(
-      `The title has ${title.length} characters; at most ${MAX_LINE_LENGTH} are allowed.`,
+      `The title has ${title.length} characters; at most ${MAX_TITLE_LENGTH} are allowed.`,
     );
   }
   const match = CONVENTIONAL_TITLE.exec(title);

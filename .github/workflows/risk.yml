@@ -49,18 +49,17 @@ jobs:
         with:
           node-version-file: target/.node-version
           package-manager-cache: false
-      # A target branch without the rules yet (the pull request that brings
-      # them) counts as high risk.
+      # The target branch's script reads the files the pull request changes
+      # from the pull request's checkout. A target branch without the rules
+      # yet (the pull request that brings them) counts as high risk.
       - id: tier
         name: Work out the risk tier
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
           if [ -f target/tools/bin/risk.ts ] && [ -f target/risk-rules.yml ]; then
-            tier="$(git -C pr -c core.quotePath=false diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA" \
-              | node target/tools/bin/risk.ts --rules target/risk-rules.yml --branch "$HEAD_REF")"
+            tier="$(cd pr && node ../target/tools/bin/risk.ts --base "$BASE_SHA" --rules ../target/risk-rules.yml --branch "$HEAD_REF")"
           else
             echo "::notice::The target branch has no risk rules yet, so the pull request counts as high risk."
             tier=high

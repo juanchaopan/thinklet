@@ -23,6 +23,8 @@ vars:
   # The branch a change is compared with: the checks of commits, steps, new
   # migrations and risk look at what HEAD adds since it left BASE.
   BASE: '{{.BASE | default "origin/main"}}'
+  # The repository, read-only at /repo, for the checks that run from an image.
+  REPO_MOUNT: --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
   # Git inside a container refuses a repository owned by another user, as a
   # mounted one is; this trusts it for that one command.
   GIT_TRUST_MOUNT: --env GIT_CONFIG_COUNT=1 --env GIT_CONFIG_KEY_0=safe.directory --env "GIT_CONFIG_VALUE_0=*"
@@ -106,20 +108,14 @@ tasks:
     desc: Scan the git history for secrets with gitleaks; `task secrets LOG_OPTS=origin/main..HEAD` scans only those commits
     cmds:
       - >-
-        docker run --rm
-        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
-        {{.GIT_TRUST_MOUNT}}
-        {{.GITLEAKS_IMAGE}}
+        docker run --rm {{.REPO_MOUNT}} {{.GIT_TRUST_MOUNT}} {{.GITLEAKS_IMAGE}}
         git --redact --no-banner {{if .LOG_OPTS}}"--log-opts={{.LOG_OPTS}}"{{end}} /repo
 
   secrets-staged:
     desc: Scan the staged changes for secrets with gitleaks (the pre-commit hook)
     cmds:
       - >-
-        docker run --rm
-        --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly"
-        {{.GIT_TRUST_MOUNT}}
-        {{.GITLEAKS_IMAGE}}
+        docker run --rm {{.REPO_MOUNT}} {{.GIT_TRUST_MOUNT}} {{.GITLEAKS_IMAGE}}
         git --pre-commit --staged --redact --no-banner /repo
 
   workflows:
@@ -127,10 +123,8 @@ tasks:
     cmds:
       - >-
         if [ -d .github/workflows ]; then
-        docker run --rm --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly" --workdir /repo
-        {{.ACTIONLINT_IMAGE}} -color &&
-        docker run --rm --mount "type=bind,src={{.ROOT_DIR}},dst=/repo,readonly" --workdir /repo
-        --env GH_TOKEN {{.ZIZMOR_IMAGE}} .;
+        docker run --rm {{.REPO_MOUNT}} --workdir /repo {{.ACTIONLINT_IMAGE}} -color &&
+        docker run --rm {{.REPO_MOUNT}} --workdir /repo --env GH_TOKEN {{.ZIZMOR_IMAGE}} .;
         else echo "No GitHub Actions workflows to check."; fi
 
   licenses:
@@ -181,11 +175,14 @@ tasks:
     cmds:
       - node tools/bin/risk.ts --base {{.BASE}} --rules "{{.RULES}}"
 
+  # Each package's test:unit script knows its own Vitest configuration and
+  # project; these tasks add only what differs between a full and a partial
+  # run.
   test-unit:
     desc: Run the unit tests of every package and of tools/ with statement coverage thresholds
     deps: [build-contracts]
     cmds:
-      - pnpm --recursive --if-present run test:unit
+      - pnpm --recursive --if-present run test:unit --coverage
       - pnpm exec vitest run --config tools/vitest.config.ts --coverage
 
   test-unit-changed:
@@ -194,9 +191,7 @@ tasks:
     vars:
       SINCE: '{{.SINCE | default "origin/main"}}'
     cmds:
-      - pnpm --filter @thinklet/contracts exec vitest run --changed {{.SINCE}} --passWithNoTests
-      - pnpm --filter api exec vitest run --project unit --changed {{.SINCE}} --passWithNoTests
-      - pnpm --filter web exec vitest run --config scripts/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
+      - pnpm --recursive --if-present run test:unit --changed {{.SINCE}} --passWithNoTests
       - pnpm exec vitest run --config tools/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
 
   test-component:
@@ -273,8 +268,11 @@ tasks:
     cmds:
       - pnpm --filter api run migrate
 
+  # Many tasks need the contracts built; within one `task` run they are
+  # built once, however many of those tasks run.
   build-contracts:
     internal: true
+    run: once
     cmds:
       - pnpm --filter @thinklet/contracts run build
 
