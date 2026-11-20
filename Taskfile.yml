@@ -1,0 +1,91 @@
+# Entry point for every routine command: `pnpm exec task <name>`
+# (`pnpm exec task --list` shows them all).
+version: '3'
+
+# Local values for development; on CI the variables come from the environment.
+# Variables that are already set are not overridden.
+dotenv: ['.env']
+
+tasks:
+  dev:
+    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the api and web dev servers
+    preconditions:
+      - sh: test -f .env
+        msg: Copy .env.example to .env first
+    cmds:
+      - docker compose up --detach --wait
+      - task: build-contracts
+      - task: migrate
+      - task: dev-servers
+
+  typecheck:
+    desc: Type-check every package with tsc --noEmit
+    deps: [build-contracts]
+    cmds:
+      - pnpm --recursive run typecheck
+
+  build:
+    desc: Build every package (contracts with tsc, api with nest build, web with ng build)
+    cmds:
+      - pnpm --recursive run build
+
+  test-unit:
+    desc: Run the unit tests of every package with statement coverage thresholds
+    deps: [build-contracts]
+    cmds:
+      - pnpm --recursive --if-present run test:unit
+
+  test-integration:
+    desc: Run the api integration tests against throwaway PostgreSQL and SeaweedFS containers
+    deps: [build-contracts]
+    cmds:
+      - pnpm --filter api run test:integration
+
+  test-security:
+    desc: Run the api security test cases against the built api and throwaway containers
+    deps: [build-api]
+    cmds:
+      - pnpm --filter api run test:security
+
+  test-migration:
+    desc: Run the migration tests against a throwaway PostgreSQL container
+    cmds:
+      - pnpm --filter api run test:migration
+
+  migrate:
+    desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
+    cmds:
+      - pnpm --filter api run migrate
+
+  build-contracts:
+    internal: true
+    cmds:
+      - pnpm --filter @thinklet/contracts run build
+
+  build-api:
+    internal: true
+    cmds:
+      - pnpm --filter "api..." run build
+
+  dev-servers:
+    internal: true
+    deps: [dev-contracts, dev-api, dev-web]
+
+  dev-contracts:
+    internal: true
+    cmds:
+      - pnpm --filter @thinklet/contracts exec tsc -p tsconfig.build.json --watch --preserveWatchOutput
+
+  dev-api:
+    internal: true
+    cmds:
+      - pnpm --filter api run start:dev
+
+  dev-web:
+    internal: true
+    # ng serve also reads PORT, which .env sets for the api; keep the web
+    # dev server on Angular's default port instead.
+    env:
+      PORT: '4200'
+    cmds:
+      - pnpm --filter web run start

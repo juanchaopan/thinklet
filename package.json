@@ -1,0 +1,21 @@
+{
+  "name": "thinklet",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": "26.13.1"
+  },
+  "devDependencies": {
+    "@go-task/cli": "3.54.0",
+    "@testcontainers/postgresql": "12.2.1",
+    "@vitest/coverage-v8": "5.1.1",
+    "drizzle-kit": "0.31.11",
+    "prettier": "3.10.1",
+    "supertest": "7.3.2",
+    "testcontainers": "12.2.1",
+    "typescript": "6.0.3",
+    "vitest": "5.1.1"
+  }
+}
