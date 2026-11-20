@@ -52,37 +52,46 @@
 - **风险和人的批准**：CI 任务 `risk` 按目标分支的 `risk-rules.yml` 给 PR 打上 `risk:low`、`risk:medium` 或 `risk:high`；中风险和高风险的 PR 要有人加上 `human-reviewed` 标签，`risk-gate` 才通过；推上新的提交时，这个标签会被自动去掉。发版 PR 一律是高风险。这几个任务按 `pull_request` 事件运行，用的是 PR 自己带的工作流文件（`.github/workflows/risk.yml`），PR 能把它们改掉，所以 `risk-gate` 通过不是最终的保证。
 - **合并前**，代理不只看 `risk-gate`，自己核对下面两项。两项都成立、必过检查也都通过才合并；`risk-gate` 显示通过但核对不成立时不合并，把情况告诉用户。人自己在网页上合并时，要自己看风险标签和批准标签。
 
-  1. **用目标分支的脚本和规则算出风险等级**，不用 PR 里的。先切到 PR 的分支，并确认本地 HEAD 就是 PR 在 GitHub 上的最新提交；再把 `origin/main` 上的 `tools/` 和 `risk-rules.yml` 取到临时目录里运行。`origin/main` 还没有规则时，一律算高风险。
+  1. **用目标分支的脚本和规则算出风险等级**，不用 PR 里的。先切到 PR 的分支，并确认本地 HEAD 就是 PR 在 GitHub 上的最新提交；不是时命令报错并以非零状态退出，不输出等级。再把 `origin/main` 上的 `tools/` 和 `risk-rules.yml` 取到临时目录里运行。`origin/main` 还没有规则时，一律算高风险。命令放在子 shell 里，贴到交互式 shell 里运行时，`exit` 只结束子 shell。
 
      ```bash
      n=<PR 编号>
-     git fetch origin main
-     [ "$(git rev-parse HEAD)" = "$(gh pr view "$n" --json headRefOid --jq .headRefOid)" ] || echo "本地 HEAD 不是 PR 的最新提交" >&2
-     target="$(mktemp -d)"
-     if git cat-file -e origin/main:risk-rules.yml 2>/dev/null && git cat-file -e origin/main:tools/bin/risk.ts 2>/dev/null; then
-       git archive origin/main tools risk-rules.yml | tar -x -C "$target"
-       node "$target/tools/bin/risk.ts" --base origin/main --rules "$target/risk-rules.yml" --branch "$(gh pr view "$n" --json headRefName --jq .headRefName)"
-     else
-       echo high
-     fi
-     rm -rf "$target"
+     (
+       git fetch origin main
+       [ "$(git rev-parse HEAD)" = "$(gh pr view "$n" --json headRefOid --jq .headRefOid)" ] || { echo "本地 HEAD 不是 PR 的最新提交，先切到 PR 的分支并拉取最新提交" >&2; exit 1; }
+       target="$(mktemp -d)"
+       if git cat-file -e origin/main:risk-rules.yml 2>/dev/null && git cat-file -e origin/main:tools/bin/risk.ts 2>/dev/null; then
+         git archive origin/main tools risk-rules.yml | tar -x -C "$target"
+         node "$target/tools/bin/risk.ts" --base origin/main --rules "$target/risk-rules.yml" --branch "$(gh pr view "$n" --json headRefName --jq .headRefName)"
+       else
+         echo high
+       fi
+       rm -rf "$target"
+     )
      ```
 
      算出的等级和 PR 上的 `risk:*` 标签不一样时，说明 PR 可能改了风险的工作流，不合并，告诉用户。
 
-  2. **中风险和高风险的 PR 有 `human-reviewed` 标签，而且这个标签是在最后一次推送之后加上的。** 最后一次推送的时间取两者里较晚的一个：GitHub 第一次见到 PR 最新提交的时间（这个提交最早的 check suite），以及最后一次强推的时间。不用提交里的日期，因为提交日期可以随意填。
+  2. **中风险和高风险的 PR 有 `human-reviewed` 标签，而且这个标签是在最后一次推送之后加上的。** 最后一次推送的时间取两者里较晚的一个：GitHub 第一次见到 PR 最新提交的时间（这个提交最早的 check suite），以及最后一次强推的时间。不用提交里的日期，因为提交日期可以随意填。两者都查不到时，推送时间无法确定，一律算未批准；查不到批准时间也算未批准。`gh api` 出错时会把错误信息输出到标准输出，所以只保留时间格式的行，查询出错就等于查不到。
 
      ```bash
      n=<PR 编号>
+     timestamps() { grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' | sort; }
      head="$(gh pr view "$n" --json headRefOid --jq .headRefOid)"
      pushed="$({
-       gh api "repos/{owner}/{repo}/commits/$head/check-suites" --paginate --jq '.check_suites[].created_at' | sort | head -n 1
+       gh api "repos/{owner}/{repo}/commits/$head/check-suites" --paginate --jq '.check_suites[].created_at' | timestamps | head -n 1
        gh api "repos/{owner}/{repo}/issues/$n/timeline" --paginate --jq '.[] | select(.event == "head_ref_force_pushed") | .created_at'
-     } | sort | tail -n 1)"
-     approved="$(gh api "repos/{owner}/{repo}/issues/$n/timeline" --paginate --jq '.[] | select(.event == "labeled" and .label.name == "human-reviewed") | .created_at' | sort | tail -n 1)"
+     } | timestamps | tail -n 1)"
+     approved="$(gh api "repos/{owner}/{repo}/issues/$n/timeline" --paginate --jq '.[] | select(.event == "labeled" and .label.name == "human-reviewed") | .created_at' | timestamps | tail -n 1)"
      labelled="$(gh pr view "$n" --json labels --jq '[.labels[].name] | index("human-reviewed") != null')"
-     echo "最后一次推送：$pushed；最后一次批准：${approved:-无}；现在有标签：$labelled"
-     if [ "$labelled" = true ] && [[ "$approved" > "$pushed" ]]; then echo 已批准; else echo 未批准; fi
+     echo "最后一次推送：${pushed:-未知}；最后一次批准：${approved:-无}；现在有标签：$labelled"
+     if [ -z "$pushed" ]; then
+       echo "未批准：无法确定最后一次推送的时间"
+     elif [ "$labelled" = true ] && [ -n "$approved" ] && [[ "$approved" > "$pushed" ]]; then
+       echo 已批准
+     else
+       echo 未批准
+     fi
      ```
 
 - **合并到 `main` 后**：CI 再跑类型检查、构建和单元、组件、集成、端到端测试；CD 发布到测试环境 staging（迁移、发布后端和前端、冒烟测试）。发版 PR 合并后，CI 打上 `v<版本>` 标签并建 GitHub release。
