@@ -10,6 +10,6 @@
 
 ## 其他设计文档
 
-- `interfaces.md`：后端接口。
+- `interfaces.md`：前端和后端响应都带的安全响应头，以及后端接口。
 
-Last changed: #1 (2026-11-20)
+Last changed: #2 (2026-11-20)
