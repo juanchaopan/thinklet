@@ -140,10 +140,10 @@ flowchart LR
 | `@playwright/test`                                            | 端到端测试和冒烟测试                 | Apache-2.0   |
 | `testcontainers`、`@testcontainers/postgresql`                | 测试里临时起 PostgreSQL 和 SeaweedFS | MIT          |
 | `supertest`                                                   | 集成测试里从 HTTP 入口调用后端       | MIT          |
-| `vercel`                                                      | 发布到 Vercel                        | Apache-2.0   |
-| `neonctl`                                                     | 创建 Neon 资源、取连接地址           | Apache-2.0   |
 
 不通过 npm 安装的工具：gitleaks（MIT）、actionlint（MIT）、zizmor（MIT）、OSV-Scanner（Apache-2.0）、CodeQL（GitHub 提供）、ZAP（Apache-2.0）。容器镜像：`postgres`（PostgreSQL License）、`chrislusf/seaweedfs`（Apache-2.0）、Playwright 官方镜像（Apache-2.0）。
+
+`vercel` 和 `neonctl` 命令行不写进依赖清单，按固定版本临时运行（见决策 0017）：CD 用 `npm install --global vercel@<版本>` 安装，版本是部署工作流里的 `VERCEL_CLI_VERSION`，由 Renovate 更新；本机用 `npx vercel@<同一版本>` 和 `npx neonctl@<版本>`。
 
 ## 代码结构
 
@@ -218,12 +218,12 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 基础设施直接用 `vercel` 和 `neonctl` 命令行创建，不用基础设施即代码工具。scaffold 步骤执行前先用 `--help` 核对参数：
 
 ```text
-neonctl projects create --name thinklet-staging --region-id aws-ap-southeast-1 --no-secrets
-neonctl connection-string <branch> --project-id <id> --pooled    # 输出直接写入 GitHub 密钥 DATABASE_URL，不显示
-neonctl connection-string <branch> --project-id <id>             # 输出直接写入 GitHub 密钥 MIGRATION_DATABASE_URL，不显示
+npx neonctl@9.7.2 projects create --name thinklet-staging --region-id aws-ap-southeast-1 --no-secrets
+npx neonctl@9.7.2 connection-string <branch> --project-id <id> --pooled    # 输出直接写入 GitHub 密钥 DATABASE_URL，不显示
+npx neonctl@9.7.2 connection-string <branch> --project-id <id>             # 输出直接写入 GitHub 密钥 MIGRATION_DATABASE_URL，不显示
 （Neon 对象存储桶按 Neon 官方文档的命令创建，桶的凭据直接写入 GitHub 密钥，不显示）
-vercel project create thinklet-web
-vercel project create thinklet-api
+npx vercel@66.5.0 project create thinklet-web
+npx vercel@66.5.0 project create thinklet-api
 ```
 
 ## 数据迁移
