@@ -67,21 +67,22 @@ flowchart LR
 
 ## 技术选择和决策点
 
-| 方面             | 选择                                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| 前端框架         | Angular（TypeScript），独立组件加 signals，单页应用                                                        |
-| 前端界面         | Angular CDK 加 Tailwind CSS，界面自己设计                                                                  |
-| 后端语言和运行时 | TypeScript，Node.js 26.13.1（最新 LTS），版本写死在 `.node-version` 和各 `package.json` 的 `engines` 里    |
-| 后端框架         | NestJS，底层用 Express                                                                                     |
-| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型                                   |
-| 数据访问         | Drizzle ORM 加 node-postgres 驱动                                                                          |
-| 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个               |
-| 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息            |
-| 数据库           | PostgreSQL；开发和测试用的版本与 Neon 项目的主版本一致                                                     |
-| 对象存储         | S3 接口（`@aws-sdk/client-s3`）；测试环境用 Neon 对象存储，生产环境换成国内云的对象存储时只改配置          |
-| 包管理           | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                             |
-| 任务入口         | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker |
-| 云               | 测试环境用 Vercel（Hobby 套餐）和 Neon（免费套餐）；生产环境用中国大陆的云，服务商待定                     |
+| 方面             | 选择                                                                                                                                                                                                                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 前端框架         | Angular（TypeScript），独立组件加 signals，单页应用                                                                                                                                                                                                                                 |
+| 前端界面         | Angular CDK 加 Tailwind CSS，界面自己设计                                                                                                                                                                                                                                           |
+| 后端语言和运行时 | TypeScript，Node.js 26.13.1（最新 LTS），版本写死在 `.node-version` 和各 `package.json` 的 `engines` 里                                                                                                                                                                             |
+| 后端框架         | NestJS，底层用 Express                                                                                                                                                                                                                                                              |
+| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型                                                                                                                                                                                                            |
+| 数据访问         | Drizzle ORM 加 node-postgres 驱动                                                                                                                                                                                                                                                   |
+| 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个                                                                                                                                                                                        |
+| 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息                                                                                                                                                                                     |
+| 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md` |
+| 数据库           | PostgreSQL；开发和测试用的版本与 Neon 项目的主版本一致                                                                                                                                                                                                                              |
+| 对象存储         | S3 接口（`@aws-sdk/client-s3`）；测试环境用 Neon 对象存储，生产环境换成国内云的对象存储时只改配置                                                                                                                                                                                   |
+| 包管理           | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                                                                                                                                                                                                      |
+| 任务入口         | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker                                                                                                                                                                          |
+| 云               | 测试环境用 Vercel（Hobby 套餐）和 Neon（免费套餐）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                                              |
 
 ## 各组件的库
 
@@ -160,7 +161,7 @@ apps/
         *.controller.ts  收发和校验请求
         *.service.ts     业务规则
         *.repository.ts  用 Drizzle 读写数据库
-      infrastructure/  数据库、对象存储、配置、日志的接入
+      infrastructure/  数据库、对象存储、配置、日志、安全响应头的接入
     drizzle/           迁移脚本
 packages/
   contracts/           Zod schema 和类型
@@ -200,12 +201,12 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 - **staging**：合并到 `main` 后，GitHub Actions 的 CD 任务按顺序做这些事：
   1. 用 Neon 的直连地址执行 `drizzle-kit migrate`。
   2. 把后端运行时要用的环境变量从 GitHub 覆盖写进 Vercel 项目 `thinklet-api`，再用 `vercel build` 和 `vercel deploy --prebuilt --prod` 发布它。
-  3. 按 `API_ORIGIN` 生成 `thinklet-web` 的 `vercel.json`，里面是把 `/api/*` 转发到后端的规则，再同样发布 `thinklet-web`。`vercel.json` 读不了环境变量，所以转发规则在发布时生成，不提交到仓库。
+  3. 按 `API_ORIGIN` 生成 `thinklet-web` 的 `vercel.json`，里面是把 `/api/*` 转发到后端的规则和前端的安全响应头，再同样发布 `thinklet-web`。`vercel.json` 读不了环境变量，所以它在发布时生成，不提交到仓库。
   4. 跑全部冒烟测试。
 
   手动部署（`/deploy staging`）也走同一个任务。Vercel 不连接 Git 集成，PR 没有预览环境。
 
-- **production**：还没有部署任务。建生产环境的 issue 会加上一个手动启动的部署任务，之后才能用 `/deploy production`。
+- **production**：还没有部署任务。建生产环境的 issue 会加上一个手动启动的部署任务，之后才能用 `/deploy production`。那时生产环境的前端也要带上同一份安全响应头。
 
 说明：
 
@@ -247,7 +248,7 @@ npx vercel@66.5.0 api /v9/projects/<项目名> -X PATCH --input <文件>        
 
 | 组件       | 开发机                                                                                             | CI                                        |
 | ---------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `apps/web` | 本机直接运行 `ng serve`，把 `/api` 转给本机的后端                                                  | GitHub 的 Linux 机器上装 Node.js 直接运行 |
+| `apps/web` | 本机直接运行 `ng serve`，把 `/api` 转给本机的后端，响应带上和测试环境一样的安全响应头              | GitHub 的 Linux 机器上装 Node.js 直接运行 |
 | `apps/api` | 本机直接运行 `nest start --watch`，常驻的 Node.js 进程                                             | 同上                                      |
 | PostgreSQL | 容器（官方 `postgres` 镜像）：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起，测完删除 | Testcontainers                            |
 | 对象存储   | SeaweedFS 容器模拟 S3：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起                  | Testcontainers                            |
@@ -290,7 +291,7 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 | 集成       | Vitest、supertest、Testcontainers（PostgreSQL 和 SeaweedFS）                       | 数据库从空库开始，用 `drizzle-kit migrate` 建表                                                                                                                       |
 | 端到端     | Playwright、axe                                                                    | 测试自己起前后端和容器里的数据库、存储，测完删除；每个页面都跑 axe                                                                                                    |
 | 冒烟       | Playwright，打了 `@smoke` 标签的端到端测试                                         | 部署后直接对测试环境的地址跑。现在有两条：首页能正常打开；经过前端的 `/api` 转发调用 `GET /api/health` 返回 200。两条都只读、不改数据，都打上 `@production-safe` 标签 |
-| 安全       | 安全测试用例用集成测试的工具来写；另加 ZAP 基线扫描                                | ZAP 在 CI 里扫测试临时起的环境                                                                                                                                        |
+| 安全       | 安全测试用例用集成测试的工具来写；另加 ZAP 基线扫描                                | ZAP 在 CI 里扫测试临时起的环境，有中危及以上的告警就失败；确实不用修的告警，在扫描的配置里逐条写明理由后忽略                                                          |
 | 迁移       | Vitest、Testcontainers                                                             | 每个有新迁移脚本的 issue 都要写：把临时库停在上一个版本，用原始 SQL 塞入旧格式的数据，再执行 `drizzle-kit migrate`，检查数据都在、格式正确                            |
 | 契约       | 不做                                                                               | 前后端在同一个仓库，由同一个 CD 任务一起发布                                                                                                                          |
 | 性能和负载 | 不做                                                                               | 没有性能指标；`/perf-test` 暂时没有可跑的东西                                                                                                                         |
@@ -300,15 +301,15 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 
 ### 指标由什么检查
 
-| 指标或要求                   | 测试对象     | 怎么检查                                                                                                                                               |
-| ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 写入后立刻可见               | 集成         | 写入后马上读，能读到新数据                                                                                                                             |
-| 安全                         | 安全         | 安全测试用例：没登录不能访问；家长 A 改了 URL 里的 id 也看不到家长 B 的孩子；恶意输入不会被执行。另有 ZAP 扫描，以及静态检查里的 CodeQL 和 OSV-Scanner |
-| WCAG 2.1 AA                  | 组件、端到端 | 组件的每个状态、端到端的每个页面都跑 axe                                                                                                               |
-| 主流浏览器近两个大版本       | 端到端       | PR 上只跑 Chromium；发版前在 Chromium、Firefox、WebKit 上都跑                                                                                          |
-| 手机、平板、电脑三种屏幕     | 组件         | 每种尺寸各截一张图                                                                                                                                     |
-| 触屏和键鼠两种操作           | 组件、端到端 | 组件测试用键盘操作；发版前的端到端测试再加上模拟手机的触屏操作                                                                                         |
-| 规模、可用性、成本、维护能力 | —            | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认首页、后端、数据库和存储都能访问                                                                     |
+| 指标或要求                   | 测试对象     | 怎么检查                                                                                                                                                                                                  |
+| ---------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 写入后立刻可见               | 集成         | 写入后马上读，能读到新数据                                                                                                                                                                                |
+| 安全                         | 安全、端到端 | 安全测试用例：没登录不能访问；家长 A 改了 URL 里的 id 也看不到家长 B 的孩子；恶意输入不会被执行。端到端测试检查首页和 `/api/health` 带着安全响应头。另有 ZAP 扫描，以及静态检查里的 CodeQL 和 OSV-Scanner |
+| WCAG 2.1 AA                  | 组件、端到端 | 组件的每个状态、端到端的每个页面都跑 axe                                                                                                                                                                  |
+| 主流浏览器近两个大版本       | 端到端       | PR 上只跑 Chromium；发版前在 Chromium、Firefox、WebKit 上都跑                                                                                                                                             |
+| 手机、平板、电脑三种屏幕     | 组件         | 每种尺寸各截一张图                                                                                                                                                                                        |
+| 触屏和键鼠两种操作           | 组件、端到端 | 组件测试用键盘操作；发版前的端到端测试再加上模拟手机的触屏操作                                                                                                                                            |
+| 规模、可用性、成本、维护能力 | —            | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认首页、后端、数据库和存储都能访问                                                                                                                        |
 
 ### 运行时机
 
@@ -467,4 +468,4 @@ LICENSE
 - 加密孩子个人信息用的密钥：等第一个存孩子信息的 issue 回到 architect 步骤时再加。
 - 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里。
 
-Last changed: #1 (2026-11-20)
+Last changed: #2 (2026-11-20)
