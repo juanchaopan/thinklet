@@ -256,7 +256,7 @@ tasks:
       - pnpm exec playwright test --config e2e/playwright.config.ts --project=chromium --grep {{if eq .PRODUCTION_SAFE "true"}}@production-safe{{else}}@smoke{{end}}
 
   test-security-scan:
-    desc: Run the ZAP baseline scan against a throwaway environment, failing on high-risk alerts (reports in test-results/zap)
+    desc: Run the ZAP baseline scan against a throwaway environment, failing on alerts of medium risk or higher except those ignored with a reason in e2e/zap-ignored-alerts.json (reports in test-results/zap)
     deps: [build]
     env:
       ZAP_IMAGE: '{{.ZAP_IMAGE}}'

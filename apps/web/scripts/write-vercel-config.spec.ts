@@ -5,7 +5,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { main, parseApiOrigin, vercelConfig } from './write-vercel-config.ts';
+import { WEB_SECURITY_HEADERS } from './security-headers.ts';
+import { main, OUTSIDE_API_SOURCE, parseApiOrigin, vercelConfig } from './write-vercel-config.ts';
+
+/**
+ * The request paths Vercel applies the OUTSIDE_API_SOURCE `headers` entry to.
+ * Vercel compiles a source with path-to-regexp, case-sensitive and strict,
+ * anchored at both ends; a source made of one unnamed group compiles to the
+ * group's own regular expression.
+ */
+const OUTSIDE_API = new RegExp(`^${OUTSIDE_API_SOURCE}$`);
 
 describe('parseApiOrigin', () => {
   it.each([
@@ -32,15 +41,47 @@ describe('parseApiOrigin', () => {
 });
 
 describe('vercelConfig', () => {
-  it('forwards /api/* to the api and serves index.html for every other path', () => {
-    const config = vercelConfig('https://api.example.com');
+  const config = vercelConfig('https://api.example.com');
 
+  it('forwards /api/* to the api and serves index.html for every other path', () => {
     expect(config.outputDirectory).toBe('dist/web/browser');
     expect(config.rewrites).toEqual([
       { source: '/api/:path*', destination: 'https://api.example.com/api/:path*' },
       { source: '/(.*)', destination: '/index.html' },
     ]);
   });
+
+  it('sends every web security header, and only those, outside /api', () => {
+    expect(config.headers.map((entry) => entry.source)).toEqual([OUTSIDE_API_SOURCE]);
+    const sent = config.headers.flatMap((entry) => entry.headers);
+    expect(sent).toHaveLength(Object.keys(WEB_SECURITY_HEADERS).length);
+    expect(Object.fromEntries(sent.map(({ key, value }) => [key, value]))).toEqual(
+      WEB_SECURITY_HEADERS,
+    );
+  });
+});
+
+describe('OUTSIDE_API_SOURCE', () => {
+  it.each([
+    '/',
+    '/index.html',
+    '/main-WLAKMSC5.js',
+    '/styles-HYYK3YF7.css',
+    '/favicon.ico',
+    '/books/1',
+    '/apiary',
+    '/api-docs',
+    '/books/api/1',
+  ])('covers %s', (path) => {
+    expect(OUTSIDE_API.test(path)).toBe(true);
+  });
+
+  it.each(['/api', '/api/', '/api/health', '/api/books/1'])(
+    'leaves %s to the api headers',
+    (path) => {
+      expect(OUTSIDE_API.test(path)).toBe(false);
+    },
+  );
 });
 
 describe('main', () => {

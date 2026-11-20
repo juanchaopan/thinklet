@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { apiDirectory } from './containers.js';
-import type { WatchedProcess } from './process.js';
+import { apiDirectory, apiEnvironment } from './containers.js';
+import { freePort, type WatchedProcess } from './process.js';
 
 /**
  * Starts the Nest application in this test process with the given
@@ -18,6 +18,30 @@ export async function startApp(
   const app = await createApp();
   await app.init();
   return app;
+}
+
+export interface AppWithoutServices {
+  app: NestExpressApplication;
+  /** The port the database and the bucket point at, on which nothing listens. */
+  closedPort: number;
+}
+
+/**
+ * Starts the application with the database and the bucket pointing at a
+ * closed port, for tests that need no container: every health check fails
+ * at once, so GET /api/health answers 503.
+ */
+export async function startAppWithoutServices(): Promise<AppWithoutServices> {
+  const closedPort = await freePort();
+  const app = await startApp(
+    apiEnvironment(`postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`, {
+      endpoint: `http://127.0.0.1:${closedPort}`,
+      bucket: 'bucket',
+      accessKeyId: 'access-key-id',
+      secretAccessKey: 'secret-access-key',
+    }),
+  );
+  return { app, closedPort };
 }
 
 export interface RunningProcess extends WatchedProcess {

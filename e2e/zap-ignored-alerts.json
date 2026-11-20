@@ -1,0 +1,6 @@
+[
+  {
+    "alertRef": "10055-6",
+    "reason": "The web CSP allows inline styles on purpose: the Angular runtime inserts component styles as <style> elements, and static hosting cannot send a per-request nonce (decision 0028)."
+  }
+]

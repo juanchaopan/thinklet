@@ -1,15 +1,26 @@
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { WEB_SECURITY_HEADERS } from './security-headers.ts';
 
 // Writes apps/web/vercel.json for the `thinklet-web` Vercel project before it
 // is built and deployed: the static Angular output, `/api/*` forwarded to the
-// api at API_ORIGIN, and every other path served by index.html so the
-// router handles it. vercel.json cannot read environment variables, so the
-// file is generated here and never committed.
+// api at API_ORIGIN, every other path served by index.html so the router
+// handles it, and the web security headers on everything outside `/api`.
+// vercel.json cannot read environment variables, so the file is generated
+// here and never committed.
 //
 //   API_ORIGIN=https://api.example.com node scripts/write-vercel-config.ts [output file]
 
 const DEFAULT_OUTPUT = fileURLToPath(new URL('../vercel.json', import.meta.url));
+
+/**
+ * Every request path except `/api` and `/api/...`, in Vercel's path-to-regexp
+ * `source` syntax (matched case-sensitively against the whole path). Those
+ * responses come from the api through the rewrite with the api's own security
+ * headers, which the web's must not be added to. The lookahead ends at `/` or
+ * the end of the path, so a page such as `/apiary` still gets the headers.
+ */
+export const OUTSIDE_API_SOURCE = '/((?!api(?:/|$)).*)';
 
 /** Returns the origin in API_ORIGIN, or throws naming what is wrong with it. */
 export function parseApiOrigin(value: string | undefined): string {
@@ -45,6 +56,12 @@ export function vercelConfig(apiOrigin: string) {
     rewrites: [
       { source: '/api/:path*', destination: `${apiOrigin}/api/:path*` },
       { source: '/(.*)', destination: '/index.html' },
+    ],
+    headers: [
+      {
+        source: OUTSIDE_API_SOURCE,
+        headers: Object.entries(WEB_SECURITY_HEADERS).map(([key, value]) => ({ key, value })),
+      },
     ],
   };
 }

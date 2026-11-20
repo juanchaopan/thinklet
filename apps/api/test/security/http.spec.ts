@@ -1,8 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
-import { startApp } from '../support/app.js';
-import { apiEnvironment } from '../support/containers.js';
-import { freePort } from '../support/process.js';
+import { startAppWithoutServices } from '../support/app.js';
 
 // Words and fragments that only appear when an error leaks into a response.
 const LEAK_MARKERS = [
@@ -19,15 +17,7 @@ describe('HTTP responses', () => {
   let closedPort: number;
 
   beforeAll(async () => {
-    closedPort = await freePort();
-    app = await startApp(
-      apiEnvironment(`postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`, {
-        endpoint: `http://127.0.0.1:${closedPort}`,
-        bucket: 'bucket',
-        accessKeyId: 'access-key-id',
-        secretAccessKey: 'secret-access-key',
-      }),
-    );
+    ({ app, closedPort } = await startAppWithoutServices());
   });
 
   afterAll(async () => {
