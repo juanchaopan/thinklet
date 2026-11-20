@@ -11,9 +11,21 @@ describe('api stubs', () => {
     expect(await response.json()).toEqual({ answer: 42 });
   });
 
-  it('fails a request to /api without a handler and records it', async () => {
+  it('fails a request below /api without a handler and records it', async () => {
     await expect(fetch('/api/example')).rejects.toThrow();
 
     expect(takeUnhandledApiRequests()).toEqual(['GET /api/example']);
+  });
+
+  it('fails a request to /api itself without a handler and records it', async () => {
+    await expect(fetch('/api')).rejects.toThrow();
+
+    expect(takeUnhandledApiRequests()).toEqual(['GET /api']);
+  });
+
+  it('lets a path that only starts with the same letters pass through', async () => {
+    await fetch('/apiary');
+
+    expect(takeUnhandledApiRequests()).toEqual([]);
   });
 });

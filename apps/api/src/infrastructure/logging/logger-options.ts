@@ -38,10 +38,23 @@ export function secretValues(settings: SecretSettings): string[] {
   return [
     settings.DATABASE_URL,
     password,
-    decodeURIComponent(password),
+    decodePassword(password),
     settings.S3_ACCESS_KEY_ID,
     settings.S3_SECRET_ACCESS_KEY,
   ];
+}
+
+/**
+ * The password with its percent escapes decoded. A `%` that starts no valid
+ * escape cannot be decoded; the password is then kept as written, so the
+ * logger still starts and the database driver reports the URL itself.
+ */
+function decodePassword(password: string): string {
+  try {
+    return decodeURIComponent(password);
+  } catch {
+    return password;
+  }
 }
 
 /**

@@ -9,9 +9,16 @@ import * as schema from './schema.js';
 export const DATABASE_POOL = Symbol('DATABASE_POOL');
 export const DATABASE = Symbol('DATABASE');
 
-export type Database = NodePgDatabase<typeof schema>;
+/** Drizzle over the pool; `$client` is the pg pool itself, for driver options Drizzle does not pass on. */
+export type Database = NodePgDatabase<typeof schema> & { $client: Pool };
 
-const CONNECTION_TIMEOUT_MS = 5_000;
+/**
+ * How long a query may wait for a connection, whether a new one or a free
+ * one from the pool. Long enough for Neon to wake a suspended database
+ * (under a second), and short enough to leave the health check's database
+ * ping time for its query within the check's timeout.
+ */
+export const CONNECTION_TIMEOUT_MS = 3_500;
 
 /**
  * One pg pool per process, built from DATABASE_URL. In staging the URL is

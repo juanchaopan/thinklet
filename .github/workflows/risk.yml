@@ -1,11 +1,17 @@
 # Risk tier and human approval of a pull request ("评审标准和风险规则" in
 # .docs/architecture.md).
 #   risk             labels the pull request risk:low, risk:medium or risk:high from
-#                    the files it changes, with the rules and the script of the
-#                    target branch, so a pull request cannot change its own tier
+#                    the files it changes, with the rules (risk-rules.yml) and the
+#                    script (tools/bin/risk.ts) of the target branch, so changing
+#                    them in a pull request does not change that pull request's tier
 #   remove-approval  takes the human-reviewed label off when a new commit arrives
 #   risk-gate        the required check: passes for low risk, otherwise only while
 #                    the pull request has the human-reviewed label
+#
+# This workflow file itself runs as the pull request has it, like every
+# pull_request workflow. A pull request that changes it changes .github/**,
+# which risk-rules.yml rates high risk, so a person reviews the change before
+# the gate passes.
 #
 # Labels changed with the workflow's own token start no new run, so the gate
 # reads the tier from the risk job and the labels from the API after the

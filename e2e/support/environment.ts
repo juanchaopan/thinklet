@@ -26,8 +26,35 @@ export interface EnvironmentOptions {
 export interface Environment {
   /** The web origin, which also forwards /api to the api. */
   baseUrl: string;
-  /** Stops everything that was started and removes the containers; safe to call twice. */
+  /**
+   * Stops everything that was started and removes the containers. Every call
+   * returns the same promise, so a second caller (a signal handler while the
+   * normal cleanup runs) waits for the cleanup to finish.
+   */
   stop: () => Promise<void>;
+}
+
+interface Cleanup {
+  /** Registers how to stop something that was just started. */
+  add: (stopOne: () => Promise<unknown>) => void;
+  /** Stops everything registered, newest first; every call returns the same promise. */
+  run: () => Promise<void>;
+}
+
+function createCleanup(): Cleanup {
+  const stops: Array<() => Promise<unknown>> = [];
+  let running: Promise<void> | undefined;
+  return {
+    add: (stopOne) => stops.push(stopOne),
+    run: () => {
+      running ??= (async () => {
+        for (const stopOne of stops.splice(0).reverse()) {
+          await stopOne().catch((error: unknown) => console.error(error));
+        }
+      })();
+      return running;
+    },
+  };
 }
 
 /**
@@ -37,19 +64,14 @@ export interface Environment {
  * Vercel rewrite. Both apps must be built first.
  */
 export async function startEnvironment(options: EnvironmentOptions): Promise<Environment> {
-  const stops: Array<() => Promise<unknown>> = [];
-  const stop = async () => {
-    for (const stopOne of stops.splice(0).reverse()) {
-      await stopOne().catch((error: unknown) => console.error(error));
-    }
-  };
+  const cleanup = createCleanup();
   try {
     const [database, storage] = await Promise.allSettled([startDatabase(), startStorage()]);
     if (database.status === 'fulfilled') {
-      stops.push(() => database.value.stop());
+      cleanup.add(() => database.value.stop());
     }
     if (storage.status === 'fulfilled') {
-      stops.push(() => storage.value.container.stop());
+      cleanup.add(() => storage.value.container.stop());
     }
     if (database.status === 'rejected') {
       throw database.reason;
@@ -72,7 +94,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       },
       stdio: ['ignore', 'ignore', 'inherit'],
     });
-    stops.push(() => stopProcess(api));
+    cleanup.add(() => stopProcess(api));
     const exited = new Promise<number | null>((resolveExit) => api.on('exit', resolveExit));
     await waitForHttp({ exited }, apiPort);
 
@@ -81,17 +103,22 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       apiOrigin: `http://127.0.0.1:${apiPort}`,
       host: options.webHost,
     });
-    stops.push(() => web.close());
+    cleanup.add(() => web.close());
 
-    return { baseUrl: `http://127.0.0.1:${web.port}`, stop };
+    return { baseUrl: `http://127.0.0.1:${web.port}`, stop: cleanup.run };
   } catch (error) {
-    await stop();
+    await cleanup.run();
     throw error;
   }
 }
 
+/**
+ * Ends the child and waits for it to exit. A child that already exited,
+ * normally or from a signal such as the Ctrl-C its terminal also sent it,
+ * has nothing left to wait for.
+ */
 async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) {
+  if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
   const exited = once(child, 'exit');

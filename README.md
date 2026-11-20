@@ -22,6 +22,27 @@ pnpm exec task dev
 
 `pnpm install` 同时装好任务入口 Task 和 git hooks。`.env` 里是本机开发用的值，不提交；`.env.example` 里的值配合 Docker Compose 起的服务就能用。`task dev` 起 PostgreSQL 和 SeaweedFS（模拟 S3）容器，执行数据库迁移，再启动前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。
 
+### 停止
+
+- 在运行 `task dev` 的终端按 Ctrl+C，停掉前后端。PostgreSQL 和 SeaweedFS 容器还在后台运行，下次 `task dev` 直接用它们。
+- `docker compose down`：停掉并删除这两个容器。数据留在 Docker 卷里，下次启动还在。
+- `docker compose down -v`：连 Docker 卷一起删除，本机数据库和对象存储里的数据全部清空。下次 `task dev` 从空库开始，重新执行迁移。
+
+### 端口
+
+| 服务                 | 默认端口 | 在哪里改                                                                              |
+| -------------------- | -------- | ------------------------------------------------------------------------------------- |
+| 前端（`ng serve`）   | 4200     | `Taskfile.yml` 里 `dev-web` 任务的 `PORT`（不在 `.env` 里）                           |
+| 后端                 | 3000     | `.env` 的 `PORT`，同时改 `API_ORIGIN` 里的端口                                        |
+| PostgreSQL           | 5432     | `.env` 的 `POSTGRES_PORT`，同时改 `DATABASE_URL` 和 `MIGRATION_DATABASE_URL` 里的端口 |
+| SeaweedFS（S3 接口） | 8333     | `.env` 的 `S3_PORT`，同时改 `S3_ENDPOINT` 里的端口                                    |
+
+端口被别的程序占用时，在 `.env` 里换一个空闲端口。`docker-compose.yml` 从 `.env` 读 `POSTGRES_PORT` 和 `S3_PORT`，后端从 `.env` 读连接地址，所以端口和地址要一起改。
+
+### 同一台机器上的多个副本
+
+`docker-compose.yml` 把 Compose 项目名定为 `thinklet`（`name: thinklet`），所以同一台机器上这个仓库的所有副本（另一个克隆、git worktree）共用同一组容器和数据卷：一个副本执行的迁移，另一个副本也看得到；在任何一个副本里执行 `docker compose down -v`，所有副本的本机数据都会被删掉。两个副本同时 `task dev` 时，前后端的端口也会冲突。测试不受影响：它们自己在随机端口上起临时容器，不用 Compose。
+
 ### 常用命令
 
 所有命令都通过 Task 运行：`pnpm exec task <命令>`，`pnpm exec task --list` 列出全部命令和说明。

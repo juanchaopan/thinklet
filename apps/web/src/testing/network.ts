@@ -11,10 +11,15 @@ export const worker = setupWorker();
 
 const unhandledApiRequests: string[] = [];
 
+/** Whether a path belongs to the api: `/api` itself or anything below it. */
+function isApiPath(pathname: string): boolean {
+  return pathname === '/api' || pathname.startsWith('/api/');
+}
+
 /**
- * Returns and forgets the `/api/*` requests that had no stub. A request
- * without a stub fails like a network error, and setup.ts fails the test
- * that made it, so no component test depends on a running api.
+ * Returns and forgets the `/api` and `/api/*` requests that had no stub. A
+ * request without a stub fails like a network error, and setup.ts fails the
+ * test that made it, so no component test depends on a running api.
  */
 export function takeUnhandledApiRequests(): string[] {
   return unhandledApiRequests.splice(0);
@@ -26,8 +31,12 @@ export async function startWorker(): Promise<void> {
     onUnhandledFrame({ frame }) {
       // HTTP frames carry the request; WebSocket frames carry a connection.
       const request = (frame.data as { request?: unknown }).request;
-      if (request instanceof Request && new URL(request.url).pathname.startsWith('/api/')) {
-        unhandledApiRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+      if (!(request instanceof Request)) {
+        return;
+      }
+      const { pathname } = new URL(request.url);
+      if (isApiPath(pathname)) {
+        unhandledApiRequests.push(`${request.method} ${pathname}`);
         // MSW answers a request with the Response its handler throws; a
         // Response.error() reaches the page as a network error.
         // eslint-disable-next-line @typescript-eslint/only-throw-error

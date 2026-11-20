@@ -35,6 +35,18 @@ describe('secretValues', () => {
       'secret-access-key',
     ]);
   });
+
+  it('keeps a password whose percent escape cannot be decoded as written', () => {
+    const malformed = { ...settings, DATABASE_URL: 'postgresql://app:p%zz@db.internal:5432/app' };
+
+    expect(secretValues(malformed)).toEqual([
+      malformed.DATABASE_URL,
+      'p%zz',
+      'p%zz',
+      'access-key-id',
+      'secret-access-key',
+    ]);
+  });
 });
 
 describe('loggerOptions', () => {

@@ -2,13 +2,16 @@
 # merge to main it deploys that commit to staging; /deploy starts it by hand
 # with a version and a target:
 #   gh workflow run deploy.yml --ref main -f target=staging -f version=v1.2.0
+# A run started by hand deploys only a commit on main (a release tag or a
+# commit of main's history) and stops before any change otherwise.
 # In order: the database migrations, the api's runtime variables copied from
 # the target's GitHub environment into its Vercel project, the api, the
 # web's vercel.json generated from API_ORIGIN, the web, then the smoke tests
 # against the target (only the @production-safe ones on production). There
 # are no data to rebuild yet. Every value comes from the target's GitHub
 # environment; a secret reaches a command only through the environment or
-# standard input, never its command line.
+# standard input, never its command line, and only the steps that need it
+# see it: the Vercel token only the steps that run the Vercel CLI.
 #
 # The Vercel projects have their Root Directory set to apps/api and apps/web,
 # so the CLI runs from the repository root and the build traces the
@@ -21,7 +24,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Git ref to deploy (a tag such as v1.2.0, a branch or a commit); empty deploys the commit the run starts from
+        description: Version to deploy, a tag such as v1.2.0 or a commit on main; empty deploys the commit the run starts from, which must also be on main
         type: string
         required: false
       target:
@@ -52,14 +55,24 @@ jobs:
       url: ${{ vars.STAGING_URL }}
     permissions:
       contents: read
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
     steps:
+      # The whole history and every tag, so a version can be checked
+      # against main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ inputs.version || github.sha }}
+
+      - name: Check that the version is on main
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          commit="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::Commit $commit is not on main. Only a tag or a commit on main can be deployed."
+            exit 1
+          fi
+          echo "Commit $commit is on main."
 
       # A deployment builds from a clean install, without a restored cache.
       - uses: ./.github/actions/setup
@@ -83,6 +96,8 @@ jobs:
       # builtin, so the value is never on a command line.
       - name: Copy the api's runtime variables into Vercel
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
@@ -111,6 +126,8 @@ jobs:
 
       - name: Deploy the api
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
         run: |
           vercel pull --yes --environment production
@@ -125,6 +142,8 @@ jobs:
 
       - name: Deploy the web
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEB_PROJECT_ID }}
         run: |
           vercel pull --yes --environment production

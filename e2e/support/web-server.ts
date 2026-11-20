@@ -1,8 +1,10 @@
+import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -35,18 +37,22 @@ export interface StartedWebServer {
 /**
  * Serves the built web app the way the `thinklet-web` Vercel project does:
  * static files, `/api` and `/api/*` forwarded to the api, and `index.html`
- * for every other path so the router can handle it.
+ * for every other path so the router can handle it. A request that fails is
+ * answered with 502 (api) or 500 (file) when nothing was sent yet, and cut
+ * off otherwise.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
   const server = createServer((incoming, outgoing) => {
-    const path = new URL(incoming.url ?? '/', 'http://localhost').pathname;
-    const handled =
-      path === '/api' || path.startsWith('/api/')
-        ? forward(incoming, outgoing, options.apiOrigin)
-        : serveFile(path, outgoing, options.root);
+    // Only the path and query of the request line count: an absolute-form
+    // request line (`GET http://other-host/api/...`) names no other host.
+    const { pathname, search } = new URL(incoming.url ?? '/', 'http://localhost');
+    const toApi = pathname === '/api' || pathname.startsWith('/api/');
+    const handled = toApi
+      ? forward(incoming, outgoing, apiTarget(options.apiOrigin, pathname, search))
+      : serveFile(pathname, outgoing, options.root);
     handled.catch(() => {
       if (!outgoing.headersSent) {
-        outgoing.writeHead(502);
+        outgoing.writeHead(toApi ? 502 : 500);
       }
       outgoing.end();
     });
@@ -62,6 +68,14 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
   };
 }
 
+/** The api URL for a request: always the configured origin, with the request's path and query. */
+function apiTarget(apiOrigin: string, pathname: string, search: string): URL {
+  const target = new URL(apiOrigin);
+  target.pathname = pathname;
+  target.search = search;
+  return target;
+}
+
 async function serveFile(path: string, outgoing: ServerResponse, root: string): Promise<void> {
   let file = normalize(join(root, decodeURIComponent(path)));
   if (file !== root && !file.startsWith(root + sep)) {
@@ -72,21 +86,24 @@ async function serveFile(path: string, outgoing: ServerResponse, root: string): 
   if (!found?.isFile()) {
     file = join(root, 'index.html');
   }
+  // The file is opened before the status is written, so a file that cannot
+  // be read still gets an error status.
+  const content = createReadStream(file);
+  await once(content, 'open');
   outgoing.writeHead(200, {
     'content-type': CONTENT_TYPES[extname(file)] ?? 'application/octet-stream',
   });
-  createReadStream(file).pipe(outgoing);
+  await pipeline(content, outgoing);
 }
 
-function forward(incoming: IncomingMessage, outgoing: ServerResponse, apiOrigin: string) {
+function forward(incoming: IncomingMessage, outgoing: ServerResponse, target: URL) {
   return new Promise<void>((resolve, reject) => {
-    const target = new URL(incoming.url ?? '/', apiOrigin);
     const proxied = request(
       target,
       { method: incoming.method, headers: { ...incoming.headers, host: target.host } },
       (response) => {
         outgoing.writeHead(response.statusCode ?? 502, response.headers);
-        response.pipe(outgoing).on('finish', resolve);
+        pipeline(response, outgoing).then(resolve, reject);
       },
     );
     proxied.on('error', reject);
