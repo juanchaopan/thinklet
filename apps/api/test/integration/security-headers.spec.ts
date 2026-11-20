@@ -5,7 +5,7 @@ import { startAppWithoutServices } from '../support/app.js';
 
 // The values themselves are checked against the design by the middleware's
 // unit test; this one checks that the application sends them on every kind
-// of /api response, whatever part of the application answers it.
+// of response, whatever part of the application answers it.
 const EXPECTED_HEADERS = Object.fromEntries(
   Object.entries(API_SECURITY_HEADERS).map(([name, value]) => [name.toLowerCase(), value]),
 );
@@ -38,6 +38,17 @@ describe('security response headers', () => {
     const response = await request(app.getHttpServer()).get('/api/unknown');
 
     expect(response.status).toBe(404);
+    expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
+  });
+
+  // Nest's not-found handler covers only /api; a path outside it must get
+  // the same JSON 404 rather than Express's HTML page, which replaces the
+  // Content-Security-Policy.
+  it.each(['/', '/unknown', '/apiary'])('are on the JSON 404 of %s, outside /api', async (path) => {
+    const response = await request(app.getHttpServer()).get(path);
+
+    expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/^application\/json/);
     expect(securityHeaders(response)).toEqual(EXPECTED_HEADERS);
   });
 
