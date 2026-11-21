@@ -1,5 +1,16 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+
+/**
+ * Whether a console message is the browser reporting the 401 of
+ * `GET /api/me`: the product home asks whether someone is signed in, and for
+ * a visitor the answer is 401 by design, which Chromium logs as a failed
+ * resource.
+ */
+function isVisitorCheck(message: ConsoleMessage): boolean {
+  const { pathname } = new URL(message.location().url || 'about:blank');
+  return pathname === '/api/me' && message.text().includes('401');
+}
 
 /**
  * Collects what goes wrong on the page from here on: console errors, uncaught
@@ -10,7 +21,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function collectPageProblems(page: Page): Promise<string[]> {
   const problems: string[] = [];
   page.on('console', (message) => {
-    if (message.type() === 'error') {
+    if (message.type() === 'error' && !isVisitorCheck(message)) {
       problems.push(`console error: ${message.text()}`);
     }
   });
@@ -43,9 +54,9 @@ async function settle(page: Page): Promise<void> {
   );
 }
 
-test.describe('home page', () => {
+test.describe('product home', () => {
   test(
-    'opens with the title thinklet in Simplified Chinese, without errors or CSP violations',
+    'opens with the title 好奇星球 in Simplified Chinese and both ways in, without errors or CSP violations',
     { tag: ['@smoke', '@production-safe'] },
     async ({ page }) => {
       const problems = await collectPageProblems(page);
@@ -53,9 +64,13 @@ test.describe('home page', () => {
       const response = await page.goto('/');
 
       expect(response?.ok()).toBe(true);
-      await expect(page).toHaveTitle('thinklet');
+      await expect(page).toHaveTitle('好奇星球');
       await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
-      await expect(page.locator('app-home')).toBeAttached();
+      await expect(page.getByRole('link', { name: '家长登录 / 注册' })).toHaveAttribute(
+        'href',
+        '/api/auth/login',
+      );
+      await expect(page.getByRole('link', { name: '孩子登录' })).toHaveAttribute('href', '/child');
       await settle(page);
       expect(problems).toEqual([]);
     },
@@ -63,12 +78,31 @@ test.describe('home page', () => {
 
   test('has no WCAG 2.1 AA violations', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('app-home')).toBeAttached();
+    await expect(page.getByRole('link', { name: '家长登录 / 注册' })).toBeVisible();
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations()) {
+        if (animation.effect?.getComputedTiming().endTime !== Infinity) {
+          animation.finish();
+        }
+      }
+    });
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
 
     expect(results.violations).toEqual([]);
+  });
+
+  test('sends a visitor from a parent page back to the product home, keeping the page', async ({
+    page,
+  }) => {
+    await page.goto('/profile');
+
+    await expect(page).toHaveURL('/?returnTo=%2Fprofile');
+    await expect(page.getByRole('link', { name: '家长登录 / 注册' })).toHaveAttribute(
+      'href',
+      '/api/auth/login?returnTo=%2Fprofile',
+    );
   });
 });

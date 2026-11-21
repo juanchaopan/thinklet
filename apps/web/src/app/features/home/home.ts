@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 
-/** The home page at `/`. By design it shows nothing. */
+/** The home page of a signed-in parent with a family, inside the signed-in frame. */
 @Component({
   selector: 'app-home',
   template: '',
