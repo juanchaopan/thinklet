@@ -1,8 +1,11 @@
 import { Controller, Get, Header, HttpStatus, Res } from '@nestjs/common';
 import { healthResponseSchema, type HealthResponse } from '@thinklet/contracts';
 import type { Response } from 'express';
+import { Public } from '../../infrastructure/authentication/public.decorator.js';
 import { HealthService } from './health.service.js';
 
+/** The health check needs no login: the smoke tests and the platform call it. */
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}

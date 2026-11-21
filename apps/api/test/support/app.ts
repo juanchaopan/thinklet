@@ -1,7 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { apiDirectory, apiEnvironment } from './containers.js';
+import {
+  apiDirectory,
+  apiEnvironment,
+  migrate,
+  startServices,
+  type StartedServices,
+} from './containers.js';
 import { freePort, type WatchedProcess } from './process.js';
 
 /**
@@ -18,6 +24,36 @@ export async function startApp(
   const app = await createApp();
   await app.init();
   return app;
+}
+
+export interface AppWithServices {
+  app: NestExpressApplication;
+  services: StartedServices;
+  /** The connection URL of the migrated database the application uses. */
+  databaseUrl: string;
+  /** Closes the application and removes the containers. */
+  stop: () => Promise<void>;
+}
+
+/**
+ * Starts the throwaway database, storage and OIDC provider, migrates the
+ * database and starts the application against them.
+ */
+export async function startAppWithServices(): Promise<AppWithServices> {
+  const services = await startServices();
+  try {
+    const databaseUrl = services.database.getConnectionUri();
+    await migrate(databaseUrl);
+    const app = await startApp(apiEnvironment(databaseUrl, services.storage, services.oidc));
+    const stop = async () => {
+      await app.close();
+      await services.stop();
+    };
+    return { app, services, databaseUrl, stop };
+  } catch (error) {
+    await services.stop();
+    throw error;
+  }
 }
 
 export interface AppWithoutServices {

@@ -1,9 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
+import { ErrorResponseFilter } from './infrastructure/errors/error-response.filter.js';
 import { securityHeaders } from './infrastructure/security-headers/security-headers.middleware.js';
 
 /** The prefix every route lives under. */
@@ -40,6 +42,12 @@ export async function createApp(): Promise<NestExpressApplication> {
   // init, so 404s, parse errors and thrown exceptions carry the headers too.
   app.use(securityHeaders);
   app.use(rejectOutsidePrefix);
+  // The login cookies are signed JWTs, verified by the auth module, so the
+  // parser's own cookie signing is not used.
+  app.use(cookieParser());
+  // Every error, from a route, a guard, the body parser or a missing route,
+  // is answered with the common error body.
+  app.useGlobalFilters(new ErrorResponseFilter());
   app.setGlobalPrefix(GLOBAL_PREFIX);
   return app;
 }
