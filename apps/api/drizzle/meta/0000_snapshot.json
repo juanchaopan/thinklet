@@ -1,5 +1,5 @@
 {
-  "id": "140a1370-a543-47b2-af41-5d6cf68b0d4b",
+  "id": "b418da64-94d1-47c5-889e-1b39a8a539f4",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -29,7 +29,7 @@
         },
         "code": {
           "name": "code",
-          "type": "char(6)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -61,7 +61,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "families_code_length_check": {
+          "name": "families_code_length_check",
+          "value": "char_length(code) = 6"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.family_members": {
@@ -184,7 +189,7 @@
         },
         "code": {
           "name": "code",
-          "type": "char(6)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -298,6 +303,10 @@
         "join_requests_status_check": {
           "name": "join_requests_status_check",
           "value": "status in ('pending', 'approved', 'rejected', 'withdrawn', 'expired')"
+        },
+        "join_requests_code_length_check": {
+          "name": "join_requests_code_length_check",
+          "value": "char_length(code) = 6"
         }
       },
       "isRLSEnabled": false

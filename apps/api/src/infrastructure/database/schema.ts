@@ -3,7 +3,6 @@
 import type { FamilyRole, JoinRequestStatus } from '@thinklet/contracts';
 import { sql } from 'drizzle-orm';
 import {
-  char,
   check,
   pgTable,
   primaryKey,
@@ -39,18 +38,26 @@ export const parents = pgTable(
   (table) => [unique('parents_oidc_identity_unique').on(table.oidcIssuer, table.oidcSubject)],
 );
 
-/** A family; its code is unique across the platform. */
-export const families = pgTable('families', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  timezone: text('timezone').notNull(),
-  code: char('code', { length: 6 }).notNull().unique('families_code_unique'),
-  createdAt: timestamptz('created_at').notNull().defaultNow(),
-  updatedAt: timestamptz('updated_at')
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+/**
+ * A family; its code is unique across the platform. Family codes are text
+ * with a length check: char(6) would pad a shorter value instead of
+ * rejecting it.
+ */
+export const families = pgTable(
+  'families',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: text('name').notNull(),
+    timezone: text('timezone').notNull(),
+    code: text('code').notNull().unique('families_code_unique'),
+    createdAt: timestamptz('created_at').notNull().defaultNow(),
+    updatedAt: timestamptz('updated_at')
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  () => [check('families_code_length_check', sql`char_length(code) = 6`)],
+);
 
 /**
  * The parents of a family. Leaving or being removed deletes the row. The
@@ -80,7 +87,9 @@ export const familyMembers = pgTable(
 
 /**
  * Requests to join a family. Rows are never deleted; the partial unique
- * index allows one pending request per parent and family at a time.
+ * index allows one pending request per parent and family at a time. The
+ * code is the family code the parent applied with, checked like the
+ * family's own.
  */
 export const joinRequests = pgTable(
   'join_requests',
@@ -92,7 +101,7 @@ export const joinRequests = pgTable(
     parentId: uuid('parent_id')
       .notNull()
       .references(() => parents.id),
-    code: char('code', { length: 6 }).notNull(),
+    code: text('code').notNull(),
     status: text('status').$type<JoinRequestStatus>().notNull(),
     createdAt: timestamptz('created_at').notNull().defaultNow(),
     closedAt: timestamptz('closed_at'),
@@ -108,5 +117,6 @@ export const joinRequests = pgTable(
       'join_requests_status_check',
       sql`status in ('pending', 'approved', 'rejected', 'withdrawn', 'expired')`,
     ),
+    check('join_requests_code_length_check', sql`char_length(code) = 6`),
   ],
 );

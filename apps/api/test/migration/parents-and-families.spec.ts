@@ -10,6 +10,9 @@ const UNIQUE_VIOLATION = '23505';
 const CHECK_VIOLATION = '23514';
 const FOREIGN_KEY_VIOLATION = '23503';
 
+/** Codes one character short of and one past the six a family code has. */
+const WRONG_LENGTH_CODES = ['ABCDE', 'ABCDEFG'];
+
 /** A random six-character code; the database takes any six characters, the api keeps to the alphabet. */
 function randomCode(): string {
   return randomUUID().slice(0, 6).toUpperCase();
@@ -49,12 +52,20 @@ describe(`migration ${TAG}`, () => {
     return row.id;
   }
 
-  async function newFamily(): Promise<string> {
-    const row = await one<{ id: string }>(
+  function insertFamily(code: string) {
+    return client.query<{ id: string }>(
       `insert into families (name, timezone, code)
        values ('林悦的家', 'Asia/Shanghai', $1) returning id`,
-      [randomCode()],
+      [code],
     );
+  }
+
+  async function newFamily(): Promise<string> {
+    const { rows } = await insertFamily(randomCode());
+    const [row] = rows;
+    if (!row) {
+      throw new Error('The family was not inserted');
+    }
     return row.id;
   }
 
@@ -129,13 +140,43 @@ describe(`migration ${TAG}`, () => {
 
   it('keeps family codes unique across the platform', async () => {
     const code = randomCode();
-    const insert = `insert into families (name, timezone, code) values ('外婆家', 'Asia/Shanghai', $1)`;
-    await client.query(insert, [code]);
+    await insertFamily(code);
 
-    await expect(client.query(insert, [code])).rejects.toMatchObject({
+    await expect(insertFamily(code)).rejects.toMatchObject({
       code: UNIQUE_VIOLATION,
       constraint: 'families_code_unique',
     });
+  });
+
+  it('stores a family code as its six characters without padding', async () => {
+    const code = randomCode();
+    await insertFamily(code);
+
+    const row = await one<{ code: string }>('select code from families where code = $1', [code]);
+    expect(row.code).toBe(code);
+  });
+
+  it('rejects family codes that are not six characters long', async () => {
+    for (const code of WRONG_LENGTH_CODES) {
+      await expect(insertFamily(code), code).rejects.toMatchObject({
+        code: CHECK_VIOLATION,
+        constraint: 'families_code_length_check',
+      });
+    }
+  });
+
+  it('rejects join request codes that are not six characters long', async () => {
+    const familyId = await newFamily();
+    const parentId = await newParent();
+    const insert = `insert into join_requests (family_id, parent_id, code, status)
+                    values ($1, $2, $3, 'pending')`;
+
+    for (const code of WRONG_LENGTH_CODES) {
+      await expect(client.query(insert, [familyId, parentId, code]), code).rejects.toMatchObject({
+        code: CHECK_VIOLATION,
+        constraint: 'join_requests_code_length_check',
+      });
+    }
   });
 
   it('rejects a second admin in a family but allows members and admins of other families', async () => {
