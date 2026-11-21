@@ -5,12 +5,12 @@ POC 用到的每个外部资源，都从仓库、CI 的配置和运行记录里�
 ## GitHub
 
 - **仓库**：代码、issue、PR、Actions、分支规则。查了仓库设置；`main` 的经典分支保护（必过检查是 CI 汇总、提交信息检查、风险关卡；要求分支最新；管理员可以绕过；不要求评论处理完；不要求 review；允许 merge commit 和 rebase）；没有 ruleset；`staging` 环境没有保护规则和环境级的密钥；12 个仓库密钥和 13 个变量的名称；全部运行记录、PR、issue、标签、artifact。没查：装了哪些 GitHub App、webhook，要所有者在网页上看或更高权限的令牌。
-- **Actions 的 artifact**：每天的加密备份。13 份，每份约 72 KB，各保留 14 天，缺两天的备份；公开仓库里任何登录的用户都能下载这些加密文件。解密要私钥，不应该取得。
+- **Actions 的 artifact**：每天的加密备份。13 份，每份约 72 KB，各保留 14 天；公开仓库里任何登录的用户都能下载这些加密文件。解密要私钥，不应该取得。
 - **issue 作为通知渠道**：19 个告警 issue，全部已关闭；3 个依赖漏洞 issue 开着（都是开发依赖）。
 - **安全功能**：密钥扫描和推送保护开着；Dependabot 告警和安全更新关着；没有 CodeQL。
 - **依赖更新**：Dependabot 开过 7 个 PR，有一个开着、截图测试失败；Renovate 的 GitHub App 在最后一天刚装，配置 PR 开着、CI 失败。Renovate 的安装范围没查。
 - **Claude 的 GitHub App 和订阅**：给 CI 里的 AI 评审和 `@claude` 用；三个工作流从没真正运行。App 装没装没查。
-- **托管的 runner**：所有 CI、发布、备份、告警探测都跑在 `ubuntu-latest` 上；定时任务严重延迟和丢失（见 [delivery.md](delivery.md)）。
+- **托管的 runner**：所有 CI、发布、备份、告警探测都跑在 `ubuntu-latest` 上；定时任务严重延迟（见 [delivery.md](delivery.md)）。
 
 ## 托管和数据库
 
