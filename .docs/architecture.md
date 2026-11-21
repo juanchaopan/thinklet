@@ -21,7 +21,7 @@ flowchart LR
     vapi["Vercel 项目 thinklet-api<br/>Vercel 函数（新加坡 sin1）"]
     npg[("Neon PostgreSQL<br/>新加坡")]
     ns3[("Neon 对象存储<br/>S3 接口")]
-    authing["Authing 国际版用户池<br/>托管登录页（OIDC）"]
+    authing["Authing 用户池（authing.cn）<br/>托管登录页（OIDC）"]
   end
 
   subgraph production["生产环境 production（待建）"]
@@ -74,27 +74,27 @@ flowchart LR
 
 ## 技术选择和决策点
 
-| 方面             | 选择                                                                                                                                                                                                                                                                                |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 前端框架         | Angular（TypeScript），独立组件加 signals，单页应用                                                                                                                                                                                                                                 |
-| 前端界面         | Angular CDK 加 Tailwind CSS，界面自己设计                                                                                                                                                                                                                                           |
-| 后端语言和运行时 | TypeScript，Node.js 26.13.1（最新 LTS），版本写死在 `.node-version` 和各 `package.json` 的 `engines` 里                                                                                                                                                                             |
-| 后端框架         | NestJS，底层用 Express                                                                                                                                                                                                                                                              |
-| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型                                                                                                                                                                                                            |
-| 数据访问         | Drizzle ORM 加 node-postgres 驱动                                                                                                                                                                                                                                                   |
-| 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个                                                                                                                                                                                        |
-| 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息                                                                                                                                                                                     |
-| 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md` |
-| 家长登录         | Authing 的托管登录页，OIDC 授权码加 PKCE，流程在后端跑，用 openid-client。只走标准协议：Authing 的地址都从 issuer 的发现文档里读，换别的身份服务只改配置。跳到 Authing 和从 Authing 跳回来都是整页跳转，不用表单提交，因为前端 CSP 的 `form-action 'self'` 会挡住提交后跳到别的域名 |
-| 登录状态         | 服务器无状态，不存会话。登录后后端用 ES256 私钥签发 JWT（jose），放在 HttpOnly、Secure、SameSite=Lax 的 cookie 里；JWT 里只有家长编号，带密钥编号 `kid`，可以换密钥。登录过程中的 state、nonce 和 PKCE 也放在一个用同一把私钥签名、几分钟就过期的 cookie 里                         |
-| 防跨站请求伪造   | cookie 用 SameSite=Lax；后端再用一个全局中间件检查每个非 GET、HEAD、OPTIONS 请求的 `Origin` 头，不是本站地址（`APP_ORIGIN`）或者没有就拒绝                                                                                                                                          |
-| 退出登录         | 清掉 JWT cookie，再整页跳到 Authing 发现文档里的退出地址（`end_session_endpoint`），同时退出 Authing，退完回到本站的产品主页                                                                                                                                                        |
-| 家庭和权限       | 家长和家庭是多对多的成员关系，每个家庭恰好一位管理员。一个家庭里的接口都在 `/api/families/{familyId}/...` 下，每个请求都查这位家长是不是这个家庭的成员，要管理员的再查角色。JWT 里不放家庭和角色，被移出家庭或交出管理员后马上生效                                                  |
-| 数据库           | PostgreSQL；开发和测试用的版本与 Neon 项目的主版本一致                                                                                                                                                                                                                              |
-| 对象存储         | S3 接口（`@aws-sdk/client-s3`）；测试环境用 Neon 对象存储，生产环境换成国内云的对象存储时只改配置                                                                                                                                                                                   |
-| 包管理           | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                                                                                                                                                                                                      |
-| 任务入口         | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker                                                                                                                                                                          |
-| 云               | 测试环境用 Vercel（Hobby 套餐）、Neon（免费套餐）和 Authing 国际版（免费用户池）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                |
+| 方面             | 选择                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 前端框架         | Angular（TypeScript），独立组件加 signals，单页应用                                                                                                                                                                                                                                                                                                               |
+| 前端界面         | Angular CDK 加 Tailwind CSS，界面自己设计                                                                                                                                                                                                                                                                                                                         |
+| 后端语言和运行时 | TypeScript，Node.js 26.13.1（最新 LTS），版本写死在 `.node-version` 和各 `package.json` 的 `engines` 里                                                                                                                                                                                                                                                           |
+| 后端框架         | NestJS，底层用 Express                                                                                                                                                                                                                                                                                                                                            |
+| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型                                                                                                                                                                                                                                                                                          |
+| 数据访问         | Drizzle ORM 加 node-postgres 驱动                                                                                                                                                                                                                                                                                                                                 |
+| 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个                                                                                                                                                                                                                                                                      |
+| 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息                                                                                                                                                                                                                                                                   |
+| 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md`                                                                               |
+| 家长登录         | Authing 的托管登录页，OIDC 授权码加 PKCE，流程在后端跑，用 openid-client。只走标准协议：Authing 的地址都从 issuer 的发现文档里读，换别的身份服务只改配置。跳到 Authing 和从 Authing 跳回来都是整页跳转，不用表单提交，因为前端 CSP 的 `form-action 'self'` 会挡住提交后跳到别的域名                                                                               |
+| 登录状态         | 服务器无状态，不存会话。登录后后端用 ES256 私钥签发 JWT（jose），放在 HttpOnly、Secure、SameSite=Lax 的 cookie 里；JWT 里只有家长编号，带密钥编号 `kid`，可以换密钥。Authing 返回的 ID 令牌另放在一个属性相同的 HttpOnly cookie 里，只在退出时用；请求只靠本站的 JWT 认证。登录过程中的 state、nonce 和 PKCE 也放在一个用同一把私钥签名、几分钟就过期的 cookie 里 |
+| 防跨站请求伪造   | cookie 用 SameSite=Lax；后端再用一个全局中间件检查每个非 GET、HEAD、OPTIONS 请求的 `Origin` 头，不是本站地址（`APP_ORIGIN`）或者没有就拒绝                                                                                                                                                                                                                        |
+| 退出登录         | 清掉 JWT cookie 和 ID 令牌 cookie，再整页跳到 Authing 发现文档里的退出地址（`end_session_endpoint`），带上 ID 令牌作为 `id_token_hint`，同时退出 Authing，退完回到本站的产品主页                                                                                                                                                                                  |
+| 家庭和权限       | 家长和家庭是多对多的成员关系，每个家庭恰好一位管理员。一个家庭里的接口都在 `/api/families/{familyId}/...` 下，每个请求都查这位家长是不是这个家庭的成员，要管理员的再查角色。JWT 里不放家庭和角色，被移出家庭或交出管理员后马上生效                                                                                                                                |
+| 数据库           | PostgreSQL；开发和测试用的版本与 Neon 项目的主版本一致                                                                                                                                                                                                                                                                                                            |
+| 对象存储         | S3 接口（`@aws-sdk/client-s3`）；测试环境用 Neon 对象存储，生产环境换成国内云的对象存储时只改配置                                                                                                                                                                                                                                                                 |
+| 包管理           | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                                                                                                                                                                                                                                                                                    |
+| 任务入口         | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker                                                                                                                                                                                                                                                        |
+| 云               | 测试环境用 Vercel（Hobby 套餐）、Neon（免费套餐）和 Authing 中国版 authing.cn（免费用户池）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                                                                                   |
 
 ## 各组件的库
 
@@ -135,27 +135,28 @@ flowchart LR
 
 ### 仓库根目录的开发工具
 
-| 工具                                                          | 用途                                                    | 许可证       |
-| ------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
-| `typescript`                                                  | 类型检查                                                | Apache-2.0   |
-| `@go-task/cli`                                                | 任务入口 Task                                           | MIT          |
-| `lefthook`                                                    | git hooks                                               | MIT          |
-| `prettier`、`prettier-plugin-tailwindcss`                     | 格式化，给 Tailwind 的 class 排序                       | MIT          |
-| `eslint`、`typescript-eslint`、`angular-eslint`               | 代码规范检查                                            | MIT          |
-| `dependency-cruiser`                                          | 架构规则                                                | MIT          |
-| `jscpd`                                                       | 重复代码                                                | MIT          |
-| `@commitlint/cli`、`@commitlint/config-conventional`          | 提交信息格式                                            | MIT          |
-| `markdownlint-cli2`                                           | Markdown 规则                                           | MIT          |
-| `license-checker-rseidelsohn`                                 | 依赖的许可证                                            | BSD-3-Clause |
-| `squawk-cli`                                                  | PostgreSQL 迁移脚本的安全检查                           | Apache-2.0   |
-| `drizzle-kit`                                                 | 生成和执行数据库迁移                                    | Apache-2.0   |
-| `vitest`、`@vitest/browser-playwright`、`@vitest/coverage-v8` | 单元测试、组件测试、集成测试、覆盖率                    | MIT          |
-| `@testing-library/angular`                                    | 组件测试里像用户一样操作页面                            | MIT          |
-| `msw`                                                         | 组件测试里替换后端接口                                  | MIT          |
-| `axe-core`、`@axe-core/playwright`                            | 无障碍检查                                              | MPL-2.0      |
-| `@playwright/test`                                            | 端到端测试和冒烟测试                                    | Apache-2.0   |
-| `testcontainers`、`@testcontainers/postgresql`                | 测试里临时起 PostgreSQL、SeaweedFS 和模拟的 OIDC 服务器 | MIT          |
-| `supertest`                                                   | 集成测试里从 HTTP 入口调用后端                          | MIT          |
+| 工具                                                          | 用途                                                     | 许可证       |
+| ------------------------------------------------------------- | -------------------------------------------------------- | ------------ |
+| `typescript`                                                  | 类型检查                                                 | Apache-2.0   |
+| `@go-task/cli`                                                | 任务入口 Task                                            | MIT          |
+| `lefthook`                                                    | git hooks                                                | MIT          |
+| `prettier`、`prettier-plugin-tailwindcss`                     | 格式化，给 Tailwind 的 class 排序                        | MIT          |
+| `eslint`、`typescript-eslint`、`angular-eslint`               | 代码规范检查                                             | MIT          |
+| `dependency-cruiser`                                          | 架构规则                                                 | MIT          |
+| `jscpd`                                                       | 重复代码                                                 | MIT          |
+| `@commitlint/cli`、`@commitlint/config-conventional`          | 提交信息格式                                             | MIT          |
+| `markdownlint-cli2`                                           | Markdown 规则                                            | MIT          |
+| `license-checker-rseidelsohn`                                 | 依赖的许可证                                             | BSD-3-Clause |
+| `squawk-cli`                                                  | PostgreSQL 迁移脚本的安全检查                            | Apache-2.0   |
+| `drizzle-kit`                                                 | 生成和执行数据库迁移                                     | Apache-2.0   |
+| `jose`                                                        | `tools/bin/jwt-key.ts` 用它生成本机开发用的 JWT 签名密钥 | MIT          |
+| `vitest`、`@vitest/browser-playwright`、`@vitest/coverage-v8` | 单元测试、组件测试、集成测试、覆盖率                     | MIT          |
+| `@testing-library/angular`                                    | 组件测试里像用户一样操作页面                             | MIT          |
+| `msw`                                                         | 组件测试里替换后端接口                                   | MIT          |
+| `axe-core`、`@axe-core/playwright`                            | 无障碍检查                                               | MPL-2.0      |
+| `@playwright/test`                                            | 端到端测试和冒烟测试                                     | Apache-2.0   |
+| `testcontainers`、`@testcontainers/postgresql`                | 测试里临时起 PostgreSQL、SeaweedFS 和模拟的 OIDC 服务器  | MIT          |
+| `supertest`                                                   | 集成测试里从 HTTP 入口调用后端                           | MIT          |
 
 不通过 npm 安装的工具：gitleaks（MIT）、actionlint（MIT）、zizmor（MIT）、OSV-Scanner（Apache-2.0）、CodeQL（GitHub 提供）、ZAP（Apache-2.0）。容器镜像：`postgres`（PostgreSQL License）、`chrislusf/seaweedfs`（Apache-2.0）、`ghcr.io/navikt/mock-oauth2-server`（MIT）、Playwright 官方镜像（Apache-2.0）。
 
@@ -213,10 +214,10 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 
 ## Deployment targets
 
-| 名称       | 部署在哪里                                                                                     | 地址                                                                           | 用到的资源                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 前端 `https://thinklet-web.vercel.app`，后端 `https://thinklet-api.vercel.app` | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元）；Authing 国际版（authing.co）的一个免费用户池和其中一个 OIDC 应用，开 Google 登录（每月 0 元，issuer 地址由 scaffold 建好后填入）；Google Cloud 的一个 OAuth 客户端，给 Authing 的 Google 登录用（免费） |
-| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                                                     | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                                                                                                                                                                                                                                  |
+| 名称       | 部署在哪里                                                                                     | 地址                                                                           | 用到的资源                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 前端 `https://thinklet-web.vercel.app`，后端 `https://thinklet-api.vercel.app` | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元）；Authing 中国版（authing.cn）的免费用户池 `好奇星球` 和其中一个 OIDC 应用，开 Google 登录，issuer 地址 `https://thinklet-staging.authing.cn/oidc`（每月 0 元）；Google Cloud 项目 `thinklet-staging` 里的一个 OAuth 客户端，给 Authing 的 Google 登录用（免费） |
+| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                                                     | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                                                                                                                                                                                                                                                                                         |
 
 部署方式：
 
@@ -240,7 +241,9 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 - 两个 Vercel 项目的根目录分别是 `apps/web` 和 `apps/api`，并允许构建读取根目录以外的文件，这样才能用到 `packages/contracts`。
 - 两个 Vercel 项目用标准保护：预览部署和各次部署自己的地址要登录 Vercel 才能打开，正式地址 `thinklet-web.vercel.app`、`thinklet-api.vercel.app` 公开访问，冒烟测试和 `/api/*` 转发才能用。
 - 登录的回调地址和退出后的返回地址都在前端的地址 `https://thinklet-web.vercel.app` 下，经过 `/api/*` 转发到后端，cookie 只属于前端的域名。
-- Authing 免费用户池每天只能发 50 封邮件（注册验证、找回密码），只能连一个社交账号。生产环境用国内版 authing.cn 另建用户池，测试环境的家长账号不带过去。
+- Authing 的用户池在 authing.cn 上，服务器在腾讯云北京：家长的名字、邮箱和密码存在北京；新加坡的 Vercel 函数跨境访问 Authing，登录会慢一点；Google 登录要经过 Authing 北京的服务器连 Google，能不能稳定用要在测试环境上试。
+- Authing 免费用户池每月最多 10 个活跃用户，只能连一个社交账号；每天最多发 50 封邮件（注册验证、找回密码），而且账号主人完成 Authing 的实名认证或企业认证后才能发。
+- 生产环境在同一个 authing.cn 上另建用户池，测试环境的家长账号不带过去。
 
 基础设施直接用 `vercel` 和 `neonctl` 命令行创建，不用基础设施即代码工具。scaffold 步骤执行前先用 `--help` 核对参数：
 
@@ -259,13 +262,19 @@ npx vercel@66.5.0 project update thinklet-api --root-directory apps/api --framew
 npx vercel@66.5.0 api /v9/projects/<项目名> -X PATCH --input <文件>             # 文件内容 {"ssoProtection":{"deploymentType":"prod_deployment_urls_and_all_previews"}}
 ```
 
-Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上建，scaffold 步骤给出逐步的说明：
+Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上建。重建时按这几步：
 
-1. 在 Google Cloud 控制台建一个 OAuth 客户端（Web 应用），授权回调地址填 Authing 给出的 Google 回调地址。
-2. 在 authing.co 建用户池，开邮箱密码注册和找回密码，连上 Google 登录。
-3. 在用户池里建一个 OIDC 应用：授权码模式，要求 PKCE，换令牌时用 client secret；登录回调地址和退出后的返回地址填本站在 `APP_ORIGIN` 下的地址。
-4. 用户把 client secret 存成不提交的文件，代理从文件读入 GitHub 密钥 `OIDC_CLIENT_SECRET`，不显示；issuer 地址和 client id 写入 GitHub 变量。
-5. 代理读 issuer 的发现文档，确认有授权、换令牌、公钥和退出（`end_session_endpoint`）四个地址，并支持 S256 的 PKCE。
+1. 在 Google Cloud 建项目 `thinklet-staging`。在 Google Auth Platform 里配 OAuth 同意屏幕：应用名 好奇星球，受众选 External，保持 Testing 状态，只有加进 Test users 的账号能用 Google 登录。
+2. 在 Authing 控制台 `https://console.authing.cn` 建用户池 好奇星球，子域名 `thinklet-staging`。账号主人完成个人实名认证，用户池才能发注册验证和找回密码的邮件。
+3. 在用户池里建一个 Regular Web APP 类型的应用，名字 好奇星球，子域名同上。登录回调地址填 `<APP_ORIGIN>/api/auth/callback`，退出回调地址填 `<APP_ORIGIN>/`。
+4. 应用的 Protocol Configuration：授权模式只勾 `authorization_code`，返回类型 `code`，ID 令牌签名 `RS256`，换令牌时的客户端验证用 `client_secret_post`，关掉 User informed consent page；ID 令牌 14 天过期。Authing 没有“必须用 PKCE”的开关：请求带了 PKCE 它就校验，本站后端每次都带。
+5. 应用的 Login Control：Single Page Login，只开邮箱加密码登录，关掉邮箱验证码登录。
+6. 允许注册：Security → General → Registration Security 里关掉 Prohibit Sign up。
+7. 注册和登录协议：Branding → Universal Login → Functional configuration 里加一条协议，文字是「我已阅读并同意《用户协议》和《隐私政策》」，注册和登录时都显示，必须勾选，语言选中文。默认语言设成简体中文，关掉语言切换，因为协议的勾选框只在中文页面上出现。
+8. Google 登录：在 Google Cloud 项目里建一个 Web application 类型的 OAuth 客户端，授权回调地址填 Authing 的 Google 连接页上给出的 Google 回调地址。在 Authing 里加社交连接 Google Web，填上这个客户端，Login Mode 选 Sign in & sign up，关掉 Bind to Existing Account：开着的话，有人先用别人的邮箱注册一个没验证过的密码账号，就能截下邮箱主人的 Google 登录。再把这个连接加进应用的社交登录。
+9. 应用和用户池的图标用地球标志。
+10. 用户把 client secret 存成不提交的文件，代理从文件读入 GitHub 密钥 `OIDC_CLIENT_SECRET`，不显示；issuer 地址和 client id 写入 GitHub 变量。
+11. 代理读 issuer 的发现文档，确认有授权、换令牌、公钥、退出（`end_session_endpoint`）和用户信息五个地址，支持 S256 的 PKCE 和 `client_secret_post`，ID 令牌能用 RS256 签名。
 
 ## 数据迁移
 
@@ -510,4 +519,4 @@ LICENSE
 - 加密孩子个人信息用的密钥：等第一个存孩子信息的 issue 回到 architect 步骤时再加。
 - 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里；`OIDC_*` 指向本机的 mock-oauth2-server，`JWT_SIGNING_KEY` 用测试专用的密钥。
 
-Last changed: #7 (2026-11-20)
+Last changed: #7 (2026-11-21)
