@@ -48,7 +48,7 @@ thinklet 是面向孩子的做题平台。它用有趣、引人入胜的方式�
 
 ## 参考项目
 
-- POC 版本：<https://github.com/juanchaopan/education>，主要用 TypeScript 写。项目建好后，通过 /change 单独开 issue 分析。
+- **education（POC 版本）**：<https://github.com/juanchaopan/education>，主要用 TypeScript 写。它是一个中文的儿童交互式解题网站，在 2026 年 11 月用约两周做出来：每道题是一部手工编排的有声互动短片，孩子一幕一幕动手发现，最后开口说出答案，可以按住话筒问 AI 老师；家长用邮箱注册，用一次性 KEY 让孩子加入家庭，按书给孩子安排练习，看每天的学习和每道题的结果，可以导出和删除家庭数据。账号、家长空间和数据保护做得扎实，教学原则很细；但每道题都是专属的代码，只做出两道题，没有经过真实孩子的验证，从没上过生产，AI、邮件和旁白用的服务都不适合中国大陆。分析见 `.docs/reference/education/`。
 
 ## 语言
 
@@ -63,4 +63,4 @@ thinklet 是面向孩子的做题平台。它用有趣、引人入胜的方式�
 
 - GitHub，公开仓库 `juanchaopan/thinklet`，默认分支 `main`。
 
-Last changed: #1 (2026-11-20)
+Last changed: #5 (2026-11-20)
