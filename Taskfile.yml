@@ -31,7 +31,7 @@ vars:
 
 tasks:
   dev:
-    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    desc: Start PostgreSQL, SeaweedFS and the mock OIDC provider with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
@@ -207,7 +207,7 @@ tasks:
         vars: { UPDATE_SCREENSHOTS: 'true' }
 
   test-integration:
-    desc: Run the api integration tests against throwaway PostgreSQL and SeaweedFS containers
+    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS and mock OIDC provider containers
     deps: [build-contracts]
     cmds:
       - pnpm --filter api run test:integration
@@ -267,6 +267,11 @@ tasks:
     desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
     cmds:
       - pnpm --filter api run migrate
+
+  jwt-key:
+    desc: Print a new ES256 signing key as a JWT_SIGNING_KEY line for .env (local development only; every environment has its own key)
+    cmds:
+      - node tools/bin/jwt-key.ts
 
   # Many tasks need the contracts built; within one `task` run they are
   # built once, however many of those tasks run.

@@ -6,8 +6,7 @@ import {
   apiDirectory,
   apiEnvironment,
   migrate,
-  startDatabase,
-  startStorage,
+  startServices,
 } from '../../apps/api/test/support/containers.ts';
 import { freePort, waitForHttp } from '../../apps/api/test/support/process.ts';
 import { startWebServer } from './web-server.ts';
@@ -58,38 +57,38 @@ function createCleanup(): Cleanup {
 }
 
 /**
- * Starts a throwaway copy of the whole system on random ports: PostgreSQL and
- * SeaweedFS in containers, the migrations, the built api (apps/api/dist) and
- * the built web (apps/web/dist) behind a server that forwards /api like the
- * Vercel rewrite. Both apps must be built first.
+ * Starts a throwaway copy of the whole system on random ports: PostgreSQL,
+ * SeaweedFS and the mock OIDC provider in containers, the migrations, the
+ * built web (apps/web/dist) behind a server that forwards /api like the
+ * Vercel rewrite, and the built api (apps/api/dist) with that server's origin
+ * as its own. Both apps must be built first.
  */
 export async function startEnvironment(options: EnvironmentOptions): Promise<Environment> {
   const cleanup = createCleanup();
   try {
-    const [database, storage] = await Promise.allSettled([startDatabase(), startStorage()]);
-    if (database.status === 'fulfilled') {
-      cleanup.add(() => database.value.stop());
-    }
-    if (storage.status === 'fulfilled') {
-      cleanup.add(() => storage.value.container.stop());
-    }
-    if (database.status === 'rejected') {
-      throw database.reason;
-    }
-    if (storage.status === 'rejected') {
-      throw storage.reason;
-    }
-    const databaseUrl = database.value.getConnectionUri();
+    const { database, storage, oidc, stop } = await startServices();
+    cleanup.add(stop);
+    const databaseUrl = database.getConnectionUri();
     await migrate(databaseUrl);
+
+    // The web server starts first, so the api gets the origin it is reached
+    // at; nothing calls /api before the api answers below.
+    const apiPort = await freePort();
+    const web = await startWebServer({
+      root: webRoot,
+      apiOrigin: `http://127.0.0.1:${apiPort}`,
+      host: options.webHost,
+    });
+    cleanup.add(() => web.close());
+    const baseUrl = `http://127.0.0.1:${web.port}`;
 
     // The api's errors go straight to this process's stderr, so its output
     // is not kept in memory for the length of the tests.
-    const apiPort = await freePort();
     const api = spawn(process.execPath, [join(apiDirectory, 'dist', 'main.js')], {
       cwd: apiDirectory,
       env: {
         ...process.env,
-        ...apiEnvironment(databaseUrl, storage.value),
+        ...apiEnvironment(databaseUrl, storage, oidc, baseUrl),
         PORT: String(apiPort),
       },
       stdio: ['ignore', 'ignore', 'inherit'],
@@ -98,14 +97,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     const exited = new Promise<number | null>((resolveExit) => api.on('exit', resolveExit));
     await waitForHttp({ exited }, apiPort);
 
-    const web = await startWebServer({
-      root: webRoot,
-      apiOrigin: `http://127.0.0.1:${apiPort}`,
-      host: options.webHost,
-    });
-    cleanup.add(() => web.close());
-
-    return { baseUrl: `http://127.0.0.1:${web.port}`, stop: cleanup.run };
+    return { baseUrl, stop: cleanup.run };
   } catch (error) {
     await cleanup.run();
     throw error;

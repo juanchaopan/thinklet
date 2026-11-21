@@ -31,7 +31,10 @@ high:
   - 'license-allowlist.json'
   - 'tools/**'
   - '**/__screenshots__/**'
+  # The api modules that keep parents' and children's data: auth through the
+  # pattern above, every other one by its own path.
   - '**/auth/**'
+  - 'apps/api/src/modules/family/**'
   - 'apps/api/drizzle/**'
   - '**/*.sql'
   - '**/.env*'

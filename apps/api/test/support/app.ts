@@ -22,24 +22,32 @@ export async function startApp(
 
 export interface AppWithoutServices {
   app: NestExpressApplication;
-  /** The port the database and the bucket point at, on which nothing listens. */
+  /** The port the database, the bucket and the OIDC issuer point at, on which nothing listens. */
   closedPort: number;
 }
 
 /**
- * Starts the application with the database and the bucket pointing at a
- * closed port, for tests that need no container: every health check fails
- * at once, so GET /api/health answers 503.
+ * Starts the application with the database, the bucket and the OIDC issuer
+ * pointing at a closed port, for tests that need no container: every health
+ * check fails at once, so GET /api/health answers 503.
  */
 export async function startAppWithoutServices(): Promise<AppWithoutServices> {
   const closedPort = await freePort();
   const app = await startApp(
-    apiEnvironment(`postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`, {
-      endpoint: `http://127.0.0.1:${closedPort}`,
-      bucket: 'bucket',
-      accessKeyId: 'access-key-id',
-      secretAccessKey: 'secret-access-key',
-    }),
+    apiEnvironment(
+      `postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`,
+      {
+        endpoint: `http://127.0.0.1:${closedPort}`,
+        bucket: 'bucket',
+        accessKeyId: 'access-key-id',
+        secretAccessKey: 'secret-access-key',
+      },
+      {
+        issuer: `http://127.0.0.1:${closedPort}/default`,
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+      },
+    ),
   );
   return { app, closedPort };
 }
