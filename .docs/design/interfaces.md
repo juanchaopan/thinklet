@@ -91,14 +91,15 @@
 
 ## 登录
 
-| 接口                     | 做什么                                                                                                                                                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/auth/login`    | 参数 `returnTo`（可选，本站以 `/` 开头的路径）。生成 state、nonce 和 PKCE，放进 10 分钟的签名 cookie，`302` 跳到 Authing 的授权地址                                                                                   |
-| `GET /api/auth/callback` | Authing 跳回来的地址。核对 state，用授权码换令牌，校验 ID 令牌和 nonce；建立或更新家长（第一次登录时记下同意），签发 JWT cookie，`302` 回到 `returnTo` 或 `/`。任何一步失败都 `302` 到 `/?login=failed`，原因写进日志 |
-| `POST /api/auth/logout`  | 清掉 JWT cookie，返回 `200` 和 `{ "endSessionUrl": "<Authing 的退出地址>" }`，前端整页跳过去；退出地址带 `client_id` 和退回产品主页的 `post_logout_redirect_uri`。不需要登录：没登录时也返回退出地址                  |
+| 接口                     | 做什么                                                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/login`    | 参数 `returnTo`（可选，本站以 `/` 开头的路径）。生成 state、nonce 和 PKCE，放进 10 分钟的签名 cookie，`302` 跳到 Authing 的授权地址                                                                                                                                                                                           |
+| `GET /api/auth/callback` | Authing 跳回来的地址。核对 state，用授权码换令牌，校验 ID 令牌和 nonce。第一次登录时建立家长，名字用 ID 令牌里的名字，没有就用邮箱 @ 前面的部分；以后只更新邮箱。每次都记下协议版本和时间。签发 JWT cookie，把 ID 令牌放进另一个 cookie，`302` 回到 `returnTo` 或 `/`。任何一步失败都 `302` 到 `/?login=failed`，原因写进日志 |
+| `POST /api/auth/logout`  | 清掉 JWT 和 ID 令牌两个 cookie，返回 `200` 和 `{ "endSessionUrl": "<Authing 的退出地址>" }`，前端整页跳过去。退出地址带 `id_token_hint`（ID 令牌 cookie 里的令牌）、`client_id` 和退回产品主页的 `post_logout_redirect_uri`。不需要登录：没登录或没有 ID 令牌时也返回退出地址，只是不带 `id_token_hint`                       |
 
 - JWT cookie：`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，有效期 7 天；剩下不到 3.5 天时，任何登录过的请求的响应都换发一个新的。
-- Authing 的退出地址接不接受 `client_id` 代替 `id_token_hint`，在 scaffold 建好用户池后核对。
+- ID 令牌 cookie：属性和 JWT cookie 一样，和它一起换发、一起清掉；只在退出时读，不用来认证请求。
+- 只带 `client_id` 时，Authing 退出后停在它自己的页面，不回本站，所以要带 `id_token_hint`。带了之后能不能回到本站，以及过期的 ID 令牌 Authing 认不认，在测试环境上用真的登录核对。
 
 ## 当前家长
 
@@ -116,7 +117,12 @@
 }
 ```
 
+- `email` 没有时是 `null`。
 - `families` 按加入时间排列；`pendingRequests` 只在当前家长是这个家庭的管理员时带，是等待中的申请数。
+
+### PATCH /api/me
+
+改自己的名字。请求 `{ "name": "林悦" }`，成功返回 `200` 和同 `GET /api/me` 的内容；`name` 去掉前后空格后不是 1–20 个字时返回 `400`。
 
 ## 家庭
 
@@ -139,13 +145,19 @@
   "code": "7KQ4MZ",
   "role": "admin",
   "members": [
-    { "parentId": "0b7c…", "name": "林悦", "role": "admin", "you": true },
-    { "parentId": "41f2…", "name": "周子航", "role": "member", "you": false }
+    {
+      "parentId": "0b7c…",
+      "name": "林悦",
+      "email": "linyue@example.com",
+      "role": "admin",
+      "you": true
+    },
+    { "parentId": "41f2…", "name": "周子航", "email": null, "role": "member", "you": false }
   ]
 }
 ```
 
-- `members` 按加入时间排列；成员列表不带邮箱。
+- `members` 按加入时间排列；`email` 没有时是 `null`。
 - `name` 去掉前后空格后 1–20 个字；`timezone` 必须是 IANA 时区名。
 - 更换家庭码时，这个家庭等待中的申请在同一个事务里变成已失效。
 - 设为管理员时，原管理员和新管理员的角色在同一个事务里对调。
@@ -166,12 +178,14 @@
 {
   "id": "9c3a…",
   "familyName": "外婆家",
+  "familyTimezone": "Asia/Shanghai",
   "adminName": "周秀英",
   "status": "pending",
   "createdAt": "2026-11-21T09:12:00Z"
 }
 ```
 
+- `familyTimezone` 用来按那个家庭的时区显示申请的时间。
 - `code` 不分大小写，后端转成大写再查。
 - 申请人只能看到、撤回和清掉自己的申请；别人的申请当作不存在。
 
@@ -222,5 +236,6 @@
 | `not_a_member`       | 这位家长已经不在家庭里了                                             |
 | `family_not_found`   | 找不到这个家庭（整页）                                               |
 | `internal`、没有回应 | 出了点问题，请稍后再试                                               |
+| `invalid_request`    | 按出错的字段显示 `rules.md` 里那个字段的提示                         |
 
 Last changed: #7 (2026-11-21)
