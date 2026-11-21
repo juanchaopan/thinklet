@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 @source "../build";
 
+/* Interaction patterns follow the input type, not the screen width: a touch
+   screen gets bottom sheets for dialogs, menus and name editing; a mouse or
+   trackpad gets centred dialogs, drop-down menus, editing in place and
+   tooltips. The navigation layout still follows the width. */
+@custom-variant touch (@media (pointer: coarse));
+@custom-variant mouse (@media (pointer: fine));
+
 @theme {
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
@@ -44,6 +51,7 @@
   --animate-pop: pop 250ms var(--ease-enter) both;
   --animate-fade: fade 200ms var(--ease-move) both;
   --animate-sheet: sheet 300ms var(--ease-enter) both;
+  --animate-float: float 300ms var(--ease-enter) both;
   --animate-drop: drop 150ms var(--ease-enter) both;
   --animate-rabbit: rabbit 500ms var(--ease-enter) both;
   --animate-bubble: bubble 250ms var(--ease-enter) 350ms both;
@@ -65,6 +73,12 @@
   }
   @keyframes sheet {
     from { transform: translateY(100%); }
+  }
+  /* A floating sheet rises from below the screen, far enough that its gap
+     to the bottom edge and its shadow start out of sight too, and stops at
+     its floating place. */
+  @keyframes float {
+    from { transform: translateY(calc(100% + 4rem)); }
   }
   @keyframes drop {
     from { opacity: 0; transform: translateY(-8px) scale(0.98); }

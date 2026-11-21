@@ -1,6 +1,10 @@
 // Writes every prototype page to build/, compiles Tailwind over them, and
 // captures PNGs per page and screen size into shots/<round>/.
 //
+// - Phone and tablet are captured as touch screens and desktop with a mouse:
+//   the browser reports the matching primary pointer (coarse or fine), which
+//   is the one switch the pages use to choose sheets or centred dialogs,
+//   drop-down menus and editing in place.
 // - A page is captured as it looks once its animations have ended; endless
 //   ones (the rabbit's bobbing, a blinking caret) are held at their start.
 // - A page with `frames` is captured once per listed moment instead: every
@@ -8,6 +12,7 @@
 //   the way the component tests hold a key frame.
 // - Pages marked viewportOnly (an open dialog, menu or toast) are captured one
 //   screen high, as the overlay covers exactly the screen; others in full.
+//   viewportOnly: 'touch' marks a page whose overlay only touch screens open.
 //
 // Each round gets its own folder, so images already opened for review are
 // never overwritten.
@@ -16,13 +21,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
-const VIEWPORTS = {
-  phone: { width: 390, height: 844 },
-  tablet: { width: 820, height: 1180 },
-  desktop: { width: 1440, height: 900 },
+const SIZES = {
+  phone: { viewport: { width: 390, height: 844 }, touch: true },
+  tablet: { viewport: { width: 820, height: 1180 }, touch: true },
+  desktop: { viewport: { width: 1440, height: 900 }, touch: false },
 };
 
-const modules = ['pages-home', 'pages-onboarding', 'pages-family', 'pages-misc'];
+const modules = ['pages-home', 'pages-onboarding', 'pages-family', 'pages-profile', 'pages-misc'];
 const pages = [];
 for (const name of modules) {
   pages.push(...(await import(`./src/${name}.mjs`)).default);
@@ -62,19 +67,21 @@ const holdAt = (time) =>
     a.currentTime = time;
   });
 
+const screenHigh = (p, touch) => p.viewportOnly === true || (p.viewportOnly === 'touch' && touch);
+
 const browser = await chromium.launch();
 for (const p of selected) {
-  for (const [size, viewport] of Object.entries(VIEWPORTS)) {
+  for (const [size, { viewport, touch }] of Object.entries(SIZES)) {
     const moments = p.frames ?? [null];
     for (const moment of moments) {
-      const context = await browser.newContext({ viewport, deviceScaleFactor: 1, locale: 'zh-CN' });
+      const context = await browser.newContext({ viewport, hasTouch: touch, deviceScaleFactor: 1, locale: 'zh-CN' });
       const tab = await context.newPage();
       await tab.goto(new URL(`build/${p.name}.html`, import.meta.url).href);
       await tab.waitForLoadState('networkidle');
       if (moment === null) await tab.evaluate(settle);
       else await tab.evaluate(holdAt, moment);
       const suffix = moment === null ? '' : `--${String(moment).padStart(4, '0')}ms`;
-      await tab.screenshot({ path: `${outDir}/${p.name}--${size}${suffix}.png`, fullPage: !p.viewportOnly });
+      await tab.screenshot({ path: `${outDir}/${p.name}--${size}${suffix}.png`, fullPage: !screenHigh(p, touch) });
       await context.close();
     }
   }

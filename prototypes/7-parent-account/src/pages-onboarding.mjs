@@ -5,7 +5,6 @@ import {
   bareShell,
   btnPrimary,
   btnSecondary,
-  btnText,
   card,
   chip,
   dialog,
@@ -86,7 +85,11 @@ const createDialog = (error) =>
     actions: `${btnSecondary('取消')}${btnPrimary('创建')}`,
   });
 
-/** Six boxes, one per character of the family code, like a verification code. */
+/**
+ * Six boxes, one per character of the family code, like a verification code.
+ * The code is looked up as soon as the sixth box is filled, so there is no
+ * button to submit it; an unknown code shakes the boxes and says so.
+ */
 const codeBoxes = (typed, { error = false } = {}) => {
   const chars = [...typed.padEnd(6, ' ')];
   const focusAt = error ? -1 : typed.length;
@@ -116,7 +119,7 @@ const joinDialog = (typed, error) =>
     title: '申请加入家庭',
     wide: true,
     body: codeBoxes(typed, { error }),
-    actions: `${btnSecondary('取消')}${btnPrimary('下一步', typed.length < 6 ? 'opacity-40 cursor-not-allowed' : '')}`,
+    actions: btnSecondary('取消'),
   });
 
 const joinConfirmDialog = dialog({
@@ -135,17 +138,17 @@ const joinConfirmDialog = dialog({
 const overStart = (overlay) => bareShell(startBody, overlay);
 
 export default [
-  { name: 'start', html: page('开始 - thinklet', bareShell(startBody)) },
-  { name: 'start-waiting', html: page('开始 - thinklet', bareShell(waitingBody)) },
-  { name: 'family-create', viewportOnly: true, html: page('创建家庭 - thinklet', overStart(createDialog(false))) },
-  { name: 'family-create-error', viewportOnly: true, html: page('创建家庭 - thinklet', overStart(createDialog(true))) },
+  { name: 'start', html: page('开始 - 好奇星球', bareShell(startBody)) },
+  { name: 'start-waiting', html: page('开始 - 好奇星球', bareShell(waitingBody)) },
+  { name: 'family-create', viewportOnly: true, html: page('创建家庭 - 好奇星球', overStart(createDialog(false))) },
+  { name: 'family-create-error', viewportOnly: true, html: page('创建家庭 - 好奇星球', overStart(createDialog(true))) },
   {
     name: 'family-create-from-menu',
     viewportOnly: true,
-    html: page('创建家庭 - thinklet', appShell({ active: 'home', content: homeSignedInBody, overlay: createDialog(false) })),
+    html: page('创建家庭 - 好奇星球', appShell({ active: 'home', content: homeSignedInBody, overlay: createDialog(false) })),
   },
-  { name: 'family-create-opening', viewportOnly: true, frames: [0, 100, 300], html: page('创建家庭 - thinklet', overStart(createDialog(false))) },
-  { name: 'family-join', viewportOnly: true, html: page('申请加入家庭 - thinklet', overStart(joinDialog('7KQ', false))) },
-  { name: 'family-join-error', viewportOnly: true, html: page('申请加入家庭 - thinklet', overStart(joinDialog('7KQ4MW', true))) },
-  { name: 'family-join-confirm', viewportOnly: true, html: page('申请加入家庭 - thinklet', overStart(joinConfirmDialog)) },
+  { name: 'family-create-opening', viewportOnly: true, frames: [0, 100, 300], html: page('创建家庭 - 好奇星球', overStart(createDialog(false))) },
+  { name: 'family-join', viewportOnly: true, html: page('申请加入家庭 - 好奇星球', overStart(joinDialog('7KQ', false))) },
+  { name: 'family-join-error', viewportOnly: true, html: page('申请加入家庭 - 好奇星球', overStart(joinDialog('7KQ4MW', true))) },
+  { name: 'family-join-confirm', viewportOnly: true, html: page('申请加入家庭 - 好奇星球', overStart(joinConfirmDialog)) },
 ];

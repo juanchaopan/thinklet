@@ -53,13 +53,17 @@ export const homeSignedInBody = `
   `)}
 </div>`;
 
+// The product home page and the signed-in home page carry the product name
+// alone as their browser title.
+const TITLE = '好奇星球';
+
 export default [
-  { name: 'home-visitor', html: page('thinklet', publicShell(homeVisitorBody)) },
-  { name: 'home-visitor-entering', frames: [0, 150, 350, 600], html: page('thinklet', publicShell(homeVisitorBody)) },
-  { name: 'home-signed-in', html: page('thinklet', appShell({ active: 'home', content: homeSignedInBody })) },
+  { name: 'home-visitor', html: page(TITLE, publicShell(homeVisitorBody)) },
+  { name: 'home-visitor-entering', frames: [0, 150, 350, 600], html: page(TITLE, publicShell(homeVisitorBody)) },
+  { name: 'home-signed-in', html: page(TITLE, appShell({ active: 'home', content: homeSignedInBody })) },
   {
     name: 'home-signed-in-entering',
     frames: [0, 120, 300, 620],
-    html: page('thinklet', appShell({ active: 'home', content: homeSignedInBody })),
+    html: page(TITLE, appShell({ active: 'home', content: homeSignedInBody })),
   },
 ];

@@ -1,3 +1,4 @@
+import QRCode from 'qrcode';
 import {
   ADMIN,
   CHECK,
@@ -5,7 +6,11 @@ import {
   MEMBER,
   MORE,
   PENCIL,
+  QR,
   SEARCH,
+  SHARE,
+  SHEET_FRAME,
+  SHEET_PANEL,
   appShell,
   avatar,
   btnDanger,
@@ -13,35 +18,39 @@ import {
   btnPrimary,
   btnSecondary,
   btnText,
+  btnTool,
   card,
   chip,
   dialog,
+  editRow,
+  editSheet,
   icon,
+  menuSheet,
   page,
+  textInput,
   timezoneField,
   toast,
 } from './ui.mjs';
 
 // The family page shows the family as it is. Admin and member see the same
 // layout; the admin also sees the pencil buttons and the actions.
-const OTHER = { name: '林建国', color: 2 };
+const OTHER = { name: '林建国', color: 2, email: 'jianguo.lin@example.com' };
+const FAMILY = '林悦的家';
+const CODE = '7KQ4MZ';
+const INVITE_LINK = `https://thinklet-web.vercel.app/join/${CODE}`;
+const TITLE = '家庭管理 - 好奇星球';
 
-const editRow = (input) => `
-<div class="flex animate-fade flex-col gap-3 sm:flex-row sm:items-center">
-  <div class="flex-1">${input}</div>
-  <div class="flex gap-2">${btnText('取消', 'flex-1 border border-line sm:flex-none')}${btnPrimary('保存', 'min-h-11 flex-1 px-5 text-sm sm:flex-none')}</div>
-</div>`;
-
-const textInput = (value) =>
-  `<input type="text" value="${value}" aria-label="家庭名称" class="block min-h-12 w-full rounded-2xl border border-violet bg-surface px-4 text-base outline-none ring-2 ring-violet/20" />`;
-
-const header = ({ admin, editing }) =>
-  editing === 'name'
-    ? `<div class="flex flex-col gap-2"><p class="text-sm font-bold text-ink-muted">家庭名称</p>${editRow(textInput('林悦的家'))}</div>`
-    : `<div class="flex items-center gap-1">
-         <h1 class="text-3xl font-black">林悦的家</h1>
+const titleView = (admin, extra = '') => `<div class="flex items-center gap-1 ${extra}">
+         <h1 class="text-3xl font-black">${FAMILY}</h1>
          ${admin ? btnIcon(PENCIL, '改家庭名称') : ''}
        </div>`;
+
+// While the name is being edited, a touch screen keeps showing the name and
+// edits it in a sheet; with a mouse the title gives way to the edit row.
+const header = ({ admin, editing }) =>
+  editing === 'name'
+    ? `${titleView(admin, 'mouse:hidden')}<div class="hidden flex-col gap-2 mouse:flex"><p class="text-sm font-bold text-ink-muted">家庭名称</p>${editRow(textInput(FAMILY, '家庭名称'))}</div>`
+    : titleView(admin);
 
 const row = (iconName, label, content) => `
 <div class="flex gap-4 py-5 first:pt-0 last:pb-0">
@@ -69,32 +78,49 @@ const timezoneRow = ({ admin, editing, timezoneHint }) =>
          }`,
   );
 
+// Every parent can pass the code on: copy it, share the invitation, or show
+// the invitation link as a QR code. Only the admin can replace the code.
 const codeRow = (admin) =>
   row(
     'key',
     '家庭码',
-    `<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-       <p class="font-mono text-3xl font-black tracking-[0.25em]" aria-label="家庭码 7 K Q 4 M Z">7KQ4MZ</p>
-       ${btnIcon(COPY, '复制家庭码')}
-       ${btnText('复制邀请链接', 'border border-line')}
+    `<div class="flex flex-wrap items-center gap-2">
+       <p class="font-mono text-3xl font-black tracking-[0.25em]" aria-label="家庭码 ${[...CODE].join(' ')}">${CODE}</p>
+       <div class="flex gap-2">${btnTool(COPY, '复制家庭码')}${btnTool(SHARE, '分享邀请')}${btnTool(QR, '显示二维码')}</div>
        ${admin ? btnText('更换家庭码', 'border border-line') : ''}
      </div>`,
   );
 
+// A member's actions drop down from the row's button with a mouse; on touch
+// screens they rise in a sheet headed by the member, as the row is out of reach.
 const memberRow = (person, { isAdmin, you, viewerIsAdmin, menuOpen = false }) => `
 <li class="relative flex items-center gap-3 py-3">
   ${avatar(person.name, person.color, 'size-11 text-base')}
-  <p class="flex min-w-0 flex-1 flex-wrap items-center gap-2 font-bold">${person.name}${you ? '<span class="text-sm font-normal text-ink-muted">（你）</span>' : ''}${isAdmin ? chip(`${icon('crown', 'size-4')}管理员`, 'sun') : ''}</p>
+  <div class="min-w-0 flex-1">
+    <p class="flex flex-wrap items-center gap-2 font-bold">${person.name}${you ? '<span class="text-sm font-normal text-ink-muted">（你）</span>' : ''}${isAdmin ? chip(`${icon('crown', 'size-4')}管理员`, 'sun') : ''}</p>
+    <p class="truncate text-sm text-ink-soft">${person.email ?? '—'}</p>
+  </div>
   ${viewerIsAdmin && !you ? btnIcon(MORE, `${person.name}的操作`, menuOpen ? 'bg-canvas' : '') : ''}
   ${
     menuOpen
-      ? `<div role="menu" class="absolute top-14 right-0 z-10 w-44 origin-top-right animate-drop rounded-2xl border border-line bg-surface p-1.5 shadow-pop">
+      ? `<div role="menu" class="absolute top-[calc(50%+1.5rem)] right-0 z-10 hidden w-44 origin-top-right animate-drop rounded-2xl border border-line bg-surface p-1.5 shadow-pop mouse:block">
            <a href="#" role="menuitem" class="flex min-h-11 items-center gap-2 rounded-xl px-3 font-bold hover:bg-canvas">${icon('crown', 'size-6')}设为管理员</a>
            <a href="#" role="menuitem" class="flex min-h-11 items-center gap-2 rounded-xl px-3 font-bold text-rose-ink hover:bg-canvas">${icon('door', 'size-6')}移出家庭</a>
          </div>`
       : ''
   }
 </li>`;
+
+const memberMenuSheet = (person) =>
+  menuSheet(
+    `<div role="menu" aria-label="${person.name}的操作" class="rounded-3xl bg-surface p-2">
+       <div class="flex items-center gap-3 px-3 py-3">${avatar(person.name, person.color, 'size-10 text-base')}<p class="font-bold">${person.name}</p></div>
+       <div class="my-1 border-t border-line"></div>
+       <a href="#" role="menuitem" class="flex min-h-12 items-center gap-3 rounded-xl px-3 text-base font-bold hover:bg-canvas">${icon('crown', 'size-7')}设为管理员</a>
+       <a href="#" role="menuitem" class="flex min-h-12 items-center gap-3 rounded-xl px-3 text-base font-bold text-rose-ink hover:bg-canvas">${icon('door', 'size-7')}移出家庭</a>
+     </div>`,
+    'mouse:hidden',
+  );
 
 const membersCard = (viewerIsAdmin, menuOpen) =>
   card(`
@@ -111,13 +137,15 @@ const leaveLine = (admin) =>
     ? `<div class="flex flex-wrap items-center justify-end gap-2 text-sm text-ink-muted"><span>先把管理员设给别人才能离开</span>${btnText('离开家庭', 'cursor-not-allowed opacity-40')}</div>`
     : `<div class="flex justify-end">${btnText('离开家庭', 'text-rose-ink')}</div>`;
 
+// The family code, used most, comes first; the time zone follows with its
+// hint directly under it.
 export const familyBody = ({ admin, editing = '', timezoneHint = false, menuOpen = false }) => `
 <div class="stagger mx-auto flex max-w-3xl flex-col gap-5">
   <header class="flex flex-col gap-1">
     <p class="text-sm font-bold text-ink-muted">家庭管理</p>
     ${header({ admin, editing })}
   </header>
-  ${card(`<div class="divide-y divide-line">${timezoneRow({ admin, editing, timezoneHint })}${codeRow(admin)}</div>`)}
+  ${card(`<div class="divide-y divide-line">${codeRow(admin)}${timezoneRow({ admin, editing, timezoneHint })}</div>`)}
   ${membersCard(admin, menuOpen)}
   ${leaveLine(admin)}
 </div>`;
@@ -127,7 +155,7 @@ const familyPage = (options, overlay = '') =>
     active: 'family',
     parent: options.admin ? ADMIN : MEMBER,
     admin: options.admin,
-    overlay,
+    overlay: options.menuOpen ? memberMenuSheet(MEMBER) : overlay,
     content: familyBody(options),
   });
 
@@ -166,7 +194,7 @@ const membersPage = (empty) =>
     content: `
 <div class="stagger mx-auto flex max-w-3xl flex-col gap-5">
   <header class="flex flex-col gap-1">
-    <p class="text-sm font-bold text-ink-muted">林悦的家</p>
+    <p class="text-sm font-bold text-ink-muted">${FAMILY}</p>
     <h1 class="text-3xl font-black">新成员</h1>
   </header>
   ${card(`
@@ -196,11 +224,12 @@ const membersPage = (empty) =>
   });
 
 // The time zone picker: a search box over the full list of IANA time zones,
-// each with its current UTC offset.
+// each with its current UTC offset. Like every dialog it is a floating sheet
+// on touch screens and sits in the middle with a mouse from 640 px up.
 const timezonePicker = `
-<div class="fixed inset-0 z-20 flex items-end justify-center sm:items-center sm:p-6">
+<div class="fixed inset-0 z-20 flex items-end justify-center ${SHEET_FRAME} mouse:sm:items-center mouse:sm:p-6">
   <div class="absolute inset-0 animate-fade bg-ink/45"></div>
-  <div role="dialog" aria-modal="true" aria-labelledby="tz-title" class="relative flex max-h-[80vh] w-full max-w-md animate-sheet flex-col rounded-t-[1.75rem] bg-surface p-5 shadow-pop sm:animate-pop sm:rounded-[1.75rem]">
+  <div role="dialog" aria-modal="true" aria-labelledby="tz-title" class="relative flex max-h-[80vh] w-full max-w-md ${SHEET_PANEL} animate-sheet flex-col rounded-t-[1.75rem] bg-surface p-5 shadow-pop mouse:sm:animate-pop mouse:sm:rounded-[1.75rem]">
     <h2 id="tz-title" class="text-xl font-black">选择时区</h2>
     <label class="mt-4 flex min-h-12 items-center gap-2 rounded-2xl border border-violet px-4 ring-2 ring-violet/20">
       <span class="text-ink-muted">${SEARCH}</span><input type="text" value="tor" aria-label="搜索时区" class="min-w-0 flex-1 bg-transparent text-base outline-none" />
@@ -221,11 +250,42 @@ const timezonePicker = `
   </div>
 </div>`;
 
+/**
+ * The invitation link as a QR code, drawn module by module as SVG squares
+ * with the standard quiet zone of four modules around it. Each dark run of a
+ * row becomes one rectangle, so the drawing stays small.
+ */
+const qrSvg = (text, pixels = 6) => {
+  const { modules } = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const quiet = 4;
+  const span = modules.size + quiet * 2;
+  const rects = [];
+  for (let y = 0; y < modules.size; y++) {
+    for (let x = 0; x < modules.size; x++) {
+      if (!modules.get(y, x)) continue;
+      let end = x;
+      while (end + 1 < modules.size && modules.get(y, end + 1)) end++;
+      rects.push(`<rect x="${x + quiet}" y="${y + quiet}" width="${end - x + 1}" height="1"/>`);
+      x = end;
+    }
+  }
+  return `<svg role="img" aria-label="邀请链接的二维码" width="${span * pixels}" height="${span * pixels}" viewBox="0 0 ${span} ${span}" shape-rendering="crispEdges" class="block"><rect width="${span}" height="${span}" fill="#ffffff"/><g fill="#161a2b">${rects.join('')}</g></svg>`;
+};
+
+const qrDialog = dialog({
+  title: `扫码加入「${FAMILY}」`,
+  closable: true,
+  body: `<div class="mt-5 flex flex-col items-center gap-4">
+    <div class="rounded-card border border-line p-2">${qrSvg(INVITE_LINK)}</div>
+    <p class="text-base text-ink-soft">也可以输入家庭码 <span class="font-mono text-lg font-black tracking-[0.25em] text-ink">${CODE}</span></p>
+  </div>`,
+});
+
 const confirm = (name, admin, { iconName, title, text, action, danger = false }) => ({
   name,
   viewportOnly: true,
   html: page(
-    '家庭管理 - 好奇星球',
+    TITLE,
     familyPage(
       { admin },
       dialog({
@@ -239,19 +299,30 @@ const confirm = (name, admin, { iconName, title, text, action, danger = false })
 });
 
 export default [
-  { name: 'family-admin', html: page('家庭管理 - 好奇星球', familyPage({ admin: true })) },
-  { name: 'family-admin-edit-name', html: page('家庭管理 - 好奇星球', familyPage({ admin: true, editing: 'name' })) },
-  { name: 'family-admin-edit-timezone', html: page('家庭管理 - 好奇星球', familyPage({ admin: true, editing: 'timezone' })) },
-  { name: 'family-admin-timezone-picker', viewportOnly: true, html: page('家庭管理 - 好奇星球', familyPage({ admin: true, editing: 'timezone' }, timezonePicker)) },
-  { name: 'family-admin-timezone-hint', html: page('家庭管理 - 好奇星球', familyPage({ admin: true, timezoneHint: true })) },
-  { name: 'family-admin-member-menu', html: page('家庭管理 - 好奇星球', familyPage({ admin: true, menuOpen: true })) },
-  { name: 'family-member', html: page('家庭管理 - 好奇星球', familyPage({ admin: false })) },
+  { name: 'family-admin', html: page(TITLE, familyPage({ admin: true })) },
+  {
+    name: 'family-admin-edit-name',
+    viewportOnly: 'touch',
+    html: page(TITLE, familyPage({ admin: true, editing: 'name' }, editSheet({ title: '改家庭名称', value: FAMILY, label: '家庭名称' }))),
+  },
+  { name: 'family-admin-edit-timezone', html: page(TITLE, familyPage({ admin: true, editing: 'timezone' })) },
+  { name: 'family-admin-timezone-picker', viewportOnly: true, html: page(TITLE, familyPage({ admin: true, editing: 'timezone' }, timezonePicker)) },
+  { name: 'family-admin-timezone-hint', html: page(TITLE, familyPage({ admin: true, timezoneHint: true })) },
+  { name: 'family-admin-member-menu', viewportOnly: 'touch', html: page(TITLE, familyPage({ admin: true, menuOpen: true })) },
+  { name: 'family-member', html: page(TITLE, familyPage({ admin: false })) },
   {
     name: 'family-saved',
     viewportOnly: true,
     frames: [0, 125, 250, 1500, 3325, 3400],
-    html: page('家庭管理 - 好奇星球', familyPage({ admin: true }, toast('party', '已保存', 'ok'))),
+    html: page(TITLE, familyPage({ admin: true }, toast('party', '已保存', 'ok'))),
   },
+  {
+    name: 'toast-copied',
+    viewportOnly: true,
+    frames: [1500],
+    html: page(TITLE, familyPage({ admin: true }, toast('key', '已复制', 'ok'))),
+  },
+  { name: 'dialog-qr', viewportOnly: true, html: page(TITLE, familyPage({ admin: true }, qrDialog)) },
   { name: 'new-members', html: page('新成员 - 好奇星球', membersPage(false)) },
   { name: 'new-members-empty', html: page('新成员 - 好奇星球', membersPage(true)) },
   confirm('dialog-new-code', true, {
@@ -276,7 +347,7 @@ export default [
   }),
   confirm('dialog-leave', false, {
     iconName: 'door',
-    title: '离开「林悦的家」？',
+    title: `离开「${FAMILY}」？`,
     text: '离开后要重新申请才能回来。',
     action: '离开',
     danger: true,
