@@ -1,4 +1,5 @@
-import { z } from 'zod';
+import * as z from 'zod';
+import './runtime.js';
 import { fieldErrorCodeSchema, type FieldErrorCode } from './fields.js';
 
 /** Every error code the api answers with; the web app picks the message to show by it. */

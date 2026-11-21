@@ -1,4 +1,5 @@
-import { z } from 'zod';
+import * as z from 'zod';
+import './runtime.js';
 
 /**
  * Why a request field was rejected. The schemas below use these codes as

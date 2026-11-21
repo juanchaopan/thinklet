@@ -1,4 +1,5 @@
-import { z } from 'zod';
+import * as z from 'zod';
+import './runtime.js';
 
 /** Result of one health check item. */
 export const checkStatusSchema = z.enum(['ok', 'error']);

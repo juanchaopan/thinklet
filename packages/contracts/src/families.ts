@@ -1,4 +1,5 @@
-import { z } from 'zod';
+import * as z from 'zod';
+import './runtime.js';
 import { familyCodeSchema, familyNameSchema, idSchema, timeZoneSchema } from './fields.js';
 
 /** A parent's role in a family: each family has exactly one admin. */

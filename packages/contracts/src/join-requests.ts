@@ -1,4 +1,5 @@
-import { z } from 'zod';
+import * as z from 'zod';
+import './runtime.js';
 import { familyCodeSchema } from './fields.js';
 
 /** Every state of a join request; only `pending` ever changes. */
