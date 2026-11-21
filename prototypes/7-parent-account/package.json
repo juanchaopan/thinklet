@@ -1,0 +1,14 @@
+{
+  "name": "prototype-7-parent-account",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "css": "tailwindcss -i src/theme.css -o build/styles.css",
+    "shots": "node render.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.5",
+    "tailwindcss": "4.3.5",
+    "playwright": "1.65.1"
+  }
+}
