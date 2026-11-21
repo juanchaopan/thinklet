@@ -1,17 +1,58 @@
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import {
+  applicantJoinRequestSchema,
   errorResponseSchema,
   familyDetailSchema,
   meResponseSchema,
+  type ApplicantJoinRequest,
   type FamilyDetail,
 } from '@thinklet/contracts';
 import request from 'supertest';
+import { startAppWithServices, type AppWithServices } from './app.js';
 import { TEST_APP_ORIGIN } from './containers.js';
 import { query } from './database.js';
 import { cookieHeader, newUser, signIn, type Target } from './login.js';
 
-// Helpers for tests of the family routes: parents signed in through the mock
-// OIDC provider, requests sent as them, families set up for them and what
-// the database holds about them.
+// Helpers for tests of the family routes: the application they run against,
+// parents signed in through the mock OIDC provider, requests sent as them,
+// families and join requests set up for them and what the database holds
+// about them.
+
+/** The running application of a test file and its database. */
+export interface RunningApp {
+  readonly server: ReturnType<NestExpressApplication['getHttpServer']>;
+  /** The connection URL of the migrated database the application uses. */
+  readonly databaseUrl: string;
+}
+
+/**
+ * Starts the application with its throwaway services before the tests of
+ * the enclosing block and stops it after them. Its fields can be read once
+ * the block's first hook has run, so inside hooks and tests.
+ */
+export function useAppWithServices(): RunningApp {
+  let started: AppWithServices | undefined;
+  const current = (): AppWithServices => {
+    if (started === undefined) {
+      throw new Error('The application has not started yet');
+    }
+    return started;
+  };
+  beforeAll(async () => {
+    started = await startAppWithServices();
+  });
+  afterAll(async () => {
+    await started?.stop();
+  });
+  return {
+    get server() {
+      return current().app.getHttpServer();
+    },
+    get databaseUrl() {
+      return current().databaseUrl;
+    },
+  };
+}
 
 /** A signed-in parent: their id and the cookies of their login. */
 export interface Parent {
@@ -61,6 +102,19 @@ export async function createFamily(
     throw new Error(`The family was not created: ${response.status}`);
   }
   return familyDetailSchema.parse(response.body);
+}
+
+/** Applies to the family with the code as the parent through the api and returns the request. */
+export async function applyToFamily(
+  target: Target,
+  parent: Parent,
+  code: string,
+): Promise<ApplicantJoinRequest> {
+  const response = await as(target, parent).post('/api/join-requests', { code });
+  if (response.status !== 201) {
+    throw new Error(`The join request was not made: ${response.status}`);
+  }
+  return applicantJoinRequestSchema.parse(response.body);
 }
 
 /**
@@ -128,6 +182,47 @@ export async function familyRow(databaseUrl: string, familyId: string): Promise<
   );
   if (row === undefined) {
     throw new Error(`No family ${familyId}`);
+  }
+  return row;
+}
+
+/** A row of the join_requests table. */
+export interface JoinRequestRow {
+  id: string;
+  family_id: string;
+  parent_id: string;
+  code: string;
+  status: string;
+  created_at: Date;
+  closed_at: Date | null;
+  closed_by: string | null;
+  dismissed_by_applicant_at: Date | null;
+  dismissed_by_admin_at: Date | null;
+}
+
+/** The family's join requests as the database holds them, oldest first. */
+export async function joinRequestRows(
+  databaseUrl: string,
+  familyId: string,
+): Promise<JoinRequestRow[]> {
+  return query<JoinRequestRow>(
+    databaseUrl,
+    'select * from join_requests where family_id = $1 order by created_at, id',
+    [familyId],
+  );
+}
+
+export async function joinRequestRow(
+  databaseUrl: string,
+  requestId: string,
+): Promise<JoinRequestRow> {
+  const [row] = await query<JoinRequestRow>(
+    databaseUrl,
+    'select * from join_requests where id = $1',
+    [requestId],
+  );
+  if (row === undefined) {
+    throw new Error(`No join request ${requestId}`);
   }
   return row;
 }
