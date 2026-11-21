@@ -43,4 +43,7 @@ export PATH="$pnpm_dir/bin:$PATH"
 # hard-link packages instead of copying them.
 pnpm install --frozen-lockfile --reporter=append-only --store-dir /repo/node_modules/.pnpm-store
 
+# The web app imports the contracts package from its build.
+pnpm --filter @thinklet/contracts run build
+
 pnpm --filter web run test:component

@@ -3,10 +3,19 @@ import axe from 'axe-core';
 /** The axe rule tags of WCAG 2.1 level AA, the project's accessibility target. */
 const WCAG_21_AA = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
-/** Fails with one line per violation when axe finds a WCAG 2.1 AA problem in `context`. */
+/**
+ * Fails with one line per violation when axe finds a WCAG 2.1 AA problem in
+ * `context`. Animations that end are finished first, so colours are checked
+ * as they settle rather than half faded in.
+ */
 export async function expectNoAxeViolations(
   context: Element = document.documentElement,
 ): Promise<void> {
+  for (const animation of document.getAnimations()) {
+    if (animation.effect?.getComputedTiming().endTime !== Infinity) {
+      animation.finish();
+    }
+  }
   const results = await axe.run(context, { runOnly: { type: 'tag', values: WCAG_21_AA } });
   const violations = results.violations.map(
     (violation) =>

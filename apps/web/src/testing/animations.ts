@@ -20,3 +20,20 @@ export function holdAnimationsAt(time: number, root: Element | Document = docume
   }
   return animations;
 }
+
+/**
+ * Brings every animation on the page to where it settles: animations that
+ * end are finished, endless ones (the rabbit floating) are held at their
+ * start. A screenshot or an accessibility check then sees the page at rest,
+ * however recently something started moving.
+ */
+export function settleAnimations(): void {
+  for (const animation of document.getAnimations()) {
+    if (animation.effect?.getComputedTiming().endTime === Infinity) {
+      animation.pause();
+      animation.currentTime = 0;
+    } else {
+      animation.finish();
+    }
+  }
+}
