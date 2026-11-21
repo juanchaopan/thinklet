@@ -40,11 +40,12 @@
 
 ## 通用约定
 
-- **登录状态**：除了 `/api/health` 和 `/api/auth/*`，每个接口都要登录。没登录、JWT 过期或签名不对时返回 `401`。
+- **登录状态**：除了 `/api/health` 和 `/api/auth/*`，每个接口都要登录。没登录、JWT 过期或签名不对时返回 `401`，错误码 `unauthenticated`。
 - **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。
 - **家庭内的接口**在 `/api/families/{familyId}/...` 下，先查当前家长是不是这个家庭的成员：不是成员或家庭不存在都返回 `404`，错误码 `family_not_found`。要管理员的接口，不是管理员时返回 `403`，错误码 `not_admin`。
+- **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请）时返回 `404`，错误码 `not_found`。
 - **出错的响应**：`{ "error": { "code": "<错误码>", "requestId": "<请求编号>" } }`。界面上的提示由前端按错误码显示；`requestId` 就是界面上的错误编号。
-- **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。
+- **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。字段出错的 `code` 有三种：`required`（没填）、`too_long`（太长）、`invalid`（格式不对）。
 - **意外的错**：`500`，错误码 `internal`，只带请求编号，不带错误详情。
 
 ## GET /api/health
@@ -169,8 +170,8 @@
 | `GET /api/family-codes/{code}`                | —            | `200 { "familyName", "adminName" }`                        | `404 code_not_found`、`409 already_member`、`409 request_pending` |
 | `POST /api/join-requests`                     | `{ "code" }` | `201` 申请                                                 | `404 code_not_found`、`409 already_member`、`409 request_pending` |
 | `GET /api/join-requests`                      | —            | `200` 申请列表：等待中、被拒绝和已失效、还没点「知道了」的 | —                                                                 |
-| `DELETE /api/join-requests/{requestId}`       | —            | `204`（撤回）                                              | `404`、`409 request_closed`                                       |
-| `POST /api/join-requests/{requestId}/dismiss` | —            | `204`（申请人的「知道了」）                                | `404`、`409 request_pending`                                      |
+| `DELETE /api/join-requests/{requestId}`       | —            | `204`（撤回）                                              | `404 not_found`、`409 request_closed`                             |
+| `POST /api/join-requests/{requestId}/dismiss` | —            | `204`（申请人的「知道了」）                                | `404 not_found`、`409 request_pending`                            |
 
 申请：
 
@@ -191,12 +192,12 @@
 
 ## 新成员（管理员）
 
-| 接口                                                              | 成功                                         | 出错                                   |
-| ----------------------------------------------------------------- | -------------------------------------------- | -------------------------------------- |
-| `GET /api/families/{familyId}/join-requests`                      | `200 { "pending": [...], "handled": [...] }` | `403 not_admin`                        |
-| `POST /api/families/{familyId}/join-requests/{requestId}/approve` | `200` 处理后的申请                           | `403 not_admin`、`409 request_closed`  |
-| `POST /api/families/{familyId}/join-requests/{requestId}/reject`  | `200` 处理后的申请                           | `403 not_admin`、`409 request_closed`  |
-| `POST /api/families/{familyId}/join-requests/{requestId}/dismiss` | `204`（管理员的「知道了」）                  | `403 not_admin`、`409 request_pending` |
+| 接口                                                              | 成功                                         | 出错                                                    |
+| ----------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| `GET /api/families/{familyId}/join-requests`                      | `200 { "pending": [...], "handled": [...] }` | `403 not_admin`                                         |
+| `POST /api/families/{familyId}/join-requests/{requestId}/approve` | `200` 处理后的申请                           | `403 not_admin`、`404 not_found`、`409 request_closed`  |
+| `POST /api/families/{familyId}/join-requests/{requestId}/reject`  | `200` 处理后的申请                           | `403 not_admin`、`404 not_found`、`409 request_closed`  |
+| `POST /api/families/{familyId}/join-requests/{requestId}/dismiss` | `204`（管理员的「知道了」）                  | `403 not_admin`、`404 not_found`、`409 request_pending` |
 
 ```json
 {
@@ -227,10 +228,12 @@
 
 | 错误码               | 界面上的提示                                                         |
 | -------------------- | -------------------------------------------------------------------- |
+| `unauthenticated`    | 回到产品主页，重新登录后回到原来的页面                               |
 | `code_not_found`     | 没有这个家庭码                                                       |
 | `already_member`     | 你已经是这个家庭的成员                                               |
 | `request_pending`    | 你已经申请过了，等管理员处理                                         |
 | `request_closed`     | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了 |
+| `not_found`          | 这个申请已经不在了，刷新列表                                         |
 | `admin_cannot_leave` | 先把管理员设给别人才能离开                                           |
 | `not_admin`          | 你已不是管理员                                                       |
 | `not_a_member`       | 这位家长已经不在家庭里了                                             |

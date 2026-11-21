@@ -21,14 +21,14 @@ PostgreSQL 里的表，用 Drizzle 定义，由迁移脚本建立。时间都存
 
 ## families：家庭
 
-| 字段         | 类型                | 说明                                |
-| ------------ | ------------------- | ----------------------------------- |
-| `id`         | uuid，主键          | 家庭编号，出现在地址和接口路径里    |
-| `name`       | text，必填          | 1–20 个字（按字符数），去掉前后空格 |
-| `timezone`   | text，必填          | IANA 时区名                         |
-| `code`       | char(6)，必填，唯一 | 家庭码                              |
-| `created_at` | timestamptz，必填   |                                     |
-| `updated_at` | timestamptz，必填   | 最后一次改名称、时区或家庭码的时间  |
+| 字段         | 类型              | 说明                                    |
+| ------------ | ----------------- | --------------------------------------- |
+| `id`         | uuid，主键        | 家庭编号，出现在地址和接口路径里        |
+| `name`       | text，必填        | 1–20 个字（按字符数），去掉前后空格     |
+| `timezone`   | text，必填        | IANA 时区名                             |
+| `code`       | text，必填，唯一  | 家庭码，正好 6 个字符（数据库约束检查） |
+| `created_at` | timestamptz，必填 |                                         |
+| `updated_at` | timestamptz，必填 | 最后一次改名称、时区或家庭码的时间      |
 
 ## family_members：家庭里的家长
 
@@ -50,7 +50,7 @@ PostgreSQL 里的表，用 Drizzle 定义，由迁移脚本建立。时间都存
 | `id`                        | uuid，主键                  |                                                           |
 | `family_id`                 | uuid，必填，引用 `families` | 申请加入的家庭                                            |
 | `parent_id`                 | uuid，必填，引用 `parents`  | 申请人                                                    |
-| `code`                      | char(6)，必填               | 申请时用的家庭码                                          |
+| `code`                      | text，必填                  | 申请时用的家庭码，正好 6 个字符（数据库约束检查）         |
 | `status`                    | text，必填                  | `pending`、`approved`、`rejected`、`withdrawn`、`expired` |
 | `created_at`                | timestamptz，必填           | 发出的时间                                                |
 | `closed_at`                 | timestamptz，可空           | 同意、拒绝、撤回或作废的时间                              |
