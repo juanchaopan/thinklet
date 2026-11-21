@@ -48,7 +48,7 @@ thinklet 是面向孩子的做题平台。它用有趣、引人入胜的方式�
 
 ## 参考项目
 
-- POC 版本：<https://github.com/juanchaopan/education>，主要用 TypeScript 写。项目建好后，通过 /change 单独开 issue 分析。
+- **education（POC 版本）**：<https://github.com/juanchaopan/education>，主要用 TypeScript 写。一个中文的儿童交互式解题网站：每道题是一部有声互动短片，孩子动手发现、开口作答；家长按书给孩子安排练习、看学习结果。分析见 `.docs/reference/education/`。
 
 ## 语言
 
@@ -63,4 +63,4 @@ thinklet 是面向孩子的做题平台。它用有趣、引人入胜的方式�
 
 - GitHub，公开仓库 `juanchaopan/thinklet`，默认分支 `main`。
 
-Last changed: #1 (2026-11-20)
+Last changed: #5 (2026-11-20)
