@@ -1,15 +1,37 @@
-# thinklet 设计
+# 好奇星球 设计
 
 设计由这里的文字和 `screens/` 里确认过的截图组成。原型源码放在各 issue 的 scratch 分支上，不放在 `main`。
 
+## 设计文档
+
+| 文档            | 内容                                                                   |
+| --------------- | ---------------------------------------------------------------------- |
+| `look.md`       | 视觉和动效：颜色、字体、布局、图标和插画、logo、动画                   |
+| `rules.md`      | 规则：登录状态、协议同意、家庭和家庭码、加入申请、权限、出错、同时操作 |
+| `data.md`       | 数据库的表和字段                                                       |
+| `interfaces.md` | 安全响应头、`/api/health`，以及登录、家庭、加入申请的接口              |
+
 ## 界面
 
-| 界面     | 内容                                                                                         | 截图 | 原型源码 |
-| -------- | -------------------------------------------------------------------------------------------- | ---- | -------- |
-| 首页 `/` | 完全空白，页面上不显示任何内容；浏览器标题是“thinklet”；页面语言是简体中文（`lang="zh-CN"`） | 无   | 无       |
+截图按 `screens/<状态>--<尺寸>.png` 命名，每个状态有手机（390×844）、平板（820×1180）、电脑（1440×900）三张。弹框、菜单和提示条打开时的状态只截一屏高，其余截整页。动画的关键帧另按 `screens/<动画>--<尺寸>--<毫秒>ms.png` 命名，见 `look.md` 的“动画”一节。
 
-## 其他设计文档
+| 界面           | 地址                               | 状态和截图                                                                                                                                                                                                                                                                                                                                                             |
+| -------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 产品主页       | `/`（没登录）                      | `home-visitor`；登录没成功时盖在上面的弹框 `error-login`                                                                                                                                                                                                                                                                                                               |
+| 登录后的首页   | `/`（已登录且有家庭）              | `home-signed-in`；切换家庭的菜单 `menu-family`；名字菜单 `menu-user`；从菜单打开的创建家庭弹框 `family-create-from-menu`；断网提示 `toast-offline`                                                                                                                                                                                                                     |
+| 孩子登录       | `/child`                           | `child-login`（空状态，内容由 #8 做）                                                                                                                                                                                                                                                                                                                                  |
+| 开始页         | `/start`                           | 没有申请 `start`；有申请 `start-waiting`；创建家庭弹框 `family-create`、名称没填 `family-create-error`；申请加入弹框 `family-join`、家庭码不对 `family-join-error`、确认家庭 `family-join-confirm`                                                                                                                                                                     |
+| 邀请链接       | `/join/<家庭码>`                   | 打开申请加入弹框并填好家庭码，盖在开始页（没有家庭时）或首页上，同 `family-join-confirm`                                                                                                                                                                                                                                                                               |
+| 家庭管理       | `/families/<家庭编号>`             | 管理员 `family-admin`；改名称 `family-admin-edit-name`；改时区 `family-admin-edit-timezone`、选择时区 `family-admin-timezone-picker`；时区提示 `family-admin-timezone-hint`；成员操作菜单 `family-admin-member-menu`；普通家长 `family-member`；确认框 `dialog-new-code`、`dialog-make-admin`、`dialog-remove-parent`、`dialog-leave`；保存成功的提示条 `family-saved` |
+| 新成员         | `/families/<家庭编号>/new-members` | 有申请 `new-members`；没有待处理的申请 `new-members-empty`；操作失败的提示条 `toast-action-error`                                                                                                                                                                                                                                                                      |
+| 找不到这个家庭 | 地址里的家庭不存在或不是成员       | `error-not-found`                                                                                                                                                                                                                                                                                                                                                      |
+| 页面没能打开   | 服务器出了意外的错                 | `error-server`                                                                                                                                                                                                                                                                                                                                                         |
 
-- `interfaces.md`：前端和后端响应都带的安全响应头，以及后端接口。
+每个页面的浏览器标题是“<页面名> - 好奇星球”，产品主页和首页只写“好奇星球”。
 
-Last changed: #2 (2026-11-20)
+## 原型源码和插画
+
+- 原型源码在 scratch 分支 `scratch/7-parent-account` 的 `prototypes/7-parent-account/`：手写 HTML 加 Tailwind，`render.mjs` 按三种尺寸截图，`strip.mjs` 把关键帧拼成一张图。
+- 插画和图标都在同一目录的 `art/` 里。小兔老师的全身图 `rabbit.webp` 来自参考项目；其余由 OpenAI Images API（`gpt-image-2.5-sunburst`）生成，每张的提示词写在 `src/art-list.mjs`，生成脚本是 `generate.mjs`。实现时把用到的文件复制进前端的静态资源。
+
+Last changed: #7 (2026-11-21)
