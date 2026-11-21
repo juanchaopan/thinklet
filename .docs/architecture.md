@@ -1,6 +1,6 @@
 # thinklet 架构
 
-thinklet 由一个 Angular 单页前端、一个 NestJS 后端、一个只放接口约定的共用包、一个 PostgreSQL 数据库和一个兼容 S3 的对象存储组成。代码在一个 pnpm workspaces 仓库里。测试环境部署在 Vercel 和 Neon；生产环境放在中国大陆的云上，还没有建。
+thinklet 由一个 Angular 单页前端、一个 NestJS 后端、一个只放接口约定的共用包、一个 PostgreSQL 数据库和一个兼容 S3 的对象存储组成，家长通过第三方身份服务 Authing 登录。代码在一个 pnpm workspaces 仓库里。测试环境部署在 Vercel 和 Neon；生产环境放在中国大陆的云上，还没有建。
 
 每个决定的理由和比较过的方案见 `.docs/decisions/`。
 
@@ -21,18 +21,24 @@ flowchart LR
     vapi["Vercel 项目 thinklet-api<br/>Vercel 函数（新加坡 sin1）"]
     npg[("Neon PostgreSQL<br/>新加坡")]
     ns3[("Neon 对象存储<br/>S3 接口")]
+    authing["Authing 国际版用户池<br/>托管登录页（OIDC）"]
   end
 
   subgraph production["生产环境 production（待建）"]
     cn["中国大陆的云<br/>服务商待定"]
   end
 
+  google["Google 登录"]
+
   web --> contracts
   api --> contracts
   browser -->|"HTTPS"| vweb
+  browser -->|"登录、退出时整页跳转"| authing
   vweb -->|"/api/* 转发"| vapi
   vapi -->|"连接池地址"| npg
   vapi -->|"S3 API"| ns3
+  vapi -->|"OIDC：换令牌、取公钥"| authing
+  authing -->|"社交登录"| google
   gha["GitHub Actions<br/>CI / CD<br/>保存全部环境变量和密钥"] -->|"drizzle-kit migrate<br/>（直连地址）"| npg
   gha -->|"vercel deploy"| vweb
   gha -->|"写入运行时变量<br/>vercel deploy"| vapi
@@ -62,6 +68,7 @@ flowchart LR
 | `packages/contracts` | 共用代码包（不单独运行） | 前后端共用的接口约定：Zod schema 和由它推出的类型。只放接口约定，不放业务逻辑                                                   |
 | PostgreSQL           | 数据库                   | 存全部业务数据                                                                                                                  |
 | 对象存储             | 对象存储                 | 存书本和教学里的图片、音频等文件，代码只走 S3 接口                                                                              |
+| Authing              | 第三方身份服务           | 家长的注册、密码登录、找回密码和社交登录，用它的托管登录页；本站只通过 OIDC 标准协议接入。家长的密码由 Authing 保存，本站不经手 |
 
 题型怎么教、孩子怎么参与，等具体题型的 issue 在 design 步骤里再定，架构不为题型预先设计。
 
@@ -78,11 +85,16 @@ flowchart LR
 | 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个                                                                                                                                                                                        |
 | 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息                                                                                                                                                                                     |
 | 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md` |
+| 家长登录         | Authing 的托管登录页，OIDC 授权码加 PKCE，流程在后端跑，用 openid-client。只走标准协议：Authing 的地址都从 issuer 的发现文档里读，换别的身份服务只改配置。跳到 Authing 和从 Authing 跳回来都是整页跳转，不用表单提交，因为前端 CSP 的 `form-action 'self'` 会挡住提交后跳到别的域名 |
+| 登录状态         | 服务器无状态，不存会话。登录后后端用 ES256 私钥签发 JWT（jose），放在 HttpOnly、Secure、SameSite=Lax 的 cookie 里；JWT 里只有家长编号，带密钥编号 `kid`，可以换密钥。登录过程中的 state、nonce 和 PKCE 也放在一个用同一把私钥签名、几分钟就过期的 cookie 里                         |
+| 防跨站请求伪造   | cookie 用 SameSite=Lax；后端再用一个全局中间件检查每个非 GET、HEAD、OPTIONS 请求的 `Origin` 头，不是本站地址（`APP_ORIGIN`）或者没有就拒绝                                                                                                                                          |
+| 退出登录         | 清掉 JWT cookie，再整页跳到 Authing 发现文档里的退出地址（`end_session_endpoint`），同时退出 Authing，退完回到本站的产品主页                                                                                                                                                        |
+| 家庭和权限       | 家长和家庭是多对多的成员关系，每个家庭恰好一位管理员。一个家庭里的接口都在 `/api/families/{familyId}/...` 下，每个请求都查这位家长是不是这个家庭的成员，要管理员的再查角色。JWT 里不放家庭和角色，被移出家庭或交出管理员后马上生效                                                  |
 | 数据库           | PostgreSQL；开发和测试用的版本与 Neon 项目的主版本一致                                                                                                                                                                                                                              |
 | 对象存储         | S3 接口（`@aws-sdk/client-s3`）；测试环境用 Neon 对象存储，生产环境换成国内云的对象存储时只改配置                                                                                                                                                                                   |
 | 包管理           | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                                                                                                                                                                                                      |
 | 任务入口         | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker                                                                                                                                                                          |
-| 云               | 测试环境用 Vercel（Hobby 套餐）和 Neon（免费套餐）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                                              |
+| 云               | 测试环境用 Vercel（Hobby 套餐）、Neon（免费套餐）和 Authing 国际版（免费用户池）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                |
 
 ## 各组件的库
 
@@ -102,15 +114,18 @@ flowchart LR
 
 由 Nest CLI（`nest new`）生成。
 
-| 库                                 | 用途                   | 许可证     |
-| ---------------------------------- | ---------------------- | ---------- |
-| `@nestjs/config`                   | 读取环境变量           | MIT        |
-| `zod`                              | 校验配置和请求         | MIT        |
-| `drizzle-orm`                      | 数据访问               | Apache-2.0 |
-| `pg`                               | PostgreSQL 驱动        | MIT        |
-| `@aws-sdk/client-s3`               | 对象存储的 S3 客户端   | Apache-2.0 |
-| `nestjs-pino`、`pino`、`pino-http` | JSON 日志              | MIT        |
-| `@thinklet/contracts`              | 接口约定（本仓库的包） | 本项目     |
+| 库                                 | 用途                                | 许可证     |
+| ---------------------------------- | ----------------------------------- | ---------- |
+| `@nestjs/config`                   | 读取环境变量                        | MIT        |
+| `zod`                              | 校验配置和请求                      | MIT        |
+| `drizzle-orm`                      | 数据访问                            | Apache-2.0 |
+| `pg`                               | PostgreSQL 驱动                     | MIT        |
+| `@aws-sdk/client-s3`               | 对象存储的 S3 客户端                | Apache-2.0 |
+| `nestjs-pino`、`pino`、`pino-http` | JSON 日志                           | MIT        |
+| `openid-client`                    | OIDC 客户端：跳转登录、换令牌、退出 | MIT        |
+| `jose`                             | 签发和校验登录状态的 JWT            | MIT        |
+| `cookie-parser`                    | 读请求里的 cookie                   | MIT        |
+| `@thinklet/contracts`              | 接口约定（本仓库的包）              | 本项目     |
 
 ### packages/contracts
 
@@ -120,29 +135,29 @@ flowchart LR
 
 ### 仓库根目录的开发工具
 
-| 工具                                                          | 用途                                 | 许可证       |
-| ------------------------------------------------------------- | ------------------------------------ | ------------ |
-| `typescript`                                                  | 类型检查                             | Apache-2.0   |
-| `@go-task/cli`                                                | 任务入口 Task                        | MIT          |
-| `lefthook`                                                    | git hooks                            | MIT          |
-| `prettier`、`prettier-plugin-tailwindcss`                     | 格式化，给 Tailwind 的 class 排序    | MIT          |
-| `eslint`、`typescript-eslint`、`angular-eslint`               | 代码规范检查                         | MIT          |
-| `dependency-cruiser`                                          | 架构规则                             | MIT          |
-| `jscpd`                                                       | 重复代码                             | MIT          |
-| `@commitlint/cli`、`@commitlint/config-conventional`          | 提交信息格式                         | MIT          |
-| `markdownlint-cli2`                                           | Markdown 规则                        | MIT          |
-| `license-checker-rseidelsohn`                                 | 依赖的许可证                         | BSD-3-Clause |
-| `squawk-cli`                                                  | PostgreSQL 迁移脚本的安全检查        | Apache-2.0   |
-| `drizzle-kit`                                                 | 生成和执行数据库迁移                 | Apache-2.0   |
-| `vitest`、`@vitest/browser-playwright`、`@vitest/coverage-v8` | 单元测试、组件测试、集成测试、覆盖率 | MIT          |
-| `@testing-library/angular`                                    | 组件测试里像用户一样操作页面         | MIT          |
-| `msw`                                                         | 组件测试里替换后端接口               | MIT          |
-| `axe-core`、`@axe-core/playwright`                            | 无障碍检查                           | MPL-2.0      |
-| `@playwright/test`                                            | 端到端测试和冒烟测试                 | Apache-2.0   |
-| `testcontainers`、`@testcontainers/postgresql`                | 测试里临时起 PostgreSQL 和 SeaweedFS | MIT          |
-| `supertest`                                                   | 集成测试里从 HTTP 入口调用后端       | MIT          |
+| 工具                                                          | 用途                                                    | 许可证       |
+| ------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
+| `typescript`                                                  | 类型检查                                                | Apache-2.0   |
+| `@go-task/cli`                                                | 任务入口 Task                                           | MIT          |
+| `lefthook`                                                    | git hooks                                               | MIT          |
+| `prettier`、`prettier-plugin-tailwindcss`                     | 格式化，给 Tailwind 的 class 排序                       | MIT          |
+| `eslint`、`typescript-eslint`、`angular-eslint`               | 代码规范检查                                            | MIT          |
+| `dependency-cruiser`                                          | 架构规则                                                | MIT          |
+| `jscpd`                                                       | 重复代码                                                | MIT          |
+| `@commitlint/cli`、`@commitlint/config-conventional`          | 提交信息格式                                            | MIT          |
+| `markdownlint-cli2`                                           | Markdown 规则                                           | MIT          |
+| `license-checker-rseidelsohn`                                 | 依赖的许可证                                            | BSD-3-Clause |
+| `squawk-cli`                                                  | PostgreSQL 迁移脚本的安全检查                           | Apache-2.0   |
+| `drizzle-kit`                                                 | 生成和执行数据库迁移                                    | Apache-2.0   |
+| `vitest`、`@vitest/browser-playwright`、`@vitest/coverage-v8` | 单元测试、组件测试、集成测试、覆盖率                    | MIT          |
+| `@testing-library/angular`                                    | 组件测试里像用户一样操作页面                            | MIT          |
+| `msw`                                                         | 组件测试里替换后端接口                                  | MIT          |
+| `axe-core`、`@axe-core/playwright`                            | 无障碍检查                                              | MPL-2.0      |
+| `@playwright/test`                                            | 端到端测试和冒烟测试                                    | Apache-2.0   |
+| `testcontainers`、`@testcontainers/postgresql`                | 测试里临时起 PostgreSQL、SeaweedFS 和模拟的 OIDC 服务器 | MIT          |
+| `supertest`                                                   | 集成测试里从 HTTP 入口调用后端                          | MIT          |
 
-不通过 npm 安装的工具：gitleaks（MIT）、actionlint（MIT）、zizmor（MIT）、OSV-Scanner（Apache-2.0）、CodeQL（GitHub 提供）、ZAP（Apache-2.0）。容器镜像：`postgres`（PostgreSQL License）、`chrislusf/seaweedfs`（Apache-2.0）、Playwright 官方镜像（Apache-2.0）。
+不通过 npm 安装的工具：gitleaks（MIT）、actionlint（MIT）、zizmor（MIT）、OSV-Scanner（Apache-2.0）、CodeQL（GitHub 提供）、ZAP（Apache-2.0）。容器镜像：`postgres`（PostgreSQL License）、`chrislusf/seaweedfs`（Apache-2.0）、`ghcr.io/navikt/mock-oauth2-server`（MIT）、Playwright 官方镜像（Apache-2.0）。
 
 `vercel` 和 `neonctl` 命令行不写进依赖清单，按固定版本临时运行（见决策 0017）：CD 用 `npm install --global vercel@<版本>` 安装，版本是部署工作流里的 `VERCEL_CLI_VERSION`，由 Renovate 更新；本机用 `npx vercel@<同一版本>` 和 `npx neonctl@<版本>`。
 
@@ -168,6 +183,13 @@ packages/
 tools/                 仓库自己的检查脚本（步骤检查、PR 标题检查、风险分级）
 ```
 
+后端的业务模块：
+
+| 模块     | 管什么                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------ |
+| `auth`   | 跳到 Authing 登录、接收回调、签发和校验 JWT、退出，以及每个接口都用的登录检查                    |
+| `family` | 家长账号、同意记录、家庭、家庭码、时区、家长成员、加入申请，以及家庭内接口都用的成员和管理员检查 |
+
 规则，由 dependency-cruiser 检查：
 
 - 后端只能从上往下调用：controller → service → repository。
@@ -191,10 +213,10 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 
 ## Deployment targets
 
-| 名称       | 部署在哪里                                                                                     | 地址                                                                           | 用到的资源                                                                                                                                                                 |
-| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 前端 `https://thinklet-web.vercel.app`，后端 `https://thinklet-api.vercel.app` | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元） |
-| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                                                     | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                         |
+| 名称       | 部署在哪里                                                                                     | 地址                                                                           | 用到的资源                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| staging    | Vercel（前端静态文件和后端函数，函数区域 `sin1` 新加坡）和 Neon（`aws-ap-southeast-1` 新加坡） | 前端 `https://thinklet-web.vercel.app`，后端 `https://thinklet-api.vercel.app` | 新建：Vercel 项目 `thinklet-web` 和 `thinklet-api`（Hobby 套餐，每月 0 元）；Neon 项目 `thinklet-staging`，含一个 PostgreSQL 数据库和一个对象存储桶（免费套餐，每月 0 元）；Authing 国际版（authing.co）的一个免费用户池和其中一个 OIDC 应用，开 Google 登录（每月 0 元，issuer 地址由 scaffold 建好后填入）；Google Cloud 的一个 OAuth 客户端，给 Authing 的 Google 登录用（免费） |
+| production | 中国大陆的云，服务商待定                                                                       | 无（待建）                                                                     | 待定，由建生产环境的 issue 回到 architect 步骤来定                                                                                                                                                                                                                                                                                                                                  |
 
 部署方式：
 
@@ -217,6 +239,8 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 - Neon 免费套餐的数据库闲置 5 分钟后自动暂停，下一个请求要等不到一秒来唤醒。
 - 两个 Vercel 项目的根目录分别是 `apps/web` 和 `apps/api`，并允许构建读取根目录以外的文件，这样才能用到 `packages/contracts`。
 - 两个 Vercel 项目用标准保护：预览部署和各次部署自己的地址要登录 Vercel 才能打开，正式地址 `thinklet-web.vercel.app`、`thinklet-api.vercel.app` 公开访问，冒烟测试和 `/api/*` 转发才能用。
+- 登录的回调地址和退出后的返回地址都在前端的地址 `https://thinklet-web.vercel.app` 下，经过 `/api/*` 转发到后端，cookie 只属于前端的域名。
+- Authing 免费用户池每天只能发 50 封邮件（注册验证、找回密码），只能连一个社交账号。生产环境用国内版 authing.cn 另建用户池，测试环境的家长账号不带过去。
 
 基础设施直接用 `vercel` 和 `neonctl` 命令行创建，不用基础设施即代码工具。scaffold 步骤执行前先用 `--help` 核对参数：
 
@@ -235,6 +259,14 @@ npx vercel@66.5.0 project update thinklet-api --root-directory apps/api --framew
 npx vercel@66.5.0 api /v9/projects/<项目名> -X PATCH --input <文件>             # 文件内容 {"ssoProtection":{"deploymentType":"prod_deployment_urls_and_all_previews"}}
 ```
 
+Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上建，scaffold 步骤给出逐步的说明：
+
+1. 在 Google Cloud 控制台建一个 OAuth 客户端（Web 应用），授权回调地址填 Authing 给出的 Google 回调地址。
+2. 在 authing.co 建用户池，开邮箱密码注册和找回密码，连上 Google 登录。
+3. 在用户池里建一个 OIDC 应用：授权码模式，要求 PKCE，换令牌时用 client secret；登录回调地址和退出后的返回地址填本站在 `APP_ORIGIN` 下的地址。
+4. 用户把 client secret 存成不提交的文件，代理从文件读入 GitHub 密钥 `OIDC_CLIENT_SECRET`，不显示；issuer 地址和 client id 写入 GitHub 变量。
+5. 代理读 issuer 的发现文档，确认有授权、换令牌、公钥和退出（`end_session_endpoint`）四个地址，并支持 S256 的 PKCE。
+
 ## 数据迁移
 
 | 数据                      | 方式                                                                                                                                       | 工具                                                                                                                                                     | 在哪里执行                                                                                      |
@@ -242,16 +274,17 @@ npx vercel@66.5.0 api /v9/projects/<项目名> -X PATCH --input <文件>        
 | PostgreSQL 的表结构和数据 | 按版本逐个迁移：脚本放在 `apps/api/drizzle/`，从数据库当前的版本按顺序往后执行。只能往前迁移，写错了就再写一个新脚本；合并过的脚本不再修改 | Drizzle Kit：改了 TypeScript 里的表定义后由它生成 SQL 脚本，脚本可以手改；执行过的脚本记在表 `__drizzle_migrations` 里；执行命令是 `drizzle-kit migrate` | 测试环境：CD 发布前执行。生产环境：它的部署任务里执行，允许停机。开发机和测试数据库：创建时执行 |
 | 对象存储里的文件          | 暂不迁移                                                                                                                                   | 等第一个写文件的 issue 再定                                                                                                                              | —                                                                                               |
 
-现在没有完全由代码生成、需要重建的数据。以后一个 issue 同时改了几种数据，各自用自己的方式迁移，执行顺序在那个 issue 里定。
+现在没有完全由代码生成、需要重建的数据。以后一个 issue 同时改了几种数据，各自用自己的方式迁移，执行顺序在那个 issue 里定。家长在 Authing 里的账号不随本站迁移，本站只存 Authing 给的家长标识。
 
 ## 各组件怎么运行
 
-| 组件       | 开发机                                                                                             | CI                                        |
-| ---------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `apps/web` | 本机直接运行 `ng serve`，把 `/api` 转给本机的后端，响应带上和测试环境一样的安全响应头              | GitHub 的 Linux 机器上装 Node.js 直接运行 |
-| `apps/api` | 本机直接运行 `nest start --watch`，常驻的 Node.js 进程                                             | 同上                                      |
-| PostgreSQL | 容器（官方 `postgres` 镜像）：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起，测完删除 | Testcontainers                            |
-| 对象存储   | SeaweedFS 容器模拟 S3：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起                  | Testcontainers                            |
+| 组件       | 开发机                                                                                                                                  | CI                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `apps/web` | 本机直接运行 `ng serve`，把 `/api` 转给本机的后端，响应带上和测试环境一样的安全响应头                                                   | GitHub 的 Linux 机器上装 Node.js 直接运行 |
+| `apps/api` | 本机直接运行 `nest start --watch`，常驻的 Node.js 进程                                                                                  | 同上                                      |
+| PostgreSQL | 容器（官方 `postgres` 镜像）：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起，测完删除                                      | Testcontainers                            |
+| 对象存储   | SeaweedFS 容器模拟 S3：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起                                                       | Testcontainers                            |
+| Authing    | mock-oauth2-server 容器模拟 OIDC 服务器，打开它的登录页，填什么用户都能登录：开发时用 Docker Compose 起；测试时用 Testcontainers 临时起 | Testcontainers                            |
 
 开发机要先装 Node.js 26.13.1、pnpm 和 Docker，并启动 Docker。后端在开发机和 CI 里以常驻进程运行，在测试环境里以 Vercel 函数运行；两种方式共用同一个 NestJS 应用模块，只是入口文件不同。
 
@@ -288,8 +321,8 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 | ---------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 单元       | Vitest，三个包都用；覆盖率用 V8                                                    | —                                                                                                                                                                                                                                                                             |
 | 组件       | Vitest 浏览器模式（Playwright 驱动的 Chromium）、Angular Testing Library、MSW、axe | 每个状态都跑 axe；每个状态、每种屏幕尺寸（手机、平板、电脑）各截一张图做对比                                                                                                                                                                                                  |
-| 集成       | Vitest、supertest、Testcontainers（PostgreSQL 和 SeaweedFS）                       | 数据库从空库开始，用 `drizzle-kit migrate` 建表                                                                                                                                                                                                                               |
-| 端到端     | Playwright、axe                                                                    | 测试自己起前后端和容器里的数据库、存储，测完删除；每个页面都跑 axe                                                                                                                                                                                                            |
+| 集成       | Vitest、supertest、Testcontainers（PostgreSQL、SeaweedFS 和 mock-oauth2-server）   | 数据库从空库开始，用 `drizzle-kit migrate` 建表                                                                                                                                                                                                                               |
+| 端到端     | Playwright、axe                                                                    | 测试自己起前后端和容器里的数据库、存储、mock-oauth2-server，测完删除；家长登录走 mock-oauth2-server 的登录页；每个页面都跑 axe                                                                                                                                                |
 | 冒烟       | Playwright，打了 `@smoke` 标签的端到端测试                                         | 部署后直接对测试环境的地址跑。现在有四条：首页能正常打开，没有控制台报错和 CSP 拦截；经过前端的 `/api` 转发调用 `GET /api/health` 返回 200；首页带着前端的安全响应头；经过前端转发的 `/api/health` 带着后端的安全响应头。四条都只读、不改数据，都打上 `@production-safe` 标签 |
 | 安全       | 安全测试用例用集成测试的工具来写；另加 ZAP 基线扫描                                | ZAP 在 CI 里扫测试临时起的环境，有中危及以上的告警就失败；确实不用修的告警，在扫描的配置里逐条写明理由后忽略                                                                                                                                                                  |
 | 迁移       | Vitest、Testcontainers                                                             | 每个有新迁移脚本的 issue 都要写：把临时库停在上一个版本，用原始 SQL 塞入旧格式的数据，再执行 `drizzle-kit migrate`，检查数据都在、格式正确                                                                                                                                    |
@@ -298,18 +331,19 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 
 - **覆盖率**：单元测试和组件测试的语句覆盖率下限是 80%，后端、前端和共用包各自计算，生成的代码和配置文件不算；低于下限时 CI 失败。
 - **截图基准图**：只在 Linux 上生成和比较。开发机用 Playwright 官方的 Docker 镜像跑截图测试，CI 直接在 Linux 上跑。
+- **真的 Authing 不测**：Authing 托管页上的注册、密码登录、Google 登录和找回密码，在测试环境上也不测；本站这边的每一步（跳转、回调、签发 JWT、退出）都由集成和端到端测试对着 mock-oauth2-server 覆盖。
 
 ### 指标由什么检查
 
-| 指标或要求                   | 测试对象     | 怎么检查                                                                                                                                                                                                  |
-| ---------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 写入后立刻可见               | 集成         | 写入后马上读，能读到新数据                                                                                                                                                                                |
-| 安全                         | 安全、端到端 | 安全测试用例：没登录不能访问；家长 A 改了 URL 里的 id 也看不到家长 B 的孩子；恶意输入不会被执行。端到端测试检查首页和 `/api/health` 带着安全响应头。另有 ZAP 扫描，以及静态检查里的 CodeQL 和 OSV-Scanner |
-| WCAG 2.1 AA                  | 组件、端到端 | 组件的每个状态、端到端的每个页面都跑 axe                                                                                                                                                                  |
-| 主流浏览器近两个大版本       | 端到端       | PR 上只跑 Chromium；发版前在 Chromium、Firefox、WebKit 上都跑                                                                                                                                             |
-| 手机、平板、电脑三种屏幕     | 组件         | 每种尺寸各截一张图                                                                                                                                                                                        |
-| 触屏和键鼠两种操作           | 组件、端到端 | 组件测试用键盘操作；发版前的端到端测试再加上模拟手机的触屏操作                                                                                                                                            |
-| 规模、可用性、成本、维护能力 | —            | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认首页、后端、数据库和存储都能访问                                                                                                                        |
+| 指标或要求                   | 测试对象     | 怎么检查                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 写入后立刻可见               | 集成         | 写入后马上读，能读到新数据                                                                                                                                                                                                                                                                                                           |
+| 安全                         | 安全、端到端 | 安全测试用例：没登录不能访问；JWT 被篡改、过期或签名不对时不能访问；不是家庭成员的家长改了 URL 里的家庭编号也看不到、改不了这个家庭；不是管理员做不了管理员的操作；`Origin` 不是本站的改数据请求被拒绝；恶意输入不会被执行。端到端测试检查首页和 `/api/health` 带着安全响应头。另有 ZAP 扫描，以及静态检查里的 CodeQL 和 OSV-Scanner |
+| WCAG 2.1 AA                  | 组件、端到端 | 组件的每个状态、端到端的每个页面都跑 axe                                                                                                                                                                                                                                                                                             |
+| 主流浏览器近两个大版本       | 端到端       | PR 上只跑 Chromium；发版前在 Chromium、Firefox、WebKit 上都跑                                                                                                                                                                                                                                                                        |
+| 手机、平板、电脑三种屏幕     | 组件         | 每种尺寸各截一张图                                                                                                                                                                                                                                                                                                                   |
+| 触屏和键鼠两种操作           | 组件、端到端 | 组件测试用键盘操作；发版前的端到端测试再加上模拟手机的触屏操作                                                                                                                                                                                                                                                                       |
+| 规模、可用性、成本、维护能力 | —            | 测试检查不了，靠架构本身保证；部署后的冒烟测试确认首页、后端、数据库和存储都能访问                                                                                                                                                                                                                                                   |
 
 ### 运行时机
 
@@ -386,6 +420,7 @@ license-allowlist.json
 tools/**
 **/__screenshots__/**
 **/auth/**
+apps/api/src/modules/family/**
 apps/api/drizzle/**
 **/*.sql
 **/.env*
@@ -402,7 +437,7 @@ apps/api/src/infrastructure/**
 LICENSE
 ```
 
-以后做家长和孩子数据的 issue，要把那些模块的路径加进高风险。
+存家长和孩子数据的后端模块都算高风险：`auth` 由 `**/auth/**` 覆盖，`family` 单独列出。以后新加这类模块的 issue，要把它的路径加进高风险。
 
 ## 依赖更新
 
@@ -444,28 +479,35 @@ LICENSE
 
 测试环境用到的全部环境变量和密钥只在 GitHub 的 `staging` 环境里维护。公开仓库能按环境保存密钥，所以名称里不带环境。
 
-| 名称                                       | 用途                                                                                                                            | 类型 | 谁用             | 值从哪来                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------------- | ------------------------------------------------------------------- |
-| `VERCEL_TOKEN`                             | 用 vercel 命令行发布、写入后端的运行时变量                                                                                      | 密钥 | CD               | 用户在 Vercel 网站上生成，存成不提交的文件，由代理从文件读入 GitHub |
-| `VERCEL_ORG_ID`                            | 指定 Vercel 账号                                                                                                                | 变量 | CD               | 建 Vercel 项目时产生                                                |
-| `VERCEL_WEB_PROJECT_ID`                    | 指定前端的 Vercel 项目                                                                                                          | 变量 | CD               | 建 Vercel 项目时产生                                                |
-| `VERCEL_API_PROJECT_ID`                    | 指定后端的 Vercel 项目                                                                                                          | 变量 | CD               | 建 Vercel 项目时产生                                                |
-| `MIGRATION_DATABASE_URL`                   | 执行 `drizzle-kit migrate`（Neon 的直连地址）                                                                                   | 密钥 | CD               | 建 Neon 项目时产生                                                  |
-| `STAGING_URL`                              | 冒烟测试访问的地址                                                                                                              | 变量 | CD               | 建 Vercel 前端项目时产生                                            |
-| `API_ORIGIN`                               | 生成前端的 `vercel.json`，把 `/api/*` 转发到这个地址                                                                            | 变量 | CD               | 建 Vercel 后端项目时产生                                            |
-| `DATABASE_URL`                             | 后端连数据库（Neon 的连接池地址）                                                                                               | 密钥 | 后端运行时       | 建 Neon 项目时产生                                                  |
-| `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`    | 后端连对象存储                                                                                                                  | 变量 | 后端运行时       | 建 Neon 存储桶时产生                                                |
-| `S3_FORCE_PATH_STYLE`                      | 对象存储用路径式地址（`<endpoint>/<桶名>/<文件>`）。Neon 和 SeaweedFS 只支持路径式；只支持 `<桶名>.<endpoint>` 的云设成 `false` | 变量 | 后端运行时       | 测试环境固定为 `true`                                               |
-| `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 对象存储的访问凭据                                                                                                              | 密钥 | 后端运行时       | 建 Neon 存储桶时产生                                                |
-| `PORT`                                     | 后端以常驻进程运行时监听的端口，可选，默认 3000                                                                                 | 变量 | 开发机和常驻进程 | 只写在 `.env.example`；GitHub 和 Vercel 都不放，Vercel 函数用不到   |
+| 名称                                       | 用途                                                                                                                            | 类型 | 谁用             | 值从哪来                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------------- | ---------------------------------------------------------------------- |
+| `VERCEL_TOKEN`                             | 用 vercel 命令行发布、写入后端的运行时变量                                                                                      | 密钥 | CD               | 用户在 Vercel 网站上生成，存成不提交的文件，由代理从文件读入 GitHub    |
+| `VERCEL_ORG_ID`                            | 指定 Vercel 账号                                                                                                                | 变量 | CD               | 建 Vercel 项目时产生                                                   |
+| `VERCEL_WEB_PROJECT_ID`                    | 指定前端的 Vercel 项目                                                                                                          | 变量 | CD               | 建 Vercel 项目时产生                                                   |
+| `VERCEL_API_PROJECT_ID`                    | 指定后端的 Vercel 项目                                                                                                          | 变量 | CD               | 建 Vercel 项目时产生                                                   |
+| `MIGRATION_DATABASE_URL`                   | 执行 `drizzle-kit migrate`（Neon 的直连地址）                                                                                   | 密钥 | CD               | 建 Neon 项目时产生                                                     |
+| `STAGING_URL`                              | 冒烟测试访问的地址                                                                                                              | 变量 | CD               | 建 Vercel 前端项目时产生                                               |
+| `API_ORIGIN`                               | 生成前端的 `vercel.json`，把 `/api/*` 转发到这个地址                                                                            | 变量 | CD               | 建 Vercel 后端项目时产生                                               |
+| `DATABASE_URL`                             | 后端连数据库（Neon 的连接池地址）                                                                                               | 密钥 | 后端运行时       | 建 Neon 项目时产生                                                     |
+| `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`    | 后端连对象存储                                                                                                                  | 变量 | 后端运行时       | 建 Neon 存储桶时产生                                                   |
+| `S3_FORCE_PATH_STYLE`                      | 对象存储用路径式地址（`<endpoint>/<桶名>/<文件>`）。Neon 和 SeaweedFS 只支持路径式；只支持 `<桶名>.<endpoint>` 的云设成 `false` | 变量 | 后端运行时       | 测试环境固定为 `true`                                                  |
+| `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 对象存储的访问凭据                                                                                                              | 密钥 | 后端运行时       | 建 Neon 存储桶时产生                                                   |
+| `OIDC_ISSUER`                              | Authing 应用的 issuer 地址，后端从它的发现文档读出其余地址                                                                      | 变量 | 后端运行时       | 建 Authing 应用时产生                                                  |
+| `OIDC_CLIENT_ID`                           | Authing 应用的 client id                                                                                                        | 变量 | 后端运行时       | 建 Authing 应用时产生                                                  |
+| `OIDC_CLIENT_SECRET`                       | 后端换令牌时证明自己的身份                                                                                                      | 密钥 | 后端运行时       | 用户从 Authing 控制台存成不提交的文件，由代理从文件读入 GitHub         |
+| `APP_ORIGIN`                               | 本站地址，用来拼登录回调地址和退出后的返回地址，并校验请求的 `Origin`                                                           | 变量 | 后端运行时       | 建 Vercel 前端项目时产生，测试环境是 `https://thinklet-web.vercel.app` |
+| `JWT_SIGNING_KEY`                          | 签发登录状态 JWT 的 ES256 私钥（JWK 格式），公钥由它算出                                                                        | 密钥 | 后端运行时       | 代理随机生成，直接写进 GitHub，不显示                                  |
+| `PORT`                                     | 后端以常驻进程运行时监听的端口，可选，默认 3000                                                                                 | 变量 | 开发机和常驻进程 | 只写在 `.env.example`；GitHub 和 Vercel 都不放，Vercel 函数用不到      |
 
 - “后端运行时”那几项，后端作为 Vercel 函数运行时要从 Vercel 项目 `thinklet-api` 里读。CD 每次发布 `thinklet-api` 前，用 `vercel env add <名称> --environment production --force` 从标准输入把它们覆盖写进去，值不出现在命令行和日志里。
 - Vercel 上的这一份只是副本。改值要在 GitHub 里改，再重新部署一次（`/deploy staging`）才生效；直接在 Vercel 网站上改的，下次发布会被覆盖。
 - Vercel 项目 `thinklet-web` 不放环境变量。
 - 由建资源产生的值，直接从命令输出写进 GitHub，从不显示在对话里。
+- 换 `JWT_SIGNING_KEY` 后，用旧密钥签发的 JWT 全部失效，所有家长要重新登录。
 - 不需要额外密钥的：去掉 `human-reviewed` 标签的任务用 GitHub 自带的令牌；Renovate 用 Mend 的 App；AI 评审只在本机跑。
+- Google 登录的 client secret 只填在 Authing 里，本站不用。
 - 测试用的外部账号：现在没有。
 - 加密孩子个人信息用的密钥：等第一个存孩子信息的 issue 回到 architect 步骤时再加。
-- 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里。
+- 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里；`OIDC_*` 指向本机的 mock-oauth2-server，`JWT_SIGNING_KEY` 用测试专用的密钥。
 
-Last changed: #2 (2026-11-20)
+Last changed: #7 (2026-11-20)
