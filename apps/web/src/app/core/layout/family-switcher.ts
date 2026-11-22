@@ -94,16 +94,23 @@ export class FamilySwitcher {
   /**
    * Makes the family current and opens the page the rules give for the page
    * the parent is on (rules.md, 导航); the counts and red dots are read again
-   * for the new family.
+   * for the new family. Choosing the current family changes nothing where
+   * the page already shows it, or shows no family of its own; on the page
+   * of another family, such as one the parent is not in, it opens the
+   * current family's page as switching to it does.
    */
   protected choose(familyId: string): void {
     this.open.set(false);
     const next = this.families().find((family) => family.id === familyId);
-    if (!next || next.id === this.currentFamily.family()?.id) {
+    if (!next) {
+      return;
+    }
+    const page = pageAfterSwitch(this.router.url, next);
+    const shown = page === null || page === this.router.url;
+    if (next.id === this.currentFamily.family()?.id && shown) {
       return;
     }
     this.currentFamily.select(next.id);
-    const page = pageAfterSwitch(this.router.url, next);
     if (page) {
       void this.router.navigateByUrl(page);
     } else {
