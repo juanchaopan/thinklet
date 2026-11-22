@@ -80,11 +80,11 @@ flowchart LR
 | 前端界面         | Angular CDK 加 Tailwind CSS，界面自己设计                                                                                                                                                                                                                                                                                                                         |
 | 后端语言和运行时 | TypeScript，Node.js 26.13.1（最新 LTS），版本写死在 `.node-version` 和各 `package.json` 的 `engines` 里                                                                                                                                                                                                                                                           |
 | 后端框架         | NestJS，底层用 Express                                                                                                                                                                                                                                                                                                                                            |
-| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型                                                                                                                                                                                                                                                                                          |
+| 接口约定         | `packages/contracts` 里的 Zod schema；后端用它校验请求，前端用它推出类型。前端的 CSP 没有 `'unsafe-eval'`，而 Zod 4 建 schema 时会试探 `new Function`，CSP 会把它报成违规，所以 `packages/contracts` 用一个模块调用 `z.config({ jitless: true })`，两个应用都在任何 schema 之前导入它                                                                             |
 | 数据访问         | Drizzle ORM 加 node-postgres 驱动                                                                                                                                                                                                                                                                                                                                 |
 | 配置             | `@nestjs/config` 加 Zod 校验：启动时校验全部环境变量，缺了或格式不对就拒绝启动，并说明是哪个                                                                                                                                                                                                                                                                      |
 | 日志             | pino（nestjs-pino）输出一行一条的 JSON 日志，自动带请求编号，按遮挡列表遮掉密码和孩子的个人信息                                                                                                                                                                                                                                                                   |
-| 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md`                                                                               |
+| 安全响应头       | 不用库，自己写。前端的响应头写成一份清单，生成的 `vercel.json`、本机端到端测试的服务器和 `ng serve` 都用这一份；后端由一个全局中间件给每个响应加上自己的一份。CSP 的脚本只允许本站文件，不含 `'unsafe-eval'`，样式允许内联（Angular 运行时会插入 `<style>`）。各响应头的值见 `.docs/design/interfaces.md`                                                         |
 | 家长登录         | Authing 的托管登录页，OIDC 授权码加 PKCE，流程在后端跑，用 openid-client。只走标准协议：Authing 的地址都从 issuer 的发现文档里读，换别的身份服务只改配置。跳到 Authing 和从 Authing 跳回来都是整页跳转，不用表单提交，因为前端 CSP 的 `form-action 'self'` 会挡住提交后跳到别的域名                                                                               |
 | 登录状态         | 服务器无状态，不存会话。登录后后端用 ES256 私钥签发 JWT（jose），放在 HttpOnly、Secure、SameSite=Lax 的 cookie 里；JWT 里只有家长编号，带密钥编号 `kid`，可以换密钥。Authing 返回的 ID 令牌另放在一个属性相同的 HttpOnly cookie 里，只在退出时用；请求只靠本站的 JWT 认证。登录过程中的 state、nonce 和 PKCE 也放在一个用同一把私钥签名、几分钟就过期的 cookie 里 |
 | 防跨站请求伪造   | cookie 用 SameSite=Lax；后端再用一个全局中间件检查每个非 GET、HEAD、OPTIONS 请求的 `Origin` 头，不是本站地址（`APP_ORIGIN`）或者没有就拒绝                                                                                                                                                                                                                        |
@@ -160,6 +160,8 @@ flowchart LR
 | `supertest`                                                   | 集成测试里从 HTTP 入口调用后端                           | MIT          |
 
 不通过 npm 安装的工具：gitleaks（MIT）、actionlint（MIT）、zizmor（MIT）、OSV-Scanner（Apache-2.0）、CodeQL（GitHub 提供）、ZAP（Apache-2.0）。容器镜像：`postgres`（PostgreSQL License）、`chrislusf/seaweedfs`（Apache-2.0）、`ghcr.io/navikt/mock-oauth2-server`（MIT）、Playwright 官方镜像（Apache-2.0）。
+
+组件测试用的镜像由仓库里的 `apps/web/component-tests.Dockerfile` 在 Playwright 官方镜像上构建，装了开源的 Noto Sans CJK 字体（Debian 软件包 `fonts-noto-cjk`，SIL Open Font License 1.1），让截图里的中文有粗体字重。字体只在测试截图时用，不进产品。Dockerfile 里的基础镜像按标签和摘要固定版本，标签里的 Playwright 版本和 `playwright`、`@playwright/test` 两个包的版本一致。
 
 `vercel` 和 `neonctl` 命令行不写进依赖清单，按固定版本临时运行（见决策 0017）：CD 用 `npm install --global vercel@<版本>` 安装，版本是部署工作流里的 `VERCEL_CLI_VERSION`，由 Renovate 更新；本机用 `npx vercel@<同一版本>` 和 `npx neonctl@<版本>`。
 
@@ -312,7 +314,7 @@ Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上�
 | 依赖漏洞     | OSV-Scanner，有高危或严重漏洞时失败                                                                                                                             |
 | 密钥泄漏     | gitleaks，加上 GitHub 的推送保护                                                                                                                                |
 | 许可证       | license-checker-rseidelsohn：只查产品运行时用到的依赖，只允许宽松的开源许可证（MIT、Apache-2.0、BSD、ISC 等），允许的列表在根目录的 `license-allowlist.json` 里 |
-| 部署配置     | actionlint 和 zizmor，检查 GitHub Actions 工作流；项目不打包自己的镜像，没有 Dockerfile 要查                                                                    |
+| 部署配置     | actionlint 和 zizmor，检查 GitHub Actions 工作流；项目自己的镜像只有组件测试用的那一个，不部署，没有对 Dockerfile 的专门检查                                    |
 | 迁移脚本     | Squawk，只查新增的脚本                                                                                                                                          |
 | 提交信息     | commitlint，加上项目自己的规则：提交类型要和分支类型对得上，要带 issue 编号，最后一行要有 `Step:`。PR 标题用同一套规则检查                                      |
 | 步骤检查     | `tools/` 里的 Node.js 脚本，对照各步骤能改的文件，由 commit-msg 钩子和 PR 的 CI 调用                                                                            |
@@ -340,7 +342,7 @@ git hooks 由 lefthook 管理，配置在 `lefthook.yml`。
 | 性能和负载 | 不做                                                                               | 没有性能指标；`/perf-test` 暂时没有可跑的东西                                                                                                                                                                                                                                 |
 
 - **覆盖率**：单元测试和组件测试的语句覆盖率下限是 80%，后端、前端和共用包各自计算，生成的代码和配置文件不算；低于下限时 CI 失败。
-- **截图基准图**：只在 Linux 上生成和比较。开发机用 Playwright 官方的 Docker 镜像跑截图测试，CI 直接在 Linux 上跑。
+- **截图基准图**：只在固定的 Linux 渲染环境里生成和比较：开发机和 CI 都用 `apps/web/component-tests.Dockerfile` 构建的镜像来跑组件测试和 `test-component-update`。这个镜像在 Playwright 官方镜像上装了 Noto Sans CJK 字体，中文粗体才有真的粗体字重。字体变了以后，要用 `test-component-update` 重新生成全部基准图。
 - **真的 Authing 不测**：Authing 托管页上的注册、密码登录、Google 登录和找回密码，在测试环境上也不测；本站这边的每一步（跳转、回调、签发 JWT、退出）都由集成和端到端测试对着 mock-oauth2-server 覆盖。
 
 ### 指标由什么检查
