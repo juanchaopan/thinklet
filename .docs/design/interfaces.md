@@ -169,7 +169,7 @@
 
 | 接口                                          | 请求         | 成功                                                                                   | 出错                                                              |
 | --------------------------------------------- | ------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `GET /api/family-codes/{code}`                | —            | `200 { "familyName", "adminName" }`                                                    | `404 code_not_found`、`409 already_member`、`409 request_pending` |
+| `GET /api/family-codes/{code}`                | —            | `200 { "familyName", "adminName", "adminId" }`                                         | `404 code_not_found`、`409 already_member`、`409 request_pending` |
 | `POST /api/join-requests`                     | `{ "code" }` | `201` 申请                                                                             | `404 code_not_found`、`409 already_member`、`409 request_pending` |
 | `GET /api/join-requests`                      | —            | `200` 申请列表：等待中、已同意、被拒绝和已失效、还没点「知道了」的，按发出时间从新到旧 | —                                                                 |
 | `DELETE /api/join-requests/{requestId}`       | —            | `204`（撤回）                                                                          | `404 not_found`、`409 request_closed`                             |
@@ -190,6 +190,7 @@
 
 - `status` 是 `pending`、`approved`、`rejected` 或 `expired`；撤回的不列出。
 - `familyTimezone` 用来按那个家庭的时区显示申请的时间。
+- `adminId` 是管理员的家长编号，用来算头像颜色。
 - `code` 不分大小写，后端转成大写再查。
 - 申请人只能看到、撤回和清掉自己的申请；别人的申请当作不存在。
 
