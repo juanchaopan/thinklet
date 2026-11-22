@@ -126,22 +126,22 @@ export function toApplicantRequest(record: ApplicantRequestRecord): ApplicantJoi
   return { ...record, status, createdAt: record.createdAt.toISOString() };
 }
 
-/** A pending request as its family's admin sees it. */
+/** A pending request as its family's admin sees it, with the applicant's parent id. */
 export function toPendingRequest(record: FamilyRequestRecord): PendingJoinRequest {
-  const { id, name, email, createdAt } = record;
-  return { id, name, email, createdAt: createdAt.toISOString() };
+  const { id, parentId, name, email, createdAt } = record;
+  return { id, parentId, name, email, createdAt: createdAt.toISOString() };
 }
 
 /** A closed request as its family's admin sees it among the handled ones. */
 export function toHandledRequest(record: FamilyRequestRecord): HandledJoinRequest {
-  const { id, name, email, status, closedAt } = record;
+  const { id, parentId, name, email, status, closedAt } = record;
   if (status !== 'approved' && status !== 'rejected' && status !== 'expired') {
     throw new Error(`The admin is not shown ${status} requests as handled`);
   }
   if (closedAt === null) {
     throw new Error('A handled request has no closing time');
   }
-  return { id, name, email, status, closedAt: closedAt.toISOString() };
+  return { id, parentId, name, email, status, closedAt: closedAt.toISOString() };
 }
 
 /**
@@ -191,7 +191,11 @@ export type Decision = Extract<JoinRequestStatus, 'approved' | 'rejected'>;
 export class JoinRequestsService {
   constructor(private readonly repository: JoinRequestsRepository) {}
 
-  /** The family the code belongs to, for the applicant to confirm before applying. */
+  /**
+   * The family the code belongs to and its admin, for the applicant to
+   * confirm before applying; the admin's parent id gives their avatar its
+   * colour.
+   */
   async lookUp(parentId: string, code: string): Promise<FamilyCodeLookupResponse> {
     const family = await this.repository.findFamilyByCode(code);
     if (family === undefined) {
@@ -202,7 +206,7 @@ export class JoinRequestsService {
       this.repository.hasPendingRequest(family.id, parentId),
     ]);
     requireApplicable({ member: role !== undefined, pending });
-    return { familyName: family.name, adminName: family.adminName };
+    return { familyName: family.name, adminName: family.adminName, adminId: family.adminId };
   }
 
   /**

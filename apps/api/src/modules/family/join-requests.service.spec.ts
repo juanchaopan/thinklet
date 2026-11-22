@@ -17,6 +17,7 @@ import {
   requireWithdrawal,
   toApplicantRequest,
   toHandledRequest,
+  toPendingRequest,
 } from './join-requests.service.js';
 
 const FAMILY_ID = 'family-1';
@@ -185,19 +186,36 @@ describe('toApplicantRequest', () => {
   });
 });
 
-describe('toHandledRequest', () => {
-  const record: FamilyRequestRecord = {
+/** The applicant's request as the admin's queries read it, in the given state. */
+function familyRecord(status: JoinRequestStatus): FamilyRequestRecord {
+  return {
     id: REQUEST_ID,
+    parentId: APPLICANT,
     name: '陈晓',
     email: null,
-    status: 'approved',
+    status,
     createdAt: CREATED_AT,
-    closedAt: CLOSED_AT,
+    closedAt: status === 'pending' ? null : CLOSED_AT,
   };
+}
 
-  it('gives the closing time as an ISO date-time', () => {
-    expect(toHandledRequest(record)).toEqual({
+describe('toPendingRequest', () => {
+  it("gives the applicant's parent id, name and email and the time as an ISO date-time", () => {
+    expect(toPendingRequest(familyRecord('pending'))).toEqual({
       id: REQUEST_ID,
+      parentId: APPLICANT,
+      name: '陈晓',
+      email: null,
+      createdAt: '2026-11-21T09:12:00.000Z',
+    });
+  });
+});
+
+describe('toHandledRequest', () => {
+  it("gives the applicant's parent id and the closing time as an ISO date-time", () => {
+    expect(toHandledRequest(familyRecord('approved'))).toEqual({
+      id: REQUEST_ID,
+      parentId: APPLICANT,
       name: '陈晓',
       email: null,
       status: 'approved',
@@ -206,11 +224,11 @@ describe('toHandledRequest', () => {
   });
 
   it.each<JoinRequestStatus>(['pending', 'withdrawn'])('refuses a %s request', (status) => {
-    expect(() => toHandledRequest({ ...record, status })).toThrow();
+    expect(() => toHandledRequest({ ...familyRecord(status), closedAt: CLOSED_AT })).toThrow();
   });
 
   it('refuses a request without a closing time', () => {
-    expect(() => toHandledRequest({ ...record, closedAt: null })).toThrow();
+    expect(() => toHandledRequest({ ...familyRecord('approved'), closedAt: null })).toThrow();
   });
 });
 
@@ -230,16 +248,16 @@ function createService(
   const familyRequest = (requestId: string): FamilyRequestRecord | undefined => {
     const request = requests.get(requestId);
     return (
-      request && {
-        id: requestId,
-        name: request.parentId,
-        email: null,
-        status: request.status,
-        createdAt: CREATED_AT,
-        closedAt: CLOSED_AT,
-      }
+      request && { ...familyRecord(request.status), id: requestId, parentId: request.parentId }
     );
   };
+  const familyRequestsWhere = (keep: (status: JoinRequestStatus) => boolean) =>
+    Promise.resolve(
+      [...requests.keys()]
+        .map(familyRequest)
+        .filter((record): record is FamilyRequestRecord => record !== undefined)
+        .filter((record) => keep(record.status)),
+    );
   const store = {
     lockFamily: vi.fn((familyId: string) => {
       calls.push(`lockFamily ${familyId}`);
@@ -251,7 +269,9 @@ function createService(
     }),
     findFamilyByCode: vi.fn((code: string) =>
       Promise.resolve(
-        code === CODE ? { id: FAMILY_ID, name: '外婆家', adminName: '周秀英' } : undefined,
+        code === CODE
+          ? { id: FAMILY_ID, name: '外婆家', adminName: '周秀英', adminId: ADMIN }
+          : undefined,
       ),
     ),
     memberRole: vi.fn((_familyId: string, parentId: string) =>
@@ -301,6 +321,10 @@ function createService(
       );
     }),
     findFamilyRequest: vi.fn((requestId: string) => Promise.resolve(familyRequest(requestId))),
+    listPendingRequests: vi.fn(() => familyRequestsWhere((status) => status === 'pending')),
+    listHandledRequests: vi.fn(() =>
+      familyRequestsWhere((status) => status !== 'pending' && status !== 'withdrawn'),
+    ),
   };
   const repository = {
     ...store,
@@ -317,12 +341,13 @@ function createService(
 
 describe('JoinRequestsService', () => {
   describe('lookUp', () => {
-    it('names the family and its admin for a parent who may apply', async () => {
+    it("names the family and its admin, with the admin's parent id, for a parent who may apply", async () => {
       const { service } = createService();
 
       await expect(service.lookUp(APPLICANT, CODE)).resolves.toEqual({
         familyName: '外婆家',
         adminName: '周秀英',
+        adminId: ADMIN,
       });
     });
 
@@ -450,13 +475,35 @@ describe('JoinRequestsService', () => {
     });
   });
 
+  describe('listFamily', () => {
+    it("lists the pending and the handled requests with each applicant's parent id", async () => {
+      const { service } = createService({ request: requestIn('pending') });
+
+      await expect(service.listFamily(FAMILY_ID)).resolves.toEqual({
+        pending: [expect.objectContaining({ id: REQUEST_ID, parentId: APPLICANT })],
+        handled: [],
+      });
+    });
+
+    it('puts an expired request among the handled ones', async () => {
+      const { service } = createService({ request: requestIn('expired') });
+
+      const listed = await service.listFamily(FAMILY_ID);
+
+      expect(listed.pending).toEqual([]);
+      expect(listed.handled).toEqual([
+        expect.objectContaining({ parentId: APPLICANT, status: 'expired' }),
+      ]);
+    });
+  });
+
   describe('decide', () => {
     it('approves: closes the request by the admin and makes the applicant a member, under the lock', async () => {
       const { service, calls, roles } = createService({ request: requestIn('pending') });
 
       const handled = await service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'approved');
 
-      expect(handled).toMatchObject({ id: REQUEST_ID, status: 'approved' });
+      expect(handled).toMatchObject({ id: REQUEST_ID, parentId: APPLICANT, status: 'approved' });
       expect(calls).toEqual([
         `lockFamily ${FAMILY_ID}`,
         `closeRequest approved by ${ADMIN}`,
@@ -470,7 +517,7 @@ describe('JoinRequestsService', () => {
 
       const handled = await service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'rejected');
 
-      expect(handled).toMatchObject({ id: REQUEST_ID, status: 'rejected' });
+      expect(handled).toMatchObject({ id: REQUEST_ID, parentId: APPLICANT, status: 'rejected' });
       expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, `closeRequest rejected by ${ADMIN}`]);
       expect(roles.has(APPLICANT)).toBe(false);
     });

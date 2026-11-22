@@ -43,11 +43,12 @@ function isRequestPending(error: unknown): boolean {
   return false;
 }
 
-/** A family found by its code, with the name of its admin. */
+/** A family found by its code, with its admin's name and parent id. */
 export interface CodeFamilyRecord {
   id: string;
   name: string;
   adminName: string;
+  adminId: string;
 }
 
 /** Who made a request, to which family, and where it stands. */
@@ -67,9 +68,10 @@ export interface ApplicantRequestRecord {
   createdAt: Date;
 }
 
-/** A request as the family's admin sees it, with the applicant's name and email. */
+/** A request as the family's admin sees it, with the applicant's parent id, name and email. */
 export interface FamilyRequestRecord {
   id: string;
+  parentId: string;
   name: string;
   email: string | null;
   status: JoinRequestStatus;
@@ -93,7 +95,7 @@ export interface Closing {
 /** Which side's 「知道了」 a dismissal records. */
 export type DismissingSide = 'applicant' | 'admin';
 
-/** Joins each family to its admin's membership, to read the admin's name with the family. */
+/** Joins each family to its admin's membership, to read the admin with the family. */
 const isFamilyAdmin = and(eq(familyMembers.familyId, families.id), eq(familyMembers.role, 'admin'));
 
 /**
@@ -102,10 +104,15 @@ const isFamilyAdmin = and(eq(familyMembers.familyId, families.id), eq(familyMemb
  * can lock its family and add the new member in the same transaction.
  */
 export class JoinRequestStore extends FamilyStore {
-  /** The family with the code and its admin's name, or undefined when no family has it. */
+  /** The family with the code and its admin, or undefined when no family has it. */
   async findFamilyByCode(code: string): Promise<CodeFamilyRecord | undefined> {
     const rows = await this.executor
-      .select({ id: families.id, name: families.name, adminName: parents.name })
+      .select({
+        id: families.id,
+        name: families.name,
+        adminName: parents.name,
+        adminId: familyMembers.parentId,
+      })
       .from(families)
       .innerJoin(familyMembers, isFamilyAdmin)
       .innerJoin(parents, eq(parents.id, familyMembers.parentId))
@@ -265,11 +272,12 @@ export class JoinRequestStore extends FamilyStore {
       .orderBy(desc(joinRequests.createdAt), desc(joinRequests.id));
   }
 
-  /** Requests with their applicant's name and email, in the given order. */
+  /** Requests with their applicant's parent id, name and email, in the given order. */
   private familyRequests(condition: SQL | undefined, order: SQL[]): Promise<FamilyRequestRecord[]> {
     return this.executor
       .select({
         id: joinRequests.id,
+        parentId: joinRequests.parentId,
         name: parents.name,
         email: parents.email,
         status: joinRequests.status,

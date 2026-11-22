@@ -31,7 +31,8 @@ import {
 // yet seen are counted for the red dot; a withdrawn request disappears from
 // A's page; each side's 「知道了」 clears the request from that side only;
 // after A changes the code, the old code no longer works and the pending
-// requests made with it expire.
+// requests made with it expire. The admin's list and the code lookup carry
+// the parent ids the avatars take their colours from.
 describe('join requests', () => {
   const running = useAppWithServices();
 
@@ -124,8 +125,8 @@ describe('join requests', () => {
   }
 
   describe('GET /api/family-codes/{code}', () => {
-    it("shows the family's name and its admin's name, whatever the case of the code", async () => {
-      const { family, applicant } = await familyAndApplicant();
+    it("shows the family's name and its admin's name and parent id, whatever the case of the code", async () => {
+      const { family, admin, applicant } = await familyAndApplicant();
 
       const responses = [
         await asParent(applicant).get(`/api/family-codes/${family.code}`),
@@ -135,8 +136,27 @@ describe('join requests', () => {
       for (const response of responses) {
         expect(response.status).toBe(200);
         expect(response.headers['cache-control']).toBe('no-store');
-        expect(response.body).toEqual({ familyName: '林悦的家', adminName: '林悦' });
+        expect(response.body).toEqual({
+          familyName: '林悦的家',
+          adminName: '林悦',
+          adminId: admin.id,
+        });
       }
+    });
+
+    it('names the admin of the moment after the admin role was handed over', async () => {
+      const { family, admin, applicant } = await familyAndApplicant();
+      const member = await parent({ name: '周子航' });
+      await addMember(running.databaseUrl, family.id, member.id);
+      await asParent(admin).put(`/api/families/${family.id}/admin`, { parentId: member.id });
+
+      const response = await asParent(applicant).get(`/api/family-codes/${family.code}`);
+
+      expect(response.body).toEqual({
+        familyName: '林悦的家',
+        adminName: '周子航',
+        adminId: member.id,
+      });
     });
 
     it('answers a code no family has, or that cannot be one, with 404 code_not_found', async () => {
@@ -215,6 +235,7 @@ describe('join requests', () => {
         pending: [
           {
             id: created.id,
+            parentId: applicant.id,
             name: '陈晓',
             email: 'chenxiao@example.com',
             createdAt: created.createdAt,
@@ -532,12 +553,36 @@ describe('join requests', () => {
       const listed = await adminList(admin, family.id);
 
       expect(listed.pending).toEqual([
-        { id: second.request.id, name: '乙', email: null, createdAt: second.request.createdAt },
-        { id: first.request.id, name: '甲', email: null, createdAt: first.request.createdAt },
+        {
+          id: second.request.id,
+          parentId: second.applicant.id,
+          name: '乙',
+          email: null,
+          createdAt: second.request.createdAt,
+        },
+        {
+          id: first.request.id,
+          parentId: first.applicant.id,
+          name: '甲',
+          email: null,
+          createdAt: first.request.createdAt,
+        },
       ]);
-      expect(listed.handled.map(({ id, name, status }) => ({ id, name, status }))).toEqual([
-        { id: rejected.request.id, name: '丁', status: 'rejected' },
-        { id: approved.request.id, name: '丙', status: 'approved' },
+      expect(
+        listed.handled.map(({ id, parentId, name, status }) => ({ id, parentId, name, status })),
+      ).toEqual([
+        {
+          id: rejected.request.id,
+          parentId: rejected.applicant.id,
+          name: '丁',
+          status: 'rejected',
+        },
+        {
+          id: approved.request.id,
+          parentId: approved.applicant.id,
+          name: '丙',
+          status: 'approved',
+        },
       ]);
       expect(await pendingCount(admin, family.id)).toBe(2);
     });
@@ -563,6 +608,7 @@ describe('join requests', () => {
       const stored = await row(request.id);
       expect(handledJoinRequestSchema.parse(response.body)).toEqual({
         id: request.id,
+        parentId: applicant.id,
         name: '陈晓',
         email: 'chenxiao@example.com',
         status: 'approved',
@@ -643,6 +689,7 @@ describe('join requests', () => {
       expect(response.status).toBe(200);
       expect(handledJoinRequestSchema.parse(response.body)).toMatchObject({
         id: request.id,
+        parentId: applicant.id,
         status: 'rejected',
       });
       expect(await row(request.id)).toMatchObject({ status: 'rejected', closed_by: admin.id });
@@ -697,8 +744,8 @@ describe('join requests', () => {
       expect(await requestResults(applicant)).toBe(1);
       const listed = await adminList(admin, family.id);
       expect(listed.pending).toEqual([]);
-      expect(listed.handled.map(({ id, status }) => ({ id, status }))).toEqual([
-        { id: request.id, status: 'expired' },
+      expect(listed.handled.map(({ id, parentId, status }) => ({ id, parentId, status }))).toEqual([
+        { id: request.id, parentId: applicant.id, status: 'expired' },
       ]);
       expect(await pendingCount(admin, family.id)).toBe(0);
       const stranger = await parent();

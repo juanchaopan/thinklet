@@ -37,7 +37,8 @@ interface Household {
 // family's admin can see, approve, reject or dismiss the family's requests, a
 // member who is not the admin is refused and a parent who is not a member is
 // answered as if there were no such family; a request of another family is
-// refused on a family's routes; every route needs a login and the changes
+// refused on a family's routes; a code lookup and the admin's list tell no
+// more than the design gives them; every route needs a login and the changes
 // need this site's Origin.
 describe('join request security', () => {
   const running = useAppWithServices();
@@ -142,6 +143,29 @@ describe('join request security', () => {
     );
 
     expect(lists.map((list) => list.map(({ id }) => id))).toEqual([[ours.pending.id], [], []]);
+  });
+
+  it("tells a parent who looks a code up only the family's name and its admin's name and id", async () => {
+    const response = await as(running.server, await signInParent(running.server)).get(
+      `/api/family-codes/${ours.family.code}`,
+    );
+
+    expect(response.body).toEqual({
+      familyName: '我们家',
+      adminName: '我们家管理员',
+      adminId: ours.admin.id,
+    });
+  });
+
+  it("gives the admin each applicant's own parent id, with nobody else's", async () => {
+    const listed = familyJoinRequestsResponseSchema.parse(
+      (await as(running.server, ours.admin).get(`/api/families/${ours.family.id}/join-requests`))
+        .body,
+    );
+
+    expect(listed.pending.map(({ id, parentId }) => ({ id, parentId }))).toEqual([
+      { id: ours.pending.id, parentId: ours.applicant.id },
+    ]);
   });
 
   it('answers a member who is not the admin with 403 not_admin on every admin route', async () => {
