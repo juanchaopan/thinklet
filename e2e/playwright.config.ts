@@ -5,6 +5,10 @@ import { defineConfig, devices } from '@playwright/test';
 // - `task test-e2e` starts a throwaway environment and sets it;
 // - `task test-smoke BASE_URL=...` points it at a deployed environment and
 //   runs only the tests tagged @smoke (or @production-safe).
+// TEST_OIDC_ISSUER and TEST_OIDC_CLIENT_ID name the identity provider the
+// site signs in through: `task test-e2e` sets them to its mock provider, and
+// a smoke run that sets them also checks that the login goes to that
+// provider with that client id.
 // Chromium runs on every PR; Firefox, WebKit and a touch phone run before a
 // release (`task test-e2e-all-browsers`).
 const baseURL = process.env['BASE_URL'];

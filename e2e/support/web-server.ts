@@ -21,6 +21,14 @@ const CONTENT_TYPES: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+/**
+ * How long an idle keep-alive connection from a test stays open: longer than
+ * any test, so a test's request context never sends a request on a
+ * connection the server is closing at that moment, which fails it with
+ * ECONNRESET. The connections are closed when the server closes.
+ */
+const KEEP_ALIVE_MS = 10 * 60 * 1000;
+
 export interface WebServerOptions {
   /** The built web app (`apps/web/dist/web/browser`). */
   root: string;
@@ -66,6 +74,7 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
       outgoing.end();
     });
   });
+  server.keepAliveTimeout = KEEP_ALIVE_MS;
   await new Promise<void>((resolve) => server.listen(0, options.host, resolve));
   return {
     port: (server.address() as AddressInfo).port,
@@ -115,11 +124,20 @@ async function serveFile(path: string, outgoing: ServerResponse, root: string): 
   await pipeline(content, outgoing);
 }
 
+/**
+ * Forwards a request to the api on a connection of its own: a pooled
+ * connection the api is just closing as idle would fail the request with a
+ * 502 that no test caused.
+ */
 function forward(incoming: IncomingMessage, outgoing: ServerResponse, target: URL) {
   return new Promise<void>((resolve, reject) => {
     const proxied = request(
       target,
-      { method: incoming.method, headers: { ...incoming.headers, host: target.host } },
+      {
+        method: incoming.method,
+        headers: { ...incoming.headers, host: target.host },
+        agent: false,
+      },
       (response) => {
         outgoing.writeHead(response.statusCode ?? 502, response.headers);
         pipeline(response, outgoing).then(resolve, reject);

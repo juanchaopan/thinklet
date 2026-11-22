@@ -56,7 +56,7 @@ async function settle(page: Page): Promise<void> {
 
 test.describe('product home', () => {
   test(
-    'opens with the title 好奇星球 in Simplified Chinese and both ways in, without errors or CSP violations',
+    'opens with the title 好奇星球 in Simplified Chinese, what the product is and both ways in, without errors or CSP violations',
     { tag: ['@smoke', '@production-safe'] },
     async ({ page }) => {
       const problems = await collectPageProblems(page);
@@ -66,6 +66,10 @@ test.describe('product home', () => {
       expect(response?.ok()).toBe(true);
       await expect(page).toHaveTitle('好奇星球');
       await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('把难懂的课，变成好玩的题');
+      await expect(
+        page.getByText('用有趣的方式带孩子学习难懂、复杂的课程，教他们解题，帮他们整理思路。'),
+      ).toBeVisible();
       await expect(page.getByRole('link', { name: '家长登录 / 注册' })).toHaveAttribute(
         'href',
         '/api/auth/login',

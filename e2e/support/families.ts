@@ -1,4 +1,5 @@
-import { expect, type Browser, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { newUser, signIn } from './sign-in.ts';
 
 /** What the end-to-end tests need of a family, read through the api. */
 export interface FamilySummary {
@@ -17,6 +18,20 @@ export async function pageOfAnotherParent(browser: Browser, testInfo: TestInfo):
   const { baseURL, locale, timezoneId } = testInfo.project.use;
   const context = await browser.newContext({ baseURL, locale, timezoneId });
   return context.newPage();
+}
+
+/** Creates a family for the signed-in parent through the api, as the create dialog does. */
+export async function createFamily(
+  page: Page,
+  name: string,
+  timezone = 'Asia/Shanghai',
+): Promise<FamilySummary> {
+  const response = await page.request.post('/api/families', {
+    data: { name, timezone },
+    headers: { Origin: new URL(page.url()).origin },
+  });
+  expect(response.status()).toBe(201);
+  return (await response.json()) as FamilySummary;
 }
 
 /** The signed-in parent's first family, as its members see it. */
@@ -77,4 +92,56 @@ export async function askToJoin(page: Page, code: string): Promise<void> {
 /** Brings the page's window back to the front, as switching back to its tab does. */
 export async function bringToFront(page: Page): Promise<void> {
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+}
+
+/**
+ * Picks a time zone in the create dialog's 时区 field by searching for it
+ * and taking the first one found, then checks what the field shows.
+ */
+export async function pickTimeZone(
+  page: Page,
+  dialog: Locator,
+  search: string,
+  shown: string,
+): Promise<void> {
+  const timeZone = dialog.getByRole('button', { name: /^时区/ });
+  await timeZone.click();
+  await page.getByRole('combobox', { name: '搜索时区' }).fill(search);
+  await page.keyboard.press('Enter');
+  await expect(timeZone).toHaveText(shown);
+}
+
+/** Switches to the family with this name in the family menu of the current family. */
+export async function switchFamily(page: Page, from: string, to: string): Promise<void> {
+  await page.getByRole('button', { name: `${from} 切换家庭` }).click();
+  await page
+    .getByRole('menu', { name: '切换家庭' })
+    .getByRole('menuitem', { name: new RegExp(`^${to}`) })
+    .click();
+  await expect(page.getByRole('button', { name: `${to} 切换家庭` })).toBeVisible();
+}
+
+/** 林悦's family, with 林悦 signed in as its admin in a browser of her own. */
+export async function familyOfLinyue(
+  browser: Browser,
+  testInfo: TestInfo,
+): Promise<{ admin: Page; family: FamilySummary }> {
+  const admin = await pageOfAnotherParent(browser, testInfo);
+  await signIn(admin, newUser('林悦'));
+  return { admin, family: await createFamily(admin, '林悦的家') };
+}
+
+/** 林悦's family, which 周子航, signed in on `page`, has asked to join. */
+export async function requestOfZihang(page: Page, browser: Browser, testInfo: TestInfo) {
+  const linyue = await familyOfLinyue(browser, testInfo);
+  await signIn(page, newUser('周子航'));
+  await askToJoin(page, linyue.family.code);
+  return linyue;
+}
+
+/** 林悦's family with 周子航, signed in on `page`, as one of its members. */
+export async function familyWithZihang(page: Page, browser: Browser, testInfo: TestInfo) {
+  const linyue = await requestOfZihang(page, browser, testInfo);
+  await handleWaitingRequest(linyue.admin, linyue.family.id, 'approve');
+  return linyue;
 }

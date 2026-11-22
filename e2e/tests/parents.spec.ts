@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createFamily, newUser, signIn } from '../support/sign-in.ts';
+import { expectAccessiblePage } from '../support/accessibility.ts';
+import { createFamily, familyWithZihang } from '../support/families.ts';
+import { newUser, signIn } from '../support/sign-in.ts';
 
 /** 林悦's avatar button, which screen readers hear as "林悦的菜单". */
 const AVATAR = /^林悦\s*的菜单/;
@@ -11,11 +13,13 @@ async function openProfileFromAvatar(page: Page): Promise<void> {
   await expect(page).toHaveURL('/profile');
 }
 
-// The signed-in parent's way around (.docs/design/rules.md, 登录和登录状态,
-// 导航, 个人设置): the child login is open to everyone, a parent without a
-// family starts on the start page and reaches the profile, which leads back
-// there, and a parent with a family goes from the start page to the home
-// page and finds their own pages in the sidebar or behind the avatar.
+// The signed-in parent's way around and their own settings
+// (.docs/design/rules.md, 登录和登录状态, 导航, 个人设置): the child login is
+// open to everyone, a parent without a family starts on the start page and
+// reaches the profile, which leads back there, a parent with a family goes
+// from the start page to the home page and finds their own pages in the
+// sidebar or behind the avatar, and a new name reaches the other parents of
+// the family.
 test.describe('signed-in parent', () => {
   test('sees the child login as it is', async ({ page }) => {
     await signIn(page, newUser('林悦'), '/child');
@@ -58,5 +62,27 @@ test.describe('signed-in parent', () => {
     await openProfileFromAvatar(page);
 
     await expect(page.getByRole('link', { name: '返回' })).toHaveCount(0);
+  });
+
+  test('renames themself on the profile, and the other parent of the family sees the new name', async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const { admin, family } = await familyWithZihang(page, browser, testInfo);
+
+    await page.goto('/profile');
+    const rename = page.getByRole('button', { name: '改名字' });
+    await expect(rename).toBeVisible();
+    await expectAccessiblePage(page);
+    await rename.click();
+    await page.getByRole('textbox', { name: '名字' }).fill('  周小航 ');
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByText('已保存')).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('周小航', { exact: true }).first()).toBeVisible();
+
+    await admin.goto(`/families/${family.id}`);
+    await expect(admin.getByRole('button', { name: '周小航的操作' })).toBeVisible();
+    await expect(admin.getByText('周子航')).toHaveCount(0);
   });
 });

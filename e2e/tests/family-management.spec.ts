@@ -1,41 +1,15 @@
-import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import {
-  askToJoin,
   bringToFront,
+  createFamily,
+  familyOfLinyue,
+  familyWithZihang,
   firstFamily,
-  handleWaitingRequest,
-  pageOfAnotherParent,
   requestCard,
-  type FamilySummary,
+  requestOfZihang,
 } from '../support/families.ts';
-import { createFamily, newUser, signIn } from '../support/sign-in.ts';
-
-/** 林悦's family, with 林悦 signed in as its admin in a browser of her own. */
-async function familyOfLinyue(
-  browser: Browser,
-  testInfo: TestInfo,
-): Promise<{ admin: Page; family: FamilySummary }> {
-  const admin = await pageOfAnotherParent(browser, testInfo);
-  await signIn(admin, newUser('林悦'));
-  await createFamily(admin, '林悦的家');
-  return { admin, family: await firstFamily(admin) };
-}
-
-/** 林悦's family, which 周子航, signed in on `page`, has asked to join. */
-async function requestOfZihang(page: Page, browser: Browser, testInfo: TestInfo) {
-  const linyue = await familyOfLinyue(browser, testInfo);
-  await signIn(page, newUser('周子航'));
-  await askToJoin(page, linyue.family.code);
-  return linyue;
-}
-
-/** 林悦's family with 周子航, signed in on `page`, as one of its members. */
-async function familyWithZihang(page: Page, browser: Browser, testInfo: TestInfo) {
-  const linyue = await requestOfZihang(page, browser, testInfo);
-  await handleWaitingRequest(linyue.admin, linyue.family.id, 'approve');
-  return linyue;
-}
+import { newUser, signIn } from '../support/sign-in.ts';
 
 /** The card with the heading on the new members page. */
 const card = (page: Page, heading: string) =>
@@ -51,13 +25,47 @@ async function actOnZihang(admin: Page, action: string, question: string, confir
     .click();
 }
 
+/** Checks that the page says the family is not there and shows none of it. */
+async function expectNoFamily(page: Page, name: string, code: string): Promise<void> {
+  await expect(page.getByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeVisible();
+  await expect(page.getByText(name)).toHaveCount(0);
+  await expect(page.getByText(code)).toHaveCount(0);
+}
+
 // The family page and the new members page, through the mock identity
-// provider (.docs/design/rules.md, 家庭, 加入申请, 权限): the admin handles
-// requests, changes the code, hands over the admin role and takes a member
-// out; a member leaves. Each parent has a browser of their own.
+// provider (.docs/design/rules.md, 家庭, 加入申请, 权限): the admin changes the
+// settings, handles requests, changes the code, hands over the admin role and
+// takes a member out; a member leaves; a parent of another family sees none
+// of it. Each parent has a browser of their own. The browser is in Shanghai.
+// A page is checked with axe once its content is shown, so the content's
+// entering animations are among those the check finishes first.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('family management', () => {
+  test('the admin renames the family and moves it to where the browser is, which stays after a reload', async ({
+    page,
+  }) => {
+    await signIn(page, newUser('林悦'));
+    const family = await createFamily(page, '林悦的家', 'Asia/Tokyo');
+
+    await page.goto(`/families/${family.id}`);
+    await expect(page.getByText('当前位置：Asia/Shanghai（UTC+08:00）')).toBeVisible();
+    await page.getByRole('button', { name: '改成这个' }).click();
+    await expect(page.getByText('已保存')).toBeVisible();
+    await expect(page.getByText(/^当前位置/)).toHaveCount(0);
+
+    await page.getByRole('button', { name: '改家庭名称' }).click();
+    await page.getByRole('textbox', { name: '家庭名称' }).fill('林家小院');
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: '林家小院' })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: '林家小院' })).toBeVisible();
+    await expect(page.getByText('Asia/Shanghai（UTC+08:00）', { exact: true })).toBeVisible();
+    await expect(page.getByText(/^当前位置/)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '林家小院 切换家庭' })).toBeVisible();
+  });
+
   test('the admin approves a request on the new members page, and the applicant is in', async ({
     page,
     browser,
@@ -169,13 +177,14 @@ test.describe('family management', () => {
     await expect(page.getByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeVisible();
   });
 
-  test('a member leaves the family and, with no family left, goes to the start page', async ({
+  test('a member leaves the family, goes to the start page and can no longer open it', async ({
     page,
     browser,
   }, testInfo) => {
     const { admin, family } = await familyWithZihang(page, browser, testInfo);
 
     await page.goto(`/families/${family.id}`);
+    await expect(page.getByText('家长 · 2')).toBeVisible();
     await expectAccessiblePage(page);
     await page.getByRole('button', { name: '离开家庭' }).click();
     await page
@@ -185,7 +194,30 @@ test.describe('family management', () => {
 
     await expect(page.getByText('你已离开 林悦的家')).toBeVisible();
     await expect(page).toHaveURL('/start');
+    await page.goto(`/families/${family.id}`);
+    await expect(page.getByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeVisible();
     await admin.goto(`/families/${family.id}`);
     await expect(admin.getByText('家长 · 1')).toBeVisible();
+  });
+
+  test('a parent of another family who puts its id in the address sees nothing of it', async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const { family } = await familyOfLinyue(browser, testInfo);
+    await signIn(page, newUser('周子航'));
+    await createFamily(page, '周家');
+
+    await page.goto(`/families/${family.id}`);
+    await expectNoFamily(page, family.name, family.code);
+    await expectAccessiblePage(page);
+    await page.goto(`/families/${family.id}/new-members`);
+    await expectNoFamily(page, family.name, family.code);
+
+    await page.getByRole('button', { name: '周家 切换家庭' }).click();
+    await expect(page.getByRole('menu', { name: '切换家庭' }).getByRole('menuitem')).toHaveText([
+      /^周家/,
+      '创建家庭',
+    ]);
   });
 });

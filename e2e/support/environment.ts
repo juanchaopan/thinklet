@@ -25,6 +25,8 @@ export interface EnvironmentOptions {
 export interface Environment {
   /** The web origin, which also forwards /api to the api. */
   baseUrl: string;
+  /** The mock identity provider the api signs in through: its issuer and the api's client id. */
+  identityProvider: { issuer: string; clientId: string };
   /**
    * Stops everything that was started and removes the containers. Every call
    * returns the same promise, so a second caller (a signal handler while the
@@ -97,7 +99,11 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     const exited = new Promise<number | null>((resolveExit) => api.on('exit', resolveExit));
     await waitForHttp({ exited }, apiPort);
 
-    return { baseUrl, stop: cleanup.run };
+    return {
+      baseUrl,
+      identityProvider: { issuer: oidc.issuer, clientId: oidc.clientId },
+      stop: cleanup.run,
+    };
   } catch (error) {
     await cleanup.run();
     throw error;
