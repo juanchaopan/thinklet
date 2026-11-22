@@ -58,7 +58,7 @@ pnpm exec task dev
 | `check`                      | 依次跑全部静态检查                                                       |
 | `format-fix`                 | 用 Prettier 改好格式                                                     |
 | `test-unit`                  | 单元测试，带覆盖率下限                                                   |
-| `test-component`             | 前端组件测试（axe 和截图对比），在固定的 Playwright 镜像里跑             |
+| `test-component`             | 前端组件测试（axe 和截图对比），在加了中文字体的 Playwright 镜像里跑     |
 | `test-component-update`      | 同上，并用新截图覆盖基准图                                               |
 | `test-integration`           | 后端集成测试，临时起 PostgreSQL、SeaweedFS 和模拟登录服务的容器          |
 | `test-security`              | 后端安全测试用例                                                         |

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Runs the web component tests inside the pinned Playwright image, where the
-# screenshot baselines are made and compared (`task test-component`). The
-# repository is mounted at /repo; every node_modules directory in it is
-# covered by a Docker volume, so the Linux packages installed here never mix
-# with the host's. /cache keeps the pnpm and, when needed, Node.js downloads
-# between runs.
+# Runs the web component tests inside the image built from
+# apps/web/component-tests.Dockerfile, where the screenshot baselines are made
+# and compared (`task test-component`). The repository is mounted at /repo;
+# every node_modules directory in it is covered by a Docker volume, so the
+# Linux packages installed here never mix with the host's. /cache keeps the
+# pnpm and, when needed, Node.js downloads between runs.
 set -euo pipefail
 
 cd /repo
