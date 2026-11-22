@@ -85,6 +85,21 @@ describe('join requests', () => {
     return applied;
   }
 
+  /**
+   * A family for each name, "<name>家" with "<name>" as its admin, and the
+   * applicant's request to each of them in turn.
+   */
+  async function requestsToFamilies(applicant: Parent, names: string[]) {
+    const applied: Array<{ admin: Parent; family: FamilyDetail; request: ApplicantJoinRequest }> =
+      [];
+    for (const name of names) {
+      const admin = await parent({ name });
+      const family = await newFamily(admin, { name: `${name}家`, timezone: 'UTC' });
+      applied.push({ admin, family, request: await apply(applicant, family.code) });
+    }
+    return applied;
+  }
+
   async function adminList(admin: Parent, familyId: string): Promise<FamilyJoinRequestsResponse> {
     const response = await asParent(admin).get(`/api/families/${familyId}/join-requests`);
     expect(response.status).toBe(200);
@@ -285,13 +300,7 @@ describe('join requests', () => {
   describe('GET /api/join-requests', () => {
     it('lists the pending, approved, rejected and expired requests newest first, not the withdrawn', async () => {
       const applicant = await parent();
-      const applied: Array<{ admin: Parent; family: FamilyDetail; request: ApplicantJoinRequest }> =
-        [];
-      for (const name of ['甲', '乙', '丙', '丁', '戊']) {
-        const admin = await parent({ name });
-        const family = await newFamily(admin, { name: `${name}家`, timezone: 'UTC' });
-        applied.push({ admin, family, request: await apply(applicant, family.code) });
-      }
+      const applied = await requestsToFamilies(applicant, ['甲', '乙', '丙', '丁', '戊']);
       const [pending, rejected, expired, approved, withdrawn] = applied;
       if (!pending || !rejected || !expired || !approved || !withdrawn) {
         throw new Error('Five requests were made');
@@ -325,13 +334,7 @@ describe('join requests', () => {
   describe('the request results in GET /api/me', () => {
     it("counts the parent's approved, rejected and expired requests not yet dismissed", async () => {
       const applicant = await parent();
-      const applied: Array<{ admin: Parent; family: FamilyDetail; request: ApplicantJoinRequest }> =
-        [];
-      for (const name of ['甲', '乙', '丙', '丁', '戊', '己']) {
-        const admin = await parent({ name });
-        const family = await newFamily(admin, { name: `${name}家`, timezone: 'UTC' });
-        applied.push({ admin, family, request: await apply(applicant, family.code) });
-      }
+      const applied = await requestsToFamilies(applicant, ['甲', '乙', '丙', '丁', '戊', '己']);
       const [pending, approved, rejected, expired, withdrawn, dismissed] = applied;
       if (!pending || !approved || !rejected || !expired || !withdrawn || !dismissed) {
         throw new Error('Six requests were made');
