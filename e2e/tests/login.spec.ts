@@ -1,4 +1,4 @@
-import { errorResponseSchema } from '@thinklet/contracts';
+import { errorResponseSchema, logoutResponseSchema } from '@thinklet/contracts';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import { familyOfLinyue } from '../support/families.ts';
 import { expect, test } from '../support/fixtures.ts';
@@ -67,6 +67,26 @@ test.describe('the login endpoints', () => {
       expect(response.status()).toBe(403);
       expect(errorResponseSchema.parse(await response.json()).error.code).toBe('bad_origin');
       expect(response.headers()['set-cookie']).toBeUndefined();
+    },
+  );
+
+  // A write sent from the site itself reaches the api through the web
+  // origin's /api forwarding with its Origin intact; a forwarding that
+  // changed it would turn every write of the site into 403 bad_origin.
+  // Logout needs no login and, without one, changes nothing.
+  test(
+    'POST /api/auth/logout from the site itself without a login answers 200 with the logout address',
+    { tag: ['@smoke', '@production-safe'] },
+    async ({ request, baseURL }) => {
+      const origin = new URL(baseURL ?? '').origin;
+
+      const response = await request.post('/api/auth/logout', { headers: { Origin: origin } });
+
+      expect(response.status()).toBe(200);
+      const endSession = new URL(logoutResponseSchema.parse(await response.json()).endSessionUrl);
+      expect(endSession.origin).not.toBe(origin);
+      expect(endSession.searchParams.get('post_logout_redirect_uri')).toBe(`${origin}/`);
+      expect(endSession.searchParams.has('id_token_hint')).toBe(false);
     },
   );
 });
