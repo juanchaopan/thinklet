@@ -55,3 +55,26 @@ export async function handleWaitingRequest(
   );
   expect(response.status()).toBe(200);
 }
+
+/** The card of the applicant's request to the family with this name. */
+export function requestCard(page: Page, familyName: string) {
+  return page.locator('[appcard]', { hasText: familyName });
+}
+
+/**
+ * Asks to join the family with the code from the page the parent is on (the
+ * start page or the join page), typing it into the six boxes.
+ */
+export async function askToJoin(page: Page, code: string): Promise<void> {
+  await page.getByRole('button', { name: /^申请加入家庭/ }).click();
+  await expect(page.getByRole('textbox', { name: '第 1 位' })).toBeFocused();
+  await page.keyboard.type(code.toLowerCase());
+  const confirm = page.getByRole('dialog', { name: '申请加入这个家庭？' });
+  await confirm.getByRole('button', { name: '发送申请' }).click();
+  await expect(page.getByText('申请已发出')).toBeVisible();
+}
+
+/** Brings the page's window back to the front, as switching back to its tab does. */
+export async function bringToFront(page: Page): Promise<void> {
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+}

@@ -1,24 +1,17 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { expectAccessiblePage } from '../support/accessibility.ts';
-import { firstFamily, handleWaitingRequest, pageOfAnotherParent } from '../support/families.ts';
+import {
+  askToJoin,
+  bringToFront,
+  firstFamily,
+  handleWaitingRequest,
+  pageOfAnotherParent,
+  requestCard,
+} from '../support/families.ts';
 import { createFamily, newUser, signIn } from '../support/sign-in.ts';
 
 /** The characters a family code is made of (rules.md, 家庭). */
 const FAMILY_CODE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
-
-/** The card of the applicant's request to the family with this name. */
-const requestCard = (page: Page, familyName: string) =>
-  page.locator('[appcard]', { hasText: familyName });
-
-/** Asks to join the family with the code from the start page, typing it into the six boxes. */
-async function askToJoin(page: Page, code: string): Promise<void> {
-  await page.getByRole('button', { name: /^申请加入家庭/ }).click();
-  await expect(page.getByRole('textbox', { name: '第 1 位' })).toBeFocused();
-  await page.keyboard.type(code.toLowerCase());
-  const confirm = page.getByRole('dialog', { name: '申请加入这个家庭？' });
-  await confirm.getByRole('button', { name: '发送申请' }).click();
-  await expect(page.getByText('申请已发出')).toBeVisible();
-}
 
 // Creating a family and asking to join one, through the mock identity
 // provider (.docs/design/rules.md, 家庭, 输入家庭码, 加入申请). The browser is
@@ -108,7 +101,7 @@ test.describe('families', () => {
 
     await askToJoin(page, family.code);
     await handleWaitingRequest(admin, family.id, 'approve');
-    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await bringToFront(page);
 
     await expect(page).toHaveURL('/');
     await expect(page.getByText('你已加入「林悦的家」')).toBeVisible();
