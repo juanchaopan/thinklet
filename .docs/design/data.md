@@ -30,6 +30,8 @@ PostgreSQL 里的表，用 Drizzle 定义，由迁移脚本建立。时间都存
 | `created_at` | timestamptz，必填 |                                         |
 | `updated_at` | timestamptz，必填 | 最后一次改名称、时区或家庭码的时间      |
 
+- 家庭码拿到就能申请加入这个家庭，不写进日志：查家庭码的请求地址在日志里写成 `/api/family-codes/[redacted]`。
+
 ## family_members：家庭里的家长
 
 | 字段        | 类型                            | 说明                   |
@@ -73,4 +75,4 @@ PostgreSQL 里的表，用 Drizzle 定义，由迁移脚本建立。时间都存
 
 - 三个 cookie 页面上的脚本都读不到；退出时全部清掉。
 
-Last changed: #7 (2026-11-21)
+Last changed: #7 (2026-11-22)
