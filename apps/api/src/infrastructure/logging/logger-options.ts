@@ -56,6 +56,17 @@ export const REDACTED_PATHS = [
   ...SECRET_VARIABLES.flatMap((name) => [name, `*.${name}`]),
 ];
 
+/**
+ * Request paths with a segment that works as a credential on its own, so it
+ * is replaced in the logged URL. Each pattern captures the path up to that
+ * segment and matches the segment right after it, without regard to case,
+ * as the router matches routes.
+ */
+const SENSITIVE_PATH_SEGMENTS: readonly RegExp[] = [
+  // A family code lets whoever holds it apply to the family.
+  /^(\/api\/family-codes\/)[^/]+/i,
+];
+
 export type SecretSettings = Pick<
   Environment,
   'DATABASE_URL' | 'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY' | 'OIDC_CLIENT_SECRET'
@@ -111,34 +122,51 @@ export function loggerOptions(secrets: readonly string[]): LoggerOptions {
   };
 }
 
+/**
+ * The URL as it may be logged: without its query string, because the login
+ * callback's query carries the authorization code and the state and no
+ * route takes personal data or tokens in the query, and with every
+ * sensitive path segment replaced.
+ */
+export function loggableUrl(url: string): string {
+  const start = url.indexOf('?');
+  const path = start === -1 ? url : url.slice(0, start);
+  return SENSITIVE_PATH_SEGMENTS.reduce(
+    (redacted, pattern) => redacted.replace(pattern, `$1${CENSOR}`),
+    path,
+  );
+}
+
 /** A request as pino's standard serializer writes it, before this module's changes. */
 interface SerializedRequest {
   url?: string;
   query?: unknown;
+  params?: unknown;
 }
 
 /**
- * The logged request without its query string: the login callback's query
- * carries the authorization code and the state, and no route takes personal
- * data or tokens in the query, so none is logged.
+ * The logged request with its URL made loggable and without the parsed
+ * query and route parameters. The parameters are those of the logging
+ * middleware's catch-all route, which repeat every segment of the path, a
+ * sensitive one included.
  */
-export function withoutQuery<T extends SerializedRequest>(request: T): T {
+export function loggableRequest<T extends SerializedRequest>(request: T): T {
   delete request.query;
+  delete request.params;
   if (request.url !== undefined) {
-    const start = request.url.indexOf('?');
-    request.url = start === -1 ? request.url : request.url.slice(0, start);
+    request.url = loggableUrl(request.url);
   }
   return request;
 }
 
 /**
  * pino-http options: one JSON line per entry, each request tagged with a
- * fresh request id and logged without its query string.
+ * fresh request id and logged with a loggable URL only.
  */
 export function httpLoggerOptions(secrets: readonly string[]): Options {
   return {
     ...loggerOptions(secrets),
-    serializers: { req: withoutQuery },
+    serializers: { req: loggableRequest },
     genReqId: requestIdOf,
   };
 }

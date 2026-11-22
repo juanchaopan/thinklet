@@ -1,14 +1,7 @@
 import request from 'supertest';
-import { runBuiltApp, type RunningProcess } from '../support/app.js';
-import {
-  apiEnvironment,
-  migrate,
-  startServices,
-  TEST_APP_ORIGIN,
-  type StartedServices,
-} from '../support/containers.js';
+import { startBuiltAppWithServices, type BuiltAppWithServices } from '../support/app.js';
+import { TEST_APP_ORIGIN } from '../support/containers.js';
 import { authorize, callback, cookieHeader, setCookiesOf, startLogin } from '../support/login.js';
-import { freePort, waitForHttp } from '../support/process.js';
 
 const tag = () => crypto.randomUUID().slice(0, 8);
 
@@ -16,8 +9,7 @@ const tag = () => crypto.randomUUID().slice(0, 8);
 // token or cookie of the login. The built api runs as a separate process
 // and everything it writes is read, as the platform's log collector would.
 describe('Logs of a login', () => {
-  let services: StartedServices;
-  let running: RunningProcess;
+  let started: BuiltAppWithServices;
   let output: string;
   const personal = {
     name: `林悦${tag()}`,
@@ -27,15 +19,8 @@ describe('Logs of a login', () => {
   const secrets: Record<string, string> = {};
 
   beforeAll(async () => {
-    services = await startServices();
-    await migrate(services.database.getConnectionUri());
-    const port = await freePort();
-    running = runBuiltApp({
-      ...apiEnvironment(services.database.getConnectionUri(), services.storage, services.oidc),
-      PORT: String(port),
-    });
-    await waitForHttp(running, port);
-    const api = `http://127.0.0.1:${port}`;
+    started = await startBuiltAppWithServices();
+    const { api } = started;
 
     const { authorizationUrl, loginCookie } = await startLogin(api, '/profile');
     const callbackPath = await authorize(authorizationUrl, {
@@ -72,14 +57,11 @@ describe('Logs of a login', () => {
       .set('Cookie', cookieHeader(cookies))
       .expect(200);
 
-    running.child.kill();
-    await running.exited;
-    output = running.output();
+    output = await started.stopApp();
   });
 
   afterAll(async () => {
-    running?.child.kill();
-    await services?.stop();
+    await started?.stop();
   });
 
   it('logs the requests and why a login failed', () => {

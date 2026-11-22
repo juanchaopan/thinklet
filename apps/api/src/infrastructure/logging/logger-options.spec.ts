@@ -3,9 +3,10 @@ import { Writable } from 'node:stream';
 import { pino } from 'pino';
 import {
   httpLoggerOptions,
+  loggableRequest,
+  loggableUrl,
   loggerOptions,
   secretValues,
-  withoutQuery,
   type SecretSettings,
 } from './logger-options.js';
 
@@ -32,6 +33,7 @@ function captureLogs(secrets: readonly string[]) {
 interface LoggedRequest {
   url?: string;
   query?: unknown;
+  params?: unknown;
   method?: string;
 }
 
@@ -159,23 +161,52 @@ describe('loggerOptions', () => {
   });
 });
 
-describe('withoutQuery', () => {
-  it('removes the query string and the parsed query of a logged request', () => {
-    const logged = withoutQuery<LoggedRequest>({
-      url: '/api/auth/callback?code=code-1&state=state-1',
+describe('loggableUrl', () => {
+  it('removes the query string', () => {
+    expect(loggableUrl('/api/auth/callback?code=code-1&state=state-1')).toBe('/api/auth/callback');
+  });
+
+  it('keeps a path without a query or a sensitive segment as it is', () => {
+    expect(loggableUrl('/api/families/family-1/join-requests')).toBe(
+      '/api/families/family-1/join-requests',
+    );
+  });
+
+  it('replaces the family code of a lookup', () => {
+    expect(loggableUrl('/api/family-codes/ABC234')).toBe('/api/family-codes/[redacted]');
+  });
+
+  // The router matches without regard to case and with a trailing slash;
+  // a longer path or a query does not bring the code back either.
+  it.each([
+    ['/API/Family-Codes/ABC234', '/API/Family-Codes/[redacted]'],
+    ['/api/family-codes/ABC234/', '/api/family-codes/[redacted]/'],
+    ['/api/family-codes/ABC234/more', '/api/family-codes/[redacted]/more'],
+    ['/api/family-codes/ABC234?x=ABC234', '/api/family-codes/[redacted]'],
+    ['/api/family-codes/AB%2FC234', '/api/family-codes/[redacted]'],
+  ])('replaces the family code in %s', (url, logged) => {
+    expect(loggableUrl(url)).toBe(logged);
+  });
+
+  it('keeps a path that only contains the sensitive prefix further on', () => {
+    expect(loggableUrl('/api/me/family-codes/x')).toBe('/api/me/family-codes/x');
+  });
+});
+
+describe('loggableRequest', () => {
+  it('logs the loggable URL without the parsed query and route parameters', () => {
+    const logged = loggableRequest<LoggedRequest>({
+      url: '/api/family-codes/ABC234?code=code-1',
       query: { code: 'code-1' },
+      params: { splat: ['family-codes', 'ABC234'] },
       method: 'GET',
     });
 
-    expect(logged).toEqual({ url: '/api/auth/callback', method: 'GET' });
-  });
-
-  it('keeps a URL without a query as it is', () => {
-    expect(withoutQuery<LoggedRequest>({ url: '/api/me' })).toEqual({ url: '/api/me' });
+    expect(logged).toEqual({ url: '/api/family-codes/[redacted]', method: 'GET' });
   });
 
   it('leaves a request without a URL alone', () => {
-    expect(withoutQuery<LoggedRequest>({ method: 'GET' })).toEqual({ method: 'GET' });
+    expect(loggableRequest<LoggedRequest>({ method: 'GET' })).toEqual({ method: 'GET' });
   });
 });
 
@@ -196,11 +227,14 @@ describe('httpLoggerOptions', () => {
     expect(headers.get('X-Request-Id')).toBe(second);
   });
 
-  it('logs requests without their query string', () => {
+  it('logs requests with their loggable URL only', () => {
     const { serializers } = httpLoggerOptions([]);
 
-    expect(serializers?.['req']?.({ url: '/api/auth/login?returnTo=/x' })).toEqual({
-      url: '/api/auth/login',
-    });
+    expect(
+      serializers?.['req']?.({
+        url: '/api/family-codes/ABC234?returnTo=/x',
+        params: { splat: ['family-codes', 'ABC234'] },
+      }),
+    ).toEqual({ url: '/api/family-codes/[redacted]' });
   });
 });

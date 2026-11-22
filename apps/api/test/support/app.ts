@@ -8,7 +8,7 @@ import {
   startServices,
   type StartedServices,
 } from './containers.js';
-import { freePort, type WatchedProcess } from './process.js';
+import { freePort, waitForHttp, type WatchedProcess } from './process.js';
 
 /**
  * Starts the Nest application in this test process with the given
@@ -113,4 +113,64 @@ export function runBuiltApp(environment: Record<string, string>): RunningProcess
   child.stderr?.on('data', (chunk: Buffer) => chunks.push(chunk));
   const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
   return { child, output: () => Buffer.concat(chunks).toString('utf8'), exited };
+}
+
+export interface BuiltAppWithServices {
+  services: StartedServices;
+  /** The address the built api listens on. */
+  api: string;
+  /** Stops the api, waits for it to exit and returns everything it wrote. */
+  stopApp: () => Promise<string>;
+  /** Stops the api if it still runs and removes the containers. */
+  stop: () => Promise<void>;
+}
+
+/** Runs the built api against the migrated services and waits until it answers. */
+async function runMigratedBuiltApp(
+  services: StartedServices,
+): Promise<{ running: RunningProcess; port: number }> {
+  const databaseUrl = services.database.getConnectionUri();
+  await migrate(databaseUrl);
+  const port = await freePort();
+  const running = runBuiltApp({
+    ...apiEnvironment(databaseUrl, services.storage, services.oidc),
+    PORT: String(port),
+  });
+  try {
+    await waitForHttp(running, port);
+  } catch (error) {
+    running.child.kill();
+    throw error;
+  }
+  return { running, port };
+}
+
+/**
+ * Starts the throwaway services, migrates the database and runs the built
+ * api against them, for tests that read what the api writes, as the
+ * platform's log collector would.
+ */
+export async function startBuiltAppWithServices(): Promise<BuiltAppWithServices> {
+  const services = await startServices();
+  let started: { running: RunningProcess; port: number };
+  try {
+    started = await runMigratedBuiltApp(services);
+  } catch (error) {
+    await services.stop();
+    throw error;
+  }
+  const { running, port } = started;
+  return {
+    services,
+    api: `http://127.0.0.1:${port}`,
+    stopApp: async () => {
+      running.child.kill();
+      await running.exited;
+      return running.output();
+    },
+    stop: async () => {
+      running.child.kill();
+      await services.stop();
+    },
+  };
 }
