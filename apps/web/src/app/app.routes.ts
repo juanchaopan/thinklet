@@ -1,5 +1,11 @@
 import type { Routes } from '@angular/router';
-import { matchVisitor, requireFamily, requireNoFamily, requireParent } from './core/guards';
+import {
+  matchFamily,
+  matchVisitor,
+  requireFamily,
+  requireNoFamily,
+  requireParent,
+} from './core/guards';
 import { AppShell } from './core/layout/app-shell';
 
 /**
@@ -9,7 +15,9 @@ import { AppShell } from './core/layout/app-shell';
  * is sent to the product home, and an unknown address goes to `/`. The
  * family pages need a family (a parent without one goes to `/start`), and
  * the start page is only for a parent without one (a parent with one goes
- * to `/`). Route titles become the browser title "<title> - 好奇星球"
+ * to `/`). An invitation link `/join/<code>` opens the join dialog over the
+ * join page for a parent with a family and over the start page for one
+ * without. Route titles become the browser title "<title> - 好奇星球"
  * (core/page-title).
  */
 export const routes: Routes = [
@@ -38,6 +46,7 @@ export const routes: Routes = [
       },
       {
         path: 'start',
+        title: '开始',
         canActivate: [requireNoFamily],
         loadComponent: () => import('./features/start/start').then((module) => module.Start),
       },
@@ -46,6 +55,17 @@ export const routes: Routes = [
         title: '加入家庭',
         canActivate: [requireFamily],
         loadComponent: () => import('./features/join/join').then((module) => module.Join),
+      },
+      {
+        path: 'join/:code',
+        title: '加入家庭',
+        canMatch: [matchFamily],
+        loadComponent: () => import('./features/join/join').then((module) => module.Join),
+      },
+      {
+        path: 'join/:code',
+        title: '开始',
+        loadComponent: () => import('./features/start/start').then((module) => module.Start),
       },
       {
         path: 'profile',

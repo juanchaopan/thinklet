@@ -7,20 +7,16 @@ export const PRESS =
   'transition duration-100 ease-move active:scale-[0.97] disabled:cursor-default disabled:opacity-60 disabled:active:scale-100';
 
 const KINDS: Record<ButtonKind, string> = {
-  primary: 'min-h-12 px-6 text-base bg-primary text-white hover:bg-primary-hover',
-  secondary:
-    'min-h-12 px-6 text-base border border-line-strong bg-surface text-ink hover:bg-canvas',
-  danger: 'min-h-12 px-6 text-base bg-rose-ink text-white',
-  text: 'min-h-11 px-4 text-sm text-ink-soft hover:bg-canvas',
+  primary: 'min-h-12 px-6 bg-primary text-white hover:bg-primary-hover',
+  secondary: 'min-h-12 px-6 border border-line-strong bg-surface text-ink hover:bg-canvas',
+  danger: 'min-h-12 px-6 bg-rose-ink text-white',
+  text: 'min-h-11 px-4 text-ink-soft hover:bg-canvas',
 };
 
-/** The primary button next to a text box when editing in place: full height, small text. */
-const COMPACT_PRIMARY = 'min-h-12 px-6 text-sm bg-primary text-white hover:bg-primary-hover';
-
 /**
- * A pill-shaped button or link, at least 44 px high. `compact` gives a
- * primary button the small text it has next to a text box when editing in
- * place.
+ * A pill-shaped button or link, at least 44 px high. Its text is 16 px; a
+ * text button, and a `compact` button of any kind, has 14 px text, as next
+ * to a text box when editing in place or as the action on a list card.
  *
  *   <button type="button" appButton="secondary">取消</button>
  */
@@ -34,8 +30,8 @@ export class Button {
 
   protected readonly classes = computed(() => {
     const kind = this.appButton() || 'primary';
-    const look = kind === 'primary' && this.compact() ? COMPACT_PRIMARY : KINDS[kind];
-    return `inline-flex items-center justify-center gap-2 rounded-full font-bold ${look} ${PRESS}`;
+    const text = kind === 'text' || this.compact() ? 'text-sm' : 'text-base';
+    return `inline-flex items-center justify-center gap-2 rounded-full font-bold ${KINDS[kind]} ${text} ${PRESS}`;
   });
 }
 

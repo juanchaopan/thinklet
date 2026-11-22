@@ -1,13 +1,24 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 export type LineIconName =
-  'copy' | 'share' | 'qr' | 'close' | 'pencil' | 'chevron' | 'check' | 'back';
+  | 'copy'
+  | 'share'
+  | 'qr'
+  | 'close'
+  | 'pencil'
+  | 'chevron'
+  | 'check'
+  | 'back'
+  | 'forward'
+  | 'search';
 
 /**
  * The project's line icons, drawn in the current text colour and hidden from
  * screen readers (the button around an icon carries the name). Copy, share
  * and QR are 20 px with 1.75 px strokes, round caps and joins; the chevron is
- * 16 px; back points left, for 返回.
+ * 16 px and points down, for a button that opens a menu or a list; back
+ * points left, for 返回; forward points right, for a card that leads on;
+ * search is the magnifier of a search box.
  */
 @Component({
   selector: 'app-line-icon',
@@ -122,6 +133,29 @@ export type LineIconName =
             fill="none"
             stroke-linecap="round"
             stroke-linejoin="round"
+          />
+        </svg>
+      }
+      @case ('forward') {
+        <svg class="size-5" viewBox="0 0 20 20" aria-hidden="true">
+          <path
+            d="m8 5 5 5-5 5"
+            stroke="currentColor"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      }
+      @case ('search') {
+        <svg class="size-5" viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.8" fill="none" />
+          <path
+            d="m13.2 13.2 3.3 3.3"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
           />
         </svg>
       }

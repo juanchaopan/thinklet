@@ -8,7 +8,9 @@ import {
 import { Art, Logo, type IconArt } from '../../shared/ui/art';
 import { Avatar } from '../../shared/ui/avatar';
 import { Badge, Dot } from '../../shared/ui/card';
+import { CreateFamilyDialog } from '../create-family-dialog';
 import { CurrentFamily } from '../current-family';
+import { FamilyCreation } from '../family-creation';
 import { Session } from '../session';
 import { FamilySwitcher } from './family-switcher';
 import { PARENT_PAGES } from './parent-pages';
@@ -34,6 +36,10 @@ interface NavItem {
  * switcher and the avatar, which opens the parent's menu, and the family's
  * pages are a tab bar at the bottom. A parent without a family gets the bare
  * frame instead: the full logo and the avatar with its menu, no family pages.
+ *
+ * The dialog that creates a family belongs to the frame, so it can open over
+ * any signed-in page. Its code is loaded the first time it is asked for, so
+ * the pages that never create a family do not wait for it.
  */
 @Component({
   selector: 'app-shell',
@@ -41,6 +47,7 @@ interface NavItem {
     Art,
     Avatar,
     Badge,
+    CreateFamilyDialog,
     Dot,
     FamilySwitcher,
     Logo,
@@ -150,11 +157,15 @@ interface NavItem {
         <main class="flex flex-1 flex-col px-4 pb-12 sm:px-8"><router-outlet /></main>
       </div>
     }
+    @defer (when creation.requested()) {
+      <app-create-family-dialog />
+    }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AppShell {
   protected readonly session = inject(Session);
+  protected readonly creation = inject(FamilyCreation);
   private readonly currentFamily = inject(CurrentFamily);
 
   protected readonly parentPages = PARENT_PAGES;

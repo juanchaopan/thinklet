@@ -19,6 +19,7 @@ export function avatarColor(parentId: string): (typeof COLORS)[number] {
 }
 
 const SIZES = {
+  tiny: 'size-6 text-xs',
   small: 'size-8 text-sm',
   regular: 'size-9 text-sm',
   large: 'size-10 text-base',
@@ -39,10 +40,12 @@ const SIZES = {
 })
 export class Avatar {
   readonly name = input.required<string>();
+  /** What the colour is worked out from: the parent's id wherever it is known. */
   readonly parentId = input.required<string>();
   /**
-   * `small` heads the parent's group in the sidebar; `large` heads the
-   * parent's menu and a member's actions.
+   * `tiny` goes inside a line of small text, such as the admin of a family
+   * found by its code; `small` heads the parent's group in the sidebar;
+   * `large` heads the parent's menu and a member's actions.
    */
   readonly size = input<keyof typeof SIZES>('regular');
 

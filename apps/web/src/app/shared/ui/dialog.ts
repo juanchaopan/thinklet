@@ -34,6 +34,19 @@ const PANEL_ENTER = 'animate-sheet touch:animate-float mouse:sm:animate-pop';
 const PANEL_LEAVE = 'animate-sheet-out touch:animate-float-out mouse:sm:animate-pop-out';
 
 /**
+ * How wide a dialog may grow in the middle of the screen: `small` for a
+ * message, `medium` for a list to choose from, `large` for a form. A sheet
+ * on a touch screen is always up to 560 px wide.
+ */
+export type DialogSize = 'small' | 'medium' | 'large';
+
+const WIDTHS: Record<DialogSize, string> = {
+  small: 'max-w-sm',
+  medium: 'max-w-md',
+  large: 'max-w-lg',
+};
+
+/**
  * A modal dialog over the current page. On a touch screen it is a sheet that
  * rises from below the screen and floats above the bottom edge, at most
  * 560 px wide; with a mouse it grows into place in the middle of the screen
@@ -41,7 +54,8 @@ const PANEL_LEAVE = 'animate-sheet-out touch:animate-float-out mouse:sm:animate-
  * fades in. Focus stays inside while it is open and goes back where it was
  * when it closes. Escape, the backdrop and the × of a closable dialog emit
  * `dismissed`; the owner then sets `open` to false, and the dialog leaves in
- * 150 ms.
+ * 150 ms. A dialog opened from inside another one lies over it, and the
+ * first one is dimmed by the second one's backdrop.
  *
  * The body is the content; the buttons are the children marked
  * `appDialogAction`, secondary first. Below 640 px they fill the width with
@@ -103,8 +117,7 @@ export class Dialog {
   readonly title = input.required<string>();
   /** The illustrated icon before the title. */
   readonly icon = input<ArtName>();
-  /** Room for wider content, such as a list or a QR code. */
-  readonly wide = input(false);
+  readonly size = input<DialogSize>('small');
   /** A dialog that only shows something has a × at its top right instead of actions. */
   readonly closable = input(false);
 
@@ -115,8 +128,7 @@ export class Dialog {
   protected readonly layer: Layer;
 
   protected readonly panelClasses = computed(
-    () =>
-      `${this.wide() ? 'max-w-lg' : 'max-w-sm'} ${this.layer.leaving() ? PANEL_LEAVE : PANEL_ENTER}`,
+    () => `${WIDTHS[this.size()]} ${this.layer.leaving() ? PANEL_LEAVE : PANEL_ENTER}`,
   );
 
   private readonly frame = viewChild<TemplateRef<unknown>>('frame');

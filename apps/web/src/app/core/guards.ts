@@ -46,6 +46,13 @@ export const requireNoFamily: CanActivateFn = async () => {
 };
 
 /**
+ * Matches the version of an address meant for a parent with a family, such
+ * as an invitation link, which opens over the join page for them and over
+ * the start page for a parent without one.
+ */
+export const matchFamily: CanMatchFn = async () => (await ownFamilies()).length > 0;
+
+/**
  * A family page opened from its address makes that family the current one
  * (rules.md, 导航). A family the parent is not a member of changes nothing;
  * its page says the family is not there.

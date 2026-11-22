@@ -1,5 +1,5 @@
 import type { Provider } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { Router, type Routes } from '@angular/router';
 import { render } from '@testing-library/angular';
 import { App } from '../app/app';
@@ -15,8 +15,9 @@ export interface RenderAppOptions {
 /**
  * Renders the whole app as the browser gets it, with the app's own
  * providers, opens `url` and waits until the page has settled (guards, lazy
- * pages, api calls). Full-page navigations (signing in and out) are recorded
- * in `navigations` instead of leaving the test page.
+ * pages, api calls). Deferred parts load when their trigger fires, as in the
+ * browser. Full-page navigations (signing in and out) are recorded in
+ * `navigations` instead of leaving the test page.
  */
 export async function renderApp(url: string, options: RenderAppOptions = {}) {
   const navigations: string[] = [];
@@ -26,6 +27,7 @@ export async function renderApp(url: string, options: RenderAppOptions = {}) {
       { provide: PageNavigation, useValue: { go: (target: string) => navigations.push(target) } },
       ...(options.providers ?? []),
     ],
+    deferBlockBehavior: DeferBlockBehavior.Playthrough,
   });
   const router = TestBed.inject(Router);
   await router.navigateByUrl(url);

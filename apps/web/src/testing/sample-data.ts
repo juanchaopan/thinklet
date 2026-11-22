@@ -1,4 +1,10 @@
-import type { ErrorCode, FamilyDetail, MeResponse } from '@thinklet/contracts';
+import type {
+  ApplicantJoinRequest,
+  ErrorCode,
+  FamilyCodeLookupResponse,
+  FamilyDetail,
+  MeResponse,
+} from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { worker } from './network';
 
@@ -73,6 +79,51 @@ export const GRANDMA_FAMILY: FamilyDetail = {
   ],
 };
 
+// 林悦's own requests to join families, one in each state, as the design
+// draws them: sent on 21, 18, 15 and 6 November in the families' time zone.
+
+export const PENDING_REQUEST: ApplicantJoinRequest = {
+  id: '9c3a1b2d-4e5f-4a6b-8c7d-9e0f1a2b3c41',
+  familyName: '舅舅家',
+  familyTimezone: 'Asia/Shanghai',
+  adminName: '王建华',
+  status: 'pending',
+  createdAt: '2026-11-21T01:12:00Z',
+};
+
+export const APPROVED_REQUEST: ApplicantJoinRequest = {
+  id: '77b0c1d2-e3f4-4a5b-9c6d-7e8f9a0b1c52',
+  familyName: '外婆家',
+  familyTimezone: 'Asia/Shanghai',
+  adminName: '周秀英',
+  status: 'approved',
+  createdAt: '2026-11-18T02:03:00Z',
+};
+
+export const REJECTED_REQUEST: ApplicantJoinRequest = {
+  id: '3e4f5a6b-7c8d-4e9f-a0b1-c2d3e4f5a663',
+  familyName: '周家',
+  familyTimezone: 'Asia/Shanghai',
+  adminName: '周子航',
+  status: 'rejected',
+  createdAt: '2026-11-15T03:30:00Z',
+};
+
+export const EXPIRED_REQUEST: ApplicantJoinRequest = {
+  id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c74',
+  familyName: '姑姑家',
+  familyTimezone: 'Asia/Shanghai',
+  adminName: '林美华',
+  status: 'expired',
+  createdAt: '2026-11-06T04:45:00Z',
+};
+
+/** The family the design's join dialog finds by its code. */
+export const GRANDMA_LOOKUP: FamilyCodeLookupResponse = {
+  familyName: '外婆家',
+  adminName: '周秀英',
+};
+
 /** The request id the stubbed failures carry. */
 export const REQUEST_ID = 'a1f392c0-5b7d-4e9f-8a1b-2c3d4e5f6a7b';
 
@@ -102,11 +153,21 @@ export function stubVisitor(): void {
   stubError('get /api/me', 401, 'unauthenticated');
 }
 
-/** Stubs `/api/me` with the parent and `/api/families/{familyId}` with their families. */
+/** Stubs `GET /api/join-requests` with the parent's own requests. */
+export function stubJoinRequests(requests: readonly ApplicantJoinRequest[] = []): void {
+  worker.use(http.get('/api/join-requests', () => HttpResponse.json(requests)));
+}
+
+/**
+ * Stubs the parent's world: `/api/me` with the parent,
+ * `/api/families/{familyId}` with their families, and their own join
+ * requests (none, unless a test stubs others after this).
+ */
 export function stubSignedIn(
   me: MeResponse = LINYUE,
   families: readonly FamilyDetail[] = [LINYUE_FAMILY, GRANDMA_FAMILY],
 ): void {
+  stubJoinRequests();
   worker.use(
     http.get('/api/me', () => HttpResponse.json(me)),
     http.get('/api/families/:familyId', ({ params }) => {

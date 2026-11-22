@@ -4,13 +4,18 @@ import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { holdAnimationsAt } from '../../../testing/animations';
 import { renderApp } from '../../../testing/app';
 import { useFixedClock } from '../../../testing/clock';
+import { holdOverlaysAt } from '../../../testing/families';
 import { LINYUE_WITH_RESULTS, stubSignedIn } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 import type { ViewportName } from '../../../testing/viewports';
 
+/** Longer than any opening, so a menu held there is fully open. */
+const OPEN = 1000;
+
 /**
- * Opens 林悦's menu from the avatar on the phone and the tablet; from 1024 px
- * her entries stand in the sidebar instead, so the menu is closed there.
+ * Opens 林悦's menu from the avatar on the phone and the tablet, held fully
+ * open; from 1024 px her entries stand in the sidebar instead, so the menu
+ * is closed there.
  */
 async function showParentMenu(size: ViewportName): Promise<void> {
   const shown = screen.queryAllByRole('menu').length > 0;
@@ -26,6 +31,7 @@ async function showParentMenu(size: ViewportName): Promise<void> {
   if (!shown) {
     await userEvent.click(screen.getByRole('button', { name: /^林悦\s*的菜单/ }));
     await screen.findByRole('menu', { name: '林悦' });
+    await holdOverlaysAt(OPEN);
   }
 }
 

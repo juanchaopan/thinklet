@@ -1,17 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import {
-  fieldErrorCodeSchema,
-  meResponseSchema,
-  parentNameSchema,
-  type FieldErrorCode,
-} from '@thinklet/contracts';
+import { meResponseSchema, parentNameSchema } from '@thinklet/contracts';
 import { Api, ApiError } from '../../core/api';
 import { Session } from '../../core/session';
 import { Art } from '../../shared/ui/art';
 import { Button, IconButton } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
 import { EditRow, EditSheet } from '../../shared/ui/edit-field';
+import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Toaster } from '../../shared/ui/toast';
@@ -20,7 +16,7 @@ import { Toaster } from '../../shared/ui/toast';
  * The hints for a name that cannot be saved (rules.md, 个人设置). A name is
  * any text, so only an empty or a long one is rejected.
  */
-const NAME_HINTS: Record<FieldErrorCode, string> = {
+const NAME_HINTS: FieldHints = {
   required: '请填名字',
   too_long: '名字最多 20 个字',
   invalid: '请填名字',
@@ -28,12 +24,7 @@ const NAME_HINTS: Record<FieldErrorCode, string> = {
 
 /** The hint for a name that fails the shared name rule, or null when it may be saved. */
 export function nameHint(value: string): string | null {
-  const result = parentNameSchema.safeParse(value);
-  if (result.success) {
-    return null;
-  }
-  const code = fieldErrorCodeSchema.safeParse(result.error.issues[0]?.message);
-  return NAME_HINTS[code.success ? code.data : 'invalid'];
+  return fieldHint(parentNameSchema, NAME_HINTS, value);
 }
 
 /**
