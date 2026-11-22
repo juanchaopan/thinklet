@@ -116,7 +116,7 @@ describe('AuthService', () => {
   });
 
   describe('completeLogin', () => {
-    it('checks the callback against the login, records it and issues the session', async () => {
+    it('checks the callback against the login, records it and issues a parent session', async () => {
       const { service, oidc, tokens, family } = createService();
 
       const completed = await service.completeLogin('login-1', '?code=code-1&state=state-1');
@@ -130,7 +130,7 @@ describe('AuthService', () => {
       expect(tokens.verifyLoginTransaction).toHaveBeenCalledWith('login-1');
       expect(oidc.completeLogin).toHaveBeenCalledWith('?code=code-1&state=state-1', transaction);
       expect(family.recordLogin).toHaveBeenCalledWith(claims.iss, claims.sub, claims);
-      expect(tokens.issueSession).toHaveBeenCalledWith('parent-1');
+      expect(tokens.issueSession).toHaveBeenCalledWith('parent', 'parent-1');
     });
 
     it('fails without asking the provider when the login cookie is not valid', async () => {

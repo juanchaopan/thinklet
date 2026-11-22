@@ -31,12 +31,12 @@ class LoginTransactionError extends Error {
 }
 
 /**
- * The login flow (`.docs/design/rules.md`, "登录和登录状态"): sends the
- * parent to the identity provider with a fresh state, nonce and PKCE
- * verifier, and on their return records the login and issues the session.
- * A step that fails is logged by its error's safe description only, never
- * with the parent's data or a token, and the parent returns to the home
- * page.
+ * The parent's login flow (`.docs/design/rules.md`, "登录和登录状态"):
+ * sends the parent to the identity provider with a fresh state, nonce and
+ * PKCE verifier, and on their return records the login and issues the
+ * session of kind `parent`. A step that fails is logged by its error's safe
+ * description only, never with the parent's data or a token, and the
+ * parent returns to the home page.
  */
 @Injectable()
 export class AuthService {
@@ -85,7 +85,7 @@ export class AuthService {
       }
       const { idToken, claims } = await this.oidc.completeLogin(callbackQuery, transaction);
       const parentId = await this.family.recordLogin(claims.iss, claims.sub, claims);
-      const sessionToken = await this.tokens.issueSession(parentId);
+      const sessionToken = await this.tokens.issueSession('parent', parentId);
       return { ok: true, sessionToken, idToken, returnTo: transaction.returnTo };
     } catch (error) {
       this.logger.warn({ error: describeError(error) }, 'Login failed');

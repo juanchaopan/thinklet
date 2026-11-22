@@ -5,12 +5,12 @@ import { Public } from '../../infrastructure/authentication/public.decorator.js'
 import { AuthService, LOGIN_FAILED_PATH } from './auth.service.js';
 import {
   clearLoginTransactionCookie,
-  clearSessionCookies,
+  clearParentSessionCookies,
   ID_TOKEN_COOKIE,
   LOGIN_TRANSACTION_COOKIE,
   readCookie,
   setLoginTransactionCookie,
-  setSessionCookies,
+  setParentSessionCookies,
 } from './session-cookies.js';
 
 /** The redirect a handler answers with. */
@@ -25,9 +25,10 @@ function queryOf(request: Request): string {
 }
 
 /**
- * The login routes (`.docs/design/interfaces.md`, "登录"). They need no
- * login. Login and callback answer with full-page redirects; a login that
- * does not succeed returns to the home page with `?login=failed`.
+ * The parent's login routes (`.docs/design/interfaces.md`, "登录"). They
+ * need no login. Login and callback answer with full-page redirects; a
+ * login that does not succeed returns to the home page with
+ * `?login=failed`.
  */
 @Public()
 @Controller('auth')
@@ -64,16 +65,17 @@ export class AuthController {
     if (!completed.ok) {
       return { url: LOGIN_FAILED_PATH };
     }
-    setSessionCookies(response, completed.sessionToken, completed.idToken);
+    setParentSessionCookies(response, completed.sessionToken, completed.idToken);
     return { url: completed.returnTo };
   }
 
   /**
    * Builds the identity provider's logout address first and clears the
-   * login cookies only once it is built. When the address cannot be built
-   * (the provider's discovery fails or times out), the request fails with
-   * the login untouched, so the page that stays signed in tells the truth
-   * and the parent can try again.
+   * parent's login cookies only once it is built; a child signed in on the
+   * same browser stays signed in. When the address cannot be built (the
+   * provider's discovery fails or times out), the request fails with the
+   * login untouched, so the page that stays signed in tells the truth and
+   * the parent can try again.
    */
   @Post('logout')
   @HttpCode(200)
@@ -85,7 +87,7 @@ export class AuthController {
     const body = logoutResponseSchema.parse({
       endSessionUrl: await this.authService.endSessionUrl(readCookie(request, ID_TOKEN_COOKIE)),
     });
-    clearSessionCookies(response);
+    clearParentSessionCookies(response);
     return body;
   }
 }
