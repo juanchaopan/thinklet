@@ -4,7 +4,12 @@ import { IconButton, PRESS } from '../../shared/ui/button';
 import { EditActions } from '../../shared/ui/edit-field';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { TimeZoneField } from '../../shared/ui/time-zone-picker';
-import { BrowserTimeZone, canonicalTimeZone, timeZoneOption } from '../../shared/ui/time-zones';
+import {
+  BrowserTimeZone,
+  canonicalTimeZone,
+  timeZoneLabel,
+  timeZoneOption,
+} from '../../shared/ui/time-zones';
 import { FamilyStore } from './family-store';
 
 /**
@@ -88,9 +93,7 @@ export class FamilyTimeZone {
     return canonicalTimeZone(zone) ?? zone;
   });
 
-  protected readonly shown = computed(
-    () => timeZoneOption(this.familyZone(), new Date())?.label ?? this.familyZone(),
-  );
+  protected readonly shown = computed(() => timeZoneLabel(this.familyZone()));
 
   /** The browser's zone, for the admin, when it is not the family's. */
   protected readonly here = computed(() => {

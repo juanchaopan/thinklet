@@ -15,10 +15,8 @@ import { PageProblem } from '../shared/ui/page-problem';
 import type { Toaster } from '../shared/ui/toast';
 import { ApiError } from './api';
 import { whenBackInFront } from './connectivity';
+import { explainChange } from './failures';
 import { Session } from './session';
-
-/** The toast for a failure the parent can only try again later. */
-const SOMETHING_WENT_WRONG = '出了点问题，请稍后再试';
 
 /**
  * Why a page of one family (its family page, its new members page) shows no
@@ -38,11 +36,6 @@ export interface FamilyReader {
 /** The address of one of the family's api routes, `/api/families/<id><suffix>`. */
 export function familyPath(familyId: string, suffix = ''): string {
   return `/api/families/${encodeURIComponent(familyId)}${suffix}`;
-}
-
-/** A 401: the session has already sent the parent to the product home. */
-export function isSignedOut(error: unknown): boolean {
-  return error instanceof ApiError && error.code === 'unauthenticated';
 }
 
 /** What a page of one family does about a change that failed. */
@@ -89,26 +82,18 @@ export function failureHandling(
 }
 
 /**
- * Explains a change that failed on a page of one family: nothing for a 401
- * (the parent is on the way to the product home), 找不到这个家庭 for a family
- * the parent is no longer in, the reason for a family that changed
- * meanwhile, and 出了点问题 for anything else, which leaves the page as it
- * was.
+ * Explains a change that failed on a page of one family: 找不到这个家庭 for a
+ * family the parent is no longer in, and otherwise as any change that failed
+ * (`explainChange`).
  */
 export function explainFailure(error: unknown, toaster: Toaster, handling: FailureHandling): void {
-  if (isSignedOut(error)) {
-    return;
-  }
-  const code = error instanceof ApiError ? error.code : 'internal';
-  if (code === 'family_not_found') {
+  if (error instanceof ApiError && error.code === 'family_not_found') {
     handling.notFound();
     return;
   }
-  const message = code === 'network' ? undefined : handling.changedMeanwhile[code];
-  toaster.show(message ?? SOMETHING_WENT_WRONG, 'error', 'wrench');
-  if (message) {
+  explainChange(error, toaster, handling.changedMeanwhile, () => {
     handling.reload();
-  }
+  });
 }
 
 /**

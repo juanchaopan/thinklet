@@ -13,6 +13,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { FAMILY_CODE_ALPHABET, FAMILY_CODE_LENGTH } from '@thinklet/contracts';
+import { restartAnimation } from './restart-animation';
 
 let nextBoxesId = 0;
 
@@ -121,7 +122,9 @@ export class CodeBoxes {
     });
     effect(() => {
       if (this.attempt() > 0 && this.error()) {
-        untracked(() => this.shake());
+        untracked(() => {
+          restartAnimation(this.group().nativeElement, 'animate-shake');
+        });
       }
     });
   }
@@ -208,13 +211,5 @@ export class CodeBoxes {
 
   private focusBox(index: number): void {
     this.boxes()[index]?.nativeElement.focus();
-  }
-
-  private shake(): void {
-    const group = this.group().nativeElement;
-    group.classList.remove('animate-shake');
-    // Reading the layout restarts the animation when the class comes back.
-    group.getBoundingClientRect();
-    group.classList.add('animate-shake');
   }
 }

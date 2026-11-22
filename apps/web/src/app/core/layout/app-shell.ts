@@ -114,7 +114,7 @@ interface NavItem {
                 >
                   <img alt="" [appArt]="page.icon" class="size-8" />
                   <span class="flex-1">{{ page.label }}</span>
-                  @if (page.link === '/join' && me.requestResults > 0) {
+                  @if (page.showsRequestResults && me.requestResults > 0) {
                     <span appDot class="mr-1.5"></span>
                     <span class="sr-only">，有新的申请结果</span>
                   }

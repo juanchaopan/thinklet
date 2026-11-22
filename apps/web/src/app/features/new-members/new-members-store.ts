@@ -10,11 +10,11 @@ import {
   type PendingJoinRequest,
 } from '@thinklet/contracts';
 import { Api, ApiError } from '../../core/api';
+import { asApiError, isSignedOut } from '../../core/failures';
 import {
   explainFailure,
   failureHandling,
   familyPath,
-  isSignedOut,
   type FamilyTrouble,
 } from '../../core/family-pages';
 import { Session } from '../../core/session';
@@ -186,13 +186,13 @@ export class NewMembersStore {
     if (isSignedOut(error)) {
       return;
     }
-    const code = error instanceof ApiError ? error.code : 'internal';
-    if (code === 'family_not_found') {
+    const failure = asApiError(error);
+    if (failure.code === 'family_not_found') {
       this.notFound();
-    } else if (code === 'not_admin') {
+    } else if (failure.code === 'not_admin') {
       void this.toFamilyPage();
     } else if (this.lists() === null) {
-      this.trouble.set(error instanceof ApiError ? error : new ApiError(0, 'internal'));
+      this.trouble.set(failure);
     }
   }
 

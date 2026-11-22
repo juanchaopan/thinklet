@@ -21,9 +21,10 @@ import { fieldHint, type FieldHints } from '../shared/ui/field-hint';
 import { TimeZoneField } from '../shared/ui/time-zone-picker';
 import { BrowserTimeZone } from '../shared/ui/time-zones';
 import { Toaster } from '../shared/ui/toast';
-import { Api, ApiError } from './api';
+import { Api } from './api';
 import { CurrentFamily } from './current-family';
 import { FamilyCreation } from './family-creation';
+import { isSignedOut, rejectedFields, showSomethingWentWrong } from './failures';
 import { Session } from './session';
 
 /** The hints for a family name that cannot be saved (rules.md, 家庭). */
@@ -194,15 +195,14 @@ export class CreateFamilyDialog {
    * toast, and what was typed stays.
    */
   private showFailure(error: unknown): void {
-    if (error instanceof ApiError && error.code === 'unauthenticated') {
+    if (isSignedOut(error)) {
       return;
     }
-    const fields =
-      error instanceof ApiError && error.code === 'invalid_request' ? error.fields : [];
+    const fields = rejectedFields(error);
     const name = fields.find((field) => field.path === 'name');
     const timeZone = fields.find((field) => field.path === 'timezone');
     if (!name && !timeZone) {
-      this.toaster.show('出了点问题，请稍后再试', 'error', 'wrench');
+      showSomethingWentWrong(this.toaster);
       return;
     }
     this.nameError.set(name ? FAMILY_NAME_HINTS[name.code] : null);

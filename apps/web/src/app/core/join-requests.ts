@@ -8,11 +8,12 @@ import {
   type FamilyCodeLookupResponse,
 } from '@thinklet/contracts';
 import { Toaster } from '../shared/ui/toast';
-import { Api, ApiError } from './api';
+import { Api, type ApiError } from './api';
+import { asApiError, explainChange, isSignedOut } from './failures';
 import { Session } from './session';
 
-/** The toast for a failure the parent can only try again later. */
-const SOMETHING_WENT_WRONG = '出了点问题，请稍后再试';
+/** What the toast says when the request a change was about is gone. */
+const REQUEST_GONE: Partial<Record<ErrorCode, string>> = { not_found: '这个申请已经不在了' };
 
 /**
  * The signed-in parent's own requests to join families (rules.md, 我的申请),
@@ -52,7 +53,7 @@ export class JoinRequests {
       this.problem.set(null);
     } catch (error) {
       if (this.list() === null && !isSignedOut(error)) {
-        this.problem.set(error instanceof ApiError ? error : new ApiError(0, 'internal'));
+        this.problem.set(asApiError(error));
       }
     }
   }
@@ -95,8 +96,9 @@ export class JoinRequests {
 
   /**
    * Runs one action on a request while it is marked busy, and takes it off
-   * the list when the action is done. `changed` names the error codes that
-   * mean the request changed meanwhile, with what to tell the parent.
+   * the list when the action is done. A request that is gone, or a code in
+   * `changed`, means the request changed meanwhile: the toast says so and
+   * the list and the parent are read again.
    */
   private async act(
     request: ApplicantJoinRequest,
@@ -108,30 +110,12 @@ export class JoinRequests {
       await action();
       this.list.update((requests) => (requests ?? []).filter((shown) => shown.id !== request.id));
     } catch (error) {
-      this.explain(error, changed);
+      explainChange(error, this.toaster, { ...changed, ...REQUEST_GONE }, () => {
+        void this.load();
+        void this.session.refresh();
+      });
     } finally {
       this.working.update((ids) => new Set([...ids].filter((id) => id !== request.id)));
     }
   }
-
-  private explain(error: unknown, changed: Partial<Record<ErrorCode, string>>): void {
-    if (isSignedOut(error)) {
-      return;
-    }
-    const code = error instanceof ApiError ? error.code : 'internal';
-    const message =
-      code === 'not_found' ? '这个申请已经不在了' : code === 'network' ? undefined : changed[code];
-    if (!message) {
-      this.toaster.show(SOMETHING_WENT_WRONG, 'error', 'wrench');
-      return;
-    }
-    this.toaster.show(message, 'error', 'wrench');
-    void this.load();
-    void this.session.refresh();
-  }
-}
-
-/** A 401: the session has already sent the parent to the product home. */
-function isSignedOut(error: unknown): boolean {
-  return error instanceof ApiError && error.code === 'unauthenticated';
 }

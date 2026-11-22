@@ -16,6 +16,7 @@ import {
 } from '@angular/core';
 import { Button } from './button';
 import { Dialog } from './dialog';
+import { restartAnimation } from './restart-animation';
 
 let nextFieldId = 0;
 
@@ -71,17 +72,11 @@ export class TextField {
     });
     effect(() => {
       if (this.attempt() > 0 && this.error()) {
-        untracked(() => this.shake());
+        untracked(() => {
+          restartAnimation(this.box().nativeElement, 'animate-shake');
+        });
       }
     });
-  }
-
-  private shake(): void {
-    const box = this.box().nativeElement;
-    box.classList.remove('animate-shake');
-    // Reading the layout restarts the animation when the class comes back.
-    box.getBoundingClientRect();
-    box.classList.add('animate-shake');
   }
 }
 

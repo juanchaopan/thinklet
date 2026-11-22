@@ -44,6 +44,14 @@ export interface TimeZoneOption {
 
 const offsetFormats = new Map<string, Intl.DateTimeFormat>();
 
+/**
+ * The standard names already worked out, by the name asked for. A browser's
+ * zone data does not change while the page is open, and building a
+ * formatter for each of its few hundred zones every time the picker opens
+ * is slow on a phone.
+ */
+const canonicalNames = new Map<string, string | null>();
+
 /** The offset of the zone at `moment` as Intl writes it ("GMT", "GMT+08:00", "GMT-05:00"). */
 function offsetName(id: string, moment: Date): string | undefined {
   let format = offsetFormats.get(id);
@@ -54,12 +62,8 @@ function offsetName(id: string, moment: Date): string | undefined {
   return format.formatToParts(moment).find((part) => part.type === 'timeZoneName')?.value;
 }
 
-/**
- * The standard name of a time zone: aliases the browser knows become the
- * name it resolves them to, and the old names in RENAMED become the new
- * ones. Null when the browser does not know the zone at all.
- */
-export function canonicalTimeZone(name: string): string | null {
+/** The name the browser resolves the zone to, by the new name when IANA renamed it. */
+function resolveTimeZone(name: string): string | null {
   let resolved: string;
   try {
     resolved = new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
@@ -67,6 +71,20 @@ export function canonicalTimeZone(name: string): string | null {
     return null;
   }
   return RENAMED[resolved] ?? resolved;
+}
+
+/**
+ * The standard name of a time zone: aliases the browser knows become the
+ * name it resolves them to, and the old names in RENAMED become the new
+ * ones. Null when the browser does not know the zone at all.
+ */
+export function canonicalTimeZone(name: string): string | null {
+  let id = canonicalNames.get(name);
+  if (id === undefined) {
+    id = resolveTimeZone(name);
+    canonicalNames.set(name, id);
+  }
+  return id;
 }
 
 /** The zone with its offset at `moment`, or null when the browser cannot work out its offset. */
@@ -85,6 +103,11 @@ export function timeZoneOption(id: string, moment: Date): TimeZoneOption | null 
   const offsetMinutes = (sign === '-' ? -1 : 1) * (Number(hours) * 60 + Number(minutes));
   const offset = `UTC${sign === '-' ? MINUS : '+'}${hours}:${minutes}`;
   return { id, offsetMinutes, offset, label: `${id}（${offset}）` };
+}
+
+/** The zone as it is shown now, with its offset; the bare name when the browser cannot work that out. */
+export function timeZoneLabel(id: string): string {
+  return timeZoneOption(id, new Date())?.label ?? id;
 }
 
 /**

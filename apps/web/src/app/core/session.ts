@@ -1,7 +1,8 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { logoutResponseSchema, meResponseSchema, type MeResponse } from '@thinklet/contracts';
-import { Api, ApiError } from './api';
+import { Api, type ApiError } from './api';
+import { asApiError } from './failures';
 import { PageNavigation } from './login';
 
 /**
@@ -97,7 +98,7 @@ export class Session {
       this.problem.set(null);
       this.state.set('signed-in');
     } catch (error) {
-      const failure = error instanceof ApiError ? error : new ApiError(0, 'internal');
+      const failure = asApiError(error);
       const visitor = failure.code === 'unauthenticated';
       this.current.set(null);
       this.problem.set(visitor ? null : failure);

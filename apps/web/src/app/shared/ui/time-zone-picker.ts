@@ -16,12 +16,7 @@ import {
 } from '@angular/core';
 import { Dialog } from './dialog';
 import { LineIcon } from './line-icon';
-import {
-  searchTimeZones,
-  timeZoneOption,
-  timeZoneOptions,
-  type TimeZoneOption,
-} from './time-zones';
+import { searchTimeZones, timeZoneLabel, timeZoneOptions, type TimeZoneOption } from './time-zones';
 
 let nextPickerId = 0;
 
@@ -221,7 +216,7 @@ export class TimeZoneField {
 
   protected readonly shown = computed(() => {
     const value = this.value();
-    return value ? (timeZoneOption(value, new Date())?.label ?? value) : '';
+    return value ? timeZoneLabel(value) : '';
   });
 
   constructor() {

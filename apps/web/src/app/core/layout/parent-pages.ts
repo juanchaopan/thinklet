@@ -5,6 +5,8 @@ export interface ParentPage {
   readonly label: string;
   readonly icon: IconArt;
   readonly link: string;
+  /** Whether the page's entry carries the red dot for request results not yet seen. */
+  readonly showsRequestResults?: boolean;
 }
 
 /**
@@ -14,6 +16,6 @@ export interface ParentPage {
  * below 1024 px and on the pages without a family.
  */
 export const PARENT_PAGES: readonly ParentPage[] = [
-  { label: '加入家庭', icon: 'key', link: '/join' },
+  { label: '加入家庭', icon: 'key', link: '/join', showsRequestResults: true },
   { label: '个人设置', icon: 'consent', link: '/profile' },
 ];

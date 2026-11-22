@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { meResponseSchema, parentNameSchema } from '@thinklet/contracts';
-import { Api, ApiError } from '../../core/api';
+import { Api } from '../../core/api';
+import { isSignedOut, rejectedFields, showSomethingWentWrong } from '../../core/failures';
 import { Session } from '../../core/session';
 import { Art } from '../../shared/ui/art';
 import { Button, IconButton } from '../../shared/ui/button';
@@ -170,17 +171,14 @@ export class Profile {
    * 出了点问题 toast.
    */
   private showFailure(error: unknown): void {
-    if (error instanceof ApiError && error.code === 'unauthenticated') {
+    if (isSignedOut(error)) {
       return;
     }
-    const field =
-      error instanceof ApiError && error.code === 'invalid_request'
-        ? error.fields.find((rejected) => rejected.path === 'name')
-        : undefined;
+    const field = rejectedFields(error).find((rejected) => rejected.path === 'name');
     if (field) {
       this.serverError.set(NAME_HINTS[field.code]);
       return;
     }
-    this.toaster.show('出了点问题，请稍后再试', 'error', 'wrench');
+    showSomethingWentWrong(this.toaster);
   }
 }

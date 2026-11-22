@@ -72,7 +72,7 @@ import { PARENT_PAGES } from './parent-pages';
           >
             <img alt="" [appArt]="page.icon" class="size-7" />
             <span class="flex-1 font-bold">{{ page.label }}</span>
-            @if (page.link === '/join' && news()) {
+            @if (page.showsRequestResults && news()) {
               <span appDot></span><span class="sr-only">，有新的申请结果</span>
             }
           </a>

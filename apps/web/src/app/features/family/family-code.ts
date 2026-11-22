@@ -7,6 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { showSomethingWentWrong } from '../../core/failures';
 import { Session } from '../../core/session';
 import { Button } from '../../shared/ui/button';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
@@ -98,7 +99,7 @@ export class FamilyCode {
     if (this.clipboard.copy(text)) {
       this.toaster.show('已复制', 'success', 'key');
     } else {
-      this.toaster.show('出了点问题，请稍后再试', 'error', 'wrench');
+      showSomethingWentWrong(this.toaster);
     }
   }
 

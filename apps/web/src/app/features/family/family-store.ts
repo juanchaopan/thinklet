@@ -10,11 +10,11 @@ import {
 } from '@thinklet/contracts';
 import { Api, ApiError } from '../../core/api';
 import { CurrentFamily, pageAfterSwitch } from '../../core/current-family';
+import { asApiError, isSignedOut, rejectedFields } from '../../core/failures';
 import {
   explainFailure,
   failureHandling,
   familyPath,
-  isSignedOut,
   type FamilyTrouble,
 } from '../../core/family-pages';
 import { Session } from '../../core/session';
@@ -32,9 +32,7 @@ export type SaveResult =
 
 /** The field the server turned down in a change of the name or the time zone. */
 function rejectedField(error: unknown): FieldErrorCode | undefined {
-  return error instanceof ApiError && error.code === 'invalid_request'
-    ? error.fields.at(0)?.code
-    : undefined;
+  return rejectedFields(error).at(0)?.code;
 }
 
 /**
@@ -248,7 +246,7 @@ export class FamilyStore {
     if (error instanceof ApiError && error.code === 'family_not_found') {
       this.notFound();
     } else if (this.detail() === null) {
-      this.trouble.set(error instanceof ApiError ? error : new ApiError(0, 'internal'));
+      this.trouble.set(asApiError(error));
     }
   }
 

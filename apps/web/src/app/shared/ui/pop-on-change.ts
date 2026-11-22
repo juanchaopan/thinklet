@@ -1,4 +1,5 @@
 import { Directive, ElementRef, effect, inject, input } from '@angular/core';
+import { restartAnimation } from './restart-animation';
 
 /**
  * Plays the count's pop, growing to 120% and back in 200 ms, each time the
@@ -21,10 +22,7 @@ export class PopOnChange {
         shown = true;
         return;
       }
-      element.classList.remove('animate-count');
-      // Reading the layout restarts the animation when the class comes back.
-      element.getBoundingClientRect();
-      element.classList.add('animate-count');
+      restartAnimation(element, 'animate-count');
     });
   }
 }

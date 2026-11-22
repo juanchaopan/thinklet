@@ -22,6 +22,7 @@ import { CodeBoxes, codeSlots, filledCode } from '../shared/ui/code-boxes';
 import { Dialog } from '../shared/ui/dialog';
 import { Toaster } from '../shared/ui/toast';
 import { ApiError } from './api';
+import { isSignedOut, showSomethingWentWrong } from './failures';
 import { JoinRequests } from './join-requests';
 
 /** What the boxes say when a code cannot be used (rules.md, 输入家庭码). */
@@ -51,6 +52,9 @@ interface FoundFamily extends FamilyCodeLookupResponse {
  * `code` fills the boxes as the dialog opens, as an invitation link does;
  * a whole code is looked up at once. `leaveTo` is the address to go to once
  * the dialog closes, which takes an invitation link out of the address bar.
+ *
+ * Each action button sits alone in its own `@if`: the dialog projects only
+ * a block's single root node into its action slot.
  */
 @Component({
   selector: 'app-join-family-dialog',
@@ -213,13 +217,13 @@ export class JoinFamilyDialog {
    * and what was typed stays.
    */
   private showFailure(error: unknown): void {
-    if (error instanceof ApiError && error.code === 'unauthenticated') {
+    if (isSignedOut(error)) {
       return;
     }
     const hint =
       error instanceof ApiError && error.code !== 'network' ? CODE_HINTS[error.code] : undefined;
     if (!hint) {
-      this.toaster.show('出了点问题，请稍后再试', 'error', 'wrench');
+      showSomethingWentWrong(this.toaster);
       return;
     }
     this.found.set(null);

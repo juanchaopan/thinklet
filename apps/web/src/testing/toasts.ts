@@ -15,10 +15,10 @@ const STAY: Record<ToastTone, number> = { success: 3000, error: 5000 };
 const LEAVE = 150;
 
 /** Runs the work with the page's timers on a clock that only moves when told to. */
-function withStillTimers(work: () => void): void {
+async function withStillTimers(work: () => void | Promise<void>): Promise<void> {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    work();
+    await work();
   } finally {
     vi.useRealTimers();
     useFixedClock();
@@ -31,14 +31,10 @@ function withStillTimers(work: () => void): void {
  * it is captured, however long that takes.
  */
 export async function raiseStillToast(trigger: () => Promise<void>, text: string): Promise<void> {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  try {
+  await withStillTimers(async () => {
     await trigger();
     await screen.findByText(text);
-  } finally {
-    vi.useRealTimers();
-    useFixedClock();
-  }
+  });
 }
 
 /**
@@ -57,7 +53,7 @@ export function toastFrame(time: number, tone: ToastTone): ScreenshotOptions {
   return {
     prepare: async () => {
       const toaster = TestBed.inject(Toaster);
-      withStillTimers(() => {
+      await withStillTimers(() => {
         for (const toast of toaster.toasts()) {
           toaster.close(toast.id);
         }
