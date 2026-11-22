@@ -2,7 +2,7 @@
 
 ## 背景
 
-家长从 Authing 登录回来后，本站要记住这位家长已经登录。用户希望服务器无状态，不存会话，以后好扩展、好拆分服务。后端在测试环境里是 Vercel 函数，每个请求都可能落在不同的实例上。登录状态放在 cookie 里，就要防跨站请求伪造。
+家长从 Authing 登录回来、孩子在本站登录后，本站要记住是谁登录了。用户希望服务器无状态，不存会话，以后好扩展、好拆分服务。后端在测试环境里是 Vercel 函数，每个请求都可能落在不同的实例上。登录状态放在 cookie 里，就要防跨站请求伪造。
 
 ## 比较过的方案
 
@@ -13,12 +13,13 @@
 
 ## 决定
 
-- 服务器不存会话。登录成功后，后端用 jose 签发一个 JWT，放在 HttpOnly、Secure、SameSite=Lax、`Path=/` 的 cookie 里。JWT 里只有家长编号、签发时间和过期时间，头里带密钥编号 `kid`。有效期和续期规则在设计文档里定。
+- 服务器不存会话。登录成功后，后端用 jose 签发一个 JWT，放在 HttpOnly、Secure、SameSite=Lax、`Path=/` 的 cookie 里。JWT 里只有一个编号（家长或孩子）、身份种类 `parent` 或 `child`、签发时间和过期时间，头里带密钥编号 `kid`。有效期和续期规则在设计文档里定。
+- 孩子的 JWT 放在另一个属性相同的 cookie 里，同一个浏览器里家长和孩子可以同时登录（见决策 0033）。
 - 签名用 ES256。私钥是密钥 `JWT_SIGNING_KEY`（JWK 格式），由代理随机生成，直接写进 GitHub；公钥由私钥算出，不单独保存。
 - 回调时，Authing 返回的 ID 令牌和 JWT 一起放进另一个 cookie，属性和 JWT 的 cookie 一样（HttpOnly、Secure、SameSite=Lax、`Path=/`），有效期跟着登录状态：JWT 的 cookie 重新签发或续期时，它也一起续。它不用来认证请求，只在退出时读出来，作为 `id_token_hint` 交给 Authing 的退出地址（见决策 0029）。
 - 跳到 Authing 前，把 state、nonce、PKCE 的 code verifier 和登录后要回到的页面放进一个用同一把私钥签名、几分钟就过期的 cookie；回调时核对，用完就清掉。
 - 防跨站请求伪造：cookie 用 SameSite=Lax；后端用一个全局中间件检查每个非 GET、HEAD、OPTIONS 请求的 `Origin` 头，不是 `APP_ORIGIN` 或者没有就拒绝。GET 请求不改数据。
-- 退出时清掉 JWT 和 ID 令牌这两个 cookie；每个请求只校验 JWT 的签名和有效期，不查会话。家庭成员关系和角色每次从数据库里查，不放进 JWT（见决策 0031）。
+- 家长退出时清掉 JWT 和 ID 令牌这两个 cookie；孩子退出只清孩子的 JWT cookie；每个请求只校验 JWT 的签名和有效期，不查会话。家庭成员关系和角色每次从数据库里查，不放进 JWT（见决策 0031）。
 
 ## 理由
 
@@ -43,4 +44,4 @@
 - 有别的服务要校验登录，要发布公钥。
 - 签名私钥可能泄漏。
 
-Last changed: #7 (2026-11-21)
+Last changed: #8 (2026-11-22)
