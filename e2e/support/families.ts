@@ -27,9 +27,9 @@ export async function createFamily(
 
 /** The signed-in parent's first family, as its members see it. */
 export async function firstFamily(page: Page): Promise<FamilySummary> {
-  const me = (await (await page.request.get('/api/me')).json()) as {
-    families: Array<{ id: string }>;
-  };
+  const meResponse = await page.request.get('/api/me');
+  expect(meResponse.status()).toBe(200);
+  const me = (await meResponse.json()) as { families: Array<{ id: string }> };
   const familyId = me.families.at(0)?.id;
   if (!familyId) {
     throw new Error('The parent has no family');
@@ -48,9 +48,9 @@ export async function handleWaitingRequest(
   familyId: string,
   decision: 'approve' | 'reject',
 ): Promise<void> {
-  const list = (await (
-    await page.request.get(`/api/families/${familyId}/join-requests`)
-  ).json()) as { pending: Array<{ id: string }> };
+  const listResponse = await page.request.get(`/api/families/${familyId}/join-requests`);
+  expect(listResponse.status()).toBe(200);
+  const list = (await listResponse.json()) as { pending: Array<{ id: string }> };
   const requestId = list.pending.at(0)?.id;
   if (!requestId) {
     throw new Error('No request is waiting in the family');
