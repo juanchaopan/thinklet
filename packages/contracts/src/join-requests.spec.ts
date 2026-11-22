@@ -26,9 +26,10 @@ describe('createJoinRequestRequestSchema', () => {
 });
 
 describe('applicantJoinRequestListSchema', () => {
-  it('accepts pending, rejected and expired requests with the family time zone', () => {
+  it('accepts pending, approved, rejected and expired requests with the family time zone', () => {
     const body = [
       request,
+      { ...request, id: '88c0c1d2-e3f4-4a5b-8c6d-7e8f9a0b1c2d', status: 'approved' },
       { ...request, id: '77b0c1d2-e3f4-4a5b-8c6d-7e8f9a0b1c2d', status: 'rejected' },
       { ...request, id: '66a0c1d2-e3f4-4a5b-8c6d-7e8f9a0b1c2d', status: 'expired' },
     ];
@@ -36,10 +37,7 @@ describe('applicantJoinRequestListSchema', () => {
     expect(applicantJoinRequestListSchema.parse(body)).toEqual(body);
   });
 
-  it('rejects approved and withdrawn requests, which the applicant does not see', () => {
-    expect(
-      applicantJoinRequestListSchema.safeParse([{ ...request, status: 'approved' }]).success,
-    ).toBe(false);
+  it('rejects withdrawn requests, which the applicant does not see', () => {
     expect(
       applicantJoinRequestListSchema.safeParse([{ ...request, status: 'withdrawn' }]).success,
     ).toBe(false);

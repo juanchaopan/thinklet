@@ -17,9 +17,8 @@ export const createJoinRequestRequestSchema = z.strictObject({
 });
 
 /**
- * A join request as its applicant sees it. Approved requests are not shown
- * (the applicant has the family instead) and withdrawn ones are gone, so the
- * status is one of the other three. `familyTimezone` is the time zone its
+ * A join request as its applicant sees it. Withdrawn requests are gone, so
+ * the status is one of the other four. `familyTimezone` is the time zone its
  * time is shown in.
  */
 export const applicantJoinRequestSchema = z.strictObject({
@@ -27,7 +26,7 @@ export const applicantJoinRequestSchema = z.strictObject({
   familyName: z.string(),
   familyTimezone: z.string(),
   adminName: z.string(),
-  status: joinRequestStatusSchema.extract(['pending', 'rejected', 'expired']),
+  status: joinRequestStatusSchema.extract(['pending', 'approved', 'rejected', 'expired']),
   createdAt: z.iso.datetime(),
 });
 
