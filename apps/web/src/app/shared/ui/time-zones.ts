@@ -131,20 +131,22 @@ export function timeZoneOptions(moment: Date, extra: readonly string[] = []): Ti
 }
 
 /**
- * The zones whose name contains the query, ignoring case, or whose offset
- * does; a typed hyphen also finds the minus sign of the offsets shown.
+ * The zones whose name contains the query as typed, ignoring case, or whose
+ * offset does. Names keep their hyphens ("Port-au-Prince"); in an offset a
+ * typed hyphen also finds the minus sign the offsets are shown with.
  */
 export function searchTimeZones(
   options: readonly TimeZoneOption[],
   query: string,
 ): TimeZoneOption[] {
-  const wanted = query.trim().toLowerCase().replaceAll('-', MINUS);
-  if (!wanted) {
+  const name = query.trim().toLowerCase();
+  if (!name) {
     return [...options];
   }
+  const offset = name.replaceAll('-', MINUS);
   return options.filter(
     (option) =>
-      option.id.toLowerCase().includes(wanted) || option.offset.toLowerCase().includes(wanted),
+      option.id.toLowerCase().includes(name) || option.offset.toLowerCase().includes(offset),
   );
 }
 

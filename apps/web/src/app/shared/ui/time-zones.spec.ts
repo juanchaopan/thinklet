@@ -95,13 +95,19 @@ describe('timeZoneOptions', () => {
 
 describe('searchTimeZones', () => {
   const options = timeZoneOptions(FIXED_NOW);
+  const idsFound = (query: string) => searchTimeZones(options, query).map((option) => option.id);
 
   it('finds the zones whose name contains the query, ignoring case', () => {
-    const found = searchTimeZones(options, 'TOR').map((option) => option.id);
+    const found = idsFound('TOR');
 
     expect(found.indexOf('America/Toronto')).toBeLessThan(found.indexOf('America/Tortola'));
     expect(found.indexOf('America/Toronto')).toBeGreaterThanOrEqual(0);
     expect(found.every((id) => id.toLowerCase().includes('tor'))).toBe(true);
+  });
+
+  it('finds a zone by a name with a hyphen in it, as typed', () => {
+    expect(idsFound('port-au')).toEqual(['America/Port-au-Prince']);
+    expect(idsFound('PORT-AU-PRINCE')).toEqual(['America/Port-au-Prince']);
   });
 
   it('finds the zones by offset, a typed hyphen standing for the minus sign', () => {
@@ -111,8 +117,15 @@ describe('searchTimeZones', () => {
     expect(found.every((option) => option.offset === `UTC${MINUS}05:00`)).toBe(true);
   });
 
+  it.each(['-05', `${MINUS}05`])('finds the zones by the offset alone, as in %s', (query) => {
+    const found = searchTimeZones(options, query);
+
+    expect(found.map((option) => option.id)).toContain('America/Toronto');
+    expect(found.every((option) => option.offset.includes(`${MINUS}05`))).toBe(true);
+  });
+
   it('finds them by the offset alone, as in +08', () => {
-    expect(searchTimeZones(options, '+08').map((option) => option.id)).toContain('Asia/Shanghai');
+    expect(idsFound('+08')).toContain('Asia/Shanghai');
   });
 
   it('lists everything for an empty query', () => {
