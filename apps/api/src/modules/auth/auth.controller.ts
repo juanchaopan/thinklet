@@ -68,7 +68,13 @@ export class AuthController {
     return { url: completed.returnTo };
   }
 
-  /** Clears the login cookies first, so they are gone even when the logout address cannot be built. */
+  /**
+   * Builds the identity provider's logout address first and clears the
+   * login cookies only once it is built. When the address cannot be built
+   * (the provider's discovery fails or times out), the request fails with
+   * the login untouched, so the page that stays signed in tells the truth
+   * and the parent can try again.
+   */
   @Post('logout')
   @HttpCode(200)
   @Header('Cache-Control', 'no-store')
@@ -76,10 +82,10 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<LogoutResponse> {
-    const idToken = readCookie(request, ID_TOKEN_COOKIE);
-    clearSessionCookies(response);
-    return logoutResponseSchema.parse({
-      endSessionUrl: await this.authService.endSessionUrl(idToken),
+    const body = logoutResponseSchema.parse({
+      endSessionUrl: await this.authService.endSessionUrl(readCookie(request, ID_TOKEN_COOKIE)),
     });
+    clearSessionCookies(response);
+    return body;
   }
 }

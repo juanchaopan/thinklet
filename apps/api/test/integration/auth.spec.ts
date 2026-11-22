@@ -1,8 +1,12 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { logoutResponseSchema, meResponseSchema } from '@thinklet/contracts';
+import { errorResponseSchema, logoutResponseSchema, meResponseSchema } from '@thinklet/contracts';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import request from 'supertest';
-import { startAppWithServices, type AppWithServices } from '../support/app.js';
+import {
+  startAppWithoutServices,
+  startAppWithServices,
+  type AppWithServices,
+} from '../support/app.js';
 import { testSigningKey, TEST_APP_ORIGIN } from '../support/containers.js';
 import { parentBySubject, query } from '../support/database.js';
 import {
@@ -24,7 +28,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // the parent with the provider's name or the email's local part, else 家长;
 // every login updates the email and the consent; the login lasts 7 days and
 // is renewed with less than 3.5 days left; logging out clears the login and
-// leaves through the provider's logout.
+// leaves through the provider's logout, and a logout that fails keeps it.
 describe('login', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -392,5 +396,34 @@ describe('login', () => {
         error: { code: 'invalid_request', requestId: response.headers['x-request-id'] },
       });
     });
+  });
+});
+
+// The identity provider's issuer points at a closed port here, so its
+// discovery fails at once and the logout address cannot be built.
+describe('logout when the identity provider cannot be reached', () => {
+  let app: NestExpressApplication;
+
+  beforeAll(async () => {
+    ({ app } = await startAppWithoutServices());
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('answers 500 internal and keeps both login cookies', async () => {
+    const session = await testSessionTokens().issueSession(crypto.randomUUID(), new Date());
+
+    const response = await request(app.getHttpServer())
+      .post('/api/auth/logout')
+      .set('Origin', TEST_APP_ORIGIN)
+      .set('Cookie', cookieHeader({ thinklet_session: session, thinklet_id_token: 'id-token-1' }));
+
+    expect(response.status).toBe(500);
+    expect(errorResponseSchema.parse(response.body)).toEqual({
+      error: { code: 'internal', requestId: response.headers['x-request-id'] },
+    });
+    expect(response.headers['set-cookie']).toBeUndefined();
   });
 });
