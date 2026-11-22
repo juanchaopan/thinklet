@@ -83,7 +83,8 @@ function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
  * screen. The owner chooses with `dropDown`: the mouse version drops down
  * where there is room under the button. A drop-down lines up with the
  * button's start edge, or with its end edge for a button at the far end of
- * a bar (`align`).
+ * a bar (`align`); it is 288 px wide, or 176 px when `narrow`, for a few
+ * short actions.
  *
  * The first entry takes the focus; the arrow keys, Home and End move between
  * entries. Escape, Tab and a click outside emit `dismissed`; the owner then
@@ -100,7 +101,9 @@ function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
         role="menu"
         tabindex="-1"
         [attr.aria-label]="label()"
-        class="w-72 rounded-3xl border border-line bg-surface p-2 shadow-pop outline-none"
+        class="rounded-3xl border border-line bg-surface p-2 shadow-pop outline-none"
+        [class.w-72]="!narrow()"
+        [class.w-44]="narrow()"
         [class.origin-top-left]="align() === 'start'"
         [class.origin-top-right]="align() === 'end'"
         [class]="layer.leaving() ? 'animate-drop-out' : 'animate-drop'"
@@ -146,6 +149,8 @@ export class Menu {
   readonly origin = input.required<HTMLElement>();
   readonly dropDown = input(true);
   readonly align = input<MenuAlign>('start');
+  /** A drop-down of a few short actions, 176 px wide instead of 288 px. */
+  readonly narrow = input(false);
 
   readonly dismissed = output();
 

@@ -45,8 +45,8 @@ interface FoundFamily extends FamilyCodeLookupResponse {
  * there or goes back with 换一个家庭码. A sent request closes the dialog with
  * 申请已发出.
  *
- * The lookup answers only with the admin's name, so the admin's avatar takes
- * its colour from the name.
+ * The admin's avatar takes its colour from the admin's parent id, which the
+ * lookup answers with, as every avatar does.
  *
  * `code` fills the boxes as the dialog opens, as an invitation link does;
  * a whole code is looked up at once. `leaveTo` is the address to go to once
@@ -73,7 +73,7 @@ interface FoundFamily extends FamilyCodeLookupResponse {
           <div class="min-w-0">
             <p class="text-lg font-black">{{ family.familyName }}</p>
             <p class="mt-1 flex items-center gap-2 text-sm text-ink-soft">
-              <app-avatar [name]="family.adminName" [parentId]="family.adminName" size="tiny" />
+              <app-avatar [name]="family.adminName" [parentId]="family.adminId" size="tiny" />
               管理员 {{ family.adminName }}
             </p>
           </div>

@@ -74,6 +74,8 @@
   --animate-toast-out: toast-out 150ms var(--ease-exit) both;
   --animate-shake: shake 300ms var(--ease-move) both;
   --animate-planet: planet 500ms var(--ease-enter) both;
+  --animate-slide-away: slide-away 250ms var(--ease-exit) both;
+  --animate-count: count 200ms var(--ease-move);
 
   @keyframes rise {
     from {
@@ -183,6 +185,26 @@
     40%,
     80% {
       transform: translateX(6px);
+    }
+  }
+  /* A handled row of a list slides out to the right while its height, its
+     padding and its dividing line close up, so the rows below move up. */
+  @keyframes slide-away {
+    from {
+      max-height: 10rem;
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+      max-height: 0;
+      padding-block: 0;
+      border-color: transparent;
+    }
+  }
+  /* A count grows to 120% and comes back when it changes. */
+  @keyframes count {
+    50% {
+      transform: scale(1.2);
     }
   }
 }

@@ -23,6 +23,7 @@ const SIZES = {
   small: 'size-8 text-sm',
   regular: 'size-9 text-sm',
   large: 'size-10 text-base',
+  list: 'size-11 text-base',
 } as const;
 
 /**
@@ -45,7 +46,8 @@ export class Avatar {
   /**
    * `tiny` goes inside a line of small text, such as the admin of a family
    * found by its code; `small` heads the parent's group in the sidebar;
-   * `large` heads the parent's menu and a member's actions.
+   * `large` heads the parent's menu and a member's actions; `list` leads a
+   * row of a list of parents, such as the family's members.
    */
   readonly size = input<keyof typeof SIZES>('regular');
 

@@ -8,6 +8,7 @@ import {
 import { Art, Logo, type IconArt } from '../../shared/ui/art';
 import { Avatar } from '../../shared/ui/avatar';
 import { Badge, Dot } from '../../shared/ui/card';
+import { PopOnChange } from '../../shared/ui/pop-on-change';
 import { CreateFamilyDialog } from '../create-family-dialog';
 import { CurrentFamily } from '../current-family';
 import { FamilyCreation } from '../family-creation';
@@ -15,6 +16,14 @@ import { Session } from '../session';
 import { FamilySwitcher } from './family-switcher';
 import { PARENT_PAGES } from './parent-pages';
 import { UserMenu } from './user-menu';
+
+/** The most waiting requests a badge writes out; more read "99+" (rules.md, 通知). */
+const MOST_COUNTED = 99;
+
+/** A count as its badge shows it: the number up to 99, then "99+". */
+export function countText(count: number): string {
+  return count > MOST_COUNTED ? `${String(MOST_COUNTED)}+` : String(count);
+}
 
 interface NavItem {
   readonly label: string;
@@ -37,6 +46,9 @@ interface NavItem {
  * pages are a tab bar at the bottom. A parent without a family gets the bare
  * frame instead: the full logo and the avatar with its menu, no family pages.
  *
+ * The count on 新成员 reads "99+" past 99, and pops each time it changes, as
+ * when the admin handles a request.
+ *
  * The dialog that creates a family belongs to the frame, so it can open over
  * any signed-in page. Its code is loaded the first time it is asked for, so
  * the pages that never create a family do not wait for it.
@@ -51,6 +63,7 @@ interface NavItem {
     Dot,
     FamilySwitcher,
     Logo,
+    PopOnChange,
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
@@ -78,7 +91,7 @@ interface NavItem {
                 <img alt="" [appArt]="item.icon" class="size-8" />
                 <span class="flex-1">{{ item.label }}</span>
                 @if (item.count) {
-                  <span appBadge>{{ item.count }}</span>
+                  <span appBadge [appPopOnChange]="item.count">{{ countText(item.count) }}</span>
                 }
               </a>
             }
@@ -139,7 +152,12 @@ interface NavItem {
                 <span class="relative">
                   <img alt="" [appArt]="item.icon" class="size-7" />
                   @if (item.count) {
-                    <span appBadge class="absolute -top-1.5 -right-3">{{ item.count }}</span>
+                    <span
+                      appBadge
+                      [appPopOnChange]="item.count"
+                      class="absolute -top-1.5 -right-3"
+                      >{{ countText(item.count) }}</span
+                    >
                   }
                 </span>
                 {{ item.label }}
@@ -169,6 +187,7 @@ export class AppShell {
   private readonly currentFamily = inject(CurrentFamily);
 
   protected readonly parentPages = PARENT_PAGES;
+  protected readonly countText = countText;
 
   /** A menu entry is current on its own page, whatever the query says. */
   protected readonly samePage: IsActiveMatchOptions = {

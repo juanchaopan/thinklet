@@ -10,7 +10,8 @@ export type LineIconName =
   | 'check'
   | 'back'
   | 'forward'
-  | 'search';
+  | 'search'
+  | 'more';
 
 /**
  * The project's line icons, drawn in the current text colour and hidden from
@@ -18,7 +19,8 @@ export type LineIconName =
  * and QR are 20 px with 1.75 px strokes, round caps and joins; the chevron is
  * 16 px and points down, for a button that opens a menu or a list; back
  * points left, for 返回; forward points right, for a card that leads on;
- * search is the magnifier of a search box.
+ * search is the magnifier of a search box; more is three dots in a row, for
+ * the button that opens a member's actions.
  */
 @Component({
   selector: 'app-line-icon',
@@ -157,6 +159,13 @@ export type LineIconName =
             stroke-width="1.8"
             stroke-linecap="round"
           />
+        </svg>
+      }
+      @case ('more') {
+        <svg class="size-5" viewBox="0 0 20 20" aria-hidden="true" fill="currentColor">
+          <circle cx="4.5" cy="10" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="15.5" cy="10" r="1.6" />
         </svg>
       }
     }

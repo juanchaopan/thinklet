@@ -26,6 +26,9 @@ import {
 } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
+/** 林小雨, the admin of 小姨家. */
+const XIAOYU_ID = 'a3c5e7f9-1b3d-4f5a-8b6c-7d9e1f3a5b06';
+
 /** The request to 小姨家 that sending one makes. */
 const SENT: ApplicantJoinRequest = {
   id: '6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e96',
@@ -105,7 +108,9 @@ describe('Join', () => {
   });
 
   it('asks to join from 申请加入家庭, and lists the request sent', async () => {
-    stubFamilyCodes({ [GRANDMA_CODE]: { familyName: '小姨家', adminName: '林小雨' } });
+    stubFamilyCodes({
+      [GRANDMA_CODE]: { familyName: '小姨家', adminName: '林小雨', adminId: XIAOYU_ID },
+    });
     stubSendRequest(SENT);
     const { fixture } = await renderJoin([REJECTED_REQUEST]);
 

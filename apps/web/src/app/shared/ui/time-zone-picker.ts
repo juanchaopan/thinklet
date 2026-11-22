@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DOCUMENT,
+  afterNextRender,
   computed,
   effect,
   inject,
@@ -10,6 +11,8 @@ import {
   output,
   signal,
   untracked,
+  viewChild,
+  type ElementRef,
 } from '@angular/core';
 import { Dialog } from './dialog';
 import { LineIcon } from './line-icon';
@@ -159,19 +162,25 @@ export class TimeZonePicker {
  * The time zone of a form: the label 时区 over a button showing the chosen
  * zone as "Asia/Shanghai（UTC+08:00）" (empty when none is chosen), which
  * opens the time zone picker. A message under it says what is wrong.
+ *
+ * Where the label is shown already, as on the family page that edits the
+ * zone in place, `showLabel` false leaves it to screen readers. With
+ * `autofocus` the button takes the focus when it appears.
  */
 @Component({
   selector: 'app-time-zone-field',
   imports: [LineIcon, TimeZonePicker],
   host: { class: 'block' },
   template: `
-    <span [id]="labelId" class="block text-sm font-bold">时区</span>
+    <span [id]="labelId" class="block text-sm font-bold" [class.sr-only]="!showLabel()">时区</span>
     <button
+      #button
       type="button"
       aria-haspopup="dialog"
       [attr.aria-labelledby]="labelId + ' ' + valueId"
       [attr.aria-describedby]="error() ? errorId : null"
-      class="mt-2 flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border bg-surface px-4 text-left text-base outline-none"
+      class="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border bg-surface px-4 text-left text-base outline-none"
+      [class.mt-2]="showLabel()"
       [class]="
         error()
           ? 'border-rose-ink ring-2 ring-rose'
@@ -198,6 +207,8 @@ export class TimeZoneField {
   /** The chosen zone's standard name. */
   readonly value = model<string | null>(null);
   readonly error = input<string | null>(null);
+  readonly showLabel = input(true);
+  readonly autofocus = input(false);
 
   protected readonly picking = signal(false);
 
@@ -206,10 +217,20 @@ export class TimeZoneField {
   protected readonly valueId = `app-time-zone-value-${this.id}`;
   protected readonly errorId = `app-time-zone-error-${this.id}`;
 
+  private readonly button = viewChild.required<ElementRef<HTMLButtonElement>>('button');
+
   protected readonly shown = computed(() => {
     const value = this.value();
     return value ? (timeZoneOption(value, new Date())?.label ?? value) : '';
   });
+
+  constructor() {
+    afterNextRender(() => {
+      if (this.autofocus()) {
+        this.button().nativeElement.focus();
+      }
+    });
+  }
 
   protected choose(id: string): void {
     this.picking.set(false);

@@ -86,6 +86,45 @@ export class TextField {
 }
 
 /**
+ * 取消 and 保存 of a value edited in place, for the form around a field: 保存
+ * submits the form and says 保存中… while `saving`. Beside the field they
+ * fill the width below 640 px and keep their size from there; next to a
+ * field showing an error (`raised`) they line up with the field's box
+ * instead of the middle of the field and its message.
+ */
+@Component({
+  selector: 'app-edit-actions',
+  imports: [Button],
+  host: { class: 'flex gap-2', '[class.sm:mt-0.5]': 'raised()' },
+  template: `
+    <button
+      type="button"
+      appButton="text"
+      class="flex-1 border border-line sm:flex-none"
+      (click)="cancelled.emit()"
+    >
+      取消
+    </button>
+    <button
+      type="submit"
+      appButton
+      [compact]="true"
+      class="flex-1 sm:flex-none"
+      [disabled]="saving()"
+    >
+      {{ saving() ? '保存中…' : '保存' }}
+    </button>
+  `,
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class EditActions {
+  readonly saving = input(false);
+  readonly raised = input(false);
+
+  readonly cancelled = output();
+}
+
+/**
  * What the two ways of editing a value share: the draft starts as the
  * current value; a value that fails `validate` shows its message, shakes the
  * box and is not saved; a value that passes is emitted with `save`. `error`
@@ -150,7 +189,7 @@ abstract class EditBase {
  */
 @Component({
   selector: 'app-edit-row',
-  imports: [Button, TextField],
+  imports: [EditActions, TextField],
   template: `
     <form
       class="flex animate-fade flex-col gap-3 sm:flex-row"
@@ -166,25 +205,11 @@ abstract class EditBase {
         [error]="shownError()"
         [attempt]="attempt()"
       />
-      <div class="flex gap-2" [class.sm:mt-0.5]="shownError()">
-        <button
-          type="button"
-          appButton="text"
-          class="flex-1 border border-line sm:flex-none"
-          (click)="cancelled.emit()"
-        >
-          取消
-        </button>
-        <button
-          type="submit"
-          appButton
-          [compact]="true"
-          class="flex-1 sm:flex-none"
-          [disabled]="saving()"
-        >
-          {{ saving() ? '保存中…' : '保存' }}
-        </button>
-      </div>
+      <app-edit-actions
+        [saving]="saving()"
+        [raised]="shownError() !== null"
+        (cancelled)="cancelled.emit()"
+      />
     </form>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

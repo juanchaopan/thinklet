@@ -27,17 +27,18 @@ import { FamilyCreation } from './family-creation';
 import { Session } from './session';
 
 /** The hints for a family name that cannot be saved (rules.md, 家庭). */
-const NAME_HINTS: FieldHints = {
+export const FAMILY_NAME_HINTS: FieldHints = {
   required: '请填家庭名称',
   too_long: '家庭名称最多 20 个字',
   invalid: '请填家庭名称',
 };
 
-const TIME_ZONE_HINT = '请选择时区';
+/** The hint for a family without a time zone (rules.md, 家庭). */
+export const TIME_ZONE_HINT = '请选择时区';
 
 /** The hint for a family name that fails the shared name rule, or null when it may be saved. */
 export function familyNameHint(value: string): string | null {
-  return fieldHint(familyNameSchema, NAME_HINTS, value);
+  return fieldHint(familyNameSchema, FAMILY_NAME_HINTS, value);
 }
 
 /** The name a new family starts with: "<the parent's name>的家", unless that is too long. */
@@ -204,7 +205,7 @@ export class CreateFamilyDialog {
       this.toaster.show('出了点问题，请稍后再试', 'error', 'wrench');
       return;
     }
-    this.nameError.set(name ? NAME_HINTS[name.code] : null);
+    this.nameError.set(name ? FAMILY_NAME_HINTS[name.code] : null);
     this.timeZoneError.set(timeZone ? TIME_ZONE_HINT : null);
     this.attempt.update((count) => count + 1);
   }
