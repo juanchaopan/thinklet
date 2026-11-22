@@ -1,7 +1,21 @@
 import { render, screen } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
-import { PageProblem } from './page-problem';
+import { errorNumber, PageProblem } from './page-problem';
+
+describe('errorNumber', () => {
+  it('takes the first 8 characters of the request id in two groups of four', () => {
+    expect(errorNumber('a1f392c0-5b7d-4e9f-8a1b-2c3d4e5f6a7b')).toBe('a1f3-92c0');
+  });
+
+  it('skips the hyphens of an id whose first group is shorter', () => {
+    expect(errorNumber('a1f3-92c0e5')).toBe('a1f3-92c0');
+  });
+
+  it('shows a short id whole', () => {
+    expect(errorNumber('a1f3')).toBe('a1f3');
+  });
+});
 
 describe('PageProblem', () => {
   it('says the family is not there and leads back', async () => {
@@ -17,10 +31,10 @@ describe('PageProblem', () => {
     await expectNoAxeViolations();
   });
 
-  it('says the page did not open, with the error id, and retries', async () => {
+  it('says the page did not open, with the error number, and retries', async () => {
     const action = vi.fn();
     await render(PageProblem, {
-      inputs: { kind: 'server', requestId: 'a1f3-92c0' },
+      inputs: { kind: 'server', requestId: 'a1f392c0-5b7d-4e9f-8a1b-2c3d4e5f6a7b' },
       on: { action },
     });
 
@@ -30,5 +44,12 @@ describe('PageProblem', () => {
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
     expect(action).toHaveBeenCalledOnce();
+  });
+
+  it('shows no error number without a request id', async () => {
+    await render(PageProblem, { inputs: { kind: 'server' } });
+
+    expect(screen.getByRole('heading', { name: '页面没能打开' })).toBeTruthy();
+    expect(screen.queryByText(/错误编号/)).toBeNull();
   });
 });

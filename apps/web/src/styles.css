@@ -15,6 +15,9 @@
     'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei',
     'WenQuanYi Zen Hei', sans-serif;
 
+  /* The colours of look.md. ink-muted and badge are dark enough for small
+     text and small marks to reach WCAG 2.1 AA (4.5:1) on surface, canvas and
+     tint. */
   --color-canvas: #f7f4ef;
   --color-surface: #ffffff;
   --color-tint: #f4f0fb;
@@ -22,8 +25,6 @@
   --color-line-strong: #d9d3c7;
   --color-ink: #161a2b;
   --color-ink-soft: #4b5168;
-  /* The muted grey of look.md (#8a8fa3) darkened to the nearest shade that small
-     text needs for WCAG 2.1 AA (4.5:1) on surface, canvas and tint. */
   --color-ink-muted: #6a6e7e;
   --color-primary: #1d2238;
   --color-primary-hover: #2c3352;
@@ -37,7 +38,7 @@
   --color-peach: #ffe3cc;
   --color-rose: #ffe4e8;
   --color-rose-ink: #c0213f;
-  --color-badge: #ef3b4f;
+  --color-badge: #d92d42;
 
   /* Cards have 20 px corners; dialogs and floating sheets 28 px. */
   --radius-card: 1.25rem;

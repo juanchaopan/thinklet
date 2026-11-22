@@ -5,7 +5,12 @@ import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
 import { worker } from '../../../testing/network';
 import { emulateTouch } from '../../../testing/pointer';
-import { LINYUE, stubError, stubSignedIn } from '../../../testing/sample-data';
+import {
+  LINYUE,
+  LINYUE_WITHOUT_FAMILY,
+  stubError,
+  stubSignedIn,
+} from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
 const END_SESSION_URL = 'https://login.example.com/oidc/session/end?id_token_hint=token';
@@ -57,7 +62,8 @@ describe('Profile', () => {
     expect(screen.getByText('linyue@example.com')).toBeTruthy();
     expect(screen.getByRole('button', { name: '改名字' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '退出登录' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: /个人设置/ }).getAttribute('aria-current')).toBe(
+    expect(screen.queryByRole('link', { name: '返回' })).toBeNull();
+    expect(screen.getByRole('link', { name: '个人设置' }).getAttribute('aria-current')).toBe(
       'page',
     );
     await expectNoAxeViolations();
@@ -85,7 +91,7 @@ describe('Profile', () => {
     });
   });
 
-  it('saves a new name and shows it everywhere', async () => {
+  it('saves a new name, shows it everywhere and says 已保存', async () => {
     const bodies = stubRename();
     const { fixture } = await renderApp('/profile');
 
@@ -98,6 +104,7 @@ describe('Profile', () => {
     expect(bodies).toEqual([{ name: '林小悦' }]);
     await noNameBox();
     expect(screen.getAllByText('林小悦').length).toBeGreaterThan(1);
+    expect(await screen.findByText('已保存')).toBeTruthy();
   });
 
   it('saves with Enter and cancels with Escape', async () => {
@@ -109,6 +116,7 @@ describe('Profile', () => {
     await userEvent.keyboard('{Escape}');
     await noNameBox();
     expect(screen.queryByText('林悦二号')).toBeNull();
+    expect(screen.queryByText('已保存')).toBeNull();
 
     await userEvent.click(screen.getByRole('button', { name: '改名字' }));
     await userEvent.type(nameBox(), '二号{Enter}');
@@ -181,8 +189,11 @@ describe('Profile', () => {
     expect(screen.getByText('名字最多 20 个字')).toBeTruthy();
   });
 
-  it('keeps the typed name and shows a toast when the server fails', async () => {
-    stubError('patch /api/me', 500, 'internal');
+  it.each([
+    ['the server fails', 500, 'internal'],
+    ['the request is refused as coming from another site', 403, 'bad_origin'],
+  ] as const)('keeps the typed name and shows a toast when %s', async (_case, status, code) => {
+    stubError('patch /api/me', status, code);
     const { fixture } = await renderApp('/profile');
 
     await userEvent.click(screen.getByRole('button', { name: '改名字' }));
@@ -192,6 +203,7 @@ describe('Profile', () => {
 
     expect(await screen.findByText('出了点问题，请稍后再试')).toBeTruthy();
     expect((nameBox() as HTMLInputElement).value).toBe('林悦二号');
+    expect(screen.queryByText('已保存')).toBeNull();
   });
 
   describe('on a touch screen', () => {
@@ -219,6 +231,7 @@ describe('Profile', () => {
       await vi.waitFor(() => {
         expect(screen.queryByRole('dialog')).toBeNull();
       });
+      expect(await screen.findByText('已保存')).toBeTruthy();
     });
 
     it('closes the sheet with 取消 and starts from the current name next time', async () => {
@@ -235,6 +248,31 @@ describe('Profile', () => {
       await userEvent.click(screen.getByRole('button', { name: '改名字' }));
       const again = await screen.findByRole('dialog', { name: '改名字' });
       expect(within(again).getByRole<HTMLInputElement>('textbox').value).toBe('林悦');
+    });
+  });
+
+  describe('without a family', () => {
+    beforeEach(() => {
+      stubSignedIn(LINYUE_WITHOUT_FAMILY, []);
+    });
+
+    it('shows the page in the frame without menus, with 返回 at the top left', async () => {
+      await renderApp('/profile');
+
+      expect(screen.queryAllByRole('navigation')).toHaveLength(0);
+      expect(screen.getByRole('heading', { level: 1, name: '个人设置' })).toBeTruthy();
+      expect(screen.getByRole('link', { name: '返回' }).getAttribute('href')).toBe('/start');
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('profile-no-family');
+    });
+
+    it('goes back to the start page with 返回', async () => {
+      const { router, fixture } = await renderApp('/profile');
+
+      await userEvent.click(screen.getByRole('link', { name: '返回' }));
+      await fixture.whenStable();
+
+      expect(router.url).toBe('/start');
     });
   });
 

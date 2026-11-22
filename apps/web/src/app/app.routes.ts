@@ -1,12 +1,16 @@
 import type { Routes } from '@angular/router';
-import { matchVisitor, requireFamily, requireParent } from './core/guards';
+import { matchVisitor, requireFamily, requireNoFamily, requireParent } from './core/guards';
 import { AppShell } from './core/layout/app-shell';
 
 /**
  * `/` is the product home for a visitor and the home page for a signed-in
- * parent. Every other page except the child login needs a signed-in parent;
- * a visitor is sent to the product home, and an unknown address goes to `/`.
- * Route titles become the browser title "<title> - 好奇星球" (core/page-title).
+ * parent; `/child`, the child login, needs no login either and shows the same
+ * to a signed-in parent. Every other page needs a signed-in parent; a visitor
+ * is sent to the product home, and an unknown address goes to `/`. The
+ * family pages need a family (a parent without one goes to `/start`), and
+ * the start page is only for a parent without one (a parent with one goes
+ * to `/`). Route titles become the browser title "<title> - 好奇星球"
+ * (core/page-title).
  */
 export const routes: Routes = [
   {
@@ -34,7 +38,14 @@ export const routes: Routes = [
       },
       {
         path: 'start',
+        canActivate: [requireNoFamily],
         loadComponent: () => import('./features/start/start').then((module) => module.Start),
+      },
+      {
+        path: 'join',
+        title: '加入家庭',
+        canActivate: [requireFamily],
+        loadComponent: () => import('./features/join/join').then((module) => module.Join),
       },
       {
         path: 'profile',

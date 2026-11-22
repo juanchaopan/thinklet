@@ -4,14 +4,19 @@ import { worker } from './network';
 
 // The people and families the design draws (林悦, admin of 林悦的家 and a
 // member of 外婆家; 周子航 and 林建国 in her family), as the api returns them.
+// The parents' ids give them the avatar colours of the design: 林悦 violet,
+// 周子航 sky, 林建国 mint.
 
-export const LINYUE_ID = '0b7c4e2a-1d3f-4a5b-9c6d-7e8f90a1b2c3';
-export const ZIHANG_ID = '41f2a8c6-5b7d-4e9f-8a1b-2c3d4e5f6a7b';
-export const JIANGUO_ID = '6c1d9e3f-2a4b-4c5d-8e6f-7a8b9c0d1e2f';
+export const LINYUE_ID = '0b7c4e2a-1d3f-4a5b-9c6d-7e8f90a1b2c6';
+export const ZIHANG_ID = '41f2a8c6-5b7d-4e9f-8a1b-2c3d4e5f6a71';
+export const JIANGUO_ID = '6c1d9e3f-2a4b-4c5d-8e6f-7a8b9c0d1e22';
 export const LINYUE_FAMILY_ID = '5d1e7f3a-9b2c-4d4e-a6f8-1a2b3c4d5e6f';
 export const GRANDMA_FAMILY_ID = '8a40c2e4-6f1b-4a3c-9d5e-7f8a9b0c1d2e';
 
-/** 林悦 signed in: admin of 林悦的家 with two requests waiting, member of 外婆家. */
+/**
+ * 林悦 signed in: admin of 林悦的家 with two requests waiting, member of
+ * 外婆家, with no request results to see.
+ */
 export const LINYUE: MeResponse = {
   id: LINYUE_ID,
   name: '林悦',
@@ -20,7 +25,14 @@ export const LINYUE: MeResponse = {
     { id: LINYUE_FAMILY_ID, name: '林悦的家', role: 'admin', pendingRequests: 2 },
     { id: GRANDMA_FAMILY_ID, name: '外婆家', role: 'member' },
   ],
+  requestResults: 0,
 };
+
+/** 林悦 with a request result she has not seen yet: the red dots are on. */
+export const LINYUE_WITH_RESULTS: MeResponse = { ...LINYUE, requestResults: 1 };
+
+/** 林悦 before she has a family. */
+export const LINYUE_WITHOUT_FAMILY: MeResponse = { ...LINYUE, families: [] };
 
 /** 林悦的家 as its members see it. */
 export const LINYUE_FAMILY: FamilyDetail = {
@@ -61,8 +73,11 @@ export const GRANDMA_FAMILY: FamilyDetail = {
   ],
 };
 
-/** The request id the stubbed failures carry, shown on screen as the error id. */
-export const REQUEST_ID = 'a1f3-92c0';
+/** The request id the stubbed failures carry. */
+export const REQUEST_ID = 'a1f392c0-5b7d-4e9f-8a1b-2c3d4e5f6a7b';
+
+/** The error number the screen shows for REQUEST_ID: its first 8 characters. */
+export const ERROR_NUMBER = 'a1f3-92c0';
 
 /** The body of an api error response. */
 export function errorBody(code: ErrorCode, extra: Record<string, unknown> = {}) {

@@ -1,12 +1,13 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-export type LineIconName = 'copy' | 'share' | 'qr' | 'close' | 'pencil' | 'chevron' | 'check';
+export type LineIconName =
+  'copy' | 'share' | 'qr' | 'close' | 'pencil' | 'chevron' | 'check' | 'back';
 
 /**
  * The project's line icons, drawn in the current text colour and hidden from
  * screen readers (the button around an icon carries the name). Copy, share
  * and QR are 20 px with 1.75 px strokes, round caps and joins; the chevron is
- * 16 px.
+ * 16 px; back points left, for 返回.
  */
 @Component({
   selector: 'app-line-icon',
@@ -106,6 +107,18 @@ export type LineIconName = 'copy' | 'share' | 'qr' | 'close' | 'pencil' | 'chevr
             d="m5 10.5 3.2 3L15 7"
             stroke="currentColor"
             stroke-width="2.4"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      }
+      @case ('back') {
+        <svg class="size-5" viewBox="0 0 20 20" aria-hidden="true">
+          <path
+            d="M12 4.5 6.5 10l5.5 5.5"
+            stroke="currentColor"
+            stroke-width="1.8"
             fill="none"
             stroke-linecap="round"
             stroke-linejoin="round"

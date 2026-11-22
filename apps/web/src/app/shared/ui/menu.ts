@@ -2,6 +2,7 @@ import { FocusKeyManager, type FocusableOption } from '@angular/cdk/a11y';
 import {
   createFlexibleConnectedPositionStrategy,
   createRepositionScrollStrategy,
+  type ConnectedPosition,
   type OverlayConfig,
 } from '@angular/cdk/overlay';
 import { TemplatePortal } from '@angular/cdk/portal';
@@ -59,12 +60,30 @@ export class MenuItem implements FocusableOption {
 })
 export class MenuDivider {}
 
+/** Which edge of its button a drop-down lines up with. */
+export type MenuAlign = 'start' | 'end';
+
+/** Below the button at the chosen edge, 4 px down; the other edge when there is no room. */
+function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
+  const start: ConnectedPosition = {
+    originX: 'start',
+    originY: 'bottom',
+    overlayX: 'start',
+    overlayY: 'top',
+    offsetY: 4,
+  };
+  const end: ConnectedPosition = { ...start, originX: 'end', overlayX: 'end' };
+  return align === 'start' ? [start, end] : [end, start];
+}
+
 /**
  * A menu of actions opened from a button. As a drop-down it unfolds 4 px
  * below its button in 150 ms; otherwise it is a sheet rising from the bottom
  * over a dimmed page in 300 ms, floating above the bottom edge on a touch
  * screen. The owner chooses with `dropDown`: the mouse version drops down
- * where there is room under the button.
+ * where there is room under the button. A drop-down lines up with the
+ * button's start edge, or with its end edge for a button at the far end of
+ * a bar (`align`).
  *
  * The first entry takes the focus; the arrow keys, Home and End move between
  * entries. Escape, Tab and a click outside emit `dismissed`; the owner then
@@ -81,7 +100,9 @@ export class MenuDivider {}
         role="menu"
         tabindex="-1"
         [attr.aria-label]="label()"
-        class="w-72 origin-top-left rounded-3xl border border-line bg-surface p-2 shadow-pop outline-none"
+        class="w-72 rounded-3xl border border-line bg-surface p-2 shadow-pop outline-none"
+        [class.origin-top-left]="align() === 'start'"
+        [class.origin-top-right]="align() === 'end'"
         [class]="layer.leaving() ? 'animate-drop-out' : 'animate-drop'"
         (keydown)="onKeydown($event)"
       >
@@ -124,6 +145,7 @@ export class Menu {
   /** The button the menu belongs to; a drop-down unfolds below it. */
   readonly origin = input.required<HTMLElement>();
   readonly dropDown = input(true);
+  readonly align = input<MenuAlign>('start');
 
   readonly dismissed = output();
 
@@ -205,9 +227,7 @@ export class Menu {
       positionStrategy: createFlexibleConnectedPositionStrategy(
         this.injector,
         this.origin(),
-      ).withPositions([
-        { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-      ]),
+      ).withPositions(dropDownPositions(this.align())),
       scrollStrategy: createRepositionScrollStrategy(this.injector),
       hasBackdrop: true,
       backdropClass: 'cdk-overlay-transparent-backdrop',

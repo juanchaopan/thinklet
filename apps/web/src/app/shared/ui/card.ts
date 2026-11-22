@@ -39,7 +39,7 @@ export class Chip {
   );
 }
 
-/** The red dot with the number of requests waiting, next to a menu entry. */
+/** The red badge with the number of requests waiting, next to a menu entry. */
 @Directive({
   selector: '[appBadge]',
   host: {
@@ -48,3 +48,16 @@ export class Chip {
   },
 })
 export class Badge {}
+
+/**
+ * The red dot for news without a number, such as request results not yet
+ * seen. It is only a mark; the entry it sits on says the same in words for
+ * screen readers.
+ *
+ *   <span appDot></span>
+ */
+@Directive({
+  selector: '[appDot]',
+  host: { 'aria-hidden': 'true', class: 'block size-2.5 shrink-0 rounded-full bg-badge' },
+})
+export class Dot {}

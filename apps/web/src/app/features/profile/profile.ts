@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import {
   fieldErrorCodeSchema,
   meResponseSchema,
@@ -37,15 +38,24 @@ export function nameHint(value: string): string | null {
 
 /**
  * The parent's own settings at `/profile`: the name, changed with the pencil
- * (in place with a mouse, in a sheet on a touch screen), the email as the
- * identity provider reports it (— when there is none), and signing out.
+ * (in place with a mouse, in a sheet on a touch screen) and saved with the
+ * 已保存 toast, the email as the identity provider reports it (— when there
+ * is none), and signing out. A parent without a family reaches it from the
+ * start page, in the frame without menus, and goes back there with 返回.
  */
 @Component({
   selector: 'app-profile',
-  imports: [Art, Button, Card, EditRow, EditSheet, IconButton, LineIcon],
+  imports: [Art, Button, Card, EditRow, EditSheet, IconButton, LineIcon, RouterLink],
   template: `
     @if (session.me(); as me) {
-      <div class="mx-auto flex max-w-3xl stagger flex-col gap-5">
+      <div class="mx-auto flex w-full max-w-3xl stagger flex-col gap-5">
+        @if (me.families.length === 0) {
+          <div>
+            <a appButton="text" routerLink="/start" class="-ml-3 pl-2">
+              <app-line-icon name="back" />返回
+            </a>
+          </div>
+        }
         <header class="flex flex-col gap-1">
           <h1 class="text-3xl font-black">个人设置</h1>
         </header>
@@ -145,6 +155,7 @@ export class Profile {
       const me = await this.api.send('PATCH', '/api/me', { name: name.trim() }, meResponseSchema);
       this.session.replace(me);
       this.editing.set(false);
+      this.toaster.show('已保存', 'success', 'party');
     } catch (error) {
       this.showFailure(error);
     } finally {
@@ -162,7 +173,11 @@ export class Profile {
     }
   }
 
-  /** A rejected name shows its hint under the box; any other failure shows a toast. */
+  /**
+   * A rejected name shows its hint under the box; any other failure (the
+   * server failing or not answering, a request from another site) shows the
+   * 出了点问题 toast.
+   */
   private showFailure(error: unknown): void {
     if (error instanceof ApiError && error.code === 'unauthenticated') {
       return;

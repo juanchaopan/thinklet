@@ -1,10 +1,28 @@
-import { DOCUMENT, Injectable, computed, inject, resource, signal } from '@angular/core';
-import { familyDetailSchema, type MeFamily } from '@thinklet/contracts';
-import { Api } from './api';
+import { DOCUMENT, Injectable, computed, inject, signal } from '@angular/core';
+import type { MeFamily } from '@thinklet/contracts';
 import { Session } from './session';
 
 /** The browser's local storage key for the family used last on this browser. */
 const STORAGE_KEY = 'thinklet.currentFamilyId';
+
+/** A family's own pages: its family page and its new members page. */
+const FAMILY_PAGE = /^\/families\/[^/?#]+(\/new-members)?(?:[?#].*)?$/;
+
+/**
+ * Where the parent goes after switching to the family `next` while on `url`
+ * (rules.md, 导航): from a family page to the new family's family page; from
+ * a new members page to the new family's new members page when they are its
+ * admin, else to its family page. Null on every other page (the home page,
+ * the join page, the profile), which stays and shows the new family.
+ */
+export function pageAfterSwitch(url: string, next: MeFamily): string | null {
+  const match = FAMILY_PAGE.exec(url);
+  if (!match) {
+    return null;
+  }
+  const newMembers = match[1] === '/new-members' && next.role === 'admin';
+  return `/families/${next.id}${newMembers ? '/new-members' : ''}`;
+}
 
 /**
  * The family the parent is working in. It is the family used last on this
@@ -15,7 +33,6 @@ const STORAGE_KEY = 'thinklet.currentFamilyId';
 @Injectable({ providedIn: 'root' })
 export class CurrentFamily {
   private readonly session = inject(Session);
-  private readonly api = inject(Api);
   private readonly storage = inject(DOCUMENT).defaultView?.localStorage;
 
   private readonly chosenId = signal(this.read());
@@ -23,21 +40,6 @@ export class CurrentFamily {
   readonly family = computed<MeFamily | null>(() => {
     const families = this.session.me()?.families ?? [];
     return families.find((family) => family.id === this.chosenId()) ?? families.at(0) ?? null;
-  });
-
-  /** The current family as its members see it (`GET /api/families/{familyId}`). */
-  readonly detail = resource({
-    params: () => this.family()?.id,
-    loader: ({ params: familyId }) => this.api.get(`/api/families/${familyId}`, familyDetailSchema),
-  });
-
-  /** Where the signed-in parent stands in the family's member list; 0 until it is known. */
-  readonly ownPlace = computed(() => {
-    const members = this.detail.hasValue() ? this.detail.value().members : [];
-    return Math.max(
-      members.findIndex((member) => member.you),
-      0,
-    );
   });
 
   /** Makes the family current and remembers it on this browser. */

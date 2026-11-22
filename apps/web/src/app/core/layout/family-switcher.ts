@@ -4,19 +4,21 @@ import { Art } from '../../shared/ui/art';
 import { Chip } from '../../shared/ui/card';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
-import { Menu, MenuItem } from '../../shared/ui/menu';
-import { CurrentFamily } from '../current-family';
+import { Menu, MenuDivider, MenuItem } from '../../shared/ui/menu';
+import { CurrentFamily, pageAfterSwitch } from '../current-family';
+import { FamilyCreation } from '../family-creation';
 import { Session } from '../session';
 
 /**
  * The current family in the navigation; it opens the menu of the parent's
- * families to switch between them. In the sidebar it says 切换家庭 under the
- * name and, with a mouse, its menu drops down; in the narrow top bar it shows
- * the name alone and its menu rises from the bottom.
+ * families, in the order they joined them with the current one ticked, and
+ * 创建家庭 under them. In the sidebar it says 切换家庭 under the name and,
+ * with a mouse, its menu drops down; in the narrow top bar it shows the name
+ * alone and its menu rises from the bottom.
  */
 @Component({
   selector: 'app-family-switcher',
-  imports: [Art, Chip, LineIcon, Menu, MenuItem],
+  imports: [Art, Chip, LineIcon, Menu, MenuDivider, MenuItem],
   template: `
     @if (currentFamily.family(); as family) {
       <button
@@ -64,6 +66,11 @@ import { Session } from '../session';
             }
           </button>
         }
+        <div appMenuDivider></div>
+        <button type="button" appMenuItem (click)="create()">
+          <img alt="" appArt="seedling" class="size-7" />
+          <span class="font-bold">创建家庭</span>
+        </button>
       </app-menu>
     }
   `,
@@ -80,21 +87,33 @@ export class FamilySwitcher {
 
   private readonly inputMode = inject(InputMode);
   private readonly router = inject(Router);
+  private readonly creation = inject(FamilyCreation);
 
   protected readonly dropDown = computed(() => !this.compact() && !this.inputMode.touch());
 
   /**
-   * Makes the family current. On a page of the previous family the same page
-   * of the chosen family opens.
+   * Makes the family current and opens the page the rules give for the page
+   * the parent is on (rules.md, 导航); the counts and red dots are read again
+   * for the new family.
    */
   protected choose(familyId: string): void {
-    const previous = this.currentFamily.family()?.id;
     this.open.set(false);
-    this.currentFamily.select(familyId);
-    const prefix = `/families/${previous ?? ''}`;
-    const url = this.router.url;
-    if (previous && (url === prefix || url.startsWith(`${prefix}/`))) {
-      void this.router.navigateByUrl(`/families/${familyId}${url.slice(prefix.length)}`);
+    const next = this.families().find((family) => family.id === familyId);
+    if (!next || next.id === this.currentFamily.family()?.id) {
+      return;
     }
+    this.currentFamily.select(next.id);
+    const page = pageAfterSwitch(this.router.url, next);
+    if (page) {
+      void this.router.navigateByUrl(page);
+    } else {
+      void this.session.refresh();
+    }
+  }
+
+  /** Asks for the dialog that creates a family, over the page the parent is on. */
+  protected create(): void {
+    this.open.set(false);
+    this.creation.request();
   }
 }

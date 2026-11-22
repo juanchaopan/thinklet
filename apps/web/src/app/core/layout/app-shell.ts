@@ -6,10 +6,13 @@ import {
   type IsActiveMatchOptions,
 } from '@angular/router';
 import { Art, Logo, type IconArt } from '../../shared/ui/art';
-import { Badge } from '../../shared/ui/card';
+import { Avatar } from '../../shared/ui/avatar';
+import { Badge, Dot } from '../../shared/ui/card';
 import { CurrentFamily } from '../current-family';
+import { Session } from '../session';
 import { FamilySwitcher } from './family-switcher';
-import { ProfileLink } from './profile-link';
+import { PARENT_PAGES } from './parent-pages';
+import { UserMenu } from './user-menu';
 
 interface NavItem {
   readonly label: string;
@@ -20,25 +23,31 @@ interface NavItem {
 }
 
 /**
- * The frame of the signed-in pages. From 1024 px a 256 px sidebar holds the
- * logo mark, the current family and the menu, and the avatar with the name
- * sits at the top right; below that a top bar holds the logo mark, the
- * current family and the avatar, and the menu is a tab bar at the bottom.
- * The menu is 首页 and 家庭管理, plus 新成员 for the family's admin. A parent
- * without a family gets the bare frame instead: the full logo and the avatar,
- * no menus.
+ * The frame of the signed-in pages (look.md, 布局). The navigation has two
+ * parts: the current family's pages (首页, 家庭管理, and 新成员 for the
+ * family's admin) under the family switcher, and the parent's own pages
+ * (加入家庭, 个人设置) under the parent's avatar and name.
+ *
+ * From 1024 px a 256 px sidebar holds the logo mark, the family switcher,
+ * the family's pages and, under a line, the parent's group; there is no bar
+ * above the content. Below that a top bar holds the logo mark, the family
+ * switcher and the avatar, which opens the parent's menu, and the family's
+ * pages are a tab bar at the bottom. A parent without a family gets the bare
+ * frame instead: the full logo and the avatar with its menu, no family pages.
  */
 @Component({
   selector: 'app-shell',
   imports: [
     Art,
+    Avatar,
     Badge,
+    Dot,
     FamilySwitcher,
     Logo,
-    ProfileLink,
     RouterLink,
     RouterLinkActive,
     RouterOutlet,
+    UserMenu,
   ],
   template: `
     @if (navItems(); as items) {
@@ -67,16 +76,44 @@ interface NavItem {
               </a>
             }
           </nav>
+          @if (session.me(); as me) {
+            <nav [attr.aria-label]="me.name" class="flex flex-col gap-1 border-t border-line pt-5">
+              <div class="flex min-h-12 items-center gap-3 px-3">
+                <app-avatar [name]="me.name" [parentId]="me.id" size="small" />
+                <span class="font-bold">{{ me.name }}</span>
+              </div>
+              @for (page of parentPages; track page.link) {
+                <a
+                  [routerLink]="page.link"
+                  routerLinkActive
+                  #own="routerLinkActive"
+                  [routerLinkActiveOptions]="samePage"
+                  ariaCurrentWhenActive="page"
+                  class="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-base font-bold transition-colors duration-150"
+                  [class]="own.isActive ? 'bg-tint text-ink' : 'text-ink-soft hover:bg-canvas'"
+                >
+                  <img alt="" [appArt]="page.icon" class="size-8" />
+                  <span class="flex-1">{{ page.label }}</span>
+                  @if (page.link === '/join' && me.requestResults > 0) {
+                    <span appDot class="mr-1.5"></span>
+                    <span class="sr-only">，有新的申请结果</span>
+                  }
+                </a>
+              }
+            </nav>
+          }
         </aside>
         <div class="flex min-w-0 flex-1 flex-col">
           <header
-            class="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur sm:px-6 lg:justify-end lg:border-b-0 lg:bg-transparent lg:backdrop-blur-none"
+            class="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur sm:px-6 lg:hidden"
           >
-            <span class="lg:hidden"><app-logo [height]="38" [mark]="true" /></span>
-            <span class="ml-auto lg:hidden"><app-family-switcher [compact]="true" /></span>
-            <app-profile-link />
+            <app-logo [height]="38" [mark]="true" />
+            <span class="ml-auto"><app-family-switcher [compact]="true" /></span>
+            <app-user-menu />
           </header>
-          <main class="flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-10 lg:pb-12"><router-outlet /></main>
+          <main class="flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-10 lg:pt-20 lg:pb-12">
+            <router-outlet />
+          </main>
           <nav
             aria-label="主菜单"
             class="fixed inset-x-0 bottom-0 z-10 grid border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
@@ -108,7 +145,7 @@ interface NavItem {
       <div class="flex min-h-screen flex-col">
         <header class="flex h-24 items-center px-4 sm:px-8">
           <app-logo [height]="64" />
-          <span class="ml-auto"><app-profile-link /></span>
+          <span class="ml-auto"><app-user-menu [markCurrent]="false" /></span>
         </header>
         <main class="flex flex-1 flex-col px-4 pb-12 sm:px-8"><router-outlet /></main>
       </div>
@@ -117,7 +154,10 @@ interface NavItem {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AppShell {
+  protected readonly session = inject(Session);
   private readonly currentFamily = inject(CurrentFamily);
+
+  protected readonly parentPages = PARENT_PAGES;
 
   /** A menu entry is current on its own page, whatever the query says. */
   protected readonly samePage: IsActiveMatchOptions = {

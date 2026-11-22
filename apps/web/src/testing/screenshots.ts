@@ -27,6 +27,16 @@ export interface ScreenshotOptions {
 const TOUCH: Record<ViewportName, boolean> = { phone: true, tablet: true, desktop: false };
 
 /**
+ * Resolves once every picture on the page has loaded and is decoded, so a
+ * capture never catches one still on its way (the first page of a test file
+ * fetches the pictures for the first time). A picture that fails to load is
+ * left as it is; the comparison then shows it.
+ */
+async function picturesReady(): Promise<void> {
+  await Promise.all(Array.from(document.images, (image) => image.decode().catch(() => undefined)));
+}
+
+/**
  * Compares one state with its baselines at every size in VIEWPORTS, named
  * `<name>-phone`, `<name>-tablet` and `<name>-desktop`. Phone and tablet are
  * captured as touch screens and the desktop with a mouse, so a state that
@@ -56,6 +66,7 @@ export async function expectScreenshotsAtEverySize(
     await page.viewport(width, height);
     await emulateTouch(TOUCH[size]);
     await options.prepare?.(size);
+    await picturesReady();
     if (!options.heldAnimations) {
       settleAnimations();
       // Let the compositor drop the layers the animations used, which draw

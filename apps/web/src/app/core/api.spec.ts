@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { meResponseSchema } from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { worker } from '../../testing/network';
-import { LINYUE, stubError } from '../../testing/sample-data';
+import { LINYUE, REQUEST_ID, stubError } from '../../testing/sample-data';
 import { Api, ApiError } from './api';
 
 function api(): Api {
@@ -41,7 +41,7 @@ describe('Api', () => {
 
     expect(error.status).toBe(400);
     expect(error.code).toBe('invalid_request');
-    expect(error.requestId).toBe('a1f3-92c0');
+    expect(error.requestId).toBe(REQUEST_ID);
     expect(error.fields).toEqual([{ path: 'name', code: 'too_long' }]);
   });
 

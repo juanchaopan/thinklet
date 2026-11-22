@@ -7,6 +7,7 @@ export type IconArt =
   | 'letter'
   | 'family'
   | 'key'
+  | 'consent'
   | 'globe'
   | 'seedling'
   | 'hourglass'
