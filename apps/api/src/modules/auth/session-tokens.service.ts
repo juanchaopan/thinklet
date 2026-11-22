@@ -1,3 +1,7 @@
+// The contracts package sets Zod to run without generated code before any
+// schema exists (decision 0028); importing it first puts the schemas below
+// under the same setting as every request schema.
+import '@thinklet/contracts';
 import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
