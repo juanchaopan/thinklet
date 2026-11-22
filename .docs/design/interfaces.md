@@ -40,12 +40,12 @@
 
 ## 通用约定
 
-- **登录状态**：除了 `/api/health` 和 `/api/auth/*`，每个接口都要登录。没登录、JWT 过期或签名不对时返回 `401`，错误码 `unauthenticated`。
-- **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。
+- **登录状态**：`/api/health`、`/api/auth/*`、`/api/child-auth/*` 和 `/api/child-login-links/{token}` 下的接口不用登录。孩子的接口（`/api/child/*`）只认孩子 cookie 里身份种类是 `child` 的 JWT；其余接口只认家长 cookie 里身份种类是 `parent` 的 JWT。没登录、JWT 过期、签名不对或身份种类不对时返回 `401`，错误码 `unauthenticated`。
+- **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。不用登录的接口也一样。
 - **家庭内的接口**在 `/api/families/{familyId}/...` 下，先查当前家长是不是这个家庭的成员：不是成员或家庭不存在都返回 `404`，错误码 `family_not_found`。要管理员的接口，不是管理员时返回 `403`，错误码 `not_admin`。
-- **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请）时返回 `404`，错误码 `not_found`。
+- **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请），或者家长查的登录链接不存在（包括不是这个孩子的链接）时返回 `404`，错误码 `not_found`。
 - **出错的响应**：`{ "error": { "code": "<错误码>", "requestId": "<请求编号>" } }`。界面上的提示由前端按错误码显示；界面上的错误编号是 `requestId` 的前 8 位，写成“a1f3-92c0”的样子。
-- **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。字段出错的 `code` 有三种：`required`（没填）、`too_long`（太长）、`invalid`（格式不对）。
+- **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。字段出错的 `code` 有四种：`required`（没填）、`too_short`（太短）、`too_long`（太长）、`invalid`（格式不对）。
 - **意外的错**：`500`，错误码 `internal`，只带请求编号，不带错误详情。
 
 ## GET /api/health
@@ -92,11 +92,11 @@
 
 ## 登录
 
-| 接口                     | 做什么                                                                                                                                                                                                                                                                                                                        |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/auth/login`    | 参数 `returnTo`（可选，本站以 `/` 开头的路径）。生成 state、nonce 和 PKCE，放进 10 分钟的签名 cookie，`302` 跳到 Authing 的授权地址                                                                                                                                                                                           |
-| `GET /api/auth/callback` | Authing 跳回来的地址。核对 state，用授权码换令牌，校验 ID 令牌和 nonce。第一次登录时建立家长，名字用 ID 令牌里的名字，没有就用邮箱 @ 前面的部分；以后只更新邮箱。每次都记下协议版本和时间。签发 JWT cookie，把 ID 令牌放进另一个 cookie，`302` 回到 `returnTo` 或 `/`。任何一步失败都 `302` 到 `/?login=failed`，原因写进日志 |
-| `POST /api/auth/logout`  | 清掉 JWT 和 ID 令牌两个 cookie，返回 `200` 和 `{ "endSessionUrl": "<Authing 的退出地址>" }`，前端整页跳过去。退出地址带 `id_token_hint`（ID 令牌 cookie 里的令牌）、`client_id` 和退回产品主页的 `post_logout_redirect_uri`。不需要登录：没登录或没有 ID 令牌时也返回退出地址，只是不带 `id_token_hint`                       |
+| 接口                     | 做什么                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/login`    | 参数 `returnTo`（可选，本站以 `/` 开头的路径）。生成 state、nonce 和 PKCE，放进 10 分钟的签名 cookie，`302` 跳到 Authing 的授权地址                                                                                                                                                                                                                 |
+| `GET /api/auth/callback` | Authing 跳回来的地址。核对 state，用授权码换令牌，校验 ID 令牌和 nonce。第一次登录时建立家长，名字用 ID 令牌里的名字，没有就用邮箱 @ 前面的部分；以后只更新邮箱。每次都记下协议版本和时间。签发身份种类是 `parent` 的 JWT cookie，把 ID 令牌放进另一个 cookie，`302` 回到 `returnTo` 或 `/`。任何一步失败都 `302` 到 `/?login=failed`，原因写进日志 |
+| `POST /api/auth/logout`  | 清掉 JWT 和 ID 令牌两个 cookie，孩子的 cookie 不动；返回 `200` 和 `{ "endSessionUrl": "<Authing 的退出地址>" }`，前端整页跳过去。退出地址带 `id_token_hint`（ID 令牌 cookie 里的令牌）、`client_id` 和退回产品主页的 `post_logout_redirect_uri`。不需要登录：没登录或没有 ID 令牌时也返回退出地址，只是不带 `id_token_hint`                         |
 
 - JWT cookie：`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，有效期 7 天；剩下不到 3.5 天时，任何登录过的请求的响应都换发一个新的。
 - ID 令牌 cookie：属性和 JWT cookie 一样，和它一起换发、一起清掉；只在退出时读，不用来认证请求。
@@ -232,22 +232,106 @@
 - `parentId` 是申请人的家长编号，用来算头像颜色。
 - 同意时，申请人在同一个事务里成为普通家长。
 
+## 孩子（家长）
+
+家庭的成员都能用，管理员和普通家长一样。
+
+| 接口                                                                    | 请求                                         | 成功                                        | 出错                                              |
+| ----------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| `GET /api/families/{familyId}/children`                                 | —                                            | `200` 孩子列表，按添加的时间排              | —                                                 |
+| `POST /api/families/{familyId}/children`                                | `{ "nickname", "account", "consent": true }` | `201` 孩子                                  | `400`、`409 account_taken`                        |
+| `PATCH /api/families/{familyId}/children/{childId}`                     | `{ "nickname"?, "account"? }`                | `200` 孩子                                  | `400`、`404 child_not_found`、`409 account_taken` |
+| `DELETE /api/families/{familyId}/children/{childId}`                    | —                                            | `204`                                       | `404 child_not_found`                             |
+| `POST /api/families/{familyId}/children/{childId}/password-reset`       | —                                            | `204`                                       | `404 child_not_found`                             |
+| `POST /api/families/{familyId}/children/{childId}/login-links`          | —                                            | `201 { "id", "url", "expiresAt" }`          | `404 child_not_found`                             |
+| `GET /api/families/{familyId}/children/{childId}/login-links/{linkId}`  | —                                            | `200 { "status", "expiresAt" }`             | `404 child_not_found`、`404 not_found`            |
+| `GET /api/families/{familyId}/children/{childId}/devices`               | —                                            | `200` 设备列表，按最近登录从新到旧          | `404 child_not_found`                             |
+| `DELETE /api/families/{familyId}/children/{childId}/devices/{deviceId}` | —                                            | `204`（撤销一台；设备已经不在时也是 `204`） | `404 child_not_found`                             |
+| `DELETE /api/families/{familyId}/children/{childId}/devices`            | —                                            | `204`（全部撤销）                           | `404 child_not_found`                             |
+
+孩子：
+
+```json
+{ "id": "3f9b…", "nickname": "小米", "account": "xiaomi" }
+```
+
+设备：
+
+```json
+{
+  "id": "a07c…",
+  "name": "iPad · Safari",
+  "rememberedAt": "2026-11-18T08:30:00Z",
+  "lastUsedAt": "2026-11-22T01:12:00Z"
+}
+```
+
+- 孩子不在这个家庭里（包括别的家庭的孩子和已经删除的孩子）时返回 `404 child_not_found`。
+- `nickname` 去掉前后空格后 1–10 个字；`account` 去掉前后空格后 1–20 个字符，只能是小写字母和数字，不是时 `code` 是 `invalid`。`consent` 不是 `true` 时，字段 `consent` 的 `code` 是 `required`。
+- 添加孩子时在同一行里记下勾选同意的家长、时间和同意文字的版本。
+- `url` 是 `<本站地址>/child/qr/<令牌>`，令牌只在这个响应里出现。生成链接时，这个孩子之前还没用过的链接在同一个事务里作废。
+- 链接的 `status` 是 `active`、`used`、`expired` 或 `revoked`。
+- 重设密码在同一个事务里清掉密码、删掉这个孩子全部记住的设备，并让之前签发的孩子 JWT 作废；还没用掉的登录链接照常有效。
+- 删除孩子时，记住的设备和登录链接一起删掉。
+
+## 孩子登录
+
+这些接口不用登录。
+
+| 接口                                              | 请求                                            | 成功                                                       | 出错                                                             |
+| ------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- |
+| `POST /api/child-auth/login`                      | `{ "code", "account", "password", "remember" }` | `200 { "id", "nickname" }`                                 | `401 login_failed`                                               |
+| `GET /api/child-auth/remembered`                  | —                                               | `200 [{ "childId", "nickname", "familyCode", "account" }]` | —                                                                |
+| `POST /api/child-auth/remembered/{childId}/login` | —                                               | `200 { "id", "nickname" }`                                 | `401 remember_invalid`                                           |
+| `POST /api/child-auth/logout`                     | —                                               | `204`                                                      | —                                                                |
+| `GET /api/child-login-links/{token}`              | —                                               | `200 { "childId", "nickname", "needsPassword" }`           | `404 link_invalid`                                               |
+| `POST /api/child-login-links/{token}/password`    | `{ "password", "remember" }`                    | `200 { "id", "nickname" }`                                 | `400`、`404 link_invalid`、`409 password_already_set`            |
+| `POST /api/child-login-links/{token}/login`       | `{ "password", "remember" }`                    | `200 { "id", "nickname" }`                                 | `401 wrong_password`、`404 link_invalid`、`409 password_not_set` |
+
+- 登录成功（输入账号密码、点头像、扫码设密码、扫码输密码）都签发孩子的登录 cookie。`remember` 是 `true` 时，建立或续期这台浏览器上这个孩子的设备记录，浏览器还没有设备 cookie 时先设一个；是 `false` 时去掉这台浏览器上这个孩子的设备记录。
+- `POST /api/child-auth/login`：`code` 不分大小写，后端转成大写再查。家庭码、账号、密码有一项不对，或者这个孩子还没有设密码，都返回 `401 login_failed`，不说是哪一项。
+- `GET /api/child-auth/remembered`：按设备 cookie 列出这台浏览器上还有效的设备记录；没有设备 cookie 时返回 `[]`。`familyCode` 是孩子家庭的家庭码，`account` 是孩子的账号，用来在点头像登录失败时填好表单。
+- `POST /api/child-auth/remembered/{childId}/login`：续期 30 天，更新最近一次登录的时间。设备记录被撤销、过期或不存在时返回 `401 remember_invalid`，不多带内容；前端用读头像列表时拿到的家庭码和账号填好表单。
+- `POST /api/child-auth/logout`：只清掉孩子的登录 cookie，设备 cookie 留着。
+- `GET /api/child-login-links/{token}` 不会用掉链接。`needsPassword` 是 `true` 表示孩子还没有密码。链接过期、用过、作废、不存在，或者孩子已经删除，都返回 `404 link_invalid`。
+- `POST /api/child-login-links/{token}/password`：给还没有密码的孩子设密码，用掉链接并登录。`password` 是 6–32 个字符。孩子已经有密码时返回 `409 password_already_set`。
+- `POST /api/child-login-links/{token}/login`：给已经有密码的孩子输密码，对了就用掉链接并登录；密码不对返回 `401 wrong_password`，链接照常能用。孩子还没有密码时返回 `409 password_not_set`。
+- 孩子的登录 cookie：属性和家长的 JWT cookie 一样（`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`），有效期 7 天；剩下不到 3.5 天时，孩子的任何登录过的请求的响应都换发一个新的。
+- 设备 cookie：`HttpOnly`、`Secure`、`SameSite=Lax`、`Path=/`，有效期 30 天；每次点头像登录时续期。
+
+## 孩子（孩子登录后）
+
+### GET /api/child/me
+
+```json
+{ "id": "3f9b…", "nickname": "小米" }
+```
+
+- 孩子的每个请求都查这个孩子还在不在、JWT 是不是在最后一次重设密码之后签发的；不是就返回 `401 unauthenticated`。
+
 ## 错误码和界面上的提示
 
-| 错误码               | 界面上的提示                                                                                                                             |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `unauthenticated`    | 回到产品主页，重新登录后回到原来的页面                                                                                                   |
-| `code_not_found`     | 没有这个家庭码                                                                                                                           |
-| `already_member`     | 你已经是这个家庭的成员                                                                                                                   |
-| `request_pending`    | 查码或发申请时：你已经申请过了，等管理员处理；点「知道了」时：出了点问题，请稍后再试（界面上等待中的申请没有「知道了」，正常用不会碰到） |
-| `request_closed`     | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了                                                                     |
-| `not_found`          | 这个申请已经不在了，刷新列表                                                                                                             |
-| `admin_cannot_leave` | 先把管理员设给别人才能离开                                                                                                               |
-| `not_admin`          | 你已不是管理员                                                                                                                           |
-| `not_a_member`       | 这位家长已经不在家庭里了                                                                                                                 |
-| `family_not_found`   | 找不到这个家庭（整页）                                                                                                                   |
-| `bad_origin`         | 出了点问题，请稍后再试                                                                                                                   |
-| `internal`、没有回应 | 出了点问题，请稍后再试                                                                                                                   |
-| `invalid_request`    | 按出错的字段显示 `rules.md` 里那个字段的提示                                                                                             |
+| 错误码                                     | 界面上的提示                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthenticated`                          | 家长的页面：回到 `/`，重新登录后回到原来的页面；孩子的页面：回到 `/child`                                                                |
+| `code_not_found`                           | 没有这个家庭码                                                                                                                           |
+| `already_member`                           | 你已经是这个家庭的成员                                                                                                                   |
+| `request_pending`                          | 查码或发申请时：你已经申请过了，等管理员处理；点「知道了」时：出了点问题，请稍后再试（界面上等待中的申请没有「知道了」，正常用不会碰到） |
+| `request_closed`                           | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了                                                                     |
+| `not_found`                                | 这个申请已经不在了，刷新列表；查登录二维码的状态时：二维码显示已失效                                                                     |
+| `admin_cannot_leave`                       | 先把管理员设给别人才能离开                                                                                                               |
+| `not_admin`                                | 你已不是管理员                                                                                                                           |
+| `not_a_member`                             | 这位家长已经不在家庭里了                                                                                                                 |
+| `family_not_found`                         | 找不到这个家庭（整页）                                                                                                                   |
+| `account_taken`                            | 家里已经有孩子用这个账号了（账号框下面）                                                                                                 |
+| `child_not_found`                          | 这个孩子已经被删除了，刷新列表；查登录二维码的状态时：二维码显示已失效                                                                   |
+| `login_failed`                             | 家庭码、账号或密码不对                                                                                                                   |
+| `remember_invalid`                         | 这台设备需要重新输入密码，打开填好家庭码和账号的表单                                                                                     |
+| `link_invalid`                             | 这个二维码已经失效了（整页）                                                                                                             |
+| `wrong_password`                           | 密码不对                                                                                                                                 |
+| `password_already_set`、`password_not_set` | 不提示，重新读取二维码的状态，换成对应的表单                                                                                             |
+| `bad_origin`                               | 出了点问题，请稍后再试                                                                                                                   |
+| `internal`、没有回应                       | 出了点问题，请稍后再试                                                                                                                   |
+| `invalid_request`                          | 按出错的字段显示 `rules.md` 里那个字段的提示                                                                                             |
 
-Last changed: #7 (2026-11-21)
+Last changed: #8 (2026-11-22)
