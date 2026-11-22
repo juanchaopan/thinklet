@@ -207,6 +207,7 @@
   "pending": [
     {
       "id": "9c3a…",
+      "parentId": "e8a1…",
       "name": "陈晓",
       "email": "chenxiao@example.com",
       "createdAt": "2026-11-21T09:12:00Z"
@@ -215,6 +216,7 @@
   "handled": [
     {
       "id": "77b0…",
+      "parentId": "c3d9…",
       "name": "林建国",
       "email": "jianguo.lin@example.com",
       "status": "approved",
@@ -225,6 +227,7 @@
 ```
 
 - `pending` 按发出时间从新到旧；`handled` 是已同意、已拒绝、已失效且管理员还没点「知道了」的，按处理时间从新到旧。撤回的不列出。
+- `parentId` 是申请人的家长编号，用来算头像颜色。
 - 同意时，申请人在同一个事务里成为普通家长。
 
 ## 错误码和界面上的提示
