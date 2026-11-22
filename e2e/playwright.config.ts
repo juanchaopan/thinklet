@@ -1,3 +1,4 @@
+import { availableParallelism, freemem } from 'node:os';
 import { defineConfig, devices } from '@playwright/test';
 
 // End-to-end and smoke tests. They run against BASE_URL, the web origin that
@@ -19,6 +20,27 @@ const baseURL = process.env['BASE_URL'];
 if (!baseURL) {
   throw new Error('Set BASE_URL to the web origin to test (the tasks set it)');
 }
+
+/**
+ * The memory one Chromium worker takes at its peak, rounded up: its browser
+ * with the pages of a test of two parents (about 650 MB measured) and its
+ * Node process (about 200 MB).
+ */
+const MEMORY_PER_WORKER = 1024 ** 3;
+
+/**
+ * How many tests run at a time: Playwright's default of one per two CPU
+ * threads, but no more than the memory free when the run starts can hold,
+ * and at least one. With more browsers than that, the machine runs out of
+ * memory and pages heavily: pages stall past the test timeout, and tests
+ * fail in steps that have nothing to do with them. The environment of
+ * `task test-e2e` is already running when this is read, so its containers
+ * and api are counted. `--workers` still overrides it.
+ */
+const WORKERS = Math.max(
+  1,
+  Math.min(Math.floor(availableParallelism() / 2), Math.floor(freemem() / MEMORY_PER_WORKER)),
+);
 
 /**
  * How many tests run at a time in each of Firefox, WebKit and the phone,
@@ -43,6 +65,7 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
+  workers: WORKERS,
   reporter: [['list'], ['html', { outputFolder: '../playwright-report', open: 'never' }]],
   use: {
     baseURL,
