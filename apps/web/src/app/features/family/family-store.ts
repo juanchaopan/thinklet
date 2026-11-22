@@ -17,6 +17,7 @@ import {
   familyPath,
   type FamilyTrouble,
 } from '../../core/family-pages';
+import { FreshReads } from '../../core/fresh-reads';
 import { Session } from '../../core/session';
 import type { IconArt } from '../../shared/ui/art';
 import { Toaster } from '../../shared/ui/toast';
@@ -61,6 +62,10 @@ export function familyAfterLeaving(
  * answers it, says so in a toast and reads the parent again, so the
  * navigation follows.
  *
+ * A read shows its answer only when no newer read started and no change was
+ * shown meanwhile, so a slow read never puts back what a change replaced, or
+ * a family the page has moved away from.
+ *
  * A family the parent is not (or no longer) a member of is `not-found`; a
  * family that changed meanwhile is explained in a toast and read again
  * (rules.md, 同时操作). The page provides its own instance.
@@ -76,6 +81,7 @@ export class FamilyStore {
   private readonly detail = signal<FamilyDetail | null>(null);
   private readonly trouble = signal<FamilyTrouble | null>(null);
   private readonly running = signal<FamilyAction | null>(null);
+  private readonly reads = new FreshReads();
   private familyId = '';
 
   /** The family as the parent sees it; null until it has been read. */
@@ -111,15 +117,15 @@ export class FamilyStore {
    * family that is shown.
    */
   async load(): Promise<void> {
-    const familyId = this.familyId;
+    const fresh = this.reads.start();
     try {
-      const family = await this.api.get(familyPath(familyId), familyDetailSchema);
-      if (familyId === this.familyId) {
+      const family = await this.api.get(familyPath(this.familyId), familyDetailSchema);
+      if (fresh()) {
         this.detail.set(family);
         this.trouble.set(null);
       }
     } catch (error) {
-      if (familyId === this.familyId) {
+      if (fresh()) {
         this.loadFailed(error);
       }
     }
@@ -131,14 +137,15 @@ export class FamilyStore {
       return { outcome: 'failed' };
     }
     this.running.set(changes.name === undefined ? 'timezone' : 'name');
+    const familyId = this.familyId;
     try {
       const family = await this.api.send(
         'PATCH',
-        familyPath(this.familyId),
+        familyPath(familyId),
         changes,
         familyDetailSchema,
       );
-      this.changed(family, '已保存', 'party');
+      this.changed(familyId, family, '已保存', 'party');
       return { outcome: 'saved' };
     } catch (error) {
       const code = rejectedField(error);
@@ -154,27 +161,27 @@ export class FamilyStore {
 
   /** Replaces the family code; the old one stops working at once. */
   changeCode(): Promise<void> {
-    return this.run('code', async () => {
+    return this.run('code', async (familyId) => {
       const family = await this.api.send(
         'POST',
-        familyPath(this.familyId, '/code'),
+        familyPath(familyId, '/code'),
         undefined,
         familyDetailSchema,
       );
-      this.changed(family, '已更换家庭码', 'key');
+      this.changed(familyId, family, '已更换家庭码', 'key');
     });
   }
 
   /** Hands the admin role to the member; the parent becomes a member like the others. */
   makeAdmin(member: FamilyMember): Promise<void> {
-    return this.run('admin', async () => {
+    return this.run('admin', async (familyId) => {
       const family = await this.api.send(
         'PUT',
-        familyPath(this.familyId, '/admin'),
+        familyPath(familyId, '/admin'),
         { parentId: member.parentId },
         familyDetailSchema,
       );
-      this.changed(family, `「${member.name}」现在是管理员`, 'crown');
+      this.changed(familyId, family, `「${member.name}」现在是管理员`, 'crown');
     });
   }
 
@@ -218,14 +225,20 @@ export class FamilyStore {
     await this.router.navigateByUrl(pageAfterSwitch(this.router.url, next) ?? '/');
   }
 
-  /** Runs one change while it is marked busy; a failure is explained. */
-  private async run(action: FamilyAction, work: () => Promise<void>): Promise<void> {
+  /**
+   * Runs one change to the family shown, which `work` is given the id of,
+   * while it is marked busy; a failure is explained.
+   */
+  private async run(
+    action: FamilyAction,
+    work: (familyId: string) => Promise<void>,
+  ): Promise<void> {
     if (this.running()) {
       return;
     }
     this.running.set(action);
     try {
-      await work();
+      await work(this.familyId);
     } catch (error) {
       explainFailure(error, this.toaster, this.failures);
     } finally {
@@ -233,8 +246,15 @@ export class FamilyStore {
     }
   }
 
-  private changed(family: FamilyDetail, text: string, icon: IconArt): void {
-    this.detail.set(family);
+  /**
+   * Says a change to the family `familyId` was made, and shows the family as
+   * the change left it while the page still shows that family.
+   */
+  private changed(familyId: string, family: FamilyDetail, text: string, icon: IconArt): void {
+    if (familyId === this.familyId) {
+      this.reads.wrote();
+      this.detail.set(family);
+    }
     this.toaster.show(text, 'success', icon);
     void this.session.refresh();
   }
@@ -252,6 +272,7 @@ export class FamilyStore {
 
   /** The parent is not, or no longer, a member: the page says so, and the navigation follows. */
   private notFound(): void {
+    this.reads.wrote();
     this.detail.set(null);
     this.trouble.set('not-found');
     void this.session.refresh();

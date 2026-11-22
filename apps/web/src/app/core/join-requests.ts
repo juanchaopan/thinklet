@@ -10,6 +10,7 @@ import {
 import { Toaster } from '../shared/ui/toast';
 import { Api, type ApiError } from './api';
 import { asApiError, explainChange, isSignedOut } from './failures';
+import { FreshReads } from './fresh-reads';
 import { Session } from './session';
 
 /** What the toast says when the request a change was about is gone. */
@@ -24,6 +25,10 @@ const REQUEST_GONE: Partial<Record<ErrorCode, string>> = { not_found: '这个申
  * a toast; dismissing also reads the parent again, so the red dot follows. A
  * request that changed meanwhile is explained in a toast and the list is
  * read again (rules.md, 同时操作).
+ *
+ * A read shows its answer only when no newer read started and the list was
+ * not changed meanwhile, so a slow read never brings back a request already
+ * withdrawn or drops one just sent.
  */
 @Injectable({ providedIn: 'root' })
 export class JoinRequests {
@@ -34,6 +39,7 @@ export class JoinRequests {
   private readonly list = signal<readonly ApplicantJoinRequest[] | null>(null);
   private readonly problem = signal<ApiError | null>(null);
   private readonly working = signal<ReadonlySet<string>>(new Set());
+  private readonly reads = new FreshReads();
 
   /** The requests, newest first; null until they have been read once. */
   readonly requests = this.list.asReadonly();
@@ -48,11 +54,15 @@ export class JoinRequests {
    * keeps the list that is shown.
    */
   async load(): Promise<void> {
+    const fresh = this.reads.start();
     try {
-      this.list.set(await this.api.get('/api/join-requests', applicantJoinRequestListSchema));
-      this.problem.set(null);
+      const requests = await this.api.get('/api/join-requests', applicantJoinRequestListSchema);
+      if (fresh()) {
+        this.list.set(requests);
+        this.problem.set(null);
+      }
     } catch (error) {
-      if (this.list() === null && !isSignedOut(error)) {
+      if (fresh() && this.list() === null && !isSignedOut(error)) {
         this.problem.set(asApiError(error));
       }
     }
@@ -74,7 +84,7 @@ export class JoinRequests {
       { code },
       applicantJoinRequestSchema,
     );
-    this.list.update((requests) => [request, ...(requests ?? [])]);
+    this.change((requests) => [request, ...requests]);
   }
 
   async withdraw(request: ApplicantJoinRequest): Promise<void> {
@@ -94,6 +104,14 @@ export class JoinRequests {
     });
   }
 
+  /** Shows the list as a change left it, which is newer than any read still on its way. */
+  private change(
+    update: (requests: readonly ApplicantJoinRequest[]) => readonly ApplicantJoinRequest[],
+  ): void {
+    this.reads.wrote();
+    this.list.update((requests) => update(requests ?? []));
+  }
+
   /**
    * Runs one action on a request while it is marked busy, and takes it off
    * the list when the action is done. A request that is gone, or a code in
@@ -108,7 +126,7 @@ export class JoinRequests {
     this.working.update((ids) => new Set([...ids, request.id]));
     try {
       await action();
-      this.list.update((requests) => (requests ?? []).filter((shown) => shown.id !== request.id));
+      this.change((requests) => requests.filter((shown) => shown.id !== request.id));
     } catch (error) {
       explainChange(error, this.toaster, { ...changed, ...REQUEST_GONE }, () => {
         void this.load();

@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { logoutResponseSchema, meResponseSchema, type MeResponse } from '@thinklet/contracts';
 import { Api, type ApiError } from './api';
 import { asApiError } from './failures';
+import { FreshReads } from './fresh-reads';
 import { PageNavigation } from './login';
 
 /**
@@ -16,6 +17,10 @@ export type SessionStatus = 'unknown' | 'visitor' | 'signed-in' | 'failed';
  * The signed-in parent (`GET /api/me`) as signals. Any 401 while signed in
  * means the login has expired: the parent goes back to the product home, and
  * signing in again returns to the page they were on.
+ *
+ * A background read shows its answer only when no newer read started and no
+ * newer parent was shown meanwhile, so a slow answer never puts back what a
+ * change has already replaced.
  */
 @Injectable({ providedIn: 'root' })
 export class Session {
@@ -26,6 +31,7 @@ export class Session {
   private readonly current = signal<MeResponse | null>(null);
   private readonly state = signal<SessionStatus>('unknown');
   private readonly problem = signal<ApiError | null>(null);
+  private readonly reads = new FreshReads();
   private loading: Promise<SessionStatus> | undefined;
   private retryUrl = '/';
 
@@ -68,8 +74,12 @@ export class Session {
     if (this.state() !== 'signed-in') {
       return;
     }
+    const fresh = this.reads.start();
     try {
-      this.current.set(await this.api.get('/api/me', meResponseSchema));
+      const me = await this.api.get('/api/me', meResponseSchema);
+      if (fresh()) {
+        this.current.set(me);
+      }
     } catch {
       // A 401 has already sent the parent home; anything else changes nothing.
     }
@@ -77,7 +87,7 @@ export class Session {
 
   /** Replaces the parent with what an api call answered. */
   replace(me: MeResponse): void {
-    this.current.set(me);
+    this.show(me);
   }
 
   /** Signs out here and at the identity provider, which then returns to the product home. */
@@ -94,17 +104,23 @@ export class Session {
   private async load(): Promise<SessionStatus> {
     try {
       const me = await this.api.get('/api/me', meResponseSchema);
-      this.current.set(me);
+      this.show(me);
       this.problem.set(null);
       this.state.set('signed-in');
     } catch (error) {
       const failure = asApiError(error);
       const visitor = failure.code === 'unauthenticated';
-      this.current.set(null);
+      this.show(null);
       this.problem.set(visitor ? null : failure);
       this.state.set(visitor ? 'visitor' : 'failed');
     }
     return this.state();
+  }
+
+  /** Shows the parent, which is newer than any background read still on its way. */
+  private show(me: MeResponse | null): void {
+    this.reads.wrote();
+    this.current.set(me);
   }
 
   private expire(): void {
@@ -112,7 +128,7 @@ export class Session {
       return;
     }
     const returnTo = this.router.url;
-    this.current.set(null);
+    this.show(null);
     this.state.set('visitor');
     this.loading = Promise.resolve('visitor');
     void this.router.navigate(['/'], { queryParams: { returnTo } });
