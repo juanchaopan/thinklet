@@ -160,10 +160,14 @@ jobs:
       - name: Install Chromium for the smoke tests
         run: pnpm exec playwright install --with-deps chromium
 
+      # The smoke tests check that the login goes to the target's own
+      # identity provider with its client id; both are public values.
       - name: Run the smoke tests
         env:
           BASE_URL: ${{ vars.STAGING_URL }}
           PRODUCTION_SAFE: ${{ (inputs.target || 'staging') == 'production' }}
+          TEST_OIDC_ISSUER: ${{ vars.OIDC_ISSUER }}
+          TEST_OIDC_CLIENT_ID: ${{ vars.OIDC_CLIENT_ID }}
         run: pnpm exec task test-smoke BASE_URL="$BASE_URL" PRODUCTION_SAFE="$PRODUCTION_SAFE"
 
       - if: failure()
