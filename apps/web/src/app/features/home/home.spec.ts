@@ -1,7 +1,6 @@
 import { screen, within } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
-import { holdAnimationsAt } from '../../../testing/animations';
 import { renderApp } from '../../../testing/app';
 import { useFixedClock } from '../../../testing/clock';
 import { holdOverlaysAt } from '../../../testing/families';
@@ -59,11 +58,10 @@ describe('Home', () => {
     async (time) => {
       await renderApp('/');
 
-      holdAnimationsAt(time);
       await expectScreenshotsAtEverySize(
         `home-signed-in-entering-${String(time).padStart(4, '0')}ms`,
         undefined,
-        { heldAnimations: true },
+        { heldAt: time },
       );
     },
   );
@@ -92,9 +90,6 @@ describe('Home', () => {
 
     expect(await screen.findByText('网络断开了，请稍后再试')).toBeTruthy();
     await expectNoAxeViolations();
-    holdAnimationsAt(2500);
-    await expectScreenshotsAtEverySize('toast-offline-2500ms', undefined, {
-      heldAnimations: true,
-    });
+    await expectScreenshotsAtEverySize('toast-offline-2500ms', undefined, { heldAt: 2500 });
   });
 });

@@ -1,7 +1,6 @@
 import { screen } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
-import { holdAnimationsAt } from '../../../testing/animations';
 import { renderApp } from '../../../testing/app';
 import { emulateReducedMotion, nextFrames } from '../../../testing/pointer';
 import { stubVisitor } from '../../../testing/sample-data';
@@ -57,11 +56,10 @@ describe('VisitorHome', () => {
   it.each([0, 150, 350, 600])('enters with the rabbit and its bubble, at %i ms', async (time) => {
     await renderApp('/');
 
-    holdAnimationsAt(time);
     await expectScreenshotsAtEverySize(
       `home-visitor-entering-${String(time).padStart(4, '0')}ms`,
       undefined,
-      { heldAnimations: true },
+      { heldAt: time },
     );
   });
 

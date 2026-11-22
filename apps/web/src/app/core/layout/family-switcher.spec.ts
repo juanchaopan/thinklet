@@ -64,7 +64,6 @@ describe('FamilySwitcher', () => {
       `menu-family-opening-${String(time).padStart(4, '0')}ms`,
       undefined,
       {
-        heldAnimations: true,
         prepare: async () => {
           await closeMenu();
           settleAnimations();

@@ -318,7 +318,6 @@ describe('Start', () => {
           `family-create-opening-${String(time).padStart(4, '0')}ms`,
           undefined,
           {
-            heldAnimations: true,
             prepare: async () => {
               creation.done();
               await noDialog();

@@ -100,34 +100,14 @@ async function overlaysOpening(): Promise<Element> {
 }
 
 /**
- * Fixes what was just shown above the page at `time` milliseconds into its
- * opening; a time past the end fixes it fully open. Each animation is moved
- * to that moment, then its look there (position and opacity) is written onto
- * the element and the animation is dropped. A held animation can still be
- * drawn from a frame the compositor made before it was moved, so a capture
- * of it is not reliable; a still element always is.
+ * Holds what was just shown above the page at `time` milliseconds into its
+ * opening; a time past the end holds it fully open. The screenshot helper
+ * captures the held moment as a still page (freezeAnimations).
  */
 export async function holdOverlaysAt(time: number): Promise<void> {
   const container = await overlaysOpening();
   await nextFrames();
-  const animations = holdAnimationsAt(time, container);
-  const looks = animations.flatMap((animation) => {
-    const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-    if (!(target instanceof HTMLElement)) {
-      return [];
-    }
-    const { transform, opacity } = getComputedStyle(target);
-    return [{ target, transform, opacity }];
-  });
-  for (const animation of animations) {
-    animation.cancel();
-  }
-  for (const { target, transform, opacity } of looks) {
-    target.style.animation = 'none';
-    target.style.transform = transform;
-    target.style.opacity = opacity;
-  }
-  await nextFrames();
+  holdAnimationsAt(time, container);
 }
 
 /** Waits until no dialog is left, including one that is still leaving. */

@@ -6,7 +6,6 @@ import {
   requireNoFamily,
   requireParent,
 } from './core/guards';
-import { AppShell } from './core/layout/app-shell';
 
 /**
  * `/` is the product home for a visitor and the home page for a signed-in
@@ -19,6 +18,9 @@ import { AppShell } from './core/layout/app-shell';
  * join page for a parent with a family and over the start page for one
  * without. Route titles become the browser title "<title> - 好奇星球"
  * (core/page-title).
+ *
+ * Every page is loaded when it is first opened, and so is the signed-in
+ * frame with its menus: a visitor's first page loads neither.
  */
 export const routes: Routes = [
   {
@@ -35,7 +37,7 @@ export const routes: Routes = [
   },
   {
     path: '',
-    component: AppShell,
+    loadComponent: () => import('./core/layout/app-shell').then((module) => module.AppShell),
     canActivate: [requireParent],
     children: [
       {
