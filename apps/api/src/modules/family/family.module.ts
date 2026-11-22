@@ -15,10 +15,13 @@ import { JoinRequestsService } from './join-requests.service.js';
 import { MeController } from './me.controller.js';
 
 /**
- * Parents' accounts and their families. FamilyService keeps the parents and
- * is the one service other modules use; FamiliesService keeps the families,
- * their settings and their members; JoinRequestsService keeps the requests
- * to join a family, from the applicant's and from the admin's side.
+ * Parents' accounts and their families. FamilyService keeps the parents;
+ * FamiliesService keeps the families, their settings and their members;
+ * JoinRequestsService keeps the requests to join a family, from the
+ * applicant's and from the admin's side. Other modules use FamilyService,
+ * and FamiliesService for its membership check (`checkAccess`), which every
+ * route under `/api/families/{familyId}` passes, those of other modules
+ * included.
  */
 @Module({
   imports: [DatabaseModule],
@@ -39,6 +42,6 @@ import { MeController } from './me.controller.js';
     JoinRequestsRepository,
     JoinRequestsService,
   ],
-  exports: [FamilyService],
+  exports: [FamilyService, FamiliesService],
 })
 export class FamilyModule {}
