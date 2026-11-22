@@ -73,6 +73,27 @@ const json = z.string().transform((value, context): unknown => {
 });
 
 /**
+ * Standard base64 text decoded into exactly `length` bytes. The text must be
+ * the canonical encoding of those bytes, padding included: Node's decoder
+ * skips characters it does not know and stops at the first `=`, so a key cut
+ * off, written in base64url or with stray characters would otherwise be read
+ * as other bytes. The message never repeats the text.
+ */
+function base64Bytes(length: number) {
+  return z.string().transform((value, context) => {
+    const bytes = Buffer.from(value, 'base64');
+    if (bytes.length !== length || bytes.toString('base64') !== value) {
+      context.addIssue({
+        code: 'custom',
+        message: `Must be ${length} bytes written in standard base64`,
+      });
+      return z.NEVER;
+    }
+    return bytes;
+  });
+}
+
+/**
  * Every environment variable the api reads. ConfigModule validates
  * `process.env` against it at startup and refuses to start, naming each bad
  * variable, when one is missing or malformed.
@@ -94,6 +115,13 @@ export const environmentSchema = z.object({
   APP_ORIGIN: origin,
   /** A JSON string in the environment, parsed into the JWK for the rest of the api. */
   JWT_SIGNING_KEY: json.pipe(signingKeySchema),
+  /**
+   * The master key of children's personal data: 32 random bytes, base64 in
+   * the environment and the bytes themselves for the rest of the api, which
+   * derives the encryption and lookup keys from it (decision 0034). 32 bytes
+   * is the key length of both AES-256 and HMAC-SHA256.
+   */
+  CHILD_DATA_KEY: base64Bytes(32),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

@@ -18,7 +18,12 @@ const settings: SecretSettings = {
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
   OIDC_CLIENT_SECRET: 'oidc-client-secret',
   JWT_SIGNING_KEY: { d: 'signing-key-d' },
+  CHILD_DATA_KEY: Buffer.from('child-data-key-for-logger-tests!'),
 };
+
+/** The child data key of `settings` in base64, as the environment holds it, and in hex. */
+const childDataKeyBase64 = settings.CHILD_DATA_KEY.toString('base64');
+const childDataKeyHex = settings.CHILD_DATA_KEY.toString('hex');
 
 function captureLogs(secrets: readonly string[]) {
   const lines: string[] = [];
@@ -64,7 +69,7 @@ const loggedJoinPageHeaders = {
 };
 
 describe('secretValues', () => {
-  it('lists the database URL, its password in both forms, the storage credentials, the client secret and the signing key', () => {
+  it('lists the database URL, its password in both forms, the storage credentials, the client secret, the signing key and the child data key in both forms', () => {
     expect(secretValues(settings)).toEqual([
       settings.DATABASE_URL,
       'p%40ss-word',
@@ -73,6 +78,8 @@ describe('secretValues', () => {
       'secret-access-key',
       'oidc-client-secret',
       'signing-key-d',
+      childDataKeyBase64,
+      childDataKeyHex,
     ]);
   });
 
@@ -148,10 +155,12 @@ describe('loggerOptions', () => {
         S3_SECRET_ACCESS_KEY: 'key-1',
         OIDC_CLIENT_SECRET: 'secret-1',
         JWT_SIGNING_KEY: 'key-2',
+        CHILD_DATA_KEY: 'key-3',
       },
+      CHILD_DATA_KEY: 'key-4',
     });
 
-    for (const value of ['url-1', 'key-1', 'secret-1', 'key-2']) {
+    for (const value of ['url-1', 'key-1', 'secret-1', 'key-2', 'key-3', 'key-4']) {
       expect(output()).not.toContain(value);
     }
   });
@@ -160,7 +169,10 @@ describe('loggerOptions', () => {
     const { logger, output } = captureLogs(secretValues(settings));
 
     logger.warn(
-      { detail: `password p@ss-word for ${settings.DATABASE_URL} and signing-key-d` },
+      {
+        detail: `password p@ss-word for ${settings.DATABASE_URL} and signing-key-d`,
+        key: `${childDataKeyBase64} or ${childDataKeyHex}`,
+      },
       'using secret-access-key with access-key-id and oidc-client-secret',
     );
 

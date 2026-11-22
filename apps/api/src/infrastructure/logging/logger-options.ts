@@ -11,6 +11,7 @@ const SECRET_VARIABLES = [
   'S3_SECRET_ACCESS_KEY',
   'OIDC_CLIENT_SECRET',
   'JWT_SIGNING_KEY',
+  'CHILD_DATA_KEY',
 ] as const;
 
 /**
@@ -89,13 +90,19 @@ const SENSITIVE_PATH_SEGMENTS: readonly RegExp[] = [
 
 export type SecretSettings = Pick<
   Environment,
-  'DATABASE_URL' | 'S3_ACCESS_KEY_ID' | 'S3_SECRET_ACCESS_KEY' | 'OIDC_CLIENT_SECRET'
+  | 'DATABASE_URL'
+  | 'S3_ACCESS_KEY_ID'
+  | 'S3_SECRET_ACCESS_KEY'
+  | 'OIDC_CLIENT_SECRET'
+  | 'CHILD_DATA_KEY'
 > & { JWT_SIGNING_KEY: Pick<Environment['JWT_SIGNING_KEY'], 'd'> };
 
 /**
  * The secret values of the configuration: the database URL, its password
  * (as written in the URL and decoded), the storage credentials, the OIDC
- * client secret and the private part of the JWT signing key.
+ * client secret, the private part of the JWT signing key, and the child
+ * data key in base64, as the environment holds it, and in hex, as bytes
+ * are most often printed.
  */
 export function secretValues(settings: SecretSettings): string[] {
   const { password } = new URL(settings.DATABASE_URL);
@@ -107,6 +114,8 @@ export function secretValues(settings: SecretSettings): string[] {
     settings.S3_SECRET_ACCESS_KEY,
     settings.OIDC_CLIENT_SECRET,
     settings.JWT_SIGNING_KEY.d,
+    settings.CHILD_DATA_KEY.toString('base64'),
+    settings.CHILD_DATA_KEY.toString('hex'),
   ];
 }
 

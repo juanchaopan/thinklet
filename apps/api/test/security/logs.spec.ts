@@ -3,6 +3,7 @@ import { runBuiltApp, type RunningProcess } from '../support/app.js';
 import {
   apiEnvironment,
   startServices,
+  testChildDataKey,
   testSigningKey,
   type StartedServices,
 } from '../support/containers.js';
@@ -78,7 +79,7 @@ describe('Logs', () => {
       }
     });
 
-    it('contains no connection string, credentials, signing key, authorization header or cookie', () => {
+    it('contains no connection string, credentials, keys, authorization header or cookie', () => {
       const output = lines.join('\n');
       const url = new URL(environment['DATABASE_URL'] ?? '');
       const secrets = [
@@ -88,6 +89,7 @@ describe('Logs', () => {
         environment['S3_SECRET_ACCESS_KEY'],
         environment['OIDC_CLIENT_SECRET'],
         signingKeySecret,
+        environment['CHILD_DATA_KEY'],
         authorization,
         cookie,
       ];
@@ -117,6 +119,7 @@ describe('Logs', () => {
       services.storage.secretAccessKey,
       services.oidc.clientSecret,
       signingKeySecret,
+      testChildDataKey,
     ]) {
       expect(running.output()).not.toContain(secret);
     }
@@ -134,5 +137,20 @@ describe('Logs', () => {
     expect(exitCode).not.toBe(0);
     expect(running.output()).toContain('JWT_SIGNING_KEY');
     expect(running.output()).not.toContain(signingKeySecret);
+  });
+
+  it('refuses to start on a child data key that is cut off, naming it without its value', async () => {
+    const cutOff = testChildDataKey.slice(0, -8);
+    const running = runBuiltApp({
+      ...apiEnvironment(services.database.getConnectionUri(), services.storage, services.oidc),
+      CHILD_DATA_KEY: cutOff,
+      PORT: String(await freePort()),
+    });
+
+    const exitCode = await running.exited;
+
+    expect(exitCode).not.toBe(0);
+    expect(running.output()).toContain('CHILD_DATA_KEY');
+    expect(running.output()).not.toContain(cutOff);
   });
 });
