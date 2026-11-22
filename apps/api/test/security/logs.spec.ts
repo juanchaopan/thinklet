@@ -1,11 +1,10 @@
-import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import request from 'supertest';
 import { runBuiltApp, type RunningProcess } from '../support/app.js';
 import {
   apiEnvironment,
-  startDatabase,
-  startStorage,
-  type StartedStorage,
+  startServices,
+  testSigningKey,
+  type StartedServices,
 } from '../support/containers.js';
 import { freePort, waitForHttp } from '../support/process.js';
 
@@ -13,18 +12,20 @@ function nonEmptyLines(text: string): string[] {
   return text.split('\n').filter((line) => line.trim() !== '');
 }
 
+/** The private part of the test signing key, which must never be logged. */
+const signingKeySecret = (JSON.parse(testSigningKey) as { d: string }).d;
+
 // These tests run the built dist/main.js as a separate process and read
 // everything it writes, exactly as the platform's log collector would.
 describe('Logs', () => {
-  let database: StartedPostgreSqlContainer;
-  let storage: StartedStorage;
+  let services: StartedServices;
 
   beforeAll(async () => {
-    [database, storage] = await Promise.all([startDatabase(), startStorage()]);
+    services = await startServices();
   });
 
   afterAll(async () => {
-    await Promise.all([database?.stop(), storage?.container.stop()]);
+    await services?.stop();
   });
 
   describe('when the checks fail on wrong credentials', () => {
@@ -36,13 +37,14 @@ describe('Logs', () => {
 
     beforeAll(async () => {
       const port = await freePort();
-      const url = new URL(database.getConnectionUri());
+      const url = new URL(services.database.getConnectionUri());
       url.password = `wrong-${crypto.randomUUID()}`;
       environment = {
-        ...apiEnvironment(url.toString(), {
-          ...storage,
-          secretAccessKey: `wrong-${crypto.randomUUID()}`,
-        }),
+        ...apiEnvironment(
+          url.toString(),
+          { ...services.storage, secretAccessKey: `wrong-${crypto.randomUUID()}` },
+          services.oidc,
+        ),
         PORT: String(port),
       };
       running = runBuiltApp(environment);
@@ -76,7 +78,7 @@ describe('Logs', () => {
       }
     });
 
-    it('contains no connection string, credentials, authorization header or cookie', () => {
+    it('contains no connection string, credentials, signing key, authorization header or cookie', () => {
       const output = lines.join('\n');
       const url = new URL(environment['DATABASE_URL'] ?? '');
       const secrets = [
@@ -84,6 +86,8 @@ describe('Logs', () => {
         url.password,
         environment['S3_ACCESS_KEY_ID'],
         environment['S3_SECRET_ACCESS_KEY'],
+        environment['OIDC_CLIENT_SECRET'],
+        signingKeySecret,
         authorization,
         cookie,
       ];
@@ -93,14 +97,14 @@ describe('Logs', () => {
         expect(output).not.toContain(secret);
       }
       expect(output).not.toMatch(/postgres(ql)?:\/\//);
-      expect(output).not.toContain(storage.endpoint);
+      expect(output).not.toContain(services.storage.endpoint);
     });
   });
 
   it('refuses to start on an invalid variable, naming it without its value', async () => {
     const invalidValue = `not-a-url-${crypto.randomUUID()}`;
     const running = runBuiltApp({
-      ...apiEnvironment(invalidValue, storage),
+      ...apiEnvironment(invalidValue, services.storage, services.oidc),
       PORT: String(await freePort()),
     });
 
@@ -108,7 +112,27 @@ describe('Logs', () => {
 
     expect(exitCode).not.toBe(0);
     expect(running.output()).toContain('DATABASE_URL');
-    expect(running.output()).not.toContain(invalidValue);
-    expect(running.output()).not.toContain(storage.secretAccessKey);
+    for (const secret of [
+      invalidValue,
+      services.storage.secretAccessKey,
+      services.oidc.clientSecret,
+      signingKeySecret,
+    ]) {
+      expect(running.output()).not.toContain(secret);
+    }
+  });
+
+  it('refuses to start on a signing key that is not one, naming it without its value', async () => {
+    const running = runBuiltApp({
+      ...apiEnvironment(services.database.getConnectionUri(), services.storage, services.oidc),
+      JWT_SIGNING_KEY: testSigningKey.slice(0, -10),
+      PORT: String(await freePort()),
+    });
+
+    const exitCode = await running.exited;
+
+    expect(exitCode).not.toBe(0);
+    expect(running.output()).toContain('JWT_SIGNING_KEY');
+    expect(running.output()).not.toContain(signingKeySecret);
   });
 });

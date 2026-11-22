@@ -52,11 +52,14 @@ export default defineConfig({
       screenshotFailures: false,
       expect: {
         toMatchScreenshot: {
-          // Baselines come from the same image as the comparison, so the
-          // pixels must match exactly; even a slight color change fails.
+          // Baselines come from the same image as the comparison, so every
+          // pixel must match. The threshold only forgives a difference of one
+          // or two colour levels, which Chromium's rasteriser produces from
+          // run to run where an anti-aliased edge meets a gradient; any change
+          // a person could see fails.
           comparatorName: 'pixelmatch',
           comparatorOptions: {
-            threshold: 0,
+            threshold: 0.01,
             allowedMismatchedPixelRatio: 0,
           },
         },

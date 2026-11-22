@@ -9,6 +9,10 @@ const rules: RiskRules = {
 };
 const issue = parseBranch('feature/12-order-filter');
 
+function repositoryRules(): RiskRules {
+  return parseRiskRules(readFileSync(new URL('../../risk-rules.yml', import.meta.url), 'utf8'));
+}
+
 describe('parseRiskRules', () => {
   it('reads the two lists of quoted patterns, skipping comments and blank lines', () => {
     const text = [
@@ -52,13 +56,21 @@ describe('parseRiskRules', () => {
   });
 
   it('reads the repository rules file', () => {
-    const repositoryRules = parseRiskRules(
-      readFileSync(new URL('../../risk-rules.yml', import.meta.url), 'utf8'),
-    );
+    const { high, low } = repositoryRules();
 
-    expect(repositoryRules.high).toContain('risk-rules.yml');
-    expect(repositoryRules.high).toContain('license-allowlist.json');
-    expect(repositoryRules.low).toContain('.docs/**');
+    expect(high).toContain('risk-rules.yml');
+    expect(high).toContain('license-allowlist.json');
+    expect(low).toContain('.docs/**');
+  });
+
+  // The architecture's risk rules put every api module that keeps parents'
+  // and children's data at high risk.
+  it.each([
+    'apps/api/src/modules/auth/auth.controller.ts',
+    'apps/api/src/modules/family/family.service.ts',
+    'apps/web/src/app/core/auth/auth.service.ts',
+  ])('puts %s at high risk in the repository rules', (file) => {
+    expect(riskTier([file], issue, repositoryRules())).toBe('high');
   });
 });
 

@@ -7,9 +7,6 @@ version: '3'
 dotenv: ['.env']
 
 vars:
-  # Pinned by tag and digest. The Playwright image's version matches the
-  # playwright and @playwright/test packages, so the browsers are the same.
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
   ZAP_IMAGE: zaproxy/zap-stable:2.17.0@sha256:9624669db72f54d86c4b46a7064518bd9bf79d8c61a4c31befa9923489f328af
   # The static checks that are not npm packages run from their official
   # images, so the same command works on Windows, macOS, Linux and CI.
@@ -17,6 +14,9 @@ vars:
   ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
   ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
   OSV_SCANNER_IMAGE: ghcr.io/google/osv-scanner:v2.7.1@sha256:a70ffffc2bfd33482953e5d6b64c6fcdb30239717a07b0f0d3ab2859ce3e4cde
+  # The component tests run in an image built from this Dockerfile: the
+  # pinned Playwright image plus a Chinese font with a bold weight.
+  COMPONENT_TEST_DOCKERFILE: apps/web/component-tests.Dockerfile
   # Docker volume that keeps the Linux node_modules and downloads of the
   # component tests between runs.
   COMPONENT_TEST_VOLUME: thinklet-component-tests
@@ -31,7 +31,7 @@ vars:
 
 tasks:
   dev:
-    desc: Start PostgreSQL and SeaweedFS with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    desc: Start PostgreSQL, SeaweedFS and the mock OIDC provider with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
@@ -195,7 +195,7 @@ tasks:
       - pnpm exec vitest run --config tools/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
 
   test-component:
-    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the pinned Playwright Docker image
+    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the image built from apps/web/component-tests.Dockerfile; `task test-component VITEST_MAX_WORKERS=3` sets how many browser pages share the test files (default one fewer than the CPUs)
     cmds:
       - task: component-tests-in-container
         vars: { UPDATE_SCREENSHOTS: 'false' }
@@ -207,7 +207,7 @@ tasks:
         vars: { UPDATE_SCREENSHOTS: 'true' }
 
   test-integration:
-    desc: Run the api integration tests against throwaway PostgreSQL and SeaweedFS containers
+    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS and mock OIDC provider containers
     deps: [build-contracts]
     cmds:
       - pnpm --filter api run test:integration
@@ -268,6 +268,11 @@ tasks:
     cmds:
       - pnpm --filter api run migrate
 
+  jwt-key:
+    desc: Print a new ES256 signing key as a JWT_SIGNING_KEY line for .env (local development only; every environment has its own key)
+    cmds:
+      - node tools/bin/jwt-key.ts
+
   # Many tasks need the contracts built; within one `task` run they are
   # built once, however many of those tasks run.
   build-contracts:
@@ -288,15 +293,30 @@ tasks:
 
   component-tests-in-container:
     internal: true
+    # The image is tagged with the hash of its Dockerfile: an image already
+    # built from the same Dockerfile is reused, and a changed Dockerfile (a
+    # new base image digest, say) gets a new tag and is built again. The
+    # Dockerfile copies nothing in, so it is built without a context.
+    vars:
+      DOCKERFILE_HASH:
+        sh: git hash-object {{.COMPONENT_TEST_DOCKERFILE}}
+      IMAGE: 'thinklet-component-tests:{{trunc 12 .DOCKERFILE_HASH}}'
     # The repository is mounted at /repo. Each workspace package's
     # node_modules is covered by its own subpath of one Docker volume, so the
     # Linux install inside never touches the host's; a new workspace package
     # needs a line here too. Subpaths must exist before they are mounted.
+    #
+    # VITEST_MAX_WORKERS, given on the command line or set in the
+    # environment, is passed on to Vitest: the test files are shared out over
+    # that many browser pages and run one after another on each, so a run can
+    # repeat how another machine shares them (a CI runner with 4 CPUs runs 3
+    # pages). Without it Vitest uses one page fewer than the CPUs it sees.
     cmds:
+      - docker image inspect {{.IMAGE}} > /dev/null 2>&1 || docker build --tag {{.IMAGE}} - < {{.COMPONENT_TEST_DOCKERFILE}}
       - >-
         docker run --rm
         --mount type=volume,src={{.COMPONENT_TEST_VOLUME}},dst=/volume
-        {{.PLAYWRIGHT_IMAGE}}
+        {{.IMAGE}}
         mkdir -p /volume/cache /volume/root /volume/web /volume/api /volume/contracts
       - >-
         docker run --rm --init --ipc=host
@@ -309,7 +329,8 @@ tasks:
         --mount type=tmpfs,dst=/repo/apps/web/.angular
         --env CI=true
         --env UPDATE_SCREENSHOTS={{.UPDATE_SCREENSHOTS}}
-        {{.PLAYWRIGHT_IMAGE}}
+        {{with .VITEST_MAX_WORKERS}}--env "VITEST_MAX_WORKERS={{.}}"{{end}}
+        {{.IMAGE}}
         bash /repo/apps/web/scripts/run-component-tests.sh
 
   dev-servers:

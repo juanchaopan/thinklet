@@ -45,9 +45,11 @@ jobs:
           TASK: ${{ matrix.task }}
 
   # Checks and tests that run on pull requests and again after the merge.
-  # The component tests run inside the pinned Playwright image, which writes
-  # its output (coverage, screenshot diffs) into the checkout as root; no
-  # later step writes there, and every job gets a fresh runner.
+  # The component tests run inside the image that `task test-component`
+  # builds from apps/web/component-tests.Dockerfile, the same image a
+  # developer machine uses, so the screenshots are rendered alike. The
+  # container writes its output (coverage, screenshot diffs) into the checkout
+  # as root; no later step writes there, and every job gets a fresh runner.
   checks-and-tests:
     name: ${{ matrix.task }}
     runs-on: ubuntu-24.04

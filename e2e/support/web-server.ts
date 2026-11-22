@@ -1,11 +1,21 @@
 import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer as createHttpServer,
+  request,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type OutgoingHttpHeaders,
+  type RequestListener,
+  type ServerResponse,
+} from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { WEB_SECURITY_HEADERS } from '../../apps/web/scripts/security-headers.ts';
+import type { TlsCredentials } from './certificate.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -21,6 +31,29 @@ const CONTENT_TYPES: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+/**
+ * How long an idle keep-alive connection from a test stays open: longer than
+ * any test, so a test's request context never sends a request on a
+ * connection the server is closing at that moment, which fails it with
+ * ECONNRESET. The connections are closed when the server closes.
+ */
+const KEEP_ALIVE_MS = 10 * 60 * 1000;
+
+/**
+ * Headers about one connection rather than the message (RFC 9110, 7.6.1).
+ * A proxy does not pass them on: the api's `Keep-Alive: timeout=5` describes
+ * its connection to this server, not this server's connection to the browser.
+ */
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-connection',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+
 export interface WebServerOptions {
   /** The built web app (`apps/web/dist/web/browser`). */
   root: string;
@@ -28,6 +61,8 @@ export interface WebServerOptions {
   apiOrigin: string;
   /** The interface to listen on; the port is chosen by the OS. */
   host: string;
+  /** The key and certificate to serve HTTPS with; without them the server speaks plain HTTP. */
+  tls?: TlsCredentials;
 }
 
 export interface StartedWebServer {
@@ -42,10 +77,11 @@ export interface StartedWebServer {
  * server answers itself, errors included, carries the web security headers
  * from the same list as vercel.json; a forwarded `/api` response keeps only
  * the api's own. A request that fails is answered with 502 (api) or 500
- * (file) when nothing was sent yet, and cut off otherwise.
+ * (file) when nothing was sent yet, and cut off otherwise, so a client never
+ * takes part of a body for all of it; the failure is written to stderr.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
-  const server = createServer((incoming, outgoing) => {
+  const handle: RequestListener = (incoming, outgoing) => {
     // Only the path and query of the request line count: an absolute-form
     // request line (`GET http://other-host/api/...`) names no other host.
     const { pathname, search } = new URL(incoming.url ?? '/', 'http://localhost');
@@ -56,16 +92,24 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
     const handled = toApi
       ? forward(incoming, outgoing, apiTarget(options.apiOrigin, pathname, search))
       : serveFile(pathname, outgoing, options.root);
-    handled.catch(() => {
-      if (!outgoing.headersSent) {
-        // The error status comes from this server, not from the api, so it
-        // carries the web's headers even for an `/api` request.
-        setWebSecurityHeaders(outgoing);
-        outgoing.writeHead(toApi ? 502 : 500);
+    handled.catch((error: unknown) => {
+      if (outgoing.destroyed) {
+        // The client went away; there is nobody left to answer.
+        return;
       }
-      outgoing.end();
+      console.error(`The test web server could not answer ${incoming.method} ${pathname}:`, error);
+      if (outgoing.headersSent) {
+        outgoing.destroy();
+        return;
+      }
+      // The error status comes from this server, not from the api, so it
+      // carries the web's headers even for an `/api` request.
+      setWebSecurityHeaders(outgoing);
+      outgoing.writeHead(toApi ? 502 : 500).end();
     });
-  });
+  };
+  const server = options.tls ? createHttpsServer(options.tls, handle) : createHttpServer(handle);
+  server.keepAliveTimeout = KEEP_ALIVE_MS;
   await new Promise<void>((resolve) => server.listen(0, options.host, resolve));
   return {
     port: (server.address() as AddressInfo).port,
@@ -115,17 +159,49 @@ async function serveFile(path: string, outgoing: ServerResponse, root: string): 
   await pipeline(content, outgoing);
 }
 
+/**
+ * The headers of a message without those about its connection: the
+ * hop-by-hop ones and any the `Connection` header names.
+ */
+function endToEndHeaders(headers: IncomingHttpHeaders): OutgoingHttpHeaders {
+  const named = new Set(
+    (headers.connection ?? '')
+      .split(',')
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name !== ''),
+  );
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !HOP_BY_HOP_HEADERS.has(name) && !named.has(name)),
+  );
+}
+
+/**
+ * Forwards a request to the api on a connection of its own: a pooled
+ * connection the api is just closing as idle would fail the request with a
+ * 502 that no test caused. A client that leaves before its answer is
+ * complete takes the api request with it, so the api neither keeps working
+ * for nobody nor waits for a request body that never comes.
+ */
 function forward(incoming: IncomingMessage, outgoing: ServerResponse, target: URL) {
   return new Promise<void>((resolve, reject) => {
     const proxied = request(
       target,
-      { method: incoming.method, headers: { ...incoming.headers, host: target.host } },
+      {
+        method: incoming.method,
+        headers: { ...endToEndHeaders(incoming.headers), host: target.host },
+        agent: false,
+      },
       (response) => {
-        outgoing.writeHead(response.statusCode ?? 502, response.headers);
+        outgoing.writeHead(response.statusCode ?? 502, endToEndHeaders(response.headers));
         pipeline(response, outgoing).then(resolve, reject);
       },
     );
     proxied.on('error', reject);
+    outgoing.on('close', () => {
+      if (!outgoing.writableFinished) {
+        proxied.destroy();
+      }
+    });
     incoming.pipe(proxied);
   });
 }

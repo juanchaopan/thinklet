@@ -10,7 +10,8 @@ import {
   apiEnvironment,
   migrate,
   startDatabase,
-  startStorage,
+  startServices,
+  type StartedServices,
   type StartedStorage,
 } from '../support/containers.js';
 
@@ -35,23 +36,26 @@ async function expectPingFailsInTime(ping: () => Promise<void>): Promise<void> {
 }
 
 describe('GET /api/health', () => {
-  let database: StartedPostgreSqlContainer;
-  let storage: StartedStorage;
+  let services: StartedServices;
+
+  /** The api's environment with the given database and, unless another is given, the shared storage. */
+  const environmentWith = (databaseUrl: string, storage: StartedStorage = services.storage) =>
+    apiEnvironment(databaseUrl, storage, services.oidc);
 
   beforeAll(async () => {
-    [database, storage] = await Promise.all([startDatabase(), startStorage()]);
-    await migrate(database.getConnectionUri());
+    services = await startServices();
+    await migrate(services.database.getConnectionUri());
   });
 
   afterAll(async () => {
-    await Promise.all([database?.stop(), storage?.container.stop()]);
+    await services?.stop();
   });
 
   describe('with the database and the bucket up', () => {
     let app: NestExpressApplication;
 
     beforeAll(async () => {
-      app = await startApp(apiEnvironment(database.getConnectionUri(), storage));
+      app = await startApp(environmentWith(services.database.getConnectionUri()));
     });
 
     afterAll(async () => {
@@ -76,7 +80,10 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       app = await startApp(
-        apiEnvironment(database.getConnectionUri(), { ...storage, bucket: 'missing-bucket' }),
+        environmentWith(services.database.getConnectionUri(), {
+          ...services.storage,
+          bucket: 'missing-bucket',
+        }),
       );
     });
 
@@ -95,7 +102,7 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       stoppedDatabase = await startDatabase();
-      app = await startApp(apiEnvironment(stoppedDatabase.getConnectionUri(), storage));
+      app = await startApp(environmentWith(stoppedDatabase.getConnectionUri()));
       await stoppedDatabase.stop();
     });
 
@@ -118,7 +125,7 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       hungDatabase = await startDatabase();
-      app = await startApp(apiEnvironment(hungDatabase.getConnectionUri(), storage));
+      app = await startApp(environmentWith(hungDatabase.getConnectionUri()));
       // An answered check leaves an open connection in the pool.
       await request(app.getHttpServer()).get('/api/health').expect(200);
       await docker('pause', hungDatabase.getId());
