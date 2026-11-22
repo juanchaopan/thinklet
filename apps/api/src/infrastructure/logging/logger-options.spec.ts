@@ -3,6 +3,8 @@ import { Writable } from 'node:stream';
 import { pino } from 'pino';
 import {
   httpLoggerOptions,
+  LOGGED_REQUEST_HEADERS,
+  loggableHeaders,
   loggableRequest,
   loggableUrl,
   loggerOptions,
@@ -32,10 +34,34 @@ function captureLogs(secrets: readonly string[]) {
 /** A logged request as pino's standard serializer writes it. */
 interface LoggedRequest {
   url?: string;
+  headers?: Record<string, unknown>;
   query?: unknown;
   params?: unknown;
   method?: string;
 }
+
+/** The headers a browser sends with a request made from a join page. */
+const joinPageHeaders = {
+  host: 'site.example',
+  origin: 'https://site.example',
+  'user-agent': 'Mozilla/5.0',
+  'content-type': 'application/json',
+  'content-length': '17',
+  accept: 'application/json',
+  cookie: 'thinklet_session=cookie-1',
+  authorization: 'Bearer token-1',
+  referer: 'https://site.example/join/ABC234',
+  'x-unknown': 'unknown-1',
+};
+
+/** The headers of joinPageHeaders that are logged. */
+const loggedJoinPageHeaders = {
+  host: 'site.example',
+  origin: 'https://site.example',
+  'user-agent': 'Mozilla/5.0',
+  'content-type': 'application/json',
+  'content-length': '17',
+};
 
 describe('secretValues', () => {
   it('lists the database URL, its password in both forms, the storage credentials, the client secret and the signing key', () => {
@@ -193,6 +219,41 @@ describe('loggableUrl', () => {
   });
 });
 
+describe('loggableHeaders', () => {
+  it('keeps only the allowed headers', () => {
+    expect(loggableHeaders(joinPageHeaders)).toEqual(loggedJoinPageHeaders);
+  });
+
+  it('leaves out the page address in any form and headers it does not know', () => {
+    const logged = loggableHeaders({
+      host: 'site.example',
+      referer: 'https://site.example/?returnTo=%2Fjoin%2FABC234',
+      'x-unknown': 'unknown-1',
+    });
+
+    expect(logged).toEqual({ host: 'site.example' });
+    expect(JSON.stringify(logged)).not.toContain('ABC234');
+  });
+
+  it('leaves the allowed headers a request does not have out', () => {
+    expect(loggableHeaders({})).toEqual({});
+  });
+
+  it('allows no header that carries a page address, a login or a forwarded client', () => {
+    for (const name of ['referer', 'cookie', 'authorization', 'x-forwarded-for', 'forwarded']) {
+      expect(LOGGED_REQUEST_HEADERS).not.toContain(name);
+    }
+  });
+
+  it("does not change the request's own headers", () => {
+    const headers = { ...joinPageHeaders };
+
+    loggableHeaders(headers);
+
+    expect(headers).toEqual(joinPageHeaders);
+  });
+});
+
 describe('loggableRequest', () => {
   it('logs the loggable URL without the parsed query and route parameters', () => {
     const logged = loggableRequest<LoggedRequest>({
@@ -205,7 +266,17 @@ describe('loggableRequest', () => {
     expect(logged).toEqual({ url: '/api/family-codes/[redacted]', method: 'GET' });
   });
 
-  it('leaves a request without a URL alone', () => {
+  it('logs only the allowed headers, without the referer and unknown headers', () => {
+    const logged = loggableRequest<LoggedRequest>({
+      url: '/api/me',
+      headers: { ...joinPageHeaders },
+      method: 'GET',
+    });
+
+    expect(logged).toEqual({ url: '/api/me', headers: loggedJoinPageHeaders, method: 'GET' });
+  });
+
+  it('leaves a request without a URL or headers alone', () => {
     expect(loggableRequest<LoggedRequest>({ method: 'GET' })).toEqual({ method: 'GET' });
   });
 });
@@ -227,14 +298,15 @@ describe('httpLoggerOptions', () => {
     expect(headers.get('X-Request-Id')).toBe(second);
   });
 
-  it('logs requests with their loggable URL only', () => {
+  it('logs requests with their loggable URL and headers only', () => {
     const { serializers } = httpLoggerOptions([]);
 
     expect(
       serializers?.['req']?.({
         url: '/api/family-codes/ABC234?returnTo=/x',
+        headers: { host: 'site.example', referer: 'https://site.example/join/ABC234' },
         params: { splat: ['family-codes', 'ABC234'] },
       }),
-    ).toEqual({ url: '/api/family-codes/[redacted]' });
+    ).toEqual({ url: '/api/family-codes/[redacted]', headers: { host: 'site.example' } });
   });
 });

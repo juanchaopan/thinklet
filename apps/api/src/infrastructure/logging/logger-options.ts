@@ -41,7 +41,11 @@ const TOKEN_FIELDS = [
 /** A field at the top level and up to two levels down. */
 const atAnyDepth = (name: string) => [name, `*.${name}`, `*.*.${name}`];
 
-/** Log fields that are replaced wherever they appear. */
+/**
+ * Log fields that are replaced wherever they appear. The request log keeps
+ * only the headers of LOGGED_REQUEST_HEADERS; the request header paths here
+ * still cover a request logged some other way.
+ */
 export const REDACTED_PATHS = [
   'req.headers.authorization',
   'req.headers["proxy-authorization"]',
@@ -54,6 +58,22 @@ export const REDACTED_PATHS = [
   ...PERSONAL_NAME_PATHS,
   ...TOKEN_FIELDS.flatMap(atAnyDepth),
   ...SECRET_VARIABLES.flatMap((name) => [name, `*.${name}`]),
+];
+
+/**
+ * The request headers the request log writes, in Node's lower case. Any
+ * other header is left out, so a header nobody thought of is never logged:
+ * `referer` carries the address of the page the request came from, such as
+ * a join page with its family code, and cookies and authorization carry
+ * the login. These say which site and client sent the request and what
+ * body it had, which is what tracing a failed request needs.
+ */
+export const LOGGED_REQUEST_HEADERS: readonly string[] = [
+  'host',
+  'origin',
+  'user-agent',
+  'content-type',
+  'content-length',
 ];
 
 /**
@@ -137,18 +157,34 @@ export function loggableUrl(url: string): string {
   );
 }
 
+/**
+ * The headers of LOGGED_REQUEST_HEADERS that the request has, in a new
+ * object: pino's standard serializer hands over the request's own headers,
+ * which the application still reads.
+ */
+export function loggableHeaders(
+  headers: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    LOGGED_REQUEST_HEADERS.flatMap((name) =>
+      headers[name] === undefined ? [] : [[name, headers[name]]],
+    ),
+  );
+}
+
 /** A request as pino's standard serializer writes it, before this module's changes. */
 interface SerializedRequest {
   url?: string;
+  headers?: Record<string, unknown>;
   query?: unknown;
   params?: unknown;
 }
 
 /**
- * The logged request with its URL made loggable and without the parsed
- * query and route parameters. The parameters are those of the logging
- * middleware's catch-all route, which repeat every segment of the path, a
- * sensitive one included.
+ * The logged request with its URL made loggable, only the allowed headers
+ * and without the parsed query and route parameters. The parameters are
+ * those of the logging middleware's catch-all route, which repeat every
+ * segment of the path, a sensitive one included.
  */
 export function loggableRequest<T extends SerializedRequest>(request: T): T {
   delete request.query;
@@ -156,12 +192,15 @@ export function loggableRequest<T extends SerializedRequest>(request: T): T {
   if (request.url !== undefined) {
     request.url = loggableUrl(request.url);
   }
+  if (request.headers !== undefined) {
+    request.headers = loggableHeaders(request.headers);
+  }
   return request;
 }
 
 /**
  * pino-http options: one JSON line per entry, each request tagged with a
- * fresh request id and logged with a loggable URL only.
+ * fresh request id and logged with a loggable URL and headers only.
  */
 export function httpLoggerOptions(secrets: readonly string[]): Options {
   return {
