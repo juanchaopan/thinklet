@@ -33,9 +33,13 @@ export const applicantJoinRequestSchema = z.strictObject({
 /** Response body of `GET /api/join-requests`. */
 export const applicantJoinRequestListSchema = z.array(applicantJoinRequestSchema);
 
-/** A pending request to join a family, as the admin sees it. */
+/**
+ * A pending request to join a family, as the admin sees it. `parentId` is
+ * the applicant's, which their avatar takes its colour from.
+ */
 export const pendingJoinRequestSchema = z.strictObject({
   id: z.uuid(),
+  parentId: z.uuid(),
   name: z.string(),
   email: z.string().nullable(),
   createdAt: z.iso.datetime(),
@@ -47,6 +51,7 @@ export const pendingJoinRequestSchema = z.strictObject({
  */
 export const handledJoinRequestSchema = z.strictObject({
   id: z.uuid(),
+  parentId: z.uuid(),
   name: z.string(),
   email: z.string().nullable(),
   status: joinRequestStatusSchema.extract(['approved', 'rejected', 'expired']),

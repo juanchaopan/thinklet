@@ -75,11 +75,23 @@ describe('familyDetailSchema', () => {
 });
 
 describe('familyCodeLookupResponseSchema', () => {
-  it('carries the family name and the admin name only', () => {
-    const body = { familyName: '外婆家', adminName: '周秀英' };
+  const body = { familyName: '外婆家', adminName: '周秀英', adminId };
 
+  it("carries the family name, the admin's name and the admin's parent id", () => {
     expect(familyCodeLookupResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('carries nothing else, such as the code', () => {
     expect(familyCodeLookupResponseSchema.safeParse({ ...body, code: '7KQ4MZ' }).success).toBe(
+      false,
+    );
+  });
+
+  it("requires the admin's parent id as a uuid", () => {
+    const { familyName, adminName } = body;
+
+    expect(familyCodeLookupResponseSchema.safeParse({ familyName, adminName }).success).toBe(false);
+    expect(familyCodeLookupResponseSchema.safeParse({ ...body, adminId: '周秀英' }).success).toBe(
       false,
     );
   });

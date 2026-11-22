@@ -42,10 +42,15 @@ export const familyDetailSchema = z.strictObject({
   members: z.array(familyMemberSchema),
 });
 
-/** Response body of `GET /api/family-codes/{code}`: whom the applicant is asking to join. */
+/**
+ * Response body of `GET /api/family-codes/{code}`: whom the applicant is
+ * asking to join. `adminId` is the admin's parent id, which their avatar
+ * takes its colour from.
+ */
 export const familyCodeLookupResponseSchema = z.strictObject({
   familyName: z.string(),
   adminName: z.string(),
+  adminId: z.uuid(),
 });
 
 export type FamilyRole = z.infer<typeof familyRoleSchema>;
