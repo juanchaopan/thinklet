@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import {
   bringToFront,
@@ -9,7 +9,9 @@ import {
   requestCard,
   requestOfZihang,
 } from '../support/families.ts';
+import { expect, test } from '../support/fixtures.ts';
 import { newUser, signIn } from '../support/sign-in.ts';
+import { SIDEBAR_SCREEN } from '../support/viewports.ts';
 
 /** The card with the heading on the new members page. */
 const card = (page: Page, heading: string) =>
@@ -38,7 +40,8 @@ async function expectNoFamily(page: Page, name: string, code: string): Promise<v
 // takes a member out; a member leaves; a parent of another family sees none
 // of it. Each parent has a browser of their own. The browser is in Shanghai.
 // A page is checked with axe once its content is shown, so the content's
-// entering animations are among those the check finishes first.
+// entering animations are among those the check finishes first. Steps that
+// read the sidebar run on a screen wide enough for it, on the phone too.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('family management', () => {
@@ -68,9 +71,10 @@ test.describe('family management', () => {
 
   test('the admin approves a request on the new members page, and the applicant is in', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await requestOfZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await requestOfZihang(page, openParentPage);
+    await admin.setViewportSize(SIDEBAR_SCREEN);
 
     await admin.goto('/');
     await admin.getByRole('link', { name: /^新成员\s*1$/ }).click();
@@ -95,9 +99,9 @@ test.describe('family management', () => {
 
   test('the admin rejects a request, and the applicant sees it rejected', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await requestOfZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await requestOfZihang(page, openParentPage);
 
     await admin.goto(`/families/${family.id}/new-members`);
     await card(admin, '等你处理').getByRole('button', { name: '拒绝' }).click();
@@ -113,9 +117,9 @@ test.describe('family management', () => {
 
   test('the admin changes the code: the old one stops working and the waiting request expires', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await requestOfZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await requestOfZihang(page, openParentPage);
 
     await admin.goto(`/families/${family.id}`);
     await expect(admin.getByText(family.code, { exact: true })).toBeVisible();
@@ -142,9 +146,9 @@ test.describe('family management', () => {
 
   test('the admin hands the admin role to a member, who then runs the family', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await familyWithZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await familyWithZihang(page, openParentPage);
 
     await admin.goto(`/families/${family.id}`);
     await actOnZihang(admin, '设为管理员', '让周子航当管理员？', '确定');
@@ -162,9 +166,9 @@ test.describe('family management', () => {
 
   test('the admin takes a member out, who can no longer open the family', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await familyWithZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await familyWithZihang(page, openParentPage);
 
     await admin.goto(`/families/${family.id}`);
     await expect(admin.getByText('家长 · 2')).toBeVisible();
@@ -179,9 +183,9 @@ test.describe('family management', () => {
 
   test('a member leaves the family, goes to the start page and can no longer open it', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await familyWithZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await familyWithZihang(page, openParentPage);
 
     await page.goto(`/families/${family.id}`);
     await expect(page.getByText('家长 · 2')).toBeVisible();
@@ -202,9 +206,9 @@ test.describe('family management', () => {
 
   test('a parent of another family who puts its id in the address sees nothing of it', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { family } = await familyOfLinyue(browser, testInfo);
+    openParentPage,
+  }) => {
+    const { family } = await familyOfLinyue(openParentPage);
     await signIn(page, newUser('周子航'));
     await createFamily(page, '周家');
 

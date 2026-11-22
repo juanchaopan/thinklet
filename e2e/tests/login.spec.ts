@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test';
 import { errorResponseSchema } from '@thinklet/contracts';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import { familyOfLinyue } from '../support/families.ts';
+import { expect, test } from '../support/fixtures.ts';
 import {
   endpointOf,
   expectConfiguredAuthorization,
@@ -74,9 +74,9 @@ test.describe('the login endpoints', () => {
 test.describe('signing in and out', () => {
   test('a visitor who opens an invitation link signs in from the product home and comes back to it', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { family } = await familyOfLinyue(browser, testInfo);
+    openParentPage,
+  }) => {
+    const { family } = await familyOfLinyue(openParentPage);
     const link = `/join/${family.code}`;
 
     await page.goto(link);

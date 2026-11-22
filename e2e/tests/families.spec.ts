@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import {
   askToJoin,
@@ -12,7 +12,9 @@ import {
   switchFamily,
   type FamilySummary,
 } from '../support/families.ts';
+import { expect, test, type OpenParentPage } from '../support/fixtures.ts';
 import { newUser, signIn } from '../support/sign-in.ts';
+import { SIDEBAR_SCREEN } from '../support/viewports.ts';
 
 /** The characters a family code is made of (rules.md, 家庭). */
 const FAMILY_CODE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
@@ -20,11 +22,10 @@ const FAMILY_CODE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 /** 周子航 on the start page, with a request to 林悦's family that 林悦 has just handled. */
 async function handledRequestOfZihang(
   page: Page,
-  browser: Browser,
-  testInfo: TestInfo,
+  openParentPage: OpenParentPage,
   decision: 'approve' | 'reject',
 ) {
-  const linyue = await familyOfLinyue(browser, testInfo);
+  const linyue = await familyOfLinyue(openParentPage);
   await signIn(page, newUser('周子航'));
   await expect(page).toHaveURL('/start');
   await askToJoin(page, linyue.family.code);
@@ -53,6 +54,8 @@ async function expectFamilyPage(page: Page, family: FamilySummary, timeZone: str
 // 当前家庭). The browser is in Shanghai, so a new family starts in that time
 // zone. The admin's side of a request (approving, rejecting) goes straight
 // through the api. A page is checked with axe once its content is shown.
+// Steps that read the sidebar run on a screen wide enough for it, on the
+// phone too.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('families', () => {
@@ -83,9 +86,10 @@ test.describe('families', () => {
 
   test('another parent asks to join with an invitation link, waits, and withdraws', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await familyOfLinyue(browser, testInfo);
+    openParentPage,
+  }) => {
+    const { admin, family } = await familyOfLinyue(openParentPage);
+    await admin.setViewportSize(SIDEBAR_SCREEN);
 
     await signIn(page, newUser('周子航'), `/join/${family.code}`);
     await expect(page).toHaveURL(`/join/${family.code}`);
@@ -113,9 +117,9 @@ test.describe('families', () => {
 
   test('the applicant sees the request rejected, clears it and may ask again', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { family } = await handledRequestOfZihang(page, browser, testInfo, 'reject');
+    openParentPage,
+  }) => {
+    const { family } = await handledRequestOfZihang(page, openParentPage, 'reject');
     await page.reload();
 
     await expect(requestCard(page, '林悦的家')).toContainText('被拒绝');
@@ -130,9 +134,10 @@ test.describe('families', () => {
 
   test('the applicant let in goes to the family, then clears the approval on the join page', async ({
     page,
-    browser,
-  }, testInfo) => {
-    await handledRequestOfZihang(page, browser, testInfo, 'approve');
+    openParentPage,
+  }) => {
+    await page.setViewportSize(SIDEBAR_SCREEN);
+    await handledRequestOfZihang(page, openParentPage, 'approve');
     await bringToFront(page);
 
     await expect(page).toHaveURL('/');

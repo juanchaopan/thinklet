@@ -1,11 +1,19 @@
 import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { createServer, request, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer as createHttpServer,
+  request,
+  type IncomingMessage,
+  type RequestListener,
+  type ServerResponse,
+} from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { WEB_SECURITY_HEADERS } from '../../apps/web/scripts/security-headers.ts';
+import type { TlsCredentials } from './certificate.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -36,6 +44,8 @@ export interface WebServerOptions {
   apiOrigin: string;
   /** The interface to listen on; the port is chosen by the OS. */
   host: string;
+  /** The key and certificate to serve HTTPS with; without them the server speaks plain HTTP. */
+  tls?: TlsCredentials;
 }
 
 export interface StartedWebServer {
@@ -53,7 +63,7 @@ export interface StartedWebServer {
  * (file) when nothing was sent yet, and cut off otherwise.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
-  const server = createServer((incoming, outgoing) => {
+  const handle: RequestListener = (incoming, outgoing) => {
     // Only the path and query of the request line count: an absolute-form
     // request line (`GET http://other-host/api/...`) names no other host.
     const { pathname, search } = new URL(incoming.url ?? '/', 'http://localhost');
@@ -73,7 +83,8 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
       }
       outgoing.end();
     });
-  });
+  };
+  const server = options.tls ? createHttpsServer(options.tls, handle) : createHttpServer(handle);
   server.keepAliveTimeout = KEEP_ALIVE_MS;
   await new Promise<void>((resolve) => server.listen(0, options.host, resolve));
   return {

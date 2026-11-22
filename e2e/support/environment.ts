@@ -9,10 +9,22 @@ import {
   startServices,
 } from '../../apps/api/test/support/containers.ts';
 import { freePort, waitForHttp } from '../../apps/api/test/support/process.ts';
+import { loopbackCertificate } from './certificate.ts';
 import { startWebServer } from './web-server.ts';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const webRoot = join(repositoryRoot, 'apps', 'web', 'dist', 'web', 'browser');
+
+/**
+ * The host name of the web origin. A local Docker's containers, the mock
+ * identity provider among them, are reached at `localhost` too, so the
+ * provider's login page and the site are one site to the browser:
+ * Playwright's WebKit cannot follow a navigation from another site into an
+ * origin whose certificate it does not trust, as the HTTPS origin's
+ * self-signed one is. The web server listens on the loopback, where
+ * `localhost` points.
+ */
+const WEB_HOST_NAME = 'localhost';
 
 export interface EnvironmentOptions {
   /**
@@ -20,6 +32,14 @@ export interface EnvironmentOptions {
    * loopback; a scanner in a container needs every interface.
    */
   webHost: string;
+  /**
+   * Whether the web origin is HTTPS, with a self-signed certificate made for
+   * this run. The login cookies are Secure, and WebKit sends a Secure cookie
+   * only over HTTPS, even to the loopback, so browsers that sign in need it;
+   * their clients must ignore certificate errors. Without it the origin is
+   * plain HTTP.
+   */
+  https?: boolean;
 }
 
 export interface Environment {
@@ -63,7 +83,8 @@ function createCleanup(): Cleanup {
  * SeaweedFS and the mock OIDC provider in containers, the migrations, the
  * built web (apps/web/dist) behind a server that forwards /api like the
  * Vercel rewrite, and the built api (apps/api/dist) with that server's origin
- * as its own. Both apps must be built first.
+ * as its own, so the login's callback, the logout's return address and the
+ * allowed Origin all follow the web origin. Both apps must be built first.
  */
 export async function startEnvironment(options: EnvironmentOptions): Promise<Environment> {
   const cleanup = createCleanup();
@@ -80,9 +101,10 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       root: webRoot,
       apiOrigin: `http://127.0.0.1:${apiPort}`,
       host: options.webHost,
+      ...(options.https ? { tls: loopbackCertificate() } : {}),
     });
     cleanup.add(() => web.close());
-    const baseUrl = `http://127.0.0.1:${web.port}`;
+    const baseUrl = `${options.https ? 'https' : 'http'}://${WEB_HOST_NAME}:${web.port}`;
 
     // The api's errors go straight to this process's stderr, so its output
     // is not kept in memory for the length of the tests.

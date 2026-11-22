@@ -1,4 +1,5 @@
-import { expect, type Browser, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+import type { OpenParentPage } from './fixtures.ts';
 import { newUser, signIn } from './sign-in.ts';
 
 /** What the end-to-end tests need of a family, read through the api. */
@@ -8,16 +9,6 @@ export interface FamilySummary {
   code: string;
   timezone: string;
   role: string;
-}
-
-/**
- * A page in a browser of its own, for a second parent signed in at the same
- * time as the first: each browser context keeps its own login cookies.
- */
-export async function pageOfAnotherParent(browser: Browser, testInfo: TestInfo): Promise<Page> {
-  const { baseURL, locale, timezoneId } = testInfo.project.use;
-  const context = await browser.newContext({ baseURL, locale, timezoneId });
-  return context.newPage();
 }
 
 /** Creates a family for the signed-in parent through the api, as the create dialog does. */
@@ -121,27 +112,26 @@ export async function switchFamily(page: Page, from: string, to: string): Promis
   await expect(page.getByRole('button', { name: `${to} 切换家庭` })).toBeVisible();
 }
 
-/** 林悦's family, with 林悦 signed in as its admin in a browser of her own. */
+/** 林悦's family, with 林悦 signed in as its admin on a page of her own. */
 export async function familyOfLinyue(
-  browser: Browser,
-  testInfo: TestInfo,
+  openParentPage: OpenParentPage,
 ): Promise<{ admin: Page; family: FamilySummary }> {
-  const admin = await pageOfAnotherParent(browser, testInfo);
+  const admin = await openParentPage();
   await signIn(admin, newUser('林悦'));
   return { admin, family: await createFamily(admin, '林悦的家') };
 }
 
 /** 林悦's family, which 周子航, signed in on `page`, has asked to join. */
-export async function requestOfZihang(page: Page, browser: Browser, testInfo: TestInfo) {
-  const linyue = await familyOfLinyue(browser, testInfo);
+export async function requestOfZihang(page: Page, openParentPage: OpenParentPage) {
+  const linyue = await familyOfLinyue(openParentPage);
   await signIn(page, newUser('周子航'));
   await askToJoin(page, linyue.family.code);
   return linyue;
 }
 
 /** 林悦's family with 周子航, signed in on `page`, as one of its members. */
-export async function familyWithZihang(page: Page, browser: Browser, testInfo: TestInfo) {
-  const linyue = await requestOfZihang(page, browser, testInfo);
+export async function familyWithZihang(page: Page, openParentPage: OpenParentPage) {
+  const linyue = await requestOfZihang(page, openParentPage);
   await handleWaitingRequest(linyue.admin, linyue.family.id, 'approve');
   return linyue;
 }

@@ -1,7 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import { createFamily, familyWithZihang } from '../support/families.ts';
+import { expect, test } from '../support/fixtures.ts';
 import { newUser, signIn } from '../support/sign-in.ts';
+import { PHONE_SCREEN, SIDEBAR_SCREEN } from '../support/viewports.ts';
 
 /** 林悦's avatar button, which screen readers hear as "林悦的菜单". */
 const AVATAR = /^林悦\s*的菜单/;
@@ -19,7 +21,7 @@ async function openProfileFromAvatar(page: Page): Promise<void> {
 // reaches the profile, which leads back there, a parent with a family goes
 // from the start page to the home page and finds their own pages in the
 // sidebar or behind the avatar, and a new name reaches the other parents of
-// the family.
+// the family, where the sidebar shows it.
 test.describe('signed-in parent', () => {
   test('sees the child login as it is', async ({ page }) => {
     await signIn(page, newUser('林悦'), '/child');
@@ -46,7 +48,7 @@ test.describe('signed-in parent', () => {
   test('with a family goes from the start page to the home page and finds their own pages', async ({
     page,
   }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize(SIDEBAR_SCREEN);
     await signIn(page, newUser('林悦'));
     await createFamily(page, '林悦的家');
 
@@ -58,7 +60,7 @@ test.describe('signed-in parent', () => {
     await expect(own.getByRole('link')).toHaveText(['加入家庭', '个人设置']);
     await expect(page.getByRole('button', { name: AVATAR })).toHaveCount(0);
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize(PHONE_SCREEN);
     await openProfileFromAvatar(page);
 
     await expect(page.getByRole('link', { name: '返回' })).toHaveCount(0);
@@ -66,9 +68,10 @@ test.describe('signed-in parent', () => {
 
   test('renames themself on the profile, and the other parent of the family sees the new name', async ({
     page,
-    browser,
-  }, testInfo) => {
-    const { admin, family } = await familyWithZihang(page, browser, testInfo);
+    openParentPage,
+  }) => {
+    await page.setViewportSize(SIDEBAR_SCREEN);
+    const { admin, family } = await familyWithZihang(page, openParentPage);
 
     await page.goto('/profile');
     const rename = page.getByRole('button', { name: '改名字' });
