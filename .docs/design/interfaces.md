@@ -44,7 +44,7 @@
 - **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。
 - **家庭内的接口**在 `/api/families/{familyId}/...` 下，先查当前家长是不是这个家庭的成员：不是成员或家庭不存在都返回 `404`，错误码 `family_not_found`。要管理员的接口，不是管理员时返回 `403`，错误码 `not_admin`。
 - **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请）时返回 `404`，错误码 `not_found`。
-- **出错的响应**：`{ "error": { "code": "<错误码>", "requestId": "<请求编号>" } }`。界面上的提示由前端按错误码显示；`requestId` 就是界面上的错误编号。
+- **出错的响应**：`{ "error": { "code": "<错误码>", "requestId": "<请求编号>" } }`。界面上的提示由前端按错误码显示；界面上的错误编号是 `requestId` 的前 8 位，写成“a1f3-92c0”的样子。
 - **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。字段出错的 `code` 有三种：`required`（没填）、`too_long`（太长）、`invalid`（格式不对）。
 - **意外的错**：`500`，错误码 `internal`，只带请求编号，不带错误详情。
 
@@ -114,12 +114,14 @@
   "families": [
     { "id": "5d1e…", "name": "林悦的家", "role": "admin", "pendingRequests": 2 },
     { "id": "8a40…", "name": "外婆家", "role": "member" }
-  ]
+  ],
+  "requestResults": 1
 }
 ```
 
 - `email` 没有时是 `null`。
 - `families` 按加入时间排列；`pendingRequests` 只在当前家长是这个家庭的管理员时带，是等待中的申请数。
+- `requestResults` 是自己发出的申请里已同意、被拒绝、已失效且还没点「知道了」的条数，用来显示「加入家庭」和头像上的红点。
 
 ### PATCH /api/me
 
@@ -165,13 +167,13 @@
 
 ## 申请加入（申请人）
 
-| 接口                                          | 请求         | 成功                                                       | 出错                                                              |
-| --------------------------------------------- | ------------ | ---------------------------------------------------------- | ----------------------------------------------------------------- |
-| `GET /api/family-codes/{code}`                | —            | `200 { "familyName", "adminName" }`                        | `404 code_not_found`、`409 already_member`、`409 request_pending` |
-| `POST /api/join-requests`                     | `{ "code" }` | `201` 申请                                                 | `404 code_not_found`、`409 already_member`、`409 request_pending` |
-| `GET /api/join-requests`                      | —            | `200` 申请列表：等待中、被拒绝和已失效、还没点「知道了」的 | —                                                                 |
-| `DELETE /api/join-requests/{requestId}`       | —            | `204`（撤回）                                              | `404 not_found`、`409 request_closed`                             |
-| `POST /api/join-requests/{requestId}/dismiss` | —            | `204`（申请人的「知道了」）                                | `404 not_found`、`409 request_pending`                            |
+| 接口                                          | 请求         | 成功                                                                                   | 出错                                                              |
+| --------------------------------------------- | ------------ | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /api/family-codes/{code}`                | —            | `200 { "familyName", "adminName" }`                                                    | `404 code_not_found`、`409 already_member`、`409 request_pending` |
+| `POST /api/join-requests`                     | `{ "code" }` | `201` 申请                                                                             | `404 code_not_found`、`409 already_member`、`409 request_pending` |
+| `GET /api/join-requests`                      | —            | `200` 申请列表：等待中、已同意、被拒绝和已失效、还没点「知道了」的，按发出时间从新到旧 | —                                                                 |
+| `DELETE /api/join-requests/{requestId}`       | —            | `204`（撤回）                                                                          | `404 not_found`、`409 request_closed`                             |
+| `POST /api/join-requests/{requestId}/dismiss` | —            | `204`（申请人的「知道了」，对已同意、被拒绝、已失效的申请）                            | `404 not_found`、`409 request_pending`                            |
 
 申请：
 
@@ -186,6 +188,7 @@
 }
 ```
 
+- `status` 是 `pending`、`approved`、`rejected` 或 `expired`；撤回的不列出。
 - `familyTimezone` 用来按那个家庭的时区显示申请的时间。
 - `code` 不分大小写，后端转成大写再查。
 - 申请人只能看到、撤回和清掉自己的申请；别人的申请当作不存在。
@@ -226,19 +229,20 @@
 
 ## 错误码和界面上的提示
 
-| 错误码               | 界面上的提示                                                         |
-| -------------------- | -------------------------------------------------------------------- |
-| `unauthenticated`    | 回到产品主页，重新登录后回到原来的页面                               |
-| `code_not_found`     | 没有这个家庭码                                                       |
-| `already_member`     | 你已经是这个家庭的成员                                               |
-| `request_pending`    | 你已经申请过了，等管理员处理                                         |
-| `request_closed`     | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了 |
-| `not_found`          | 这个申请已经不在了，刷新列表                                         |
-| `admin_cannot_leave` | 先把管理员设给别人才能离开                                           |
-| `not_admin`          | 你已不是管理员                                                       |
-| `not_a_member`       | 这位家长已经不在家庭里了                                             |
-| `family_not_found`   | 找不到这个家庭（整页）                                               |
-| `internal`、没有回应 | 出了点问题，请稍后再试                                               |
-| `invalid_request`    | 按出错的字段显示 `rules.md` 里那个字段的提示                         |
+| 错误码               | 界面上的提示                                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `unauthenticated`    | 回到产品主页，重新登录后回到原来的页面                                                                                                   |
+| `code_not_found`     | 没有这个家庭码                                                                                                                           |
+| `already_member`     | 你已经是这个家庭的成员                                                                                                                   |
+| `request_pending`    | 查码或发申请时：你已经申请过了，等管理员处理；点「知道了」时：出了点问题，请稍后再试（界面上等待中的申请没有「知道了」，正常用不会碰到） |
+| `request_closed`     | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了                                                                     |
+| `not_found`          | 这个申请已经不在了，刷新列表                                                                                                             |
+| `admin_cannot_leave` | 先把管理员设给别人才能离开                                                                                                               |
+| `not_admin`          | 你已不是管理员                                                                                                                           |
+| `not_a_member`       | 这位家长已经不在家庭里了                                                                                                                 |
+| `family_not_found`   | 找不到这个家庭（整页）                                                                                                                   |
+| `bad_origin`         | 出了点问题，请稍后再试                                                                                                                   |
+| `internal`、没有回应 | 出了点问题，请稍后再试                                                                                                                   |
+| `invalid_request`    | 按出错的字段显示 `rules.md` 里那个字段的提示                                                                                             |
 
 Last changed: #7 (2026-11-21)
