@@ -119,7 +119,7 @@ describe('requireDecision', () => {
 });
 
 describe('requireApplicantDismissal', () => {
-  it.each(byStatus({ pending: 'request_pending', approved: 'not_found', withdrawn: 'not_found' }))(
+  it.each(byStatus({ pending: 'request_pending', withdrawn: 'not_found' }))(
     'answers the applicant dismissing a %s request with %s',
     (status, expected) => {
       expect(codeOf(() => requireApplicantDismissal(requestIn(status), APPLICANT))).toBe(expected);
@@ -129,6 +129,9 @@ describe('requireApplicantDismissal', () => {
   it("answers someone else's request as not found, whatever its state", () => {
     expect(codeOf(() => requireApplicantDismissal(undefined, APPLICANT))).toBe('not_found');
     expect(codeOf(() => requireApplicantDismissal(requestIn('rejected'), STRANGER))).toBe(
+      'not_found',
+    );
+    expect(codeOf(() => requireApplicantDismissal(requestIn('approved'), STRANGER))).toBe(
       'not_found',
     );
     expect(codeOf(() => requireApplicantDismissal(requestIn('pending'), STRANGER))).toBe(
@@ -170,8 +173,15 @@ describe('toApplicantRequest', () => {
     });
   });
 
-  it.each<JoinRequestStatus>(['approved', 'withdrawn'])('refuses a %s request', (status) => {
-    expect(() => toApplicantRequest({ ...record, status })).toThrow();
+  it.each<JoinRequestStatus>(['pending', 'approved', 'rejected', 'expired'])(
+    'shows a %s request',
+    (status) => {
+      expect(toApplicantRequest({ ...record, status }).status).toBe(status);
+    },
+  );
+
+  it('refuses a withdrawn request', () => {
+    expect(() => toApplicantRequest({ ...record, status: 'withdrawn' })).toThrow();
   });
 });
 
@@ -412,12 +422,24 @@ describe('JoinRequestsService', () => {
   });
 
   describe('dismissOwn', () => {
-    it("records the applicant's 「知道了」 under the family's lock", async () => {
-      const { service, calls } = createService({ request: requestIn('expired') });
+    it.each<JoinRequestStatus>(['approved', 'rejected', 'expired'])(
+      "records the applicant's 「知道了」 on a %s request under the family's lock",
+      async (status) => {
+        const { service, calls } = createService({ request: requestIn(status) });
 
-      await service.dismissOwn(APPLICANT, REQUEST_ID);
+        await service.dismissOwn(APPLICANT, REQUEST_ID);
 
-      expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest applicant']);
+        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest applicant']);
+      },
+    );
+
+    it('checks the request as it stands under the lock', async () => {
+      const { service, store } = createService({ request: requestIn('approved') });
+      store.findRequest.mockResolvedValueOnce(requestIn('approved'));
+      store.findRequest.mockResolvedValueOnce(requestIn('withdrawn'));
+
+      expect(await rejectionCode(service.dismissOwn(APPLICANT, REQUEST_ID))).toBe('not_found');
+      expect(store.dismissRequest).not.toHaveBeenCalled();
     });
 
     it("refuses someone else's request without writing", async () => {

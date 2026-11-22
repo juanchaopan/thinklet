@@ -199,8 +199,9 @@ export class JoinRequestStore extends FamilyStore {
   }
 
   /**
-   * The parent's requests the start page shows, newest first: the pending
-   * ones, and the rejected and expired ones the parent has not dismissed.
+   * The parent's requests the start page and the join page list, newest
+   * first: the pending ones, and the approved, rejected and expired ones the
+   * parent has not dismissed.
    */
   listApplicantRequests(parentId: string): Promise<ApplicantRequestRecord[]> {
     return this.applicantRequests(
@@ -209,7 +210,7 @@ export class JoinRequestStore extends FamilyStore {
         or(
           eq(joinRequests.status, 'pending'),
           and(
-            inArray(joinRequests.status, ['rejected', 'expired']),
+            inArray(joinRequests.status, ['approved', 'rejected', 'expired']),
             isNull(joinRequests.dismissedByApplicantAt),
           ),
         ),

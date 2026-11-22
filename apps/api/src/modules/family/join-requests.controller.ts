@@ -58,7 +58,7 @@ export class JoinRequestsController {
     await this.joinRequestsService.withdraw(parentId, requestId);
   }
 
-  /** The applicant's 「知道了」 on a rejected or expired request: 204. */
+  /** The applicant's 「知道了」 on an approved, rejected or expired request: 204. */
   @Post(':requestId/dismiss')
   @HttpCode(HttpStatus.NO_CONTENT)
   async dismiss(

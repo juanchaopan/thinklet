@@ -13,13 +13,15 @@ interface Stored {
   /** Whether the parent exists. */
   exists?: boolean;
   memberships?: MembershipRecord[];
+  requestResults?: number;
 }
 
-function createService({ exists = true, memberships = [] }: Stored = {}) {
+function createService({ exists = true, memberships = [], requestResults = 0 }: Stored = {}) {
   const repository = {
     upsertParentLogin: vi.fn(() => Promise.resolve('parent-1')),
     findParent: vi.fn(() => Promise.resolve(exists ? parent : undefined)),
     listMemberships: vi.fn(() => Promise.resolve(memberships)),
+    countRequestResults: vi.fn(() => Promise.resolve(requestResults)),
     updateParentName: vi.fn(() => Promise.resolve(exists)),
   };
   return { service: new FamilyService(repository as unknown as FamilyRepository), repository };
@@ -59,9 +61,20 @@ describe('initialName', () => {
     expect(initialName({ name: `${'a'.repeat(19)} b` })).toBe('a'.repeat(19));
   });
 
-  it('uses the generic name with neither a name nor an email', () => {
-    expect(initialName({})).toBe(FALLBACK_PARENT_NAME);
-    expect(initialName({ email: '@example.com' })).toBe(FALLBACK_PARENT_NAME);
+  it('uses 家长 with neither a name nor an email', () => {
+    expect(FALLBACK_PARENT_NAME).toBe('家长');
+    expect(initialName({})).toBe('家长');
+    expect(initialName({ name: null, email: null })).toBe('家长');
+  });
+
+  it('uses 家长 when the name and the email are only spaces', () => {
+    expect(initialName({ name: '   ' })).toBe('家长');
+    expect(initialName({ name: '　 \t', email: '  ' })).toBe('家长');
+  });
+
+  it('uses 家长 when the email has nothing before the @', () => {
+    expect(initialName({ email: '@example.com' })).toBe('家长');
+    expect(initialName({ name: ' ', email: '  @example.com' })).toBe('家长');
   });
 });
 
@@ -73,6 +86,7 @@ describe('emailOf', () => {
   it('is null when the provider gave none', () => {
     expect(emailOf({})).toBeNull();
     expect(emailOf({ email: '' })).toBeNull();
+    expect(emailOf({ email: '   ' })).toBeNull();
     expect(emailOf({ email: true })).toBeNull();
   });
 });
@@ -113,6 +127,16 @@ describe('FamilyService', () => {
     );
   });
 
+  it('records a login with only spaces for a name and no email as 家长', async () => {
+    const { service, repository } = createService();
+
+    await service.recordLogin('https://idp.example.com', 'subject-1', { name: '  ' });
+
+    expect(repository.upsertParentLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '家长', email: null }),
+    );
+  });
+
   it('returns the parent with their families, the pending requests only where they are admin', async () => {
     const { service } = createService({
       memberships: [
@@ -127,7 +151,17 @@ describe('FamilyService', () => {
         { id: 'family-1', name: '林悦的家', role: 'admin', pendingRequests: 2 },
         { id: 'family-2', name: '外婆家', role: 'member' },
       ],
+      requestResults: 0,
     });
+  });
+
+  it("counts the parent's request results not yet seen", async () => {
+    const { service, repository } = createService({ requestResults: 3 });
+
+    const me = await service.getMe('parent-1');
+
+    expect(me.requestResults).toBe(3);
+    expect(repository.countRequestResults).toHaveBeenCalledWith('parent-1');
   });
 
   it('keeps a zero count for an admin', async () => {
@@ -157,11 +191,12 @@ describe('FamilyService', () => {
     });
   });
 
-  it("changes the parent's own name and returns them", async () => {
-    const { service, repository } = createService();
+  it("changes the parent's own name and returns them with their request results", async () => {
+    const { service, repository } = createService({ requestResults: 1 });
 
     await expect(service.updateName('parent-1', '林悦')).resolves.toMatchObject({
       id: 'parent-1',
+      requestResults: 1,
     });
     expect(repository.updateParentName).toHaveBeenCalledWith('parent-1', '林悦');
   });

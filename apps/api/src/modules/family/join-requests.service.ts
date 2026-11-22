@@ -84,33 +84,29 @@ export function requireDecision(request: RequestState | undefined, familyId: str
 
 /**
  * One side's 「知道了」 on a request it sees as closed. A pending request is
- * still waiting; a request that side never sees is answered as no request
- * at all.
+ * still waiting; a withdrawn request is never shown to either side, so it is
+ * answered as no request at all.
  */
-function requireDismissal(request: RequestState, hidden: JoinRequestStatus[]): void {
+function requireDismissal(request: RequestState): void {
   if (request.status === 'pending') {
     throw requestPending();
   }
-  if (hidden.includes(request.status)) {
+  if (request.status === 'withdrawn') {
     throw requestNotFound();
   }
 }
 
-/**
- * The applicant's 「知道了」: on their own rejected and expired requests. An
- * approved request is never shown to them (it became a family), nor a
- * withdrawn one.
- */
+/** The applicant's 「知道了」: on their own approved, rejected and expired requests. */
 export function requireApplicantDismissal(
   request: RequestState | undefined,
   parentId: string,
 ): void {
-  requireDismissal(ownRequest(request, parentId), ['approved', 'withdrawn']);
+  requireDismissal(ownRequest(request, parentId));
 }
 
-/** The admin's 「知道了」: on the family's approved, rejected and expired requests, never the withdrawn ones. */
+/** The admin's 「知道了」: on the family's approved, rejected and expired requests. */
 export function requireAdminDismissal(request: RequestState | undefined, familyId: string): void {
-  requireDismissal(familyRequest(request, familyId), ['withdrawn']);
+  requireDismissal(familyRequest(request, familyId));
 }
 
 /** A request read back right after it was written. */
@@ -124,8 +120,8 @@ function written<T>(record: T | undefined): T {
 /** A request as its applicant sees it, with its time as an ISO date-time. */
 export function toApplicantRequest(record: ApplicantRequestRecord): ApplicantJoinRequest {
   const { status } = record;
-  if (status !== 'pending' && status !== 'rejected' && status !== 'expired') {
-    throw new Error(`An applicant is not shown ${status} requests`);
+  if (status === 'withdrawn') {
+    throw new Error('An applicant is not shown withdrawn requests');
   }
   return { ...record, status, createdAt: record.createdAt.toISOString() };
 }
@@ -181,7 +177,7 @@ async function lockAsAdmin(
 }
 
 /** The admin's two ways of closing a pending request. */
-export type Decision = 'approved' | 'rejected';
+export type Decision = Extract<JoinRequestStatus, 'approved' | 'rejected'>;
 
 /**
  * Join requests to families (`.docs/design/interfaces.md`, "申请加入（申请人）"
@@ -237,7 +233,7 @@ export class JoinRequestsService {
     }
   }
 
-  /** The parent's own requests the start page shows, newest first. */
+  /** The parent's own requests the start page and the join page list, newest first. */
   async listOwn(parentId: string): Promise<ApplicantJoinRequest[]> {
     return (await this.repository.listApplicantRequests(parentId)).map(toApplicantRequest);
   }
@@ -254,7 +250,7 @@ export class JoinRequestsService {
     });
   }
 
-  /** The applicant's 「知道了」 on their own rejected or expired request. */
+  /** The applicant's 「知道了」 on their own approved, rejected or expired request. */
   dismissOwn(parentId: string, requestId: string): Promise<void> {
     return this.repository.transaction(async (store) => {
       requireApplicantDismissal(await lockRequest(store, requestId), parentId);

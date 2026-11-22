@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { FamilyRole } from '@thinklet/contracts';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
 import {
   families,
@@ -105,5 +105,23 @@ export class FamilyRepository {
       .innerJoin(families, eq(families.id, familyMembers.familyId))
       .where(eq(familyMembers.parentId, parentId))
       .orderBy(asc(familyMembers.joinedAt), asc(families.id));
+  }
+
+  /**
+   * How many of the parent's own requests were approved, rejected or expired
+   * and are not yet dismissed by them: the results they have still to see.
+   */
+  async countRequestResults(parentId: string): Promise<number> {
+    const rows = await this.database
+      .select({ results: count() })
+      .from(joinRequests)
+      .where(
+        and(
+          eq(joinRequests.parentId, parentId),
+          inArray(joinRequests.status, ['approved', 'rejected', 'expired']),
+          isNull(joinRequests.dismissedByApplicantAt),
+        ),
+      );
+    return rows.at(0)?.results ?? 0;
   }
 }

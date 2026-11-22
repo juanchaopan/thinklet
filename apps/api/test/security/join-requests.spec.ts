@@ -1,6 +1,7 @@
 import {
   applicantJoinRequestListSchema,
   familyJoinRequestsResponseSchema,
+  meResponseSchema,
   type ApplicantJoinRequest,
   type FamilyDetail,
 } from '@thinklet/contracts';
@@ -11,6 +12,7 @@ import {
   applyToFamily,
   as,
   createFamily,
+  joinRequestRow,
   joinRequestRows,
   memberRows,
   outcomesOf,
@@ -30,12 +32,13 @@ interface Household {
 }
 
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for join
-// requests: a parent cannot see, withdraw or dismiss someone else's request;
-// only the family's admin can see, approve, reject or dismiss the family's
-// requests, a member who is not the admin is refused and a parent who is not
-// a member is answered as if there were no such family; a request of another
-// family is refused on a family's routes; every route needs a login and the
-// changes need this site's Origin.
+// requests: a parent cannot see, withdraw or dismiss someone else's request,
+// approved ones included, and counts only their own results; only the
+// family's admin can see, approve, reject or dismiss the family's requests, a
+// member who is not the admin is refused and a parent who is not a member is
+// answered as if there were no such family; a request of another family is
+// refused on a family's routes; every route needs a login and the changes
+// need this site's Origin.
 describe('join request security', () => {
   const running = useAppWithServices();
   let ours: Household;
@@ -98,6 +101,35 @@ describe('join request security', () => {
       ]),
     );
     expect(await stateOf(theirs.family.id)).toEqual(before);
+  });
+
+  it('does not let anyone else dismiss an approved request, nor count it as their result', async () => {
+    const approved = await household('第三家');
+    await as(running.server, approved.admin).post(
+      `/api/families/${approved.family.id}/join-requests/${approved.pending.id}/approve`,
+    );
+
+    const responses = [];
+    for (const by of [approved.admin, approved.member, ours.applicant]) {
+      responses.push(
+        await as(running.server, by).post(`/api/join-requests/${approved.pending.id}/dismiss`),
+      );
+    }
+
+    expect(outcomesOf(responses)).toEqual(responses.map(() => [404, 'not_found']));
+    expect((await joinRequestRow(running.databaseUrl, approved.pending.id)).status).toBe(
+      'approved',
+    );
+    expect(
+      (await joinRequestRow(running.databaseUrl, approved.pending.id)).dismissed_by_applicant_at,
+    ).toBeNull();
+    const results = await Promise.all(
+      [approved.applicant, approved.admin, ours.applicant].map(
+        async (by) =>
+          meResponseSchema.parse((await as(running.server, by).get('/api/me')).body).requestResults,
+      ),
+    );
+    expect(results).toEqual([1, 0, 0]);
   });
 
   it("lists only the parent's own requests", async () => {
@@ -234,6 +266,7 @@ describe('join request security', () => {
         code: ours.family.code,
       }),
       await fromElsewhere(server().delete(own), ours.applicant),
+      await fromElsewhere(server().post(`${own}/dismiss`), ours.applicant),
       await fromElsewhere(server().post(`${family}/approve`), ours.admin),
       await fromElsewhere(server().post(`${family}/reject`), ours.admin),
     ];

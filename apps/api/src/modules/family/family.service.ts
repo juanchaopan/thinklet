@@ -11,7 +11,7 @@ import { FamilyRepository, type MembershipRecord } from './family.repository.js'
 /** The version of the user agreement and privacy policy a login agrees to (`.docs/design/rules.md`, "协议同意"). */
 export const CONSENT_VERSION = '2026-11-21';
 
-/** The name of a parent whose identity provider gave neither a name nor an email. */
+/** The name of a parent whose identity provider gave neither a usable name nor an email. */
 export const FALLBACK_PARENT_NAME = '家长';
 
 /** The claims of an ID token; the parent's account is built from `name` and `email`. */
@@ -40,7 +40,8 @@ function localPart(email: string): string {
 /**
  * The name a new parent starts with: the ID token's name, else the part of
  * the email before the `@`, cut to 20 characters (`.docs/design/rules.md`,
- * "家长账号"). With neither, a generic name the parent can change.
+ * "家长账号"). A name or an email of spaces only counts as none; with
+ * neither, a generic name the parent can change.
  */
 export function initialName(claims: LoginClaims): string {
   const email = emailOf(claims);
@@ -77,16 +78,20 @@ export class FamilyService {
     });
   }
 
-  /** The signed-in parent with their families. A parent that no longer exists is not signed in. */
+  /**
+   * The signed-in parent with their families and the number of their request
+   * results not yet seen. A parent that no longer exists is not signed in.
+   */
   async getMe(parentId: string): Promise<MeResponse> {
-    const [parent, memberships] = await Promise.all([
+    const [parent, memberships, requestResults] = await Promise.all([
       this.repository.findParent(parentId),
       this.repository.listMemberships(parentId),
+      this.repository.countRequestResults(parentId),
     ]);
     if (parent === undefined) {
       throw unauthenticated();
     }
-    return { ...parent, families: memberships.map(toMeFamily) };
+    return { ...parent, families: memberships.map(toMeFamily), requestResults };
   }
 
   /** Changes the parent's own name, already trimmed and checked, and returns them as `getMe` does. */

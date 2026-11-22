@@ -21,10 +21,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Acceptance criteria covered: a parent signs in through the identity
 // provider and comes back to the page they wanted; the first login creates
-// the parent with the provider's name or the email's local part; every login
-// updates the email and the consent; the login lasts 7 days and is renewed
-// with less than 3.5 days left; logging out clears the login and leaves
-// through the provider's logout.
+// the parent with the provider's name or the email's local part, else 家长;
+// every login updates the email and the consent; the login lasts 7 days and
+// is renewed with less than 3.5 days left; logging out clears the login and
+// leaves through the provider's logout.
 describe('login', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -122,6 +122,14 @@ describe('login', () => {
       });
     });
 
+    it('names a parent with only spaces for a name and no email 家长', async () => {
+      const user = newUser({ name: '   ' });
+
+      await signIn(app.getHttpServer(), user);
+
+      expect(await parentOf(user.subject)).toMatchObject({ name: '家长', email: null });
+    });
+
     it('cuts a long name from the provider to 20 characters', async () => {
       const user = newUser({ name: '一二三四五六七八九十一二三四五六七八九十多出来的' });
 
@@ -193,6 +201,7 @@ describe('login', () => {
         name: '林悦',
         email: 'linyue@example.com',
         families: [],
+        requestResults: 0,
       });
     });
 
