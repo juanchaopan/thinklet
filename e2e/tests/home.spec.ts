@@ -1,5 +1,5 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { expectAccessiblePage } from '../support/accessibility.ts';
 
 /**
  * Whether a console message is the browser reporting the 401 of
@@ -79,19 +79,8 @@ test.describe('product home', () => {
   test('has no WCAG 2.1 AA violations', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('link', { name: '家长登录 / 注册' })).toBeVisible();
-    await page.evaluate(() => {
-      for (const animation of document.getAnimations()) {
-        if (animation.effect?.getComputedTiming().endTime !== Infinity) {
-          animation.finish();
-        }
-      }
-    });
 
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-
-    expect(results.violations).toEqual([]);
+    await expectAccessiblePage(page);
   });
 
   test('sends a visitor from a parent page back to the product home, keeping the page', async ({
