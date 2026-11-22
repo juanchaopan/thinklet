@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
   afterNextRender,
@@ -132,11 +133,24 @@ export class JoinFamilyDialog {
   private readonly typedCode = computed(() => filledCode(this.characters()));
   private readonly familyBox = viewChild<ElementRef<HTMLElement>>('familyBox');
 
+  /**
+   * Whether the dialog is open, from the moment it opens until it closes
+   * itself, its page closes it or the page goes away. The `open` input alone
+   * can still read true once the dialog has asked to close, when its page
+   * goes away before taking the input back.
+   */
+  private asking = false;
+
   constructor() {
     effect(() => {
       if (this.open()) {
         untracked(() => this.start());
+      } else {
+        this.asking = false;
       }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      this.asking = false;
     });
   }
 
@@ -146,22 +160,23 @@ export class JoinFamilyDialog {
   }
 
   /**
-   * Looks the code up; the answer counts only while the boxes still hold
-   * that code. The family found takes the focus from the boxes, which are
-   * gone, so screen readers read it and Escape still closes the dialog.
+   * Looks the code up; the answer, found or failed, counts only while the
+   * dialog is open and the boxes still hold that code. The family found
+   * takes the focus from the boxes, which are gone, so screen readers read
+   * it and Escape still closes the dialog.
    */
   protected async lookUp(code: string): Promise<void> {
     this.error.set(null);
     try {
       const family = await this.requests.lookUp(code);
-      if (this.open() && this.typedCode() === code) {
+      if (this.stillAsking(code)) {
         this.found.set({ ...family, code });
         afterNextRender(() => this.familyBox()?.nativeElement.focus(), {
           injector: this.injector,
         });
       }
     } catch (error) {
-      if (this.typedCode() === code) {
+      if (this.stillAsking(code)) {
         this.showFailure(error);
       }
     }
@@ -191,6 +206,7 @@ export class JoinFamilyDialog {
   }
 
   protected close(): void {
+    this.asking = false;
     this.closed.emit();
     const leaveTo = this.leaveTo();
     if (leaveTo) {
@@ -198,8 +214,14 @@ export class JoinFamilyDialog {
     }
   }
 
+  /** Whether the dialog is still open on the code, so an answer about it is still wanted. */
+  private stillAsking(code: string): boolean {
+    return this.asking && this.open() && this.typedCode() === code;
+  }
+
   /** Starts over from the given code: a whole one is looked up at once. */
   private start(): void {
+    this.asking = true;
     this.found.set(null);
     this.error.set(null);
     this.attempt.set(0);
