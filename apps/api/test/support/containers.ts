@@ -8,12 +8,15 @@ import { promisify } from 'node:util';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 
-export const apiDirectory = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const supportDirectory = dirname(fileURLToPath(import.meta.url));
+export const apiDirectory = join(supportDirectory, '..', '..');
 const composeFile = join(apiDirectory, '..', '..', 'docker-compose.yml');
 const S3_PORT = 8333;
 const OIDC_PORT = 8080;
 /** The mock OIDC provider serves an issuer under any first path segment; tests use this one. */
 const OIDC_ISSUER_ID = 'default';
+/** Where the provider's login page is copied to in its container. */
+const OIDC_LOGIN_PAGE = '/login/login.html';
 
 /** The site origin of tests that run no web server in front of the api. */
 export const TEST_APP_ORIGIN = 'http://localhost:4200';
@@ -82,10 +85,23 @@ export interface StartedOidcProvider extends OidcClient {
  * login page on, so a browser can sign in as any user. It accepts any client,
  * so the client id and secret are random. The issuer is on the host the tests
  * reach the container at, the one address both the browser and the api use.
+ *
+ * The login page is mock-login.html, the same form with nothing outside the
+ * page: the provider's own page loads its font from Google Fonts, and the
+ * browser's load event, which every sign-in waits for, then hangs for as
+ * long as that site is slow or out of reach.
  */
 export async function startOidcProvider(): Promise<StartedOidcProvider> {
   const container = await new GenericContainer(composeImage('mock-oauth2-server'))
-    .withEnvironment({ JSON_CONFIG: JSON.stringify({ interactiveLogin: true }) })
+    .withEnvironment({
+      JSON_CONFIG: JSON.stringify({ interactiveLogin: true, loginPagePath: OIDC_LOGIN_PAGE }),
+    })
+    .withCopyContentToContainer([
+      {
+        content: readFileSync(join(supportDirectory, 'mock-login.html'), 'utf8'),
+        target: OIDC_LOGIN_PAGE,
+      },
+    ])
     .withExposedPorts(OIDC_PORT)
     .withWaitStrategy(Wait.forHttp('/isalive', OIDC_PORT).forStatusCode(200))
     .start();

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mock-oauth2-server sign-in</title>
+  </head>
+  <body>
+    <main>
+      <h1>Mock OAuth2 Server Sign-in</h1>
+      <form method="post">
+        <p>
+          <label>
+            User or subject
+            <input type="text" name="username" required autofocus />
+          </label>
+        </p>
+        <p>
+          <label>
+            Claims (JSON, optional)
+            <textarea name="claims" rows="8" cols="60"></textarea>
+          </label>
+        </p>
+        <p><input type="submit" value="Sign-in" /></p>
+      </form>
+    </main>
+  </body>
+</html>
