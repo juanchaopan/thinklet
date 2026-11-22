@@ -195,7 +195,7 @@ tasks:
       - pnpm exec vitest run --config tools/vitest.config.ts --changed {{.SINCE}} --passWithNoTests
 
   test-component:
-    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the image built from apps/web/component-tests.Dockerfile
+    desc: Run the web component tests (axe, and screenshots at phone, tablet and desktop sizes compared with the baselines) in the image built from apps/web/component-tests.Dockerfile; `task test-component VITEST_MAX_WORKERS=3` sets how many browser pages share the test files (default one fewer than the CPUs)
     cmds:
       - task: component-tests-in-container
         vars: { UPDATE_SCREENSHOTS: 'false' }
@@ -305,6 +305,12 @@ tasks:
     # node_modules is covered by its own subpath of one Docker volume, so the
     # Linux install inside never touches the host's; a new workspace package
     # needs a line here too. Subpaths must exist before they are mounted.
+    #
+    # VITEST_MAX_WORKERS, given on the command line or set in the
+    # environment, is passed on to Vitest: the test files are shared out over
+    # that many browser pages and run one after another on each, so a run can
+    # repeat how another machine shares them (a CI runner with 4 CPUs runs 3
+    # pages). Without it Vitest uses one page fewer than the CPUs it sees.
     cmds:
       - docker image inspect {{.IMAGE}} > /dev/null 2>&1 || docker build --tag {{.IMAGE}} - < {{.COMPONENT_TEST_DOCKERFILE}}
       - >-
@@ -323,6 +329,7 @@ tasks:
         --mount type=tmpfs,dst=/repo/apps/web/.angular
         --env CI=true
         --env UPDATE_SCREENSHOTS={{.UPDATE_SCREENSHOTS}}
+        {{with .VITEST_MAX_WORKERS}}--env "VITEST_MAX_WORKERS={{.}}"{{end}}
         {{.IMAGE}}
         bash /repo/apps/web/scripts/run-component-tests.sh
 

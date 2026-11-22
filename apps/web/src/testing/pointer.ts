@@ -32,3 +32,14 @@ export async function emulateReducedMotion(enabled: boolean): Promise<void> {
   });
   await nextFrames();
 }
+
+/**
+ * Moves the mouse off the browser window, so nothing on the page is hovered.
+ * The mouse belongs to the browser page, which outlives a test and the test
+ * files run one after another on it: where one test left the mouse, the next
+ * would otherwise show a hover it never asked for.
+ */
+export async function moveMouseOffPage(): Promise<void> {
+  await cdp().send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: -1, y: -1 });
+  await nextFrames();
+}
