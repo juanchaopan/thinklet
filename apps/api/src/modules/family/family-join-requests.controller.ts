@@ -26,11 +26,11 @@ import { JoinRequestsService, type Decision } from './join-requests.service.js';
  */
 @Controller('families/:familyId/join-requests')
 @UseGuards(FamilyMemberGuard)
+@FamilyAdmin()
 export class FamilyJoinRequestsController {
   constructor(private readonly joinRequestsService: JoinRequestsService) {}
 
   @Get()
-  @FamilyAdmin()
   @Header('Cache-Control', 'no-store')
   async list(
     @Param('familyId', FamilyIdPipe) familyId: string,
@@ -42,7 +42,6 @@ export class FamilyJoinRequestsController {
 
   /** 200 with the approved request; the applicant is a member of the family. */
   @Post(':requestId/approve')
-  @FamilyAdmin()
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   approve(
@@ -55,7 +54,6 @@ export class FamilyJoinRequestsController {
 
   /** 200 with the rejected request. */
   @Post(':requestId/reject')
-  @FamilyAdmin()
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   reject(
@@ -68,7 +66,6 @@ export class FamilyJoinRequestsController {
 
   /** The admin's 「知道了」 on a handled request: 204. */
   @Post(':requestId/dismiss')
-  @FamilyAdmin()
   @HttpCode(HttpStatus.NO_CONTENT)
   async dismiss(
     @CurrentParentId() parentId: string,

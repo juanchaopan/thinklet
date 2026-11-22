@@ -105,11 +105,11 @@ async function readDetail(
 
 /**
  * Locks the family and checks the parent's role there under the lock. Every
- * change to a family starts with it, so a change sees the roles and members
- * left by the changes before it: a parent who handed over the admin role in
- * another tab, or who was taken out, is refused.
+ * change to a family or its join requests starts with it, so a change sees
+ * the roles and members left by the changes before it: a parent who handed
+ * over the admin role in another tab, or who was taken out, is refused.
  */
-async function lockFor(
+export async function lockFor(
   store: FamilyStore,
   familyId: string,
   parentId: string,
@@ -144,8 +144,9 @@ export class FamiliesService {
     );
   }
 
+  /** Reads the family on the pool; its two queries run side by side and lock nothing. */
   get(parentId: string, familyId: string): Promise<FamilyDetail> {
-    return this.repository.transaction((store) => readDetail(store, familyId, parentId));
+    return readDetail(this.repository, familyId, parentId);
   }
 
   /** The admin changes the name, the time zone or both; the last change saved wins. */

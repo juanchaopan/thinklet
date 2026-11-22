@@ -13,13 +13,29 @@ const PARENT_ID = '0b7c2f4e-8d1a-4c3b-9e5f-6a7b8c9d0e1f';
 const handlers = { open: () => undefined, adminOnly: () => undefined };
 FamilyAdmin()(handlers, 'adminOnly', { value: handlers.adminOnly });
 
+/** A controller with no mark, whose routes are marked one by one. */
+class OpenController {
+  readonly routes = handlers;
+}
+
+/** A controller marked for the admin as a whole. */
+class AdminController {
+  readonly routes = handlers;
+}
+FamilyAdmin()(AdminController);
+
 /** A request to a family route with the given family id, by the signed-in parent. */
-function contextFor(familyId: unknown, handler: keyof typeof handlers): ExecutionContext {
+function contextFor(
+  familyId: unknown,
+  handler: keyof typeof handlers,
+  controller: object = OpenController,
+): ExecutionContext {
   const request = { params: { familyId } } as unknown as Request;
   setCurrentParentId(request, PARENT_ID);
   return {
     switchToHttp: () => ({ getRequest: () => request }),
     getHandler: () => handlers[handler],
+    getClass: () => controller,
   } as unknown as ExecutionContext;
 }
 
@@ -57,6 +73,14 @@ describe('FamilyMemberGuard', () => {
     const { guard, familiesService } = createGuard();
 
     await guard.canActivate(contextFor(FAMILY_ID, 'adminOnly'));
+
+    expect(familiesService.checkAccess).toHaveBeenCalledWith(PARENT_ID, FAMILY_ID, 'admin');
+  });
+
+  it('needs the admin on every route of a controller marked for the admin', async () => {
+    const { guard, familiesService } = createGuard();
+
+    await guard.canActivate(contextFor(FAMILY_ID, 'open', AdminController));
 
     expect(familiesService.checkAccess).toHaveBeenCalledWith(PARENT_ID, FAMILY_ID, 'admin');
   });

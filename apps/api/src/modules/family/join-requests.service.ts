@@ -8,7 +8,7 @@ import type {
   PendingJoinRequest,
 } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { requireAccess } from './families.service.js';
+import { lockFor } from './families.service.js';
 import {
   JoinRequestsRepository,
   RequestPendingError,
@@ -46,6 +46,19 @@ export function requireApplicable({ member, pending }: Application): void {
   if (pending) {
     throw requestPending();
   }
+}
+
+/** Reads the parent's membership and pending request with the store's queries and checks that they may apply. */
+async function checkApplicable(
+  store: JoinRequestStore,
+  familyId: string,
+  parentId: string,
+): Promise<void> {
+  const [role, pending] = await Promise.all([
+    store.memberRole(familyId, parentId),
+    store.hasPendingRequest(familyId, parentId),
+  ]);
+  requireApplicable({ member: role !== undefined, pending });
 }
 
 /** The request when it is the parent's own; anyone else's is answered as no request at all. */
@@ -162,20 +175,6 @@ async function lockRequest(
   return store.findRequest(requestId);
 }
 
-/**
- * Locks the family and checks under the lock that the parent is still its
- * admin, so an admin who handed the role over or was taken out a moment ago
- * is refused.
- */
-async function lockAsAdmin(
-  store: JoinRequestStore,
-  familyId: string,
-  adminId: string,
-): Promise<void> {
-  await store.lockFamily(familyId);
-  requireAccess(await store.memberRole(familyId, adminId), 'admin');
-}
-
 /** The admin's two ways of closing a pending request. */
 export type Decision = Extract<JoinRequestStatus, 'approved' | 'rejected'>;
 
@@ -201,11 +200,7 @@ export class JoinRequestsService {
     if (family === undefined) {
       throw codeNotFound();
     }
-    const [role, pending] = await Promise.all([
-      this.repository.memberRole(family.id, parentId),
-      this.repository.hasPendingRequest(family.id, parentId),
-    ]);
-    requireApplicable({ member: role !== undefined, pending });
+    await checkApplicable(this.repository, family.id, parentId);
     return { familyName: family.name, adminName: family.adminName, adminId: family.adminId };
   }
 
@@ -221,11 +216,7 @@ export class JoinRequestsService {
         if (familyId === undefined) {
           throw codeNotFound();
         }
-        const [role, pending] = await Promise.all([
-          store.memberRole(familyId, parentId),
-          store.hasPendingRequest(familyId, parentId),
-        ]);
-        requireApplicable({ member: role !== undefined, pending });
+        await checkApplicable(store, familyId, parentId);
         const requestId = await store.insertRequest({ familyId, parentId, code });
         return toApplicantRequest(written(await store.findApplicantRequest(requestId)));
       });
@@ -282,7 +273,7 @@ export class JoinRequestsService {
     decision: Decision,
   ): Promise<HandledJoinRequest> {
     return this.repository.transaction(async (store) => {
-      await lockAsAdmin(store, familyId, adminId);
+      await lockFor(store, familyId, adminId, 'admin');
       const request = requireDecision(await store.findRequest(requestId), familyId);
       await store.closeRequest(requestId, {
         status: decision,
@@ -299,7 +290,7 @@ export class JoinRequestsService {
   /** The admin's 「知道了」 on a handled request of the family. */
   dismissForFamily(adminId: string, familyId: string, requestId: string): Promise<void> {
     return this.repository.transaction(async (store) => {
-      await lockAsAdmin(store, familyId, adminId);
+      await lockFor(store, familyId, adminId, 'admin');
       requireAdminDismissal(await store.findRequest(requestId), familyId);
       await store.dismissRequest(requestId, 'admin', new Date());
     });

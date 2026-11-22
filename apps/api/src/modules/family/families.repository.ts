@@ -5,14 +5,12 @@ import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
+import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
 const { families, familyMembers, joinRequests, parents } = schema;
 
 /** The pool or a transaction on it: both run the same queries. */
 type Executor = PgDatabase<NodePgQueryResultHKT, typeof schema>;
-
-/** PostgreSQL's error code for a unique violation. */
-const UNIQUE_VIOLATION = '23505';
 
 /** The unique constraint that keeps family codes unique across the platform. */
 const FAMILY_CODE_UNIQUE = 'families_code_unique';
@@ -29,31 +27,13 @@ export class FamilyCodeTakenError extends Error {
   }
 }
 
-/**
- * Whether the error, or an error it was caused by, is the unique violation
- * of the family code. Drizzle wraps the driver's error in its own, with the
- * driver's as the cause.
- */
-function isFamilyCodeTaken(error: unknown): boolean {
-  for (let current: unknown = error; current instanceof Error; current = current.cause) {
-    const { code, constraint } = current as { code?: unknown; constraint?: unknown };
-    if (code === UNIQUE_VIOLATION && constraint === FAMILY_CODE_UNIQUE) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /** Runs a write that sets a family code, turning a taken code into FamilyCodeTakenError. */
-async function settingCode<T>(write: () => Promise<T>): Promise<T> {
-  try {
-    return await write();
-  } catch (error) {
-    if (isFamilyCodeTaken(error)) {
-      throw new FamilyCodeTakenError({ cause: error });
-    }
-    throw error;
-  }
+function settingCode<T>(write: () => Promise<T>): Promise<T> {
+  return translatingUniqueViolation(
+    FAMILY_CODE_UNIQUE,
+    (options) => new FamilyCodeTakenError(options),
+    write,
+  );
 }
 
 export interface FamilyRecord {

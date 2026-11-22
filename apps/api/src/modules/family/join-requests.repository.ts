@@ -8,10 +8,8 @@ import {
   joinRequests,
   parents,
 } from '../../infrastructure/database/schema.js';
+import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 import { FamilyStore } from './families.repository.js';
-
-/** PostgreSQL's error code for a unique violation. */
-const UNIQUE_VIOLATION = '23505';
 
 /** The partial unique index that allows one pending request per parent and family. */
 const ONE_PENDING_PER_PARENT = 'join_requests_one_pending_per_parent';
@@ -26,21 +24,6 @@ export class RequestPendingError extends Error {
     super('The parent already has a pending request to the family', options);
     this.name = 'RequestPendingError';
   }
-}
-
-/**
- * Whether the error, or an error it was caused by, is the unique violation
- * of the one pending request per parent and family. Drizzle wraps the
- * driver's error in its own, with the driver's as the cause.
- */
-function isRequestPending(error: unknown): boolean {
-  for (let current: unknown = error; current instanceof Error; current = current.cause) {
-    const { code, constraint } = current as { code?: unknown; constraint?: unknown };
-    if (code === UNIQUE_VIOLATION && constraint === ONE_PENDING_PER_PARENT) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** A family found by its code, with its admin's name and parent id. */
@@ -151,18 +134,15 @@ export class JoinRequestStore extends FamilyStore {
 
   /** Records a pending request and returns its id; throws RequestPendingError when one is pending already. */
   async insertRequest(request: NewRequest): Promise<string> {
-    let rows: Array<{ id: string }>;
-    try {
-      rows = await this.executor
-        .insert(joinRequests)
-        .values({ ...request, status: 'pending' })
-        .returning({ id: joinRequests.id });
-    } catch (error) {
-      if (isRequestPending(error)) {
-        throw new RequestPendingError({ cause: error });
-      }
-      throw error;
-    }
+    const rows = await translatingUniqueViolation(
+      ONE_PENDING_PER_PARENT,
+      (options) => new RequestPendingError(options),
+      () =>
+        this.executor
+          .insert(joinRequests)
+          .values({ ...request, status: 'pending' })
+          .returning({ id: joinRequests.id }),
+    );
     const row = rows.at(0);
     if (row === undefined) {
       throw new Error('Recording the join request returned no row');
