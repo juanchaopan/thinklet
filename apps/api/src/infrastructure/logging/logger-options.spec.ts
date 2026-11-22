@@ -25,6 +25,9 @@ const settings: SecretSettings = {
 const childDataKeyBase64 = settings.CHILD_DATA_KEY.toString('base64');
 const childDataKeyHex = settings.CHILD_DATA_KEY.toString('hex');
 
+/** A login link token as the api makes them: 32 random bytes in base64url. */
+const linkToken = 'q3V9-x_Z0aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567';
+
 function captureLogs(secrets: readonly string[]) {
   const lines: string[] = [];
   const destination = new Writable({
@@ -123,6 +126,34 @@ describe('loggerOptions', () => {
     }
   });
 
+  it("redacts a child's nickname, account and password and the names of their devices", () => {
+    const { logger, output } = captureLogs([]);
+
+    logger.info({
+      child: { nickname: 'nickname-1', account: 'account-1', password: 'password-1' },
+      body: { child: { nickname: 'nickname-2', account: 'account-2' } },
+      device: { name: 'device-1' },
+      remembered: { device: { name: 'device-2' }, deviceName: 'device-3' },
+      nickname: 'nickname-3',
+      account: 'account-3',
+    });
+
+    for (const value of [
+      'nickname-1',
+      'nickname-2',
+      'nickname-3',
+      'account-1',
+      'account-2',
+      'account-3',
+      'password-1',
+      'device-1',
+      'device-2',
+      'device-3',
+    ]) {
+      expect(output()).not.toContain(value);
+    }
+  });
+
   it('keeps the name of an error, which is its type', () => {
     const { logger, output } = captureLogs([]);
 
@@ -131,7 +162,7 @@ describe('loggerOptions', () => {
     expect(output()).toContain('TypeError');
   });
 
-  it('redacts tokens of the login wherever they are nested', () => {
+  it('redacts tokens of the login and family codes wherever they are nested', () => {
     const { logger, output } = captureLogs([]);
 
     logger.info({
@@ -139,9 +170,11 @@ describe('loggerOptions', () => {
       tokens: { id_token: 'token-2', access_token: 'token-3', refresh_token: 'token-4' },
       login: { sessionToken: 'token-5', loginToken: 'token-6', codeVerifier: 'token-7' },
       request: { cookies: { thinklet_session: 'token-8' } },
+      link: { token: 'token-9' },
+      remembered: { deviceToken: 'token-10', child: { familyCode: 'token-11' } },
     });
 
-    for (const value of [1, 2, 3, 4, 5, 6, 7, 8].map((n) => `token-${n}`)) {
+    for (const value of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((n) => `token-${n}"`)) {
       expect(output()).not.toContain(value);
     }
   });
@@ -226,8 +259,37 @@ describe('loggableUrl', () => {
     expect(loggableUrl(url)).toBe(logged);
   });
 
-  it('keeps a path that only contains the sensitive prefix further on', () => {
+  it('replaces the token of a login link and keeps the action after it', () => {
+    expect(loggableUrl(`/api/child-login-links/${linkToken}`)).toBe(
+      '/api/child-login-links/[redacted]',
+    );
+    expect(loggableUrl(`/api/child-login-links/${linkToken}/password`)).toBe(
+      '/api/child-login-links/[redacted]/password',
+    );
+    expect(loggableUrl(`/api/child-login-links/${linkToken}/login`)).toBe(
+      '/api/child-login-links/[redacted]/login',
+    );
+  });
+
+  it.each([
+    [`/API/Child-Login-Links/${linkToken}`, '/API/Child-Login-Links/[redacted]'],
+    [`/api/child-login-links/${linkToken}/`, '/api/child-login-links/[redacted]/'],
+    [`/api/child-login-links/${linkToken}?token=${linkToken}`, '/api/child-login-links/[redacted]'],
+    [
+      `/api/child-login-links/${linkToken}/login?remember=${linkToken}`,
+      '/api/child-login-links/[redacted]/login',
+    ],
+    [`/api/child-login-links/${encodeURIComponent('a/b')}`, '/api/child-login-links/[redacted]'],
+  ])('replaces the login link token in %s', (url, logged) => {
+    expect(loggableUrl(url)).toBe(logged);
+    expect(loggableUrl(url)).not.toContain(linkToken);
+  });
+
+  it('keeps a path that only contains a sensitive prefix further on', () => {
     expect(loggableUrl('/api/me/family-codes/x')).toBe('/api/me/family-codes/x');
+    expect(loggableUrl('/api/families/f-1/children/c-1/login-links/l-1')).toBe(
+      '/api/families/f-1/children/c-1/login-links/l-1',
+    );
   });
 });
 
@@ -245,6 +307,15 @@ describe('loggableHeaders', () => {
 
     expect(logged).toEqual({ host: 'site.example' });
     expect(JSON.stringify(logged)).not.toContain('ABC234');
+  });
+
+  it('leaves out the address of a QR login page with its token', () => {
+    const logged = loggableHeaders({
+      host: 'site.example',
+      referer: `https://site.example/child/qr/${linkToken}`,
+    });
+
+    expect(JSON.stringify(logged)).not.toContain(linkToken);
   });
 
   it('leaves the allowed headers a request does not have out', () => {
@@ -320,5 +391,22 @@ describe('httpLoggerOptions', () => {
         params: { splat: ['family-codes', 'ABC234'] },
       }),
     ).toEqual({ url: '/api/family-codes/[redacted]', headers: { host: 'site.example' } });
+  });
+
+  it('logs a login link request without its token anywhere', () => {
+    const { serializers } = httpLoggerOptions([]);
+
+    const logged: unknown = serializers?.['req']?.({
+      url: `/api/child-login-links/${linkToken}/password?x=${linkToken}`,
+      headers: { host: 'site.example', referer: `https://site.example/child/qr/${linkToken}` },
+      query: { x: linkToken },
+      params: { splat: ['child-login-links', linkToken, 'password'] },
+    });
+
+    expect(logged).toEqual({
+      url: '/api/child-login-links/[redacted]/password',
+      headers: { host: 'site.example' },
+    });
+    expect(JSON.stringify(logged)).not.toContain(linkToken);
   });
 });
