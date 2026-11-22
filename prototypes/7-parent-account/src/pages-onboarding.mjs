@@ -1,17 +1,6 @@
 import { homeSignedInBody } from './pages-home.mjs';
-import {
-  appShell,
-  avatar,
-  bareShell,
-  btnPrimary,
-  btnSecondary,
-  card,
-  chip,
-  dialog,
-  icon,
-  page,
-  timezoneField,
-} from './ui.mjs';
+import { REQUESTS, requestList } from './requests.mjs';
+import { appShell, avatar, bareShell, btnPrimary, btnSecondary, dialog, icon, page, timezoneField } from './ui.mjs';
 
 const narrow = (content) => `<div class="stagger mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-5 py-6">${content}</div>`;
 
@@ -35,33 +24,12 @@ const startBody = narrow(`
 <div><h1 class="text-3xl font-black">欢迎，林悦</h1><p class="mt-2 text-base text-ink-soft">先创建或加入一个家庭。</p></div>
 ${choices}`);
 
-const request = ({ family, admin, status }) => {
-  const states = {
-    pending: { tone: 'sun', label: '等待同意', iconName: 'hourglass', action: btnSecondary('撤回', 'min-h-11 px-5 text-sm') },
-    rejected: { tone: 'rose', label: '未被同意', iconName: 'letter', action: btnSecondary('知道了', 'min-h-11 px-5 text-sm') },
-    expired: { tone: 'gray', label: '已失效', iconName: 'letter', action: btnSecondary('知道了', 'min-h-11 px-5 text-sm') },
-  };
-  const s = states[status];
-  return `
-<li class="flex items-center gap-3 py-4 first:pt-0 last:pb-0">
-  ${icon(s.iconName, 'size-10')}
-  <div class="min-w-0 flex-1">
-    <p class="font-bold">${family}</p>
-    <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-soft">${chip(s.label, s.tone)}<span>管理员 ${admin}</span></p>
-  </div>
-  ${s.action}
-</li>`;
-};
-
-const waitingBody = narrow(`
+// With requests sent, the start page lists them with the same cards as the
+// 加入家庭 page, above the two ways to get a family.
+const withRequests = (requests) =>
+  narrow(`
 <h1 class="text-3xl font-black">欢迎，林悦</h1>
-${card(`
-  <h2 class="text-lg font-black">我的加入申请</h2>
-  <ul class="mt-4 divide-y divide-line">
-    ${request({ family: '外婆家', admin: '周秀英', status: 'pending' })}
-    ${request({ family: '周家', admin: '周子航', status: 'rejected' })}
-  </ul>
-`)}
+${requestList(requests)}
 ${choices}`);
 
 const nameField = (error) => `
@@ -135,11 +103,14 @@ const joinConfirmDialog = dialog({
   actions: `${btnSecondary('换一个家庭码')}${btnPrimary('发送申请')}`,
 });
 
-const overStart = (overlay) => bareShell(startBody, overlay);
+const overStart = (overlay) => bareShell(startBody, { overlay });
+
+const TITLE = '开始 - 好奇星球';
 
 export default [
-  { name: 'start', html: page('开始 - 好奇星球', bareShell(startBody)) },
-  { name: 'start-waiting', html: page('开始 - 好奇星球', bareShell(waitingBody)) },
+  { name: 'start', html: page(TITLE, bareShell(startBody)) },
+  { name: 'start-waiting', html: page(TITLE, bareShell(withRequests([REQUESTS.pending, REQUESTS.rejected]), { unseen: true })) },
+  { name: 'start-expired', html: page(TITLE, bareShell(withRequests([REQUESTS.expired]), { unseen: true })) },
   { name: 'family-create', viewportOnly: true, html: page('创建家庭 - 好奇星球', overStart(createDialog(false))) },
   { name: 'family-create-error', viewportOnly: true, html: page('创建家庭 - 好奇星球', overStart(createDialog(true))) },
   {

@@ -39,6 +39,7 @@ const FAMILY = '林悦的家';
 const CODE = '7KQ4MZ';
 const INVITE_LINK = `https://thinklet-web.vercel.app/join/${CODE}`;
 const TITLE = '家庭管理 - 好奇星球';
+const MEMBERS_TITLE = '新成员 - 好奇星球';
 
 const titleView = (admin, extra = '') => `<div class="flex items-center gap-1 ${extra}">
          <h1 class="text-3xl font-black">${FAMILY}</h1>
@@ -159,6 +160,7 @@ const familyPage = (options, overlay = '') =>
     content: familyBody(options),
   });
 
+// Dates of this year read like 11月21日 09:12, in the family's time zone.
 const pendingRow = (name, email, color, when) => `
 <li class="flex flex-wrap items-center gap-3 py-4 first:pt-0 last:pb-0">
   ${avatar(name, color, 'size-11 text-base')}
@@ -187,10 +189,11 @@ const historyRow = (name, email, color, result, when) => {
 </li>`;
 };
 
-const membersPage = (empty) =>
+const membersPage = (empty, overlay = '') =>
   appShell({
     active: 'members',
     pending: empty ? 0 : 2,
+    overlay,
     content: `
 <div class="stagger mx-auto flex max-w-3xl flex-col gap-5">
   <header class="flex flex-col gap-1">
@@ -203,8 +206,8 @@ const membersPage = (empty) =>
       empty
         ? `<div class="flex flex-col items-center gap-2 py-6 text-center">${icon('letter', 'size-14')}<p class="font-bold text-ink-soft">没有新的申请</p></div>`
         : `<ul class="mt-4 divide-y divide-line">
-            ${pendingRow('陈晓', 'chenxiao@example.com', 3, '今天 09:12')}
-            ${pendingRow('王一凡', 'yifan.wang@example.com', 4, '昨天 20:40')}
+            ${pendingRow('陈晓', 'chenxiao@example.com', 3, '11月21日 09:12')}
+            ${pendingRow('王一凡', 'yifan.wang@example.com', 4, '11月20日 20:40')}
           </ul>`
     }
   `)}
@@ -223,27 +226,56 @@ const membersPage = (empty) =>
 </div>`,
   });
 
-// The time zone picker: a search box over the full list of IANA time zones,
-// each with its current UTC offset. Like every dialog it is a floating sheet
-// on touch screens and sits in the middle with a mouse from 640 px up.
-const timezonePicker = `
+// Every IANA time zone with its UTC offset on the prototype's date, sorted by
+// offset and then by name, as the picker lists them.
+const ON = new Date('2026-11-21T12:00:00Z');
+const MINUS = '−';
+
+const offsetOf = (zone) => {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' })
+    .formatToParts(ON)
+    .find((part) => part.type === 'timeZoneName').value;
+  return name === 'GMT' ? '+00:00' : name.slice(3);
+};
+
+const ZONES = Intl.supportedValuesOf('timeZone')
+  .map((zone) => {
+    const offset = offsetOf(zone);
+    const sign = offset[0] === '-' ? -1 : 1;
+    return {
+      zone,
+      label: `UTC${offset.replace('-', MINUS)}`,
+      minutes: sign * (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6))),
+    };
+  })
+  .sort((a, b) => a.minutes - b.minutes || a.zone.localeCompare(b.zone, 'en'));
+
+/**
+ * The zones whose IANA name contains the query, ignoring case, or whose
+ * offset text does; a typed hyphen also matches the minus sign shown.
+ */
+const searchZones = (query) => {
+  const q = query.trim().toLowerCase().replaceAll('-', MINUS);
+  return ZONES.filter((z) => z.zone.toLowerCase().includes(q) || z.label.toLowerCase().includes(q));
+};
+
+// The time zone picker: a search box over the full list. Like every dialog it
+// is a floating sheet on touch screens and sits in the middle with a mouse
+// from 640 px up. The first result is the highlighted one.
+const timezonePicker = (query) => `
 <div class="fixed inset-0 z-20 flex items-end justify-center ${SHEET_FRAME} mouse:sm:items-center mouse:sm:p-6">
   <div class="absolute inset-0 animate-fade bg-ink/45"></div>
   <div role="dialog" aria-modal="true" aria-labelledby="tz-title" class="relative flex max-h-[80vh] w-full max-w-md ${SHEET_PANEL} animate-sheet flex-col rounded-t-[1.75rem] bg-surface p-5 shadow-pop mouse:sm:animate-pop mouse:sm:rounded-[1.75rem]">
     <h2 id="tz-title" class="text-xl font-black">选择时区</h2>
     <label class="mt-4 flex min-h-12 items-center gap-2 rounded-2xl border border-violet px-4 ring-2 ring-violet/20">
-      <span class="text-ink-muted">${SEARCH}</span><input type="text" value="tor" aria-label="搜索时区" class="min-w-0 flex-1 bg-transparent text-base outline-none" />
+      <span class="text-ink-muted">${SEARCH}</span><input type="text" value="${query}" aria-label="搜索时区" class="min-w-0 flex-1 bg-transparent text-base outline-none" />
     </label>
     <ul class="mt-3 -mx-2 overflow-auto" role="listbox">
-      ${[
-        ['America/Toronto', 'UTC−05:00', true],
-        ['Europe/Isle_of_Man（Douglas）', 'UTC+00:00', false],
-        ['America/Thunder_Bay', 'UTC−05:00', false],
-      ]
+      ${searchZones(query)
         .map(
-          ([zone, offset, selected]) => `<li role="option" aria-selected="${selected}" class="flex min-h-12 items-center justify-between gap-3 rounded-xl px-3 ${
-            selected ? 'bg-tint font-bold' : ''
-          }"><span>${zone}</span><span class="text-sm text-ink-muted">${offset}</span></li>`,
+          ({ zone, label }, i) => `<li role="option" aria-selected="${i === 0}" class="flex min-h-12 items-center rounded-xl px-3 ${
+            i === 0 ? 'bg-tint font-bold' : ''
+          }">${zone}（${label}）</li>`,
         )
         .join('')}
     </ul>
@@ -306,7 +338,7 @@ export default [
     html: page(TITLE, familyPage({ admin: true, editing: 'name' }, editSheet({ title: '改家庭名称', value: FAMILY, label: '家庭名称' }))),
   },
   { name: 'family-admin-edit-timezone', html: page(TITLE, familyPage({ admin: true, editing: 'timezone' })) },
-  { name: 'family-admin-timezone-picker', viewportOnly: true, html: page(TITLE, familyPage({ admin: true, editing: 'timezone' }, timezonePicker)) },
+  { name: 'family-admin-timezone-picker', viewportOnly: true, html: page(TITLE, familyPage({ admin: true, editing: 'timezone' }, timezonePicker('tor'))) },
   { name: 'family-admin-timezone-hint', html: page(TITLE, familyPage({ admin: true, timezoneHint: true })) },
   { name: 'family-admin-member-menu', viewportOnly: 'touch', html: page(TITLE, familyPage({ admin: true, menuOpen: true })) },
   { name: 'family-member', html: page(TITLE, familyPage({ admin: false })) },
@@ -323,8 +355,16 @@ export default [
     html: page(TITLE, familyPage({ admin: true }, toast('key', '已复制', 'ok'))),
   },
   { name: 'dialog-qr', viewportOnly: true, html: page(TITLE, familyPage({ admin: true }, qrDialog)) },
-  { name: 'new-members', html: page('新成员 - 好奇星球', membersPage(false)) },
-  { name: 'new-members-empty', html: page('新成员 - 好奇星球', membersPage(true)) },
+  { name: 'new-members', html: page(MEMBERS_TITLE, membersPage(false)) },
+  { name: 'new-members-empty', html: page(MEMBERS_TITLE, membersPage(true)) },
+  // Approving failed on the server: the request stays in the list, the count
+  // stays as it was, and the toast says so.
+  {
+    name: 'toast-action-error',
+    viewportOnly: true,
+    frames: [0, 125, 250, 2500, 5250, 5400],
+    html: page(MEMBERS_TITLE, membersPage(false, toast('wrench', '出了点问题，请稍后再试', 'bad'))),
+  },
   confirm('dialog-new-code', true, {
     iconName: 'key',
     title: '更换家庭码？',

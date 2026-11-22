@@ -13,6 +13,8 @@
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
     'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei', sans-serif;
 
+  /* Text colours keep enough contrast on the cream and white backgrounds;
+     the badge red carries white numbers. */
   --color-canvas: #f7f4ef;
   --color-surface: #ffffff;
   --color-tint: #f4f0fb;
@@ -20,7 +22,7 @@
   --color-line-strong: #d9d3c7;
   --color-ink: #161a2b;
   --color-ink-soft: #4b5168;
-  --color-ink-muted: #8a8fa3;
+  --color-ink-muted: #6a6e7e;
   --color-primary: #1d2238;
   --color-primary-hover: #2c3352;
   --color-violet: #6d3cf0;
@@ -33,7 +35,7 @@
   --color-peach: #ffe3cc;
   --color-rose: #ffe4e8;
   --color-rose-ink: #c0213f;
-  --color-badge: #ef3b4f;
+  --color-badge: #d92d42;
   --color-spark: #ffb020;
 
   --radius-card: 1.25rem;

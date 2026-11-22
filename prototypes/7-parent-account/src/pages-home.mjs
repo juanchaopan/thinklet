@@ -38,17 +38,18 @@ const welcomeBanner = `
   <div aria-hidden="true" class="absolute right-0 -bottom-2 w-32 animate-rabbit [animation-delay:120ms] sm:right-8 sm:w-52 lg:right-16 lg:w-60">${art('rabbitWave', 'w-full')}</div>
 </section>`;
 
+// Children and books come in later issues; until then the home page says so
+// in place of the family's content.
 export const homeSignedInBody = `
 <div class="stagger mx-auto flex max-w-5xl flex-col gap-6">
   ${welcomeBanner}
   ${card(`
-    <div class="flex flex-wrap items-center gap-4">
-      ${icon('family', 'size-12')}
+    <div class="flex items-center gap-4">
+      ${icon('seedling', 'size-12')}
       <div class="min-w-0 flex-1">
-        <h2 class="text-lg font-black">林悦的家</h2>
-        <p class="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-soft">${chip('管理员', 'sun')}<span>3 位家长</span></p>
+        <h2 class="text-lg font-black">孩子和书库很快就来</h2>
+        <p class="mt-1 text-sm text-ink-soft">以后在这里看到这个家庭的孩子和书。</p>
       </div>
-      ${btnSecondary('家庭管理', 'w-full sm:w-auto')}
     </div>
   `)}
 </div>`;

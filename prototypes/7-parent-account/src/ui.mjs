@@ -63,6 +63,7 @@ export const MORE = `<svg class="size-5" viewBox="0 0 20 20" aria-hidden="true">
 export const CHECK = `<svg class="size-5" viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10.5 3.2 3L15 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 export const SEARCH = `<svg class="size-5" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="m13.2 13.2 3.3 3.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 export const CLOSE = `<svg class="size-5" viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 5.5 9 9m0-9-9 9" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>`;
+export const BACK = `<svg class="size-5" viewBox="0 0 20 20" aria-hidden="true"><path d="M12 4.5 6.5 10l5.5 5.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 // The line icons next to the family code: 20 px, 1.75 px strokes with round
 // caps and joins, drawn in the current colour.
@@ -100,6 +101,9 @@ export const chip = (text, tone = 'mint') => {
 
 export const badge = (count, extra = '') =>
   `<span class="inline-flex min-w-5 items-center justify-center rounded-full bg-badge px-1.5 text-xs leading-5 font-bold text-white ${extra}">${count}</span>`;
+
+/** A red dot for news without a count, such as request results not yet seen. */
+export const dot = (extra = '') => `<span class="size-2.5 shrink-0 rounded-full bg-badge ${extra}"></span>`;
 
 export const chevron = (cls = 'size-4 text-ink-muted') =>
   `<svg class="${cls} shrink-0" viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 7.5 10 12l4.5-4.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -158,17 +162,48 @@ ${body}
 export const ADMIN = { name: '林悦', color: 0, email: 'linyue@example.com' };
 export const MEMBER = { name: '周子航', color: 1, email: null };
 
+/** One entry of a menu: an icon, the label and whatever follows it. */
+export const menuItem = (content, extra = '') =>
+  `<a href="#" role="menuitem" class="flex min-h-12 items-center gap-3 rounded-xl px-3 text-base hover:bg-canvas ${extra}">${content}</a>`;
+
 /**
- * The parent's own avatar, with the name on wide screens. It is a plain link
- * to the profile page; on that page it is shown as the current one.
+ * The entries that belong to the parent rather than to a family: joining
+ * another family, with a red dot while request results wait to be seen, and
+ * the parent's own settings.
  */
-export const profileButton = (parent, current = false) => `
-<a href="#" aria-label="个人设置"${current ? ' aria-current="page"' : ''} class="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full p-1 lg:pr-3 ${
+const parentItems = (unseen) => [
+  { key: 'join', label: '加入家庭', icon: 'key', dot: unseen },
+  { key: 'profile', label: '个人设置', icon: 'consent' },
+];
+
+const NEWS = '<span class="sr-only">，有新的申请结果</span>';
+
+/** The parent's menu, opened from the avatar: the parent at its head, then the parent's entries. */
+export const userMenu = (parent, unseen = false) => `
+<div role="menu" aria-label="${parent.name}" class="w-64 rounded-3xl border border-line bg-surface p-2 shadow-pop">
+  <div class="flex items-center gap-3 px-3 py-3">${avatar(parent.name, parent.color, 'size-10 text-base')}<p class="font-bold">${parent.name}</p></div>
+  <div class="my-1 border-t border-line"></div>
+  ${parentItems(unseen)
+    .map((item) => menuItem(`${icon(item.icon, 'size-7')}<span class="flex-1 font-bold">${item.label}</span>${item.dot ? `${dot()}${NEWS}` : ''}`))
+    .join('')}
+</div>`;
+
+/**
+ * The parent's avatar, with the name on wide screens, opening the parent's
+ * menu. A red dot at the avatar's top right corner tells of request results
+ * not yet seen; it is placed from the button's own corner, where the avatar
+ * always sits, so the avatar itself is left untouched, and the button only
+ * becomes the dot's positioning box while there is a dot. On the pages that
+ * menu leads to, the button is shown as the current one.
+ */
+export const userButton = (parent, { unseen = false, current = false } = {}) => `
+<button type="button" aria-haspopup="menu" aria-label="${parent.name}的菜单${unseen ? '，有新的申请结果' : ''}" class="${unseen ? 'relative ' : ''}flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-full p-1 lg:pr-3 ${
   current ? 'bg-tint' : 'hover:bg-surface/70'
 }">
   ${avatar(parent.name, parent.color)}
   <span class="hidden text-sm font-bold lg:inline">${parent.name}</span>
-</a>`;
+  ${unseen ? '<span class="absolute top-0.5 left-[1.875rem] size-3 rounded-full border-2 border-surface bg-badge"></span>' : ''}
+</button>`;
 
 /** Top bar of the pages a visitor sees before signing in: the full logo, shown large. */
 export const publicShell = (content, overlay = '') => `
@@ -178,10 +213,13 @@ export const publicShell = (content, overlay = '') => `
   ${overlay}
 </div>`;
 
-/** A page for a signed-in parent who has no family yet: the full logo and the avatar, no menus. */
-export const bareShell = (content, overlay = '', parent = ADMIN) => `
+/**
+ * A page for a signed-in parent who has no family yet: the full logo and the
+ * avatar opening the parent's menu, no family menus.
+ */
+export const bareShell = (content, { overlay = '', parent = ADMIN, unseen = false } = {}) => `
 <div class="flex min-h-screen flex-col">
-  <header class="flex h-24 items-center px-4 sm:px-8">${logoImage(64)}<span class="ml-auto">${profileButton(parent)}</span></header>
+  <header class="flex h-24 items-center px-4 sm:px-8">${logoImage(64)}<span class="ml-auto">${userButton(parent, { unseen })}</span></header>
   <main class="flex flex-1 flex-col px-4 pb-12 sm:px-8">${content}</main>
   ${overlay}
 </div>`;
@@ -197,8 +235,8 @@ const familySwitcher = (family, compact = false) => `
 </button>`;
 
 /**
- * The menu entries. "新成员" is shown to the family's admin only, with a red
- * count while requests wait.
+ * The family's menu entries. "新成员" is shown to the family's admin only,
+ * with a red count while requests wait.
  */
 const navItems = (admin, pending) => [
   { key: 'home', label: '首页', icon: 'home' },
@@ -206,14 +244,26 @@ const navItems = (admin, pending) => [
   ...(admin ? [{ key: 'members', label: '新成员', icon: 'letter', count: pending }] : []),
 ];
 
+const sideLink = (item, active) =>
+  `<a href="#" class="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-base font-bold transition-colors duration-150 ${
+    item.key === active ? 'bg-tint text-ink' : 'text-ink-soft hover:bg-canvas'
+  }"${item.key === active ? ' aria-current="page"' : ''}>${icon(item.icon, 'size-8')}<span class="flex-1">${item.label}</span>${
+    item.count ? badge(item.count) : ''
+  }${item.dot ? `${dot('mr-1.5')}${NEWS}` : ''}</a>`;
+
 /**
- * Signed-in layout. Wide screens get a left sidebar and the avatar with the
- * name at the top right; narrow screens get a top bar with the avatar and a
- * bottom tab bar. Both show the logo mark, as the full logo's name is not
- * legible at navigation size. The profile page is not a menu entry, so on it
- * the avatar is marked current instead.
+ * Signed-in layout.
+ * - From 1024 px: a left sidebar with the logo mark, the family switcher, the
+ *   family's entries and, under a divider, the parent's own group headed by
+ *   the avatar and name. There is no top bar; the content keeps its distance
+ *   from the top.
+ * - Below 1024 px: a top bar with the logo mark, the family switcher and the
+ *   avatar, which opens the parent's menu, and a bottom tab bar with the
+ *   family's entries.
+ * The full logo's name is not legible at navigation size, so both show the
+ * mark. The pages of the parent's menu mark the avatar as current.
  */
-export const appShell = ({ active, content, family = '林悦的家', parent = ADMIN, admin = true, pending = 2, overlay = '' }) => {
+export const appShell = ({ active, content, family = '林悦的家', parent = ADMIN, admin = true, pending = 2, unseen = false, overlay = '' }) => {
   const items = navItems(admin, pending);
   return `
 <div class="min-h-screen lg:flex">
@@ -221,24 +271,22 @@ export const appShell = ({ active, content, family = '林悦的家', parent = AD
     <div class="px-2">${logoMark(48)}</div>
     ${familySwitcher(family)}
     <nav aria-label="主菜单" class="flex flex-col gap-1">
-      ${items
-        .map(
-          (item) => `<a href="#" class="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-base font-bold transition-colors duration-150 ${
-            item.key === active ? 'bg-tint text-ink' : 'text-ink-soft hover:bg-canvas'
-          }"${item.key === active ? ' aria-current="page"' : ''}>${icon(item.icon, 'size-8')}<span class="flex-1">${item.label}</span>${
-            item.count ? badge(item.count) : ''
-          }</a>`,
-        )
+      ${items.map((item) => sideLink(item, active)).join('')}
+    </nav>
+    <nav aria-label="${parent.name}" class="flex flex-col gap-1 border-t border-line pt-5">
+      <div class="flex min-h-12 items-center gap-3 px-3">${avatar(parent.name, parent.color, 'size-8 text-sm')}<span class="font-bold">${parent.name}</span></div>
+      ${parentItems(unseen)
+        .map((item) => sideLink(item, active))
         .join('')}
     </nav>
   </aside>
   <div class="flex min-w-0 flex-1 flex-col">
-    <header class="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur sm:px-6 lg:justify-end lg:border-b-0 lg:bg-transparent lg:backdrop-blur-none">
-      <span class="lg:hidden">${logoMark(38)}</span>
-      <span class="ml-auto lg:hidden">${familySwitcher(family, true)}</span>
-      ${profileButton(parent, active === 'profile')}
+    <header class="sticky top-0 z-10 flex h-16 items-center gap-3 border-b border-line bg-surface/85 px-4 backdrop-blur sm:px-6 lg:hidden">
+      <span>${logoMark(38)}</span>
+      <span class="ml-auto">${familySwitcher(family, true)}</span>
+      ${userButton(parent, { unseen, current: active === 'profile' || active === 'join' })}
     </header>
-    <main class="flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-10 lg:pb-12">${content}</main>
+    <main class="flex-1 px-4 pt-4 pb-28 sm:px-6 lg:px-10 lg:pt-20 lg:pb-12">${content}</main>
     <nav aria-label="主菜单" class="fixed inset-x-0 bottom-0 z-10 grid border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" style="grid-template-columns:repeat(${items.length},minmax(0,1fr))">
       ${items
         .map(

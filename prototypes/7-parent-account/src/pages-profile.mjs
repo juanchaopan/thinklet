@@ -1,8 +1,9 @@
-import { ADMIN, PENCIL, appShell, btnIcon, btnSecondary, card, editRow, editSheet, icon, page, textInput } from './ui.mjs';
+import { ADMIN, BACK, PENCIL, appShell, bareShell, btnIcon, btnSecondary, btnText, card, editRow, editSheet, icon, page, textInput } from './ui.mjs';
 
 // The parent's own settings: the name, edited like the family name (in place
-// with a mouse, in a bottom sheet on touch screens), the email as Authing
-// reports it, and signing out.
+// with a mouse, in a sheet on touch screens), the email as Authing reports it,
+// and signing out. A parent with no family reaches it from the start page,
+// without the family menus, and returns there with 返回.
 const TITLE = '个人设置 - 好奇星球';
 
 const field = (label, content) => `
@@ -26,8 +27,9 @@ const nameField = (editing, error) =>
 
 const emailField = field('邮箱', `<p class="flex min-h-11 items-center text-base font-bold">${ADMIN.email ?? '—'}</p>`);
 
-const profileBody = ({ editing = false, error = '' } = {}) => `
-<div class="stagger mx-auto flex max-w-3xl flex-col gap-5">
+const profileBody = ({ editing = false, error = '', back = false } = {}) => `
+<div class="stagger mx-auto flex w-full max-w-3xl flex-col gap-5">
+  ${back ? `<div>${btnText(`${BACK}返回`, '-ml-3 pl-2')}</div>` : ''}
   <header class="flex flex-col gap-1">
     <h1 class="text-3xl font-black">个人设置</h1>
   </header>
@@ -49,4 +51,5 @@ export default [
   { name: 'profile', html: profilePage() },
   { name: 'profile-edit-name', viewportOnly: 'touch', html: profilePage({ editing: true }) },
   { name: 'profile-edit-name-error', viewportOnly: 'touch', html: profilePage({ editing: true, error: '请填名字' }) },
+  { name: 'profile-no-family', html: page(TITLE, bareShell(profileBody({ back: true }))) },
 ];

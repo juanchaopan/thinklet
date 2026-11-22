@@ -27,7 +27,7 @@ const SIZES = {
   desktop: { viewport: { width: 1440, height: 900 }, touch: false },
 };
 
-const modules = ['pages-home', 'pages-onboarding', 'pages-family', 'pages-profile', 'pages-misc'];
+const modules = ['pages-home', 'pages-onboarding', 'pages-family', 'pages-join', 'pages-profile', 'pages-misc'];
 const pages = [];
 for (const name of modules) {
   pages.push(...(await import(`./src/${name}.mjs`)).default);

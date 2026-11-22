@@ -1,16 +1,31 @@
 import { homeSignedInBody, homeVisitorBody } from './pages-home.mjs';
-import { CHECK, appShell, art, btnPrimary, btnSecondary, card, chip, dialog, icon, menuSheet, page, publicShell, toast } from './ui.mjs';
+import {
+  ADMIN,
+  CHECK,
+  appShell,
+  art,
+  btnPrimary,
+  btnSecondary,
+  card,
+  chip,
+  dialog,
+  icon,
+  menuItem,
+  menuSheet,
+  page,
+  publicShell,
+  toast,
+  userMenu,
+} from './ui.mjs';
 
-const menuItem = (content, extra = '') =>
-  `<a href="#" role="menuitem" class="flex min-h-12 items-center gap-3 rounded-xl px-3 text-base hover:bg-canvas ${extra}">${content}</a>`;
-
+// The family switcher lists the parent's families and creating one; joining
+// another family lives in the parent's own menu.
 const familyMenu = `
 <div role="menu" aria-label="切换家庭" class="w-72 rounded-3xl border border-line bg-surface p-2 shadow-pop">
   ${menuItem(`${icon('family', 'size-7')}<span class="flex-1 font-bold">林悦的家</span>${chip('管理员', 'sun')}<span class="text-violet">${CHECK}</span>`, 'bg-tint')}
   ${menuItem(`${icon('family', 'size-7')}<span class="flex-1 font-bold">外婆家</span>`)}
   <div class="my-2 border-t border-line"></div>
   ${menuItem(`${icon('seedling', 'size-7')}<span class="font-bold">创建家庭</span>`)}
-  ${menuItem(`${icon('letter', 'size-7')}<span class="font-bold">申请加入家庭</span>`)}
 </div>`;
 
 // Menus open over the current page. With a mouse on a wide screen they drop
@@ -26,6 +41,16 @@ const openMenu = (menu, wideClass, origin) =>
 </div>
 ${menuSheet(menu, 'mouse:lg:hidden')}`,
   });
+
+// The parent's menu opens from the avatar in the top bar below 1024 px. From
+// 1024 px its entries stand in the sidebar instead, so that capture shows the
+// sidebar group.
+const parentMenuOpen = appShell({
+  active: 'home',
+  unseen: true,
+  content: homeSignedInBody,
+  overlay: menuSheet(userMenu(ADMIN, true), 'lg:hidden'),
+});
 
 // Children see this page, so the rabbit teacher greets them here.
 const childLogin = publicShell(`
@@ -74,25 +99,14 @@ const serverError = appShell({
   content: problem({ iconName: 'wrench', title: '页面没能打开', text: '出了点问题，请稍后再试。', action: '重试', code: 'a1f3-92c0' }),
 });
 
-const membersBehind = `
-<div class="mx-auto flex max-w-3xl flex-col gap-5">
-  <header class="flex flex-col gap-1"><p class="text-sm font-bold text-ink-muted">林悦的家</p><h1 class="text-3xl font-black">新成员</h1></header>
-  ${card('<h2 class="text-lg font-black">等你处理</h2><div class="h-24"></div>')}
-</div>`;
-
 export default [
   { name: 'menu-family', viewportOnly: true, html: page('好奇星球', openMenu(familyMenu, 'top-36 left-4', 'origin-top-left')) },
   { name: 'menu-family-opening', viewportOnly: true, frames: [0, 100, 300], html: page('好奇星球', openMenu(familyMenu, 'top-36 left-4', 'origin-top-left')) },
+  { name: 'menu-user', viewportOnly: 'touch', html: page('好奇星球', parentMenuOpen) },
   { name: 'child-login', html: page('孩子登录 - 好奇星球', childLogin) },
   { name: 'error-login', viewportOnly: true, html: page('好奇星球', loginFailed) },
   { name: 'error-not-found', html: page('找不到这个家庭 - 好奇星球', notFound) },
   { name: 'error-server', html: page('页面没能打开 - 好奇星球', serverError) },
-  {
-    name: 'toast-action-error',
-    viewportOnly: true,
-    frames: [0, 125, 250, 2500, 5250, 5400],
-    html: page('新成员 - 好奇星球', appShell({ active: 'members', pending: 1, content: membersBehind, overlay: toast('letter', '这个申请已经失效了', 'bad') })),
-  },
   {
     name: 'toast-offline',
     viewportOnly: true,
