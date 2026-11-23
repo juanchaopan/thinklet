@@ -12,18 +12,19 @@ import { emulateTouch } from '../../../testing/pointer';
 import {
   ERROR_NUMBER,
   GRANDMA_FAMILY_ID,
-  LINYUE,
   LINYUE_FAMILY_ID,
+  LINYUE_WITH_REQUESTS,
   LINYUE_WITH_RESULTS,
   LINYUE_WITHOUT_FAMILY,
   REQUEST_ID,
+  linyueWaitingFor,
   stubSignedIn,
 } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 import { VIEWPORTS } from '../../../testing/viewports';
 import { PageProblem } from '../../shared/ui/page-problem';
 import { FamilyCreation } from '../family-creation';
-import { makeFamilyCurrent, requireFamilyAdmin, requireParent } from '../guards';
+import { makeFamilyCurrent, requireParent } from '../guards';
 import { AppShell } from './app-shell';
 
 /** A family page that could not be shown, as the family pages show it. */
@@ -43,8 +44,7 @@ class Blank {}
 
 /**
  * The signed-in frame around blank pages and the family pages, which use the
- * guards the family routes use: opening a family makes it current, and its
- * new members page is for its admin.
+ * guard the family routes use: opening a family makes it current.
  */
 const FRAME_ROUTES: Routes = [
   {
@@ -57,11 +57,6 @@ const FRAME_ROUTES: Routes = [
       {
         path: 'families/:familyId/children',
         canActivate: [makeFamilyCurrent],
-        component: Blank,
-      },
-      {
-        path: 'families/:familyId/new-members',
-        canActivate: [makeFamilyCurrent, requireFamilyAdmin],
         component: Blank,
       },
       { path: 'join', component: Blank },
@@ -104,9 +99,15 @@ const linkTexts = (container: HTMLElement) =>
     .getAllByRole('link')
     .map((link) => link.textContent?.replace(/\s+/g, ''));
 
+/** The red counts in both family menus, the sidebar's and the tab bar's, as they read. */
+const menuCounts = () =>
+  Array.from(document.querySelectorAll('nav[aria-label="主菜单"]'), (menu) =>
+    Array.from(menu.querySelectorAll('[appBadge]'), (badge) => badge.textContent?.trim()),
+  );
+
 /** Opens the family menu and chooses 外婆家. */
 async function switchToGrandma(): Promise<void> {
-  await userEvent.click(screen.getByRole('button', { name: '林悦的家 切换家庭' }));
+  await userEvent.click(screen.getByRole('button', { name: /^林悦的家 切换家庭/ }));
   await userEvent.click(await screen.findByRole('menuitem', { name: /外婆家/ }));
 }
 
@@ -122,11 +123,10 @@ describe('AppShell', () => {
       const menu = visibleMenu();
       expect(menu.closest('aside')).not.toBeNull();
       const links = within(menu).getAllByRole('link');
-      expect(linkTexts(menu)).toEqual(['首页', '孩子', '家庭管理', '新成员2']);
+      expect(linkTexts(menu)).toEqual(['书库', '孩子', '家庭管理']);
       expect(links[0]?.getAttribute('href')).toBe('/');
       expect(links[1]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}/children`);
       expect(links[2]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}`);
-      expect(links[3]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}/new-members`);
       expect(links[0]?.getAttribute('aria-current')).toBe('page');
 
       const group = parentGroup();
@@ -205,7 +205,7 @@ describe('AppShell', () => {
       const menu = visibleMenu();
       expect(menu.closest('aside')).toBeNull();
       expect(menu.getBoundingClientRect().bottom).toBe(VIEWPORTS.phone.height);
-      expect(linkTexts(menu)).toEqual(['首页', '孩子', '家庭管理', '2新成员']);
+      expect(linkTexts(menu)).toEqual(['书库', '孩子', '家庭管理']);
       expect(screen.getByRole('button', { name: AVATAR }).closest('header')).not.toBeNull();
       expect(screen.queryByRole('navigation', { name: '林悦' })).toBeNull();
       await expectNoAxeViolations();
@@ -285,11 +285,56 @@ describe('AppShell', () => {
     });
   });
 
-  it('shows 孩子 but no 新成员 to a parent who is not the admin', async () => {
+  describe('the count of join requests waiting', () => {
+    it('is not shown while none wait', async () => {
+      await renderApp('/', { routes: FRAME_ROUTES });
+
+      expect(menuCounts()).toEqual([[], []]);
+      expect(within(visibleMenu()).getByRole('link', { name: '家庭管理' })).toBeTruthy();
+    });
+
+    it('stands on 家庭管理 in the sidebar and the tab bar for the admin', async () => {
+      stubSignedIn(LINYUE_WITH_REQUESTS);
+      await renderApp('/', { routes: FRAME_ROUTES });
+
+      expect(menuCounts()).toEqual([['2'], ['2']]);
+      expect(
+        within(visibleMenu()).getByRole('link', { name: /^家庭管理\s*，2 个申请等你处理$/ }),
+      ).toBeTruthy();
+      await expectNoAxeViolations();
+
+      await page.viewport(VIEWPORTS.phone.width, VIEWPORTS.phone.height);
+
+      expect(
+        within(visibleMenu()).getByRole('link', { name: /^家庭管理\s*，2 个申请等你处理$/ }),
+      ).toBeTruthy();
+    });
+
+    it('reads 99+ past 99', async () => {
+      stubSignedIn(linyueWaitingFor(120));
+      await renderApp('/', { routes: FRAME_ROUTES });
+
+      expect(menuCounts()).toEqual([['99+'], ['99+']]);
+      expect(
+        within(visibleMenu()).getByRole('link', { name: /^家庭管理\s*，99\+ 个申请等你处理$/ }),
+      ).toBeTruthy();
+    });
+
+    it('is not on 家庭管理 in a family the parent does not run', async () => {
+      stubSignedIn(LINYUE_WITH_REQUESTS);
+      localStorage.setItem('thinklet.currentFamilyId', GRANDMA_FAMILY_ID);
+      await renderApp('/', { routes: FRAME_ROUTES });
+
+      expect(linkTexts(visibleMenu())).toEqual(['书库', '孩子', '家庭管理']);
+      expect(menuCounts()).toEqual([[], []]);
+    });
+  });
+
+  it('shows the same three pages to a parent who is not the admin', async () => {
     localStorage.setItem('thinklet.currentFamilyId', GRANDMA_FAMILY_ID);
     await renderApp('/', { routes: FRAME_ROUTES });
 
-    expect(linkTexts(visibleMenu())).toEqual(['首页', '孩子', '家庭管理']);
+    expect(linkTexts(visibleMenu())).toEqual(['书库', '孩子', '家庭管理']);
   });
 
   it('opens the family used last on this browser, else the one joined first', async () => {
@@ -329,7 +374,7 @@ describe('AppShell', () => {
       });
     });
 
-    it('switches families on the home page, stays there and remembers the choice', async () => {
+    it('switches families on the library, stays there and remembers the choice', async () => {
       const { router, fixture } = await renderApp('/', { routes: FRAME_ROUTES });
 
       await switchToGrandma();
@@ -338,7 +383,9 @@ describe('AppShell', () => {
       expect(router.url).toBe('/');
       expect(localStorage.getItem('thinklet.currentFamilyId')).toBe(GRANDMA_FAMILY_ID);
       expect(screen.getAllByRole('button', { name: /外婆家/ }).length).toBeGreaterThan(0);
-      expect(within(visibleMenu()).queryByRole('link', { name: /新成员/ })).toBeNull();
+      expect(
+        within(visibleMenu()).getByRole('link', { name: '家庭管理' }).getAttribute('href'),
+      ).toBe(`/families/${GRANDMA_FAMILY_ID}`);
       await vi.waitFor(() => {
         expect(screen.queryByRole('menu')).toBeNull();
       });
@@ -351,11 +398,6 @@ describe('AppShell', () => {
         `/families/${GRANDMA_FAMILY_ID}/children`,
       ],
       ['the family page', `/families/${LINYUE_FAMILY_ID}`, `/families/${GRANDMA_FAMILY_ID}`],
-      [
-        'the new members page, to a family they do not run',
-        `/families/${LINYUE_FAMILY_ID}/new-members`,
-        `/families/${GRANDMA_FAMILY_ID}`,
-      ],
       ['the profile', '/profile', '/profile'],
       ['the join page', '/join', '/join'],
     ])('goes from %s to the page the rules give', async (_page, from, to) => {
@@ -365,21 +407,6 @@ describe('AppShell', () => {
       await fixture.whenStable();
 
       expect(router.url).toBe(to);
-    });
-
-    it('goes from the new members page to the one of a family they run', async () => {
-      stubSignedIn({
-        ...LINYUE,
-        families: [LINYUE.families[0], { ...LINYUE.families[1], role: 'admin' }],
-      });
-      const { fixture, router } = await renderApp(`/families/${LINYUE_FAMILY_ID}/new-members`, {
-        routes: FRAME_ROUTES,
-      });
-
-      await switchToGrandma();
-      await fixture.whenStable();
-
-      expect(router.url).toBe(`/families/${GRANDMA_FAMILY_ID}/new-members`);
     });
 
     it('opens with the keyboard and gives the focus back when it closes', async () => {
@@ -428,22 +455,6 @@ describe('AppShell', () => {
 
       expect(localStorage.getItem('thinklet.currentFamilyId')).toBeNull();
       expect(screen.getAllByRole('button', { name: /林悦的家/ }).length).toBeGreaterThan(0);
-    });
-
-    it("sends a member who is not the admin from the new members page to the family's page", async () => {
-      const { router } = await renderApp(`/families/${GRANDMA_FAMILY_ID}/new-members`, {
-        routes: FRAME_ROUTES,
-      });
-
-      expect(router.url).toBe(`/families/${GRANDMA_FAMILY_ID}`);
-    });
-
-    it('lets the admin open the new members page', async () => {
-      const { router } = await renderApp(`/families/${LINYUE_FAMILY_ID}/new-members`, {
-        routes: FRAME_ROUTES,
-      });
-
-      expect(router.url).toBe(`/families/${LINYUE_FAMILY_ID}/new-members`);
     });
   });
 
@@ -504,20 +515,14 @@ describe('AppShell', () => {
   it('refreshes the waiting count and the red dot when another page opens', async () => {
     const { router, fixture } = await renderApp('/', { routes: FRAME_ROUTES });
     worker.use(
-      http.get('/api/me', () =>
-        HttpResponse.json({
-          ...LINYUE,
-          families: [{ ...LINYUE.families[0], pendingRequests: 3 }, LINYUE.families[1]],
-          requestResults: 2,
-        }),
-      ),
+      http.get('/api/me', () => HttpResponse.json({ ...linyueWaitingFor(3), requestResults: 2 })),
     );
 
     await router.navigateByUrl('/profile');
     await fixture.whenStable();
 
     await vi.waitFor(() => {
-      expect(within(visibleMenu()).getByRole('link', { name: /新成员.*3/ })).toBeTruthy();
+      expect(within(visibleMenu()).getByRole('link', { name: /^家庭管理.*3/ })).toBeTruthy();
     });
     expect(within(parentGroup()).getByRole('link', { name: JOIN_WITH_NEWS })).toBeTruthy();
   });

@@ -19,9 +19,9 @@ import { asApiError, explainChange, isSignedOut } from './failures';
 import { Session } from './session';
 
 /**
- * Why a page of one family (its family page, its children page, its new
- * members page) shows no family: the parent is not, or no longer, a member,
- * or the server failed or did not answer while the page was opening.
+ * Why a page of one family (its family page, its children page) shows no
+ * family: the parent is not, or no longer, a member, or the server failed
+ * or did not answer while the page was opening.
  */
 export type FamilyTrouble = 'not-found' | ApiError;
 
@@ -127,8 +127,8 @@ export function followFamily(familyId: Signal<string>, reader: FamilyReader): vo
 /**
  * What a page of one family shows in place of its content when it has no
  * family to show (rules.md, 出错时的显示): 找不到这个家庭 with the way back to
- * the parent's own family (its home page, or the start page without one),
- * or 页面没能打开 with the error number and 重试, which emits `retry`.
+ * the parent's own family (its library, or the start page without one), or
+ * 页面没能打开 with the error number and 重试, which emits `retry`.
  */
 @Component({
   selector: 'app-family-trouble',

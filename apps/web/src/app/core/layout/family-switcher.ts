@@ -1,13 +1,15 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Art } from '../../shared/ui/art';
-import { Chip } from '../../shared/ui/card';
+import { Badge, Chip } from '../../shared/ui/card';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Menu, MenuDivider, MenuItem } from '../../shared/ui/menu';
+import { PopOnChange } from '../../shared/ui/pop-on-change';
 import { CurrentFamily, pageAfterSwitch } from '../current-family';
 import { FamilyCreation } from '../family-creation';
 import { Session } from '../session';
+import { countText, waitingInAll, waitingText } from './waiting-count';
 
 /**
  * The current family in the navigation; it opens the menu of the parent's
@@ -15,10 +17,16 @@ import { Session } from '../session';
  * 创建家庭 under them. In the sidebar it says 切换家庭 under the name and,
  * with a mouse, its menu drops down; in the narrow top bar it shows the name
  * alone and its menu rises from the bottom.
+ *
+ * The join requests waiting are counted in red (rules.md, 通知): on the
+ * button, those of every family the parent runs, so requests to another
+ * family are seen without switching to it; in the menu, each family the
+ * parent runs carries its own. The button's count pops each time it
+ * changes, as when the admin handles a request.
  */
 @Component({
   selector: 'app-family-switcher',
-  imports: [Art, Chip, LineIcon, Menu, MenuDivider, MenuItem],
+  imports: [Art, Badge, Chip, LineIcon, Menu, MenuDivider, MenuItem, PopOnChange],
   template: `
     @if (currentFamily.family(); as family) {
       <button
@@ -27,7 +35,7 @@ import { Session } from '../session';
         aria-haspopup="menu"
         [attr.aria-expanded]="open()"
         class="flex min-h-12 w-full items-center gap-3 rounded-2xl border border-line bg-surface px-3 text-left hover:bg-canvas"
-        [class.max-w-44]="compact()"
+        [class.max-w-48]="compact()"
         (click)="open.set(true)"
       >
         <img alt="" appArt="family" class="size-7" />
@@ -39,6 +47,12 @@ import { Session } from '../session';
             <span class="block text-xs text-ink-muted">切换家庭</span>
           }
         </span>
+        @if (waiting() > 0) {
+          <span appBadge aria-hidden="true" [appPopOnChange]="waiting()">{{
+            countText(waiting())
+          }}</span>
+          <span class="sr-only">{{ waitingText(waiting()) }}</span>
+        }
         <app-line-icon name="chevron" class="text-ink-muted" />
       </button>
       <app-menu
@@ -61,6 +75,10 @@ import { Session } from '../session';
             @if (item.role === 'admin') {
               <span appChip="sun">管理员</span>
             }
+            @if (item.pendingRequests) {
+              <span appBadge aria-hidden="true">{{ countText(item.pendingRequests) }}</span>
+              <span class="sr-only">{{ waitingText(item.pendingRequests) }}</span>
+            }
             @if (item.id === family.id) {
               <app-line-icon name="check" class="text-violet" />
             }
@@ -77,13 +95,19 @@ import { Session } from '../session';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class FamilySwitcher {
-  /** The top bar's version: the name alone, at most 176 px wide. */
+  /** The top bar's version: the name alone, at most 192 px wide. */
   readonly compact = input(false);
 
   protected readonly currentFamily = inject(CurrentFamily);
   protected readonly open = signal(false);
   private readonly session = inject(Session);
   protected readonly families = computed(() => this.session.me()?.families ?? []);
+
+  /** The join requests waiting in every family the parent runs. */
+  protected readonly waiting = computed(() => waitingInAll(this.families()));
+
+  protected readonly countText = countText;
+  protected readonly waitingText = waitingText;
 
   private readonly inputMode = inject(InputMode);
   private readonly router = inject(Router);

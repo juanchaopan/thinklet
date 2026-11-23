@@ -16,29 +16,21 @@ import { Session } from '../session';
 import { FamilySwitcher } from './family-switcher';
 import { PARENT_PAGES } from './parent-pages';
 import { UserMenu } from './user-menu';
-
-/** The most waiting requests a badge writes out; more read "99+" (rules.md, 通知). */
-const MOST_COUNTED = 99;
-
-/** A count as its badge shows it: the number up to 99, then "99+". */
-export function countText(count: number): string {
-  return count > MOST_COUNTED ? `${String(MOST_COUNTED)}+` : String(count);
-}
+import { countText, waitingText } from './waiting-count';
 
 interface NavItem {
   readonly label: string;
   readonly icon: IconArt;
   readonly link: string;
-  /** The number of requests waiting, shown as a red count when there are any. */
-  readonly count?: number;
+  /** The number of join requests waiting, shown as a red count when there are any. */
+  readonly count: number;
 }
 
 /**
  * The frame of the signed-in pages (look.md, 布局). The navigation has two
- * parts: the current family's pages (首页, 孩子 and 家庭管理 for every parent
- * of the family, and 新成员 for its admin) under the family switcher, and
- * the parent's own pages (加入家庭, 个人设置) under the parent's avatar and
- * name.
+ * parts: the current family's pages (书库, 孩子 and 家庭管理, the same for
+ * every parent of the family) under the family switcher, and the parent's
+ * own pages (加入家庭, 个人设置) under the parent's avatar and name.
  *
  * From 1024 px a 256 px sidebar holds the logo mark, the family switcher,
  * the family's pages and, under a line, the parent's group; there is no bar
@@ -47,8 +39,10 @@ interface NavItem {
  * pages are a tab bar at the bottom. A parent without a family gets the bare
  * frame instead: the full logo and the avatar with its menu, no family pages.
  *
- * The count on 新成员 reads "99+" past 99, and pops each time it changes, as
- * when the admin handles a request.
+ * For the family's admin, 家庭管理 carries the red count of the join
+ * requests waiting in the current family (rules.md, 通知); it reads "99+"
+ * past 99 and pops each time it changes, as when the admin handles a
+ * request. Screen readers hear the count after the entry's name.
  *
  * The dialog that creates a family belongs to the frame, so it can open over
  * any signed-in page. Its code is loaded the first time it is asked for, so
@@ -91,8 +85,11 @@ interface NavItem {
               >
                 <img alt="" [appArt]="item.icon" class="size-8" />
                 <span class="flex-1">{{ item.label }}</span>
-                @if (item.count) {
-                  <span appBadge [appPopOnChange]="item.count">{{ countText(item.count) }}</span>
+                @if (item.count > 0) {
+                  <span appBadge aria-hidden="true" [appPopOnChange]="item.count">{{
+                    countText(item.count)
+                  }}</span>
+                  <span class="sr-only">{{ waitingText(item.count) }}</span>
                 }
               </a>
             }
@@ -152,9 +149,10 @@ interface NavItem {
               >
                 <span class="relative">
                   <img alt="" [appArt]="item.icon" class="size-7" />
-                  @if (item.count) {
+                  @if (item.count > 0) {
                     <span
                       appBadge
+                      aria-hidden="true"
                       [appPopOnChange]="item.count"
                       class="absolute -top-1.5 -right-3"
                       >{{ countText(item.count) }}</span
@@ -162,6 +160,9 @@ interface NavItem {
                   }
                 </span>
                 {{ item.label }}
+                @if (item.count > 0) {
+                  <span class="sr-only">{{ waitingText(item.count) }}</span>
+                }
               </a>
             }
           </nav>
@@ -189,6 +190,7 @@ export class AppShell {
 
   protected readonly parentPages = PARENT_PAGES;
   protected readonly countText = countText;
+  protected readonly waitingText = waitingText;
 
   /** A menu entry is current on its own page, whatever the query says. */
   protected readonly samePage: IsActiveMatchOptions = {
@@ -205,19 +207,14 @@ export class AppShell {
     }
     const familyPage = `/families/${family.id}`;
     return [
-      { label: '首页', icon: 'home', link: '/' },
-      { label: '孩子', icon: 'child', link: `${familyPage}/children` },
-      { label: '家庭管理', icon: 'settings', link: familyPage },
-      ...(family.role === 'admin'
-        ? [
-            {
-              label: '新成员',
-              icon: 'letter' as const,
-              link: `${familyPage}/new-members`,
-              count: family.pendingRequests ?? 0,
-            },
-          ]
-        : []),
+      { label: '书库', icon: 'home', link: '/', count: 0 },
+      { label: '孩子', icon: 'child', link: `${familyPage}/children`, count: 0 },
+      {
+        label: '家庭管理',
+        icon: 'settings',
+        link: familyPage,
+        count: family.role === 'admin' ? (family.pendingRequests ?? 0) : 0,
+      },
     ];
   });
 }

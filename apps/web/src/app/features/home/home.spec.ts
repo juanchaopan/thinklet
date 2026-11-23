@@ -39,7 +39,7 @@ describe('Home', () => {
     stubSignedIn();
   });
 
-  it('welcomes the parent with the rabbit teacher and says the book library is coming', async () => {
+  it('welcomes the parent with the rabbit teacher at 书库, the first of the family pages', async () => {
     await renderApp('/');
 
     expect(document.title).toBe('好奇星球');
@@ -47,24 +47,9 @@ describe('Home', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent?.replace(/\s+/g, '')).toBe(
       '我是小兔老师，今天也一起学习吧！',
     );
-    expect(screen.getByRole('heading', { level: 2, name: '书库很快就来' })).toBeTruthy();
-    expect(screen.getByText('以后在这里挑书，分派给孩子。')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '书库' }).getAttribute('aria-current')).toBe('page');
     await expectNoAxeViolations();
-    await expectScreenshotsAtEverySize('home-signed-in');
   });
-
-  it.each([0, 120, 300, 620])(
-    'enters with the cards, the logo and the rabbit, at %i ms',
-    async (time) => {
-      await renderApp('/');
-
-      await expectScreenshotsAtEverySize(
-        `home-signed-in-entering-${String(time).padStart(4, '0')}ms`,
-        undefined,
-        { heldAt: time },
-      );
-    },
-  );
 
   it("shows the parent's menu with the red dot from the avatar, and as the sidebar group from 1024 px", async () => {
     stubSignedIn(LINYUE_WITH_RESULTS);
