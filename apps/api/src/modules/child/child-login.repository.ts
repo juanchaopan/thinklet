@@ -1,15 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, sql } from 'drizzle-orm';
-import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
-import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
-import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
+import {
+  DATABASE,
+  type Database,
+  type Executor,
+} from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
 
 const { children, childLoginLinks, childDevices } = schema;
-
-/** The pool or a transaction on it: both run the same queries. */
-type Executor = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 
 /** A child found by the family and the account a login names. */
 export interface LoginCandidate {

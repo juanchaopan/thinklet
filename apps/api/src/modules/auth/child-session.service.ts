@@ -1,11 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { readCookie } from '../../infrastructure/authentication/cookies.js';
 import { setCurrentChildId } from '../../infrastructure/authentication/current-child.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import {
   CHILD_SESSION_COOKIE,
   clearChildSessionCookie,
-  readCookie,
   setChildSessionCookie,
 } from './session-cookies.js';
 import { needsRenewal } from './session-lifetime.js';
@@ -77,7 +77,7 @@ export class ChildSessionService {
     response: Response,
     isCurrent: (session: ChildSession) => Promise<boolean>,
     now = new Date(),
-  ): Promise<string> {
+  ): Promise<void> {
     const session = await this.verify(request, now);
     if (session === undefined || !(await isCurrent(session))) {
       throw new ApiError('unauthenticated', HttpStatus.UNAUTHORIZED);
@@ -86,6 +86,5 @@ export class ChildSessionService {
     if (needsRenewal(session.expiresAt, now)) {
       await this.signIn(response, session.childId, now);
     }
-    return session.childId;
   }
 }

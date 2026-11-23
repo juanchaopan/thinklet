@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } f
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Environment } from '../config/environment.js';
+import { decodeCanonicalBase64 } from '../encoding/canonical-base64.js';
 
 const CIPHER = 'aes-256-gcm';
 const KEY_BYTES = 32;
@@ -19,8 +20,6 @@ const KEY_ID = 'v1';
 const ENCRYPTION_INFO = 'thinklet child data encryption v1';
 const LOOKUP_INFO = 'thinklet child data lookup v1';
 
-const BASE64URL = /^[A-Za-z0-9_-]*$/;
-
 /** Ciphertext that is malformed, names a key this api does not have, or was changed. */
 export class ChildDataDecryptionError extends Error {
   override readonly name = 'ChildDataDecryptionError';
@@ -30,14 +29,10 @@ export class ChildDataDecryptionError extends Error {
   }
 }
 
-/**
- * Base64url text decoded into bytes, only when it is the canonical encoding
- * of those bytes: Node's decoder skips characters it does not know, so text
- * with stray characters would otherwise decode into other bytes.
- */
-function decodeBase64url(text: string, part: string): Buffer {
-  const bytes = Buffer.from(text, 'base64url');
-  if (!BASE64URL.test(text) || bytes.toString('base64url') !== text) {
+/** A part of a ciphertext decoded into bytes, only when it is their canonical base64url. */
+function decodePart(text: string, part: string): Buffer {
+  const bytes = decodeCanonicalBase64(text, 'base64url');
+  if (bytes === undefined) {
     throw new ChildDataDecryptionError(`the ${part} is not base64url`);
   }
   return bytes;
@@ -99,9 +94,9 @@ export class ChildDataCipher {
     if (keyId !== KEY_ID) {
       throw new ChildDataDecryptionError('it names an unknown key');
     }
-    const iv = decodeBase64url(ivText, 'IV');
-    const ciphertext = decodeBase64url(ciphertextText, 'ciphertext');
-    const tag = decodeBase64url(tagText, 'tag');
+    const iv = decodePart(ivText, 'IV');
+    const ciphertext = decodePart(ciphertextText, 'ciphertext');
+    const tag = decodePart(tagText, 'tag');
     if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) {
       throw new ChildDataDecryptionError('the IV or the tag has the wrong length');
     }

@@ -96,9 +96,8 @@ describe('ChildSessionService', () => {
       const { service, request, response, asResponse } = setUp(issuedDaysAgo(1), childCookie);
       const isCurrent = acceptingCheck();
 
-      await expect(service.authenticate(request, asResponse, isCurrent, now)).resolves.toBe(
-        'child-1',
-      );
+      await service.authenticate(request, asResponse, isCurrent, now);
+
       expect(isCurrent).toHaveBeenCalledWith(expect.objectContaining({ childId: 'child-1' }));
       expect(currentChildIdOf(request)).toBe('child-1');
       expect(response.cookie).not.toHaveBeenCalled();

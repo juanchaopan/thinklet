@@ -1,16 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm';
-import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
-import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
-import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
+import {
+  DATABASE,
+  type Database,
+  type Executor,
+} from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
 import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
 const { children, childLoginLinks, childDevices } = schema;
-
-/** The pool or a transaction on it: both run the same queries. */
-type Executor = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 
 /** The unique constraint that keeps a child's account unique within the family. */
 const ACCOUNT_UNIQUE = 'children_family_account_unique';
@@ -146,7 +145,8 @@ export class ChildStore {
   /**
    * Adds the child without a password, refusing logins issued before its
    * consent; throws AccountTakenError when another child of the family has
-   * the account.
+   * the account. The child is returned from what was written, so only its
+   * id is read back.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
     const rows = await settingAccount(() =>
@@ -162,13 +162,13 @@ export class ChildStore {
           consentVersion: child.consentVersion,
           consentedAt: child.consentedAt,
         })
-        .returning(childColumns),
+        .returning({ id: children.id }),
     );
-    const record = this.readChildren(rows).at(0);
-    if (record === undefined) {
+    const row = rows.at(0);
+    if (row === undefined) {
       throw new Error('Adding the child returned no row');
     }
-    return record;
+    return { id: row.id, nickname: child.nickname, account: child.account };
   }
 
   /**

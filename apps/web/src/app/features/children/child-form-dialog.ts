@@ -17,7 +17,11 @@ import {
 } from '@thinklet/contracts';
 import { Button } from '../../shared/ui/button';
 import { Checkbox } from '../../shared/ui/checkbox';
-import { CHILD_ACCOUNT_HINT, childAccountText } from '../../shared/ui/child-account';
+import {
+  CHILD_ACCOUNT_HINT,
+  CHILD_ACCOUNT_HINTS,
+  childAccountText,
+} from '../../shared/ui/child-account';
 import { Dialog } from '../../shared/ui/dialog';
 import { TextField } from '../../shared/ui/edit-field';
 import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
@@ -32,18 +36,6 @@ const NICKNAME_HINTS: FieldHints = {
   too_short: '请填昵称',
   too_long: '昵称最多 10 个字',
   invalid: '请填昵称',
-};
-
-/**
- * The hints for an account that cannot be saved. The box takes only small
- * letters and digits, at most 20 of them, so an empty account is the one
- * mistake it lets through.
- */
-const ACCOUNT_HINTS: FieldHints = {
-  required: '请填账号',
-  too_short: '请填账号',
-  too_long: '请填账号',
-  invalid: '请填账号',
 };
 
 /** The hint for an account another child of the family has (interfaces.md, 错误码). */
@@ -211,7 +203,7 @@ export class ChildFormDialog {
     const account = this.account().trim();
     this.nicknameError.set(fieldHint(childNicknameSchema, NICKNAME_HINTS, this.nickname()));
     this.accountError.set(
-      fieldHint(childAccountSchema, ACCOUNT_HINTS, account) ??
+      fieldHint(childAccountSchema, CHILD_ACCOUNT_HINTS, account) ??
         (account === this.takenAccount() ? ACCOUNT_TAKEN : null),
     );
     const consentGiven =
@@ -233,7 +225,9 @@ export class ChildFormDialog {
         if (field.code === 'taken') {
           this.takenAccount.set(this.account().trim());
         }
-        this.accountError.set(field.code === 'taken' ? ACCOUNT_TAKEN : ACCOUNT_HINTS[field.code]);
+        this.accountError.set(
+          field.code === 'taken' ? ACCOUNT_TAKEN : CHILD_ACCOUNT_HINTS[field.code],
+        );
       } else if (field.path === 'consent') {
         this.consentError.set(CONSENT_HINT);
       }

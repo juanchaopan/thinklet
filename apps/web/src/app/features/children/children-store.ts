@@ -280,39 +280,49 @@ export class ChildrenStore {
    * server turns down, an account another child has included, are given
    * back to the form; other failures are explained.
    */
-  private async save(work: (familyId: string) => Promise<void>): Promise<SaveOutcome> {
-    if (this.running()) {
-      return { outcome: 'failed' };
-    }
-    this.running.set('save');
-    try {
-      await work(this.familyId);
-      return { outcome: 'done' };
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'account_taken') {
-        return { outcome: 'rejected', fields: [{ path: 'account', code: 'taken' }] };
+  private save(work: (familyId: string) => Promise<void>): Promise<SaveOutcome> {
+    return this.whileBusy<SaveOutcome>('save', { outcome: 'failed' }, async () => {
+      try {
+        await work(this.familyId);
+        return { outcome: 'done' };
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'account_taken') {
+          return { outcome: 'rejected', fields: [{ path: 'account', code: 'taken' }] };
+        }
+        const fields = rejectedFields(error);
+        return fields.length > 0
+          ? { outcome: 'rejected', fields }
+          : { outcome: this.failed(error) };
       }
-      const fields = rejectedFields(error);
-      return fields.length > 0 ? { outcome: 'rejected', fields } : { outcome: this.failed(error) };
-    } finally {
-      this.running.set(null);
-    }
+    });
   }
 
   /** Runs one confirmed change to a child while it is marked busy; a failure is explained. */
-  private async run(
+  private run(
     action: ChildAction,
     work: (familyId: string) => Promise<void>,
   ): Promise<ChangeOutcome> {
+    return this.whileBusy<ChangeOutcome>(action, 'failed', async () => {
+      try {
+        await work(this.familyId);
+        return 'done';
+      } catch (error) {
+        return this.failed(error);
+      }
+    });
+  }
+
+  /**
+   * Runs the work with `action` marked busy. Only one change runs at a time:
+   * while another runs, nothing is done and the answer is `refused`.
+   */
+  private async whileBusy<T>(action: ChildAction, refused: T, work: () => Promise<T>): Promise<T> {
     if (this.running()) {
-      return 'failed';
+      return refused;
     }
     this.running.set(action);
     try {
-      await work(this.familyId);
-      return 'done';
-    } catch (error) {
-      return this.failed(error);
+      return await work();
     } finally {
       this.running.set(null);
     }

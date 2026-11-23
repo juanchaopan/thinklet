@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { decodeCanonicalBase64 } from '../../infrastructure/encoding/canonical-base64.js';
 
 /**
  * The random bytes in a login link's token and in a device token
@@ -38,6 +39,6 @@ export function isWellFormedToken(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     TOKEN_PATTERN.test(value) &&
-    Buffer.from(value, 'base64url').toString('base64url') === value
+    decodeCanonicalBase64(value, 'base64url') !== undefined
   );
 }

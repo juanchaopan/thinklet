@@ -12,27 +12,15 @@ import { Avatar } from '../../shared/ui/avatar';
 import { Button } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
 import { Checkbox } from '../../shared/ui/checkbox';
-import { childAccountText } from '../../shared/ui/child-account';
+import { CHILD_ACCOUNT_HINTS, childAccountText } from '../../shared/ui/child-account';
 import { CodeBoxes, codeSlots, filledCode } from '../../shared/ui/code-boxes';
 import { TextField } from '../../shared/ui/edit-field';
-import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
+import { fieldHint } from '../../shared/ui/field-hint';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { ChildForm, LOGIN_PASSWORD_HINTS } from './child-form';
 
 /** The hint for a family code with an empty box. */
 const CODE_REQUIRED = '请填家庭码';
-
-/**
- * The hints for an account that cannot be sent. The box takes only small
- * letters and digits, at most 20 of them, so an empty account is the one
- * mistake it lets through.
- */
-const ACCOUNT_HINTS: FieldHints = {
-  required: '请填账号',
-  too_short: '请填账号',
-  too_long: '请填账号',
-  invalid: '请填账号',
-};
 
 /**
  * The card of the child login that signs in with the family code, the
@@ -174,7 +162,7 @@ export class ChildLoginForm extends ChildForm {
     const account = this.account().trim();
     const password = this.password();
     this.codeError.set(code ? null : CODE_REQUIRED);
-    this.accountError.set(fieldHint(childAccountSchema, ACCOUNT_HINTS, account));
+    this.accountError.set(fieldHint(childAccountSchema, CHILD_ACCOUNT_HINTS, account));
     this.passwordError.set(fieldHint(childPasswordSchema, LOGIN_PASSWORD_HINTS, password));
     if (!code || this.accountError() || this.passwordError()) {
       this.shake();

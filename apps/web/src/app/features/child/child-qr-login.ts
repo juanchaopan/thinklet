@@ -20,13 +20,13 @@ import { ChildEntry } from './child-entry';
 import { PasswordForm, SetPasswordForm } from './qr-forms';
 
 /**
- * What the page shows: nothing while the link is read; the form that sets
- * the first password or the one that asks for the password, by what the
- * link says; that the link is no longer valid; or that it could not be read.
+ * What the page shows: nothing while the link is read; the link's form,
+ * which sets the first password or asks for the password by what the link
+ * says; that the link is no longer valid; or that it could not be read.
  */
 type Shown =
   | { readonly kind: 'reading' }
-  | { readonly kind: 'set-password' | 'password'; readonly link: ChildLoginLinkInfo }
+  | { readonly kind: 'form'; readonly link: ChildLoginLinkInfo }
   | { readonly kind: 'invalid' }
   | { readonly kind: 'problem'; readonly requestId: string | undefined };
 
@@ -50,24 +50,23 @@ type Shown =
   template: `
     <app-child-column [rabbit]="shown().kind === 'invalid'">
       @switch (shown().kind) {
-        @case ('set-password') {
+        @case ('form') {
           @if (link(); as link) {
-            <app-set-password-form
-              [token]="token()"
-              [link]="link"
-              (stale)="read()"
-              (gone)="showInvalid()"
-            />
-          }
-        }
-        @case ('password') {
-          @if (link(); as link) {
-            <app-password-form
-              [token]="token()"
-              [link]="link"
-              (stale)="read()"
-              (gone)="showInvalid()"
-            />
+            @if (link.needsPassword) {
+              <app-set-password-form
+                [token]="token()"
+                [link]="link"
+                (stale)="read()"
+                (gone)="showInvalid()"
+              />
+            } @else {
+              <app-password-form
+                [token]="token()"
+                [link]="link"
+                (stale)="read()"
+                (gone)="showInvalid()"
+              />
+            }
           }
         }
         @case ('invalid') {
@@ -97,7 +96,7 @@ export class ChildQrLogin {
 
   protected readonly link = computed(() => {
     const shown = this.shown();
-    return shown.kind === 'set-password' || shown.kind === 'password' ? shown.link : null;
+    return shown.kind === 'form' ? shown.link : null;
   });
 
   protected readonly requestId = computed(() => {
@@ -116,8 +115,7 @@ export class ChildQrLogin {
     const fresh = this.reads.start();
     let shown: Shown;
     try {
-      const link = await this.entry.link(token);
-      shown = { kind: link.needsPassword ? 'set-password' : 'password', link };
+      shown = { kind: 'form', link: await this.entry.link(token) };
     } catch (error) {
       const failure = asApiError(error);
       shown =

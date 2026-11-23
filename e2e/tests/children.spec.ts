@@ -9,6 +9,7 @@ import {
   childrenPage,
   expectError,
   familyWithXiaoming,
+  sentFrom,
 } from '../support/children.ts';
 import { createFamily } from '../support/families.ts';
 import { expect, test } from '../support/fixtures.ts';
@@ -126,7 +127,7 @@ test.describe('children', () => {
     const { admin, family, child } = await familyWithXiaoming(openParentPage);
     await signIn(page, newUser('周子航'));
     const own = await createFamily(page, '周家');
-    const origin = { Origin: new URL(page.url()).origin };
+    const origin = sentFrom(page);
 
     await page.goto(childrenPage(family.id));
     await expect(page.getByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeVisible();

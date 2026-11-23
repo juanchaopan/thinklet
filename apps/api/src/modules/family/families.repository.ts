@@ -1,16 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { FamilyRole } from '@thinklet/contracts';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
-import type { PgDatabase } from 'drizzle-orm/pg-core';
-import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
+import {
+  DATABASE,
+  type Database,
+  type Executor,
+} from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
 import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
 const { families, familyMembers, joinRequests, parents } = schema;
-
-/** The pool or a transaction on it: both run the same queries. */
-type Executor = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 
 /** The unique constraint that keeps family codes unique across the platform. */
 const FAMILY_CODE_UNIQUE = 'families_code_unique';

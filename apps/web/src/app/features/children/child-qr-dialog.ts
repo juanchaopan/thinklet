@@ -12,6 +12,7 @@ import {
   untracked,
 } from '@angular/core';
 import type { Child, ChildLoginLink } from '@thinklet/contracts';
+import { FreshReads } from '../../core/fresh-reads';
 import { Button } from '../../shared/ui/button';
 import { Dialog } from '../../shared/ui/dialog';
 import { QrCode } from '../../shared/ui/qr-code';
@@ -145,8 +146,12 @@ export class ChildQrDialog {
 
   /** The timers of the link shown now; cleared when it stops being watched. */
   private timers: Array<ReturnType<typeof setInterval>> = [];
-  /** Counts the links made and the stops, so answers about a link no longer watched are dropped. */
-  private generation = 0;
+  /**
+   * Each link made starts a read that its making and its checks share; a
+   * stop marks it stale, so answers about a link no longer watched are
+   * dropped.
+   */
+  private readonly reads = new FreshReads();
 
   constructor() {
     effect(() => {
@@ -166,11 +171,11 @@ export class ChildQrDialog {
   /** Makes a new link, which revokes the child's links not used yet, and starts watching it. */
   protected async makeLink(): Promise<void> {
     this.stop();
-    const generation = this.generation;
+    const watched = this.reads.start();
     this.link.set(null);
     this.state.set('making');
     const made = await this.store.createLink(this.child());
-    if (generation !== this.generation) {
+    if (!watched()) {
       return;
     }
     if (typeof made === 'string') {
@@ -180,7 +185,7 @@ export class ChildQrDialog {
     this.link.set(made);
     this.now.set(Date.now());
     this.state.set('live');
-    this.watch(made, generation);
+    this.watch(made, watched);
   }
 
   /**
@@ -188,7 +193,7 @@ export class ChildQrDialog {
    * time is up, and checks it every 3 s while the page is in front, for at
    * most 10 minutes.
    */
-  private watch(link: ChildLoginLink, generation: number): void {
+  private watch(link: ChildLoginLink, watched: () => boolean): void {
     const started = Date.now();
     const expires = Date.parse(link.expiresAt);
     let checkedAtEnd = false;
@@ -197,23 +202,23 @@ export class ChildQrDialog {
         this.now.set(Date.now());
         if (!checkedAtEnd && expires <= this.now()) {
           checkedAtEnd = true;
-          void this.check(link, generation);
+          void this.check(link, watched);
         }
       }, TICK),
       setInterval(() => {
         if (Date.now() - started > CHECK_LIMIT) {
           this.stop();
         } else if (this.document.visibilityState === 'visible') {
-          void this.check(link, generation);
+          void this.check(link, watched);
         }
       }, CHECK_INTERVAL),
     ];
   }
 
   /** Shows what the check of the link found, while that link is still the one watched. */
-  private async check(link: ChildLoginLink, generation: number): Promise<void> {
+  private async check(link: ChildLoginLink, watched: () => boolean): Promise<void> {
     const found = await this.store.checkLink(this.child(), link);
-    if (generation !== this.generation) {
+    if (!watched()) {
       return;
     }
     if (found === 'used') {
@@ -227,7 +232,7 @@ export class ChildQrDialog {
 
   /** Stops counting and checking; answers still on their way are dropped. */
   private stop(): void {
-    this.generation++;
+    this.reads.wrote();
     for (const timer of this.timers) {
       clearInterval(timer);
     }

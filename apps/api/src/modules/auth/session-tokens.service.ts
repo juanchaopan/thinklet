@@ -23,7 +23,7 @@ const SESSION_TYPE = 'JWT';
 const LOGIN_TRANSACTION_TYPE = 'thinklet-login+jwt';
 
 /** Who a session JWT signs in: a parent or a child (decision 0033). */
-export const IDENTITY_KINDS = ['parent', 'child'] as const;
+const IDENTITY_KINDS = ['parent', 'child'] as const;
 export type IdentityKind = (typeof IDENTITY_KINDS)[number];
 
 /**

@@ -14,7 +14,6 @@ import { ApiError } from '../../infrastructure/errors/api-error.js';
 import {
   AccountTakenError,
   ChildrenRepository,
-  type ChildRecord,
   type DeviceRecord,
   type LoginLinkRecord,
 } from './children.repository.js';
@@ -30,7 +29,7 @@ export const CHILD_CONSENT_VERSION = '2026-11-22';
 export const LOGIN_LINK_LIFETIME_MS = 10 * 60 * 1000;
 
 /** The page a login link opens, under the site's origin; the token follows it. */
-export const LOGIN_LINK_PATH = '/child/qr/';
+const LOGIN_LINK_PATH = '/child/qr/';
 
 /** A child of another family and a deleted child are answered the same, so ids reveal nothing. */
 export const childNotFound = () => new ApiError('child_not_found', HttpStatus.NOT_FOUND);
@@ -53,11 +52,6 @@ export function loginLinkStatus(link: LoginLinkRecord, now: Date): ChildLoginLin
     return 'revoked';
   }
   return link.expiresAt.getTime() <= now.getTime() ? 'expired' : 'active';
-}
-
-/** A child as the parents see it. */
-export function toChild(record: ChildRecord): Child {
-  return { id: record.id, nickname: record.nickname, account: record.account };
 }
 
 /** A remembered browser with its times as ISO date-times. */
@@ -87,7 +81,8 @@ async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
  * (`.docs/design/interfaces.md`, "孩子（家长）"). Every member of the
  * family may use it, the admin and the other parents alike; the routes'
  * membership check runs before it. A child is always looked up within the
- * family, so a child of another family is not found.
+ * family, so a child of another family is not found. The repository's
+ * child records are what the parents see of a child.
  */
 @Injectable()
 export class ChildrenService {
@@ -101,16 +96,16 @@ export class ChildrenService {
   }
 
   /** The family's children in the order they were added. */
-  async list(familyId: string): Promise<Child[]> {
-    return (await this.repository.listChildren(familyId)).map(toChild);
+  list(familyId: string): Promise<Child[]> {
+    return this.repository.listChildren(familyId);
   }
 
   /**
    * Adds a child without a password, with the guardian's consent of the
    * parent who adds it: the parent, the time and the consent's version.
    */
-  async add(parentId: string, familyId: string, request: AddChildRequest): Promise<Child> {
-    const record = await claimingAccount(() =>
+  add(parentId: string, familyId: string, request: AddChildRequest): Promise<Child> {
+    return claimingAccount(() =>
       this.repository.insertChild({
         familyId,
         nickname: request.nickname,
@@ -120,7 +115,6 @@ export class ChildrenService {
         consentedAt: new Date(),
       }),
     );
-    return toChild(record);
   }
 
   /** Changes the nickname, the account or both; the last change saved wins. */
@@ -131,7 +125,7 @@ export class ChildrenService {
     if (record === undefined) {
       throw childNotFound();
     }
-    return toChild(record);
+    return record;
   }
 
   /** Deletes the child with its consent, its login links and its devices. */

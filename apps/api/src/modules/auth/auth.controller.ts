@@ -1,6 +1,7 @@
 import { Controller, Get, Header, HttpCode, Post, Query, Redirect, Req, Res } from '@nestjs/common';
 import { logoutResponseSchema, type LogoutResponse } from '@thinklet/contracts';
 import type { Request, Response } from 'express';
+import { readCookie } from '../../infrastructure/authentication/cookies.js';
 import { Public } from '../../infrastructure/authentication/public.decorator.js';
 import { AuthService, LOGIN_FAILED_PATH } from './auth.service.js';
 import {
@@ -8,7 +9,6 @@ import {
   clearParentSessionCookies,
   ID_TOKEN_COOKIE,
   LOGIN_TRANSACTION_COOKIE,
-  readCookie,
   setLoginTransactionCookie,
   setParentSessionCookies,
 } from './session-cookies.js';

@@ -4,6 +4,7 @@
 import '@thinklet/contracts';
 import { createPrivateKey, createPublicKey, type webcrypto } from 'node:crypto';
 import { z } from 'zod';
+import { decodeCanonicalBase64 } from '../encoding/canonical-base64.js';
 
 const booleanString = z.enum(['true', 'false']).transform((value) => value === 'true');
 
@@ -74,15 +75,14 @@ const json = z.string().transform((value, context): unknown => {
 
 /**
  * Standard base64 text decoded into exactly `length` bytes. The text must be
- * the canonical encoding of those bytes, padding included: Node's decoder
- * skips characters it does not know and stops at the first `=`, so a key cut
- * off, written in base64url or with stray characters would otherwise be read
+ * the canonical encoding of those bytes, padding included, so a key cut off,
+ * written in base64url or with stray characters is refused rather than read
  * as other bytes. The message never repeats the text.
  */
 function base64Bytes(length: number) {
   return z.string().transform((value, context) => {
-    const bytes = Buffer.from(value, 'base64');
-    if (bytes.length !== length || bytes.toString('base64') !== value) {
+    const bytes = decodeCanonicalBase64(value, 'base64');
+    if (bytes?.length !== length) {
       context.addIssue({
         code: 'custom',
         message: `Must be ${length} bytes written in standard base64`,

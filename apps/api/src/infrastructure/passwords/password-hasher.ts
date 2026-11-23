@@ -1,6 +1,7 @@
 import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Injectable } from '@nestjs/common';
+import { decodeCanonicalBase64, encodeBase64 } from '../encoding/canonical-base64.js';
 
 const deriveArgon2 = promisify(argon2);
 
@@ -10,7 +11,7 @@ const VERSION = 19;
 const SALT_BYTES = 16;
 
 /** The cost of a new hash: OWASP's minimum for argon2id (19 MiB, 2 passes, 1 lane). */
-export const PASSWORD_HASH_COST = {
+const PASSWORD_HASH_COST = {
   memory: 19_456,
   passes: 2,
   parallelism: 1,
@@ -39,12 +40,12 @@ export class PasswordHashFormatError extends Error {
   }
 }
 
-const encode = (bytes: Buffer) => bytes.toString('base64').replace(/=+$/, '');
+const encode = (bytes: Buffer) => encodeBase64(bytes, 'base64-unpadded');
 
 /** Unpadded base64 decoded into bytes, only when it is their canonical encoding. */
 function decode(text: string): Buffer {
-  const bytes = Buffer.from(text, 'base64');
-  if (encode(bytes) !== text) {
+  const bytes = decodeCanonicalBase64(text, 'base64-unpadded');
+  if (bytes === undefined) {
     throw new PasswordHashFormatError();
   }
   return bytes;

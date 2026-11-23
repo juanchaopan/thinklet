@@ -2,13 +2,13 @@ import { HttpStatus, Injectable, type CanActivate, type ExecutionContext } from 
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import { IS_CHILD_ROUTE } from '../../infrastructure/authentication/child-route.decorator.js';
+import { readCookie } from '../../infrastructure/authentication/cookies.js';
 import { setCurrentParentId } from '../../infrastructure/authentication/current-parent.js';
 import { IS_PUBLIC } from '../../infrastructure/authentication/public.decorator.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import {
   ID_TOKEN_COOKIE,
   PARENT_SESSION_COOKIE,
-  readCookie,
   setParentSessionCookies,
 } from './session-cookies.js';
 import { needsRenewal } from './session-lifetime.js';

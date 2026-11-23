@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { lastingCookie, readCookie } from '../../infrastructure/authentication/cookies.js';
 import { isWellFormedToken } from './tokens.js';
 
 /**
@@ -21,22 +22,11 @@ export function rememberedUntil(now: Date): Date {
  * none or it is not a token this api makes, which is then no device token.
  */
 export function readDeviceToken(request: Request): string | undefined {
-  const cookies = request.cookies as Record<string, unknown> | undefined;
-  const value = cookies?.[DEVICE_COOKIE];
+  const value = readCookie(request, DEVICE_COOKIE);
   return isWellFormedToken(value) ? value : undefined;
 }
 
-/**
- * Sets the device cookie for 30 days, with the attributes of the login
- * cookies: HttpOnly, so no script on the page reads the token, Secure,
- * SameSite=Lax and the whole site.
- */
+/** Sets the device cookie for 30 days, with the attributes of every cookie the api sets. */
 export function setDeviceCookie(response: Response, token: string): void {
-  response.cookie(DEVICE_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: DEVICE_LIFETIME_MS,
-  });
+  response.cookie(DEVICE_COOKIE, token, lastingCookie(DEVICE_LIFETIME_MS));
 }
