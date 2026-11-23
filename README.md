@@ -29,13 +29,15 @@ pnpm exec task dev
 
 这两把密钥只在本机用，不要提交，也不要用到别的环境。
 
-`task dev` 起 PostgreSQL、SeaweedFS（模拟 S3）和 mock-oauth2-server（模拟 Authing 的 OIDC 登录服务）容器，执行数据库迁移，再启动前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。登录时会跳到模拟登录服务的页面，填任意用户名都能登录；这个服务不保存任何数据，容器重启后所有登录都要重来。
+`task dev` 起 PostgreSQL、SeaweedFS（模拟 S3）和 mock-oauth2-server（模拟 Authing 的 OIDC 登录服务）容器，执行数据库迁移（书本数据也在迁移脚本里），再把 `content/books/` 里的封面导入对象存储，最后启动前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。登录时会跳到模拟登录服务的页面，填任意用户名都能登录；这个服务不保存任何数据，容器重启后所有登录都要重来。
+
+改了 `content/books/` 里的封面以后，运行 `pnpm exec task rebuild` 重新导入；内容没变的封面不重传。
 
 ### 停止
 
 - 在运行 `task dev` 的终端按 Ctrl+C，停掉前后端。三个容器还在后台运行，下次 `task dev` 直接用它们。
 - `docker compose down`：停掉并删除这些容器。数据留在 Docker 卷里，下次启动还在。
-- `docker compose down -v`：连 Docker 卷一起删除，本机数据库和对象存储里的数据全部清空。下次 `task dev` 从空库开始，重新执行迁移。
+- `docker compose down -v`：连 Docker 卷一起删除，本机数据库和对象存储里的数据全部清空。下次 `task dev` 从空库开始，重新执行迁移、导入封面。
 
 ### 端口
 
@@ -51,7 +53,7 @@ pnpm exec task dev
 
 ### 同一台机器上的多个副本
 
-`docker-compose.yml` 把 Compose 项目名定为 `thinklet`（`name: thinklet`），所以同一台机器上这个仓库的所有副本（另一个克隆、git worktree）共用同一组容器和数据卷：一个副本执行的迁移，另一个副本也看得到；在任何一个副本里执行 `docker compose down -v`，所有副本的本机数据都会被删掉。两个副本同时 `task dev` 时，前后端的端口也会冲突。测试不受影响：它们自己在随机端口上起临时容器，不用 Compose。
+`docker-compose.yml` 把 Compose 项目名定为 `thinklet`（`name: thinklet`），所以同一台机器上这个仓库的所有副本（另一个克隆、git worktree）共用同一组容器和数据卷：一个副本执行的迁移和封面导入，另一个副本也看得到；在任何一个副本里执行 `docker compose down -v`，所有副本的本机数据都会被删掉。两个副本同时 `task dev` 时，前后端的端口也会冲突。测试不受影响：它们自己在随机端口上起临时容器，不用 Compose。
 
 ### 常用命令
 
@@ -59,7 +61,7 @@ pnpm exec task dev
 
 | 命令                         | 做什么                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------ |
-| `dev`                        | 起容器、执行迁移，启动前后端                                             |
+| `dev`                        | 起容器、执行迁移、导入封面，启动前后端                                   |
 | `jwt-key`                    | 新生成一把本机用的登录签名私钥，打印成 `.env` 里的一行                   |
 | `child-data-key`             | 新生成一把本机用的孩子信息主密钥，打印成 `.env` 里的一行                 |
 | `check`                      | 依次跑全部静态检查                                                       |
@@ -75,3 +77,4 @@ pnpm exec task dev
 | `test-e2e-all-browsers`      | 端到端测试，Chromium、Firefox、WebKit 和模拟手机都跑                     |
 | `test-smoke BASE_URL=<地址>` | 对已部署的地址跑冒烟测试；加 `PRODUCTION_SAFE=true` 只跑不改数据的那几条 |
 | `migrate`                    | 对 `.env` 里的数据库执行迁移                                             |
+| `rebuild`                    | 构建后端，把 `content/books/` 里的封面导入 `.env` 里的对象存储           |
