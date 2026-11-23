@@ -34,8 +34,8 @@ interface Household {
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for join
 // requests: a parent cannot see, withdraw or dismiss someone else's request,
 // approved ones included, and counts only their own results; only the
-// family's admin can see, approve, reject or dismiss the family's requests, a
-// member who is not the admin is refused and a parent who is not a member is
+// family's admin can see, approve or reject the family's requests, a member
+// who is not the admin is refused and a parent who is not a member is
 // answered as if there were no such family; a request of another family is
 // refused on a family's routes; a code lookup and the admin's list tell no
 // more than the design gives them; every route needs a login and the changes
@@ -76,7 +76,6 @@ describe('join request security', () => {
       await client.get(path),
       await client.post(`${path}/${requestId}/approve`),
       await client.post(`${path}/${requestId}/reject`),
-      await client.post(`${path}/${requestId}/dismiss`),
     ];
   }
 
@@ -210,7 +209,6 @@ describe('join request security', () => {
     const responses = [
       await client.post(`${path}/${theirs.pending.id}/approve`),
       await client.post(`${path}/${theirs.pending.id}/reject`),
-      await client.post(`${path}/${theirs.pending.id}/dismiss`),
     ];
 
     expect(outcomesOf(responses)).toEqual(responses.map(() => [404, 'not_found']));
@@ -271,7 +269,6 @@ describe('join request security', () => {
       await anonymous(server().get(family)),
       await anonymous(server().post(`${family}/${ours.pending.id}/approve`)),
       await anonymous(server().post(`${family}/${ours.pending.id}/reject`)),
-      await anonymous(server().post(`${family}/${ours.pending.id}/dismiss`)),
     ];
 
     expect(outcomesOf(responses)).toEqual(responses.map(() => [401, 'unauthenticated']));

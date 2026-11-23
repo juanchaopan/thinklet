@@ -1,6 +1,7 @@
 import './runtime.js';
 
 export * from './auth.js';
+export * from './books.js';
 export * from './child.js';
 export * from './child-auth.js';
 export * from './children.js';

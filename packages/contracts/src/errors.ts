@@ -20,12 +20,14 @@ export const errorCodeSchema = z.enum([
   'not_admin',
   // 404: the family does not exist or the parent is not one of its members.
   'family_not_found',
-  // 404: nothing at this address, a join request that is not the parent's own, or a login link that is not the child's.
+  // 404: nothing at this address, a join request that is not the parent's own, a login link that is not the child's, or no such cover.
   'not_found',
   // 404: no family has this code.
   'code_not_found',
   // 404: the family has no such child, or the child has been deleted.
   'child_not_found',
+  // 404: the book does not exist, or it is inactive and the family does not have it.
+  'book_not_found',
   // 404: the login link has expired, been used or revoked, does not exist, or its child has been deleted.
   'link_invalid',
   // 409: the parent is already a member of the family.
@@ -44,6 +46,12 @@ export const errorCodeSchema = z.enum([
   'password_already_set',
   // 409: the child of the login link has no password yet, so it is set, not entered.
   'password_not_set',
+  // 409: a child of the family still reads the book, so the family cannot remove it.
+  'book_in_use',
+  // 409: the family does not have the book, so it cannot be assigned to its children.
+  'book_not_acquired',
+  // 409: the book has left the library, so it cannot be acquired or assigned to another child.
+  'book_inactive',
   // 500: anything unexpected; the response carries only the request id.
   'internal',
 ]);

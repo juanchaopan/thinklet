@@ -75,9 +75,6 @@ export interface Closing {
   closedBy: string | null;
 }
 
-/** Which side's 「知道了」 a dismissal records. */
-export type DismissingSide = 'applicant' | 'admin';
-
 /** Joins each family to its admin's membership, to read the admin with the family. */
 const isFamilyAdmin = and(eq(familyMembers.familyId, families.id), eq(familyMembers.role, 'admin'));
 
@@ -168,16 +165,12 @@ export class JoinRequestStore extends FamilyStore {
     await this.executor.update(joinRequests).set(closing).where(eq(joinRequests.id, requestId));
   }
 
-  /** Records one side's 「知道了」; a request that side already dismissed keeps its first time. */
-  async dismissRequest(requestId: string, side: DismissingSide, at: Date): Promise<void> {
-    const [column, change] =
-      side === 'applicant'
-        ? [joinRequests.dismissedByApplicantAt, { dismissedByApplicantAt: at }]
-        : [joinRequests.dismissedByAdminAt, { dismissedByAdminAt: at }];
+  /** Records the applicant's 「知道了」; a request already dismissed keeps its first time. */
+  async dismissRequest(requestId: string, at: Date): Promise<void> {
     await this.executor
       .update(joinRequests)
-      .set(change)
-      .where(and(eq(joinRequests.id, requestId), isNull(column)));
+      .set({ dismissedByApplicantAt: at })
+      .where(and(eq(joinRequests.id, requestId), isNull(joinRequests.dismissedByApplicantAt)));
   }
 
   async findApplicantRequest(requestId: string): Promise<ApplicantRequestRecord | undefined> {
@@ -218,16 +211,12 @@ export class JoinRequestStore extends FamilyStore {
     );
   }
 
-  /**
-   * The family's approved, rejected and expired requests its admin has not
-   * dismissed, the latest closed first.
-   */
+  /** The family's approved, rejected and expired requests, the latest closed first. */
   listHandledRequests(familyId: string): Promise<FamilyRequestRecord[]> {
     return this.familyRequests(
       and(
         eq(joinRequests.familyId, familyId),
         inArray(joinRequests.status, ['approved', 'rejected', 'expired']),
-        isNull(joinRequests.dismissedByAdminAt),
       ),
       [desc(joinRequests.closedAt), desc(joinRequests.id)],
     );

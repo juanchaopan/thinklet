@@ -10,7 +10,6 @@ import {
 } from './join-requests.repository.js';
 import {
   JoinRequestsService,
-  requireAdminDismissal,
   requireApplicable,
   requireApplicantDismissal,
   requireDecision,
@@ -136,22 +135,6 @@ describe('requireApplicantDismissal', () => {
       'not_found',
     );
     expect(codeOf(() => requireApplicantDismissal(requestIn('pending'), STRANGER))).toBe(
-      'not_found',
-    );
-  });
-});
-
-describe('requireAdminDismissal', () => {
-  it.each(byStatus({ pending: 'request_pending', withdrawn: 'not_found' }))(
-    'answers the admin dismissing a %s request with %s',
-    (status, expected) => {
-      expect(codeOf(() => requireAdminDismissal(requestIn(status), FAMILY_ID))).toBe(expected);
-    },
-  );
-
-  it("answers another family's request as not found, whatever its state", () => {
-    expect(codeOf(() => requireAdminDismissal(undefined, FAMILY_ID))).toBe('not_found');
-    expect(codeOf(() => requireAdminDismissal(requestIn('approved'), OTHER_FAMILY_ID))).toBe(
       'not_found',
     );
   });
@@ -303,8 +286,8 @@ function createService(
       roles.set(parentId, role);
       return Promise.resolve();
     }),
-    dismissRequest: vi.fn((_requestId: string, side: string) => {
-      calls.push(`dismissRequest ${side}`);
+    dismissRequest: vi.fn((requestId: string) => {
+      calls.push(`dismissRequest ${requestId}`);
       return Promise.resolve();
     }),
     findApplicantRequest: vi.fn((requestId: string) => {
@@ -454,7 +437,7 @@ describe('JoinRequestsService', () => {
 
         await service.dismissOwn(APPLICANT, REQUEST_ID);
 
-        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest applicant']);
+        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, `dismissRequest ${REQUEST_ID}`]);
       },
     );
 
@@ -556,25 +539,6 @@ describe('JoinRequestsService', () => {
         await rejectionCode(service.decide(ADMIN, OTHER_FAMILY_ID, REQUEST_ID, 'approved')),
       ).toBe('not_found');
       expect(store.insertMember).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('dismissForFamily', () => {
-    it("records the admin's 「知道了」 under the lock", async () => {
-      const { service, calls } = createService({ request: requestIn('approved') });
-
-      await service.dismissForFamily(ADMIN, FAMILY_ID, REQUEST_ID);
-
-      expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest admin']);
-    });
-
-    it('refuses a pending request without writing', async () => {
-      const { service, store } = createService({ request: requestIn('pending') });
-
-      expect(await rejectionCode(service.dismissForFamily(ADMIN, FAMILY_ID, REQUEST_ID))).toBe(
-        'request_pending',
-      );
-      expect(store.dismissRequest).not.toHaveBeenCalled();
     });
   });
 });
