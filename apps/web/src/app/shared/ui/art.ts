@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, Directive, computed, input } from '
 /** The project's illustrated icons, `public/art/icon-<name>.webp`. */
 export type IconArt =
   | 'home'
+  | 'child'
   | 'settings'
   | 'letter'
   | 'family'

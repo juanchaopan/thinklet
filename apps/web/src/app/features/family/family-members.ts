@@ -33,7 +33,7 @@ type MemberAction = 'admin' | 'remove';
         <ul class="mt-1 divide-y divide-line">
           @for (member of family.members; track member.parentId) {
             <li class="flex items-center gap-3 py-3">
-              <app-avatar [name]="member.name" [parentId]="member.parentId" size="list" />
+              <app-avatar [name]="member.name" [personId]="member.parentId" size="list" />
               <div class="min-w-0 flex-1">
                 <p class="flex flex-wrap items-center gap-2 font-bold">
                   {{ member.name }}
@@ -66,12 +66,12 @@ type MemberAction = 'admin' | 'remove';
                   [origin]="actions"
                   [dropDown]="!inputMode.touch()"
                   align="end"
-                  [narrow]="true"
+                  width="narrow"
                   (dismissed)="menuFor.set(null)"
                 >
                   @if (inputMode.touch()) {
                     <div aria-hidden="true" class="flex items-center gap-3 px-3 py-3">
-                      <app-avatar [name]="member.name" [parentId]="member.parentId" size="large" />
+                      <app-avatar [name]="member.name" [personId]="member.parentId" size="large" />
                       <p class="font-bold">{{ member.name }}</p>
                     </div>
                     <div role="separator" class="my-1 border-t border-line"></div>

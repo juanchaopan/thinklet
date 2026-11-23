@@ -23,10 +23,21 @@ let nextFieldId = 0;
 /** Turns a typed value into the message to show, or null when it may be saved. */
 export type Validator = (value: string) => string | null;
 
+/** Turns what is in a text box into what the box takes, such as lower-case letters and digits only. */
+export type InputFilter = (text: string) => string;
+
 /**
  * A text box. With an error it turns red, shakes 6 px to each side in 300 ms
  * and shows the message under it, fading in over 200 ms; it shakes again for
- * every new `attempt`. With `autofocus` it takes the focus when it appears.
+ * every new `attempt`. Without an error a `hint` under it says what the box
+ * takes. With `autofocus` it takes the focus when it appears.
+ *
+ * A `filter` decides what the box takes as it is typed in or pasted into:
+ * the box shows the filtered text at once and the caret stays after what was
+ * typed, so a character the box does not take never appears. Text being
+ * composed with an input method is filtered once it is complete. Such a box
+ * is for codes and accounts, so the browser neither capitalises, corrects
+ * nor fills it in.
  */
 @Component({
   selector: 'app-text-field',
@@ -36,9 +47,13 @@ export type Validator = (value: string) => string | null;
       type="text"
       [attr.aria-label]="label()"
       [attr.aria-invalid]="error() ? 'true' : null"
-      [attr.aria-describedby]="error() ? errorId : null"
+      [attr.aria-describedby]="describedBy()"
+      [attr.autocomplete]="filter() ? 'off' : null"
+      [attr.autocapitalize]="filter() ? 'off' : null"
+      [attr.spellcheck]="filter() ? 'false' : null"
       [value]="value()"
-      (input)="value.set(box.value)"
+      (input)="typed(box, $event)"
+      (compositionend)="typed(box)"
       class="block min-h-12 w-full rounded-2xl border bg-surface px-4 text-base outline-none"
       [class]="
         error()
@@ -48,6 +63,8 @@ export type Validator = (value: string) => string | null;
     />
     @if (error(); as message) {
       <p [id]="errorId" class="mt-2 animate-fade text-sm font-bold text-rose-ink">{{ message }}</p>
+    } @else if (hint(); as text) {
+      <p [id]="hintId" class="mt-2 text-sm text-ink-muted">{{ text }}</p>
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -56,11 +73,23 @@ export class TextField {
   readonly value = model.required<string>();
   readonly label = input.required<string>();
   readonly error = input<string | null>(null);
+  /** What the box takes, said under it while there is no error. */
+  readonly hint = input<string | null>(null);
+  readonly filter = input<InputFilter | null>(null);
   /** Counts the failed attempts to save; each new one shakes the box. */
   readonly attempt = input(0);
   readonly autofocus = input(true);
 
-  protected readonly errorId = `app-text-field-error-${String(nextFieldId++)}`;
+  protected readonly errorId = `app-text-field-error-${String(nextFieldId)}`;
+  protected readonly hintId = `app-text-field-hint-${String(nextFieldId++)}`;
+
+  /** The line under the box that screen readers read with it: the error, else the hint. */
+  protected readonly describedBy = computed(() => {
+    if (this.error()) {
+      return this.errorId;
+    }
+    return this.hint() ? this.hintId : null;
+  });
 
   private readonly box = viewChild.required<ElementRef<HTMLInputElement>>('box');
 
@@ -77,6 +106,29 @@ export class TextField {
         });
       }
     });
+  }
+
+  /**
+   * Takes what is in the box, filtered when the box has a filter: the box is
+   * given the filtered text, with the caret after the filtered text that came
+   * before it.
+   */
+  protected typed(box: HTMLInputElement, event?: Event): void {
+    if (event instanceof InputEvent && event.isComposing) {
+      return;
+    }
+    const filter = this.filter();
+    if (!filter) {
+      this.value.set(box.value);
+      return;
+    }
+    const text = filter(box.value);
+    if (text !== box.value) {
+      const caret = filter(box.value.slice(0, box.selectionStart ?? box.value.length)).length;
+      box.value = text;
+      box.setSelectionRange(caret, caret);
+    }
+    this.value.set(text);
   }
 }
 

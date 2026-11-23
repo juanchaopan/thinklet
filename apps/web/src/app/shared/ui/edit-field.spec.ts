@@ -1,9 +1,44 @@
 import { render, screen } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
-import { EditRow, EditSheet } from './edit-field';
+import { childAccountText } from './child-account';
+import { EditRow, EditSheet, TextField } from './edit-field';
 
 const required = (value: string) => (value.trim() ? null : '请填家庭名称');
+
+describe('TextField', () => {
+  it('says under the box what it takes, until there is an error', async () => {
+    const view = await render(TextField, {
+      inputs: { value: '', label: '账号', hint: '只能用小写字母和数字', autofocus: false },
+    });
+    const box = screen.getByRole('textbox', { name: '账号' });
+
+    expect(box.getAttribute('aria-describedby')).toBe(screen.getByText('只能用小写字母和数字').id);
+
+    view.fixture.componentRef.setInput('error', '请填账号');
+    await view.fixture.whenStable();
+
+    expect(screen.queryByText('只能用小写字母和数字')).toBeNull();
+    expect(box.getAttribute('aria-describedby')).toBe(screen.getByText('请填账号').id);
+  });
+
+  it('takes only what its filter lets through, with the caret after what was typed', async () => {
+    const view = await render(TextField, {
+      inputs: { value: '', label: '账号', filter: childAccountText },
+    });
+    const box = screen.getByRole<HTMLInputElement>('textbox', { name: '账号' });
+
+    await userEvent.type(box, 'Le Le');
+    box.setSelectionRange(2, 2);
+    await userEvent.keyboard('-9');
+
+    expect(box.value).toBe('le9le');
+    expect(box.selectionStart).toBe(3);
+    expect(view.fixture.componentInstance.value()).toBe('le9le');
+    expect(box.getAttribute('autocapitalize')).toBe('off');
+    expect(box.getAttribute('spellcheck')).toBe('false');
+  });
+});
 
 describe('EditRow', () => {
   it('saves only a value that passes the check, and shakes otherwise', async () => {
