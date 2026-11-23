@@ -50,6 +50,11 @@ export function timeLeft(expiresAt: string, now: number): string {
  * fades under 已失效 and 重新生成 makes a new link. The check mark replaces
  * the code without an animation.
  *
+ * The time left counts down to the server's expiry time on this browser's
+ * clock, which may be behind the server's; the 10 minutes of 3 s checks are
+ * timed on the browser alone. So the countdown runs on after the 3 s checks
+ * stop, until its own end, and the check there still finds the link run out.
+ *
  * A link that cannot be made is said in a toast and the dialog closes.
  */
 @Component({
@@ -144,8 +149,10 @@ export class ChildQrDialog {
     return link ? timeLeft(link.expiresAt, this.now()) : '';
   });
 
-  /** The timers of the link shown now; cleared when it stops being watched. */
-  private timers: Array<ReturnType<typeof setInterval>> = [];
+  /** The countdown of the link shown now, until its end check. */
+  private countdown: ReturnType<typeof setInterval> | undefined;
+  /** The 3 s checks of the link shown now, for at most 10 minutes. */
+  private checks: ReturnType<typeof setInterval> | undefined;
   /**
    * Each link made starts a read that its making and its checks share; a
    * stop marks it stale, so answers about a link no longer watched are
@@ -189,30 +196,28 @@ export class ChildQrDialog {
   }
 
   /**
-   * Counts the time left down every second, checking the link once when its
-   * time is up, and checks it every 3 s while the page is in front, for at
-   * most 10 minutes.
+   * Counts the time left down every second until it is up, then checks the
+   * link once; and checks it every 3 s while the page is in front, for at
+   * most 10 minutes. The two end on their own: the end of the 3 s checks
+   * leaves the countdown running.
    */
   private watch(link: ChildLoginLink, watched: () => boolean): void {
     const started = Date.now();
     const expires = Date.parse(link.expiresAt);
-    let checkedAtEnd = false;
-    this.timers = [
-      setInterval(() => {
-        this.now.set(Date.now());
-        if (!checkedAtEnd && expires <= this.now()) {
-          checkedAtEnd = true;
-          void this.check(link, watched);
-        }
-      }, TICK),
-      setInterval(() => {
-        if (Date.now() - started > CHECK_LIMIT) {
-          this.stop();
-        } else if (this.document.visibilityState === 'visible') {
-          void this.check(link, watched);
-        }
-      }, CHECK_INTERVAL),
-    ];
+    this.countdown = setInterval(() => {
+      this.now.set(Date.now());
+      if (expires <= this.now()) {
+        this.stopCountdown();
+        void this.check(link, watched);
+      }
+    }, TICK);
+    this.checks = setInterval(() => {
+      if (Date.now() - started > CHECK_LIMIT) {
+        this.stopChecks();
+      } else if (this.document.visibilityState === 'visible') {
+        void this.check(link, watched);
+      }
+    }, CHECK_INTERVAL);
   }
 
   /** Shows what the check of the link found, while that link is still the one watched. */
@@ -233,9 +238,17 @@ export class ChildQrDialog {
   /** Stops counting and checking; answers still on their way are dropped. */
   private stop(): void {
     this.reads.wrote();
-    for (const timer of this.timers) {
-      clearInterval(timer);
-    }
-    this.timers = [];
+    this.stopCountdown();
+    this.stopChecks();
+  }
+
+  private stopCountdown(): void {
+    clearInterval(this.countdown);
+    this.countdown = undefined;
+  }
+
+  private stopChecks(): void {
+    clearInterval(this.checks);
+    this.checks = undefined;
   }
 }

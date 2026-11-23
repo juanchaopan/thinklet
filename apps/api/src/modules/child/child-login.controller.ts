@@ -129,10 +129,14 @@ export class ChildLoginController {
     );
   }
 
-  /** Sets the cookies of a completed login: the child's login, and the device token when it is renewed. */
+  /**
+   * Sets the cookies of a completed login: the child's login, issued at the
+   * time the login took under the child's lock, so a password reset after
+   * the login ends it; and the device token when it is renewed.
+   */
   private async signIn(response: Response, login: CompletedLogin): Promise<ChildLoginResponse> {
     const body = childLoginResponseSchema.parse(login.child);
-    await this.sessions.signIn(response, login.child.id);
+    await this.sessions.signIn(response, login.child.id, login.issuedAt);
     if (login.deviceToken !== undefined) {
       setDeviceCookie(response, login.deviceToken);
     }

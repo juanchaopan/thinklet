@@ -11,6 +11,7 @@ import type {
 } from '@thinklet/contracts';
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { sessionsValidAfterReset } from './child.service.js';
 import {
   AccountTakenError,
   ChildrenRepository,
@@ -139,13 +140,16 @@ export class ChildrenService {
    * Resets the child's password in one transaction: the password is
    * cleared, every login issued so far is refused and every remembered
    * browser forgotten. Login links not used yet keep working, so the child
-   * sets a new password with the next one.
+   * sets a new password with the next one. The child's row is locked
+   * before the time of the reset is taken, so a login holding the lock
+   * finishes first and its session, issued before that time, is refused.
    */
   resetPassword(familyId: string, childId: string): Promise<void> {
     return this.repository.transaction(async (store) => {
-      if (!(await store.clearPassword(familyId, childId, new Date()))) {
+      if (!(await store.lockChild(familyId, childId))) {
         throw childNotFound();
       }
+      await store.clearPassword(familyId, childId, sessionsValidAfterReset(new Date()));
       await store.deleteDevices(childId);
     });
   }

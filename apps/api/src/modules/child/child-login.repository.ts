@@ -10,7 +10,7 @@ import * as schema from '../../infrastructure/database/schema.js';
 
 const { children, childLoginLinks, childDevices } = schema;
 
-/** A child found by the family and the account a login names. */
+/** A child as a login checks it: found by the family and the account, or locked by its id. */
 export interface LoginCandidate {
   id: string;
   nickname: string;
@@ -18,15 +18,19 @@ export interface LoginCandidate {
   passwordHash: string | null;
 }
 
-/** A login link found by its token, with what the login needs of its child. */
-export interface LinkRecord {
+/** The state of a login link, as a login reads it under the link's lock. */
+export interface LinkState {
   linkId: string;
   childId: string;
-  nickname: string;
-  passwordHash: string | null;
   expiresAt: Date;
   usedAt: Date | null;
   revokedAt: Date | null;
+}
+
+/** A login link found by its token, with what the login needs of its child. */
+export interface LinkRecord extends LinkState {
+  nickname: string;
+  passwordHash: string | null;
 }
 
 /** A child the browser remembers, in plain text, with its family to fetch the code of. */
@@ -47,12 +51,24 @@ export interface RememberedDevice {
   expiresAt: Date;
 }
 
+const linkStateColumns = {
+  linkId: childLoginLinks.id,
+  childId: childLoginLinks.childId,
+  expiresAt: childLoginLinks.expiresAt,
+  usedAt: childLoginLinks.usedAt,
+  revokedAt: childLoginLinks.revokedAt,
+};
+
 /**
  * The queries of a child's login, on the pool or inside one transaction:
  * finding the child by account or login link, the child's password and the
  * check of a signed-in child, and the browsers the child is remembered on.
  * The nickname, the account and the device names are encrypted on the way
  * in and decrypted on the way out.
+ *
+ * A transaction that locks both a child's row and one of the child's login
+ * links locks the child's row first, as making a login link and resetting
+ * a password do, so no two of them wait for each other.
  */
 export class ChildLoginStore {
   constructor(
@@ -71,8 +87,21 @@ export class ChildLoginStore {
           eq(children.accountLookup, this.cipher.lookup(familyId, account)),
         ),
       );
-    const row = rows.at(0);
-    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
+    return this.readCandidate(rows.at(0));
+  }
+
+  /**
+   * The child with its password hash as it is now, its row locked until the
+   * transaction ends, or undefined when the child is gone. A password reset
+   * locks the same row, so it runs wholly before or after the transaction.
+   */
+  async lockChild(childId: string): Promise<LoginCandidate | undefined> {
+    const rows = await this.executor
+      .select({ id: children.id, nickname: children.nickname, passwordHash: children.passwordHash })
+      .from(children)
+      .where(eq(children.id, childId))
+      .for('update');
+    return this.readCandidate(rows.at(0));
   }
 
   /** The time before which the child's logins are refused, or undefined when the child is gone. */
@@ -94,18 +123,34 @@ export class ChildLoginStore {
     return row === undefined ? undefined : this.cipher.decrypt(row.nickname);
   }
 
-  /** The login link with the token's hash and its child, or undefined when there is none. */
-  findLinkByToken(tokenHash: string): Promise<LinkRecord | undefined> {
-    return this.linkByToken(tokenHash, false);
+  /** The login link with the token's hash and its child, unlocked, or undefined when there is none. */
+  async findLinkByToken(tokenHash: string): Promise<LinkRecord | undefined> {
+    const rows = await this.executor
+      .select({
+        ...linkStateColumns,
+        nickname: children.nickname,
+        passwordHash: children.passwordHash,
+      })
+      .from(childLoginLinks)
+      .innerJoin(children, eq(children.id, childLoginLinks.childId))
+      .where(eq(childLoginLinks.tokenHash, tokenHash));
+    const row = rows.at(0);
+    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
   }
 
   /**
-   * The same, with the link's and the child's rows locked until the
-   * transaction ends, so the logins on one link, and a password reset of
-   * its child, run one after another.
+   * The child's login link with the token's hash, its row locked until the
+   * transaction ends, or undefined when the child has none such. The caller
+   * holds the child's lock already, so of two logins on one link the second
+   * waits for the first and finds the link used.
    */
-  lockLinkByToken(tokenHash: string): Promise<LinkRecord | undefined> {
-    return this.linkByToken(tokenHash, true);
+  async lockLink(childId: string, tokenHash: string): Promise<LinkState | undefined> {
+    const rows = await this.executor
+      .select(linkStateColumns)
+      .from(childLoginLinks)
+      .where(and(eq(childLoginLinks.tokenHash, tokenHash), eq(childLoginLinks.childId, childId)))
+      .for('update');
+    return rows.at(0);
   }
 
   async setPassword(childId: string, passwordHash: string): Promise<void> {
@@ -200,22 +245,7 @@ export class ChildLoginStore {
     }));
   }
 
-  private async linkByToken(tokenHash: string, lock: boolean): Promise<LinkRecord | undefined> {
-    const query = this.executor
-      .select({
-        linkId: childLoginLinks.id,
-        childId: children.id,
-        nickname: children.nickname,
-        passwordHash: children.passwordHash,
-        expiresAt: childLoginLinks.expiresAt,
-        usedAt: childLoginLinks.usedAt,
-        revokedAt: childLoginLinks.revokedAt,
-      })
-      .from(childLoginLinks)
-      .innerJoin(children, eq(children.id, childLoginLinks.childId))
-      .where(eq(childLoginLinks.tokenHash, tokenHash));
-    const rows = lock ? await query.for('update') : await query;
-    const row = rows.at(0);
+  private readCandidate(row: LoginCandidate | undefined): LoginCandidate | undefined {
     return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
   }
 }

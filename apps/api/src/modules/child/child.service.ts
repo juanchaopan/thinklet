@@ -7,17 +7,33 @@ import { ChildLoginRepository } from './child-login.repository.js';
 /** A child login that no longer counts, answered as no login at all. */
 const unauthenticated = () => new ApiError('unauthenticated', HttpStatus.UNAUTHORIZED);
 
+const SECOND_MS = 1000;
+
+/**
+ * The time a password reset at `at` refuses the child's logins before:
+ * `at` rounded up to a whole second. A JWT carries its issue time in whole
+ * seconds, so a login issued earlier in the reset's own second carries
+ * that second too, and only a whole second after the reset refuses it.
+ * A login made after the reset within the rest of that second is refused
+ * as well, which loses nothing in practice: the reset clears the password
+ * and forgets every remembered browser, so the child logs in again only
+ * by setting a new password on a login link, which takes far longer.
+ */
+export function sessionsValidAfterReset(at: Date): Date {
+  return new Date(Math.ceil(at.getTime() / SECOND_MS) * SECOND_MS);
+}
+
 /**
  * Whether a login issued at `issuedAt` counts after the child's logins were
- * last ended at `sessionsValidAfter` (`.docs/design/data.md`, "children").
- * The JWT carries its issue time in whole seconds, so the time it is
- * compared with is cut to whole seconds too: a login issued in the same
- * second as the reset, or as the child's creation, counts; one issued in an
- * earlier second does not.
+ * last ended at `sessionsValidAfter` (`.docs/design/data.md`, "children"),
+ * both compared in whole seconds, the unit of the JWT's issue time. A reset
+ * stores a whole second (`sessionsValidAfterReset`). The child's creation
+ * stores its exact time, and a login in the same second counts: there is
+ * no login of the child from before it existed.
  */
 export function issuedSinceLastReset(issuedAt: Date, sessionsValidAfter: Date): boolean {
-  const validAfterSecond = Math.floor(sessionsValidAfter.getTime() / 1000) * 1000;
-  return issuedAt.getTime() >= validAfterSecond;
+  const seconds = (date: Date) => Math.floor(date.getTime() / SECOND_MS);
+  return seconds(issuedAt) >= seconds(sessionsValidAfter);
 }
 
 /**

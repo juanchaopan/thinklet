@@ -257,23 +257,38 @@ describe('ChildrenService', () => {
   });
 
   describe('resetPassword', () => {
-    it('clears the password as of now and forgets every device, in one transaction', async () => {
+    it('locks the child, then clears the password as of now and forgets every device, in one transaction', async () => {
       const { service, store, calls } = createService();
 
       await service.resetPassword(FAMILY_ID, CHILD_ID);
 
       expect(calls).toEqual([
         'transaction',
+        `lockChild ${CHILD_ID}`,
         `clearPassword ${CHILD_ID} ${NOW.toISOString()}`,
         `deleteDevices ${CHILD_ID}`,
       ]);
       expect(store.revokeActiveLinks).not.toHaveBeenCalled();
     });
 
-    it('answers a child of another family with child_not_found and forgets no device', async () => {
+    it('refuses logins from the next whole second on when the reset falls within a second', async () => {
+      const { service, store } = createService();
+      vi.setSystemTime(new Date('2026-11-22T09:00:00.300Z'));
+
+      await service.resetPassword(FAMILY_ID, CHILD_ID);
+
+      expect(store.clearPassword).toHaveBeenCalledWith(
+        FAMILY_ID,
+        CHILD_ID,
+        new Date('2026-11-22T09:00:01.000Z'),
+      );
+    });
+
+    it('answers a child of another family with child_not_found and changes nothing', async () => {
       const { service, store } = createService();
 
       expect(await refusalOf(service.resetPassword('family-2', CHILD_ID))).toBe('child_not_found');
+      expect(store.clearPassword).not.toHaveBeenCalled();
       expect(store.deleteDevices).not.toHaveBeenCalled();
     });
   });

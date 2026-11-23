@@ -41,6 +41,23 @@ const DEVICE_MAX_AGE = String(30 * 24 * 60 * 60);
 const cipher = testChildDataCipher();
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
+/** How many times a test of two requests at the same time sends them, to meet their interleavings. */
+const RACE_ROUNDS = 20;
+
+/** A child's login ready to send, on the browser it signs in. */
+interface PendingLogin {
+  child: Child;
+  kid: ChildBrowser;
+  send: () => Promise<request.Response>;
+}
+
+/** A use of a child's login link: the route under the link and the body to send it. */
+interface LinkUse {
+  child: Child;
+  route: 'login' | 'password';
+  body: { password: string; remember: boolean };
+}
+
 /** The error code of an error response, whose body has nothing else but the request id. */
 function errorCodeOf(response: request.Response): string {
   const { error } = errorResponseSchema.parse(response.body);
@@ -59,11 +76,6 @@ function expectSignedIn(response: request.Response, child: Child): void {
 
 /** How long a device row lasts from its last login. */
 const lifetimeOf = (row: DeviceRow) => row.expires_at.getTime() - row.last_used_at.getTime();
-
-/** Waits until the clock is in the next whole second, the unit a JWT counts its issue time in. */
-async function nextSecond(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 1000 - (Date.now() % 1000) + 20));
-}
 
 // Acceptance criteria covered: a child logs in with the family code, the
 // account and the password, and any wrong item is "家庭码、账号或密码不对";
@@ -90,6 +102,10 @@ describe('child login', () => {
     remember,
   });
   const linkOf = (child: Child) => newLoginLink(running.server, parent, family.id, child.id);
+  const newerLink = (child: Child) =>
+    as(running.server, parent).post(`${childPath(family.id, child.id)}/login-links`);
+  const resetPassword = (child: Child) =>
+    as(running.server, parent).post(`${childPath(family.id, child.id)}/password-reset`);
   const linkStatus = async (child: Child, linkId: string) =>
     childLoginLinkStatusResponseSchema.parse(
       (
@@ -137,6 +153,24 @@ describe('child login', () => {
       throw new Error('No child was remembered');
     }
     return { child, kid };
+  }
+
+  /**
+   * Sends a login and a password reset of its child at the same time, for
+   * a new login each round. Whichever runs first, the reset wins: the login
+   * is refused, or it ends at the next request and its device is forgotten.
+   */
+  async function expectResetWinsOver(prepare: () => Promise<PendingLogin>): Promise<void> {
+    for (let round = 0; round < RACE_ROUNDS; round += 1) {
+      const { child, kid, send } = await prepare();
+
+      const [login, reset] = await Promise.all([send(), resetPassword(child)]);
+
+      expect(reset.status).toBe(204);
+      expect([200, 401]).toContain(login.status);
+      expect((await kid.me()).status).toBe(401);
+      expect(await devicesOf(child.id)).toEqual([]);
+    }
   }
 
   beforeAll(async () => {
@@ -202,6 +236,14 @@ describe('child login', () => {
         expect(errorCodeOf(response)).toBe('login_failed');
         expect(response.headers['set-cookie']).toBeUndefined();
       }
+    });
+
+    it('is refused, or ends with its remembered device, when a parent resets the password at the same time', async () => {
+      await expectResetWinsOver(async () => {
+        const child = await withPassword();
+        const kid = browser();
+        return { child, kid, send: () => kid.login(loginOf(child, true)) };
+      });
     });
   });
 
@@ -377,6 +419,14 @@ describe('child login', () => {
         expect(errorCodeOf(response)).toBe('remember_invalid');
       }
     });
+
+    it('is refused, or ends, when a parent resets the password at the same time', async () => {
+      await expectResetWinsOver(async () => {
+        const { child, kid } = await rememberedChild();
+        kid.cookies.delete(CHILD_SESSION_COOKIE);
+        return { child, kid, send: () => kid.loginRemembered(child.id) };
+      });
+    });
   });
 
   describe('login links', () => {
@@ -510,6 +560,40 @@ describe('child login', () => {
       expect(responses.map((response) => response.status).sort()).toEqual([200, 404]);
     });
 
+    it.each<[string, () => Promise<LinkUse>]>([
+      [
+        'logs in',
+        async () => {
+          const child = await withPassword();
+          return { child, route: 'login', body: { password: child.password, remember: true } };
+        },
+      ],
+      [
+        'sets the password',
+        async () => ({
+          child: await newChild(),
+          route: 'password',
+          body: { password: 'my secret', remember: true },
+        }),
+      ],
+    ])(
+      '%s or is link_invalid, and never fails, while a parent makes a newer link at the same time',
+      async (_case, prepare) => {
+        for (let round = 0; round < RACE_ROUNDS; round += 1) {
+          const { child, route, body } = await prepare();
+          const link = await linkOf(child);
+
+          const [use, newer] = await Promise.all([
+            browser().post(`${linkPath(link.token)}/${route}`, body),
+            newerLink(child),
+          ]);
+
+          expect(newer.status).toBe(201);
+          expect([200, 404]).toContain(use.status);
+        }
+      },
+    );
+
     it('works within its 10 minutes and is link_invalid from then on', async () => {
       const child = await newChild();
       const link = await linkOf(child);
@@ -575,11 +659,8 @@ describe('child login', () => {
 
     it('ends when a parent resets the password, and the remembered device goes with it', async () => {
       const { child, kid } = await rememberedChild();
-      await nextSecond();
 
-      await as(running.server, parent)
-        .post(`${childPath(family.id, child.id)}/password-reset`)
-        .expect(204);
+      expect((await resetPassword(child)).status).toBe(204);
 
       const me = await kid.me();
       expect(me.status).toBe(401);

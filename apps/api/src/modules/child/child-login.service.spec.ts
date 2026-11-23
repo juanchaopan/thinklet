@@ -12,6 +12,8 @@ import { DEVICE_LIFETIME_MS } from './device-cookie.js';
 import { hashToken, isWellFormedToken, newToken } from './tokens.js';
 
 const NOW = new Date('2026-11-22T09:00:00.000Z');
+/** The clock once a transaction has committed, so a time taken after the commit shows. */
+const AFTER_COMMIT = new Date(NOW.getTime() + 1500);
 const FAMILY_ID = '5d1e6f70-8192-4a3b-8c4d-5e6f708192a3';
 const OTHER_FAMILY_ID = '8a40b1c2-d3e4-4f5a-8b6c-7d8e9f0a1b2c';
 const CHILD_ID = '3f9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d';
@@ -20,11 +22,13 @@ const COUSIN_ID = 'c3d9e0f1-a2b3-4c4d-9e5f-6a7b8c9d0e1f';
 const LINK_ID = '7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d';
 const HASH =
   '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhcw';
+const OTHER_HASH = '$argon2id$v=19$m=19456,t=2,p=1$b3RoZXJzYWx0$b3RoZXItaGFzaA';
 const STAND_IN = '$argon2id$v=19$m=19456,t=2,p=1$c3RhbmRpbg$c3RhbmQtaW4';
 const IPAD =
   'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
 const LOGIN = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret1', remember: false };
 const XIAOMI: LoginCandidate = { id: CHILD_ID, nickname: '小米', passwordHash: HASH };
+const XIAOMI_WITHOUT_PASSWORD: LoginCandidate = { ...XIAOMI, passwordHash: null };
 const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD };
 
 const minutesFromNow = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
@@ -45,12 +49,19 @@ const linkOf = (changes: Partial<LinkRecord> = {}): LinkRecord => ({
 const expectRefusal = (call: Promise<unknown>, code: ErrorCode) =>
   expect(call).rejects.toMatchObject({ code });
 
+/** Asserts that every mock was called, each first called after the one before it. */
+function expectCalledInOrder(...mocks: Array<{ mock: { invocationCallOrder: number[] } }>): void {
+  const firstCalls = mocks.map((mock) => mock.mock.invocationCallOrder[0] ?? Number.NaN);
+  expect(firstCalls.every(Number.isFinite)).toBe(true);
+  expect(firstCalls).toEqual([...firstCalls].sort((a, b) => a - b));
+}
+
 describe('ChildLoginService', () => {
   const store = {
     findLoginCandidate: vi.fn<ChildLoginStore['findLoginCandidate']>(),
-    findNickname: vi.fn<ChildLoginStore['findNickname']>(),
+    lockChild: vi.fn<ChildLoginStore['lockChild']>(),
     findLinkByToken: vi.fn<ChildLoginStore['findLinkByToken']>(),
-    lockLinkByToken: vi.fn<ChildLoginStore['lockLinkByToken']>(),
+    lockLink: vi.fn<ChildLoginStore['lockLink']>(),
     setPassword: vi.fn<ChildLoginStore['setPassword']>(),
     markLinkUsed: vi.fn<ChildLoginStore['markLinkUsed']>(),
     rememberDevice: vi.fn<ChildLoginStore['rememberDevice']>(),
@@ -58,11 +69,14 @@ describe('ChildLoginService', () => {
     forgetDevice: vi.fn<ChildLoginStore['forgetDevice']>(),
     listRemembered: vi.fn<ChildLoginStore['listRemembered']>(),
   };
-  const repository = {
-    ...store,
-    transaction: <T>(work: (s: ChildLoginStore) => Promise<T>) =>
-      work(store as unknown as ChildLoginStore),
-  } as unknown as ChildLoginRepository;
+  /** Called once a transaction's work has resolved; it moves the clock on, as time passes after a commit. */
+  const committed = vi.fn<() => void>();
+  const transaction = vi.fn(async (work: (s: ChildLoginStore) => Promise<unknown>) => {
+    const result = await work(store as unknown as ChildLoginStore);
+    committed();
+    return result;
+  });
+  const repository = { ...store, transaction } as unknown as ChildLoginRepository;
   const families = {
     findIdByCode: vi.fn<FamiliesService['findIdByCode']>(),
     codesOf: vi.fn<FamiliesService['codesOf']>(),
@@ -78,10 +92,15 @@ describe('ChildLoginService', () => {
     for (const mock of [...Object.values(store), ...Object.values(families)]) {
       mock.mockReset();
     }
+    transaction.mockClear();
+    committed.mockReset().mockImplementation(() => {
+      vi.setSystemTime(AFTER_COMMIT);
+    });
     hasher.hash.mockReset().mockResolvedValue(STAND_IN);
     hasher.verify.mockReset().mockResolvedValue(false);
     families.findIdByCode.mockResolvedValue(FAMILY_ID);
     store.findLoginCandidate.mockResolvedValue(XIAOMI);
+    store.lockChild.mockResolvedValue(XIAOMI);
     service = new ChildLoginService(repository, families as unknown as FamiliesService, hasher);
   });
 
@@ -95,10 +114,30 @@ describe('ChildLoginService', () => {
 
       const login = await service.login(LOGIN, FRESH_BROWSER);
 
-      expect(login).toEqual({ child: { id: CHILD_ID, nickname: '小米' }, deviceToken: undefined });
+      expect(login).toEqual({
+        child: { id: CHILD_ID, nickname: '小米' },
+        deviceToken: undefined,
+        issuedAt: NOW,
+      });
       expect(families.findIdByCode).toHaveBeenCalledWith('7KQ4MZ');
       expect(store.findLoginCandidate).toHaveBeenCalledWith(FAMILY_ID, 'xiaomi');
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
+      expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
+    });
+
+    it("verifies the password before the transaction, then writes the device and takes the session's issue time under the child's lock", async () => {
+      hasher.verify.mockResolvedValue(true);
+
+      const login = await service.login({ ...LOGIN, remember: true }, FRESH_BROWSER);
+
+      expectCalledInOrder(
+        hasher.verify,
+        transaction,
+        store.lockChild,
+        store.rememberDevice,
+        committed,
+      );
+      expect(login.issuedAt).toEqual(NOW);
     });
 
     it.each<[string, () => void]>([
@@ -109,7 +148,7 @@ describe('ChildLoginService', () => {
       ],
       [
         'a child without a password yet',
-        () => store.findLoginCandidate.mockResolvedValue({ ...XIAOMI, passwordHash: null }),
+        () => store.findLoginCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD),
       ],
     ])(
       'refuses %s with login_failed, checking the password against the stand-in hash',
@@ -120,14 +159,33 @@ describe('ChildLoginService', () => {
         await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
         expect(hasher.verify).toHaveBeenCalledTimes(1);
         expect(hasher.verify).toHaveBeenCalledWith('secret1', STAND_IN);
-        expect(store.rememberDevice).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
       },
     );
 
     it('refuses a wrong password with the same login_failed', async () => {
       await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
+      expect(transaction).not.toHaveBeenCalled();
     });
+
+    it.each<[string, LoginCandidate | undefined]>([
+      ['reset', XIAOMI_WITHOUT_PASSWORD],
+      ['changed', { ...XIAOMI, passwordHash: OTHER_HASH }],
+      ['deleted with the child', undefined],
+    ])(
+      'refuses with login_failed a password %s after it was verified, remembering nothing',
+      async (_case, locked) => {
+        hasher.verify.mockResolvedValue(true);
+        store.lockChild.mockResolvedValue(locked);
+
+        await expectRefusal(
+          service.login({ ...LOGIN, remember: true }, FRESH_BROWSER),
+          'login_failed',
+        );
+        expect(store.rememberDevice).not.toHaveBeenCalled();
+      },
+    );
 
     it('makes the stand-in hash once, with the cost of every new hash', async () => {
       families.findIdByCode.mockResolvedValue(undefined);
@@ -180,6 +238,7 @@ describe('ChildLoginService', () => {
       expect(login.deviceToken).toBeUndefined();
       expect(store.forgetDevice).toHaveBeenCalledWith(CHILD_ID, hash);
       expect(store.rememberDevice).not.toHaveBeenCalled();
+      expectCalledInOrder(store.lockChild, store.forgetDevice, committed);
     });
 
     it('has nothing to forget on a browser without a device token', async () => {
@@ -222,37 +281,43 @@ describe('ChildLoginService', () => {
   });
 
   describe('loginRemembered', () => {
-    it('logs the child in and renews the browser for 30 days with the same token', async () => {
+    it("logs the child in and renews the browser for 30 days with the same token, under the child's lock", async () => {
       const { token, hash } = newToken();
       store.renewDevice.mockResolvedValue(true);
-      store.findNickname.mockResolvedValue('小米');
 
       const login = await service.loginRemembered(CHILD_ID, token);
 
-      expect(login).toEqual({ child: { id: CHILD_ID, nickname: '小米' }, deviceToken: token });
+      expect(login).toEqual({
+        child: { id: CHILD_ID, nickname: '小米' },
+        deviceToken: token,
+        issuedAt: NOW,
+      });
+      expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
       expect(store.renewDevice).toHaveBeenCalledWith(
         CHILD_ID,
         hash,
         NOW,
         new Date(NOW.getTime() + DEVICE_LIFETIME_MS),
       );
+      expectCalledInOrder(transaction, store.lockChild, store.renewDevice, committed);
     });
 
-    it.each<[string, string | undefined, boolean]>([
-      ['without a device token', undefined, true],
-      ['a browser that does not remember the child, or no longer', newToken().token, false],
-    ])('refuses %s with remember_invalid', async (_case, token, renewed) => {
-      store.renewDevice.mockResolvedValue(renewed);
-      store.findNickname.mockResolvedValue('小米');
-
-      await expectRefusal(service.loginRemembered(CHILD_ID, token), 'remember_invalid');
+    it('refuses a browser without a device token with remember_invalid, without a transaction', async () => {
+      await expectRefusal(service.loginRemembered(CHILD_ID, undefined), 'remember_invalid');
+      expect(transaction).not.toHaveBeenCalled();
     });
 
-    it('refuses a child deleted after the renewal with remember_invalid', async () => {
-      store.renewDevice.mockResolvedValue(true);
-      store.findNickname.mockResolvedValue(undefined);
+    it('refuses a browser that does not remember the child, or no longer, with remember_invalid', async () => {
+      store.renewDevice.mockResolvedValue(false);
 
       await expectRefusal(service.loginRemembered(CHILD_ID, newToken().token), 'remember_invalid');
+    });
+
+    it('refuses a child deleted by then with remember_invalid, renewing nothing', async () => {
+      store.lockChild.mockResolvedValue(undefined);
+
+      await expectRefusal(service.loginRemembered(CHILD_ID, newToken().token), 'remember_invalid');
+      expect(store.renewDevice).not.toHaveBeenCalled();
     });
   });
 
@@ -288,24 +353,58 @@ describe('ChildLoginService', () => {
   });
 
   describe('setPasswordWithLink', () => {
-    const request = { password: 'new secret', remember: false };
+    const request = { password: 'new secret', remember: true };
+
+    beforeEach(() => {
+      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.lockLink.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.lockChild.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
+      hasher.hash.mockResolvedValue(HASH);
+    });
 
     it("sets the child's first password, uses the link and logs the child in", async () => {
       const { token, hash } = newToken();
-      store.lockLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
-      hasher.hash.mockResolvedValue(HASH);
 
       const login = await service.setPasswordWithLink(token, request, FRESH_BROWSER);
 
       expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
-      expect(store.lockLinkByToken).toHaveBeenCalledWith(hash);
+      expect(store.findLinkByToken).toHaveBeenCalledWith(hash);
+      expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
+      expect(store.lockLink).toHaveBeenCalledWith(CHILD_ID, hash);
       expect(hasher.hash).toHaveBeenCalledWith('new secret');
       expect(store.setPassword).toHaveBeenCalledWith(CHILD_ID, HASH);
       expect(store.markLinkUsed).toHaveBeenCalledWith(LINK_ID, NOW);
     });
 
-    it('refuses a child who has a password with password_already_set, changing nothing', async () => {
-      store.lockLinkByToken.mockResolvedValue(linkOf());
+    it('hashes the password before the transaction, and locks the child before the link', async () => {
+      const login = await service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER);
+
+      expectCalledInOrder(
+        hasher.hash,
+        transaction,
+        store.lockChild,
+        store.lockLink,
+        store.setPassword,
+        store.markLinkUsed,
+        store.rememberDevice,
+        committed,
+      );
+      expect(login.issuedAt).toEqual(NOW);
+    });
+
+    it('refuses a child who has a password with password_already_set, hashing nothing', async () => {
+      store.findLinkByToken.mockResolvedValue(linkOf());
+
+      await expectRefusal(
+        service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
+        'password_already_set',
+      );
+      expect(hasher.hash).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses with password_already_set a password set under the lock first, changing nothing', async () => {
+      store.lockChild.mockResolvedValue(XIAOMI);
 
       await expectRefusal(
         service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
@@ -313,10 +412,11 @@ describe('ChildLoginService', () => {
       );
       expect(store.setPassword).not.toHaveBeenCalled();
       expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(store.rememberDevice).not.toHaveBeenCalled();
     });
 
-    it.each(unusableLinks)('answers %s with link_invalid', async (_case, link) => {
-      store.lockLinkByToken.mockResolvedValue(
+    it.each(unusableLinks)('answers %s with link_invalid, hashing nothing', async (_case, link) => {
+      store.findLinkByToken.mockResolvedValue(
         link === undefined ? undefined : { ...link, passwordHash: null },
       );
 
@@ -324,17 +424,45 @@ describe('ChildLoginService', () => {
         service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
         'link_invalid',
       );
-      expect(store.setPassword).not.toHaveBeenCalled();
+      expect(hasher.hash).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it.each(unusableLinks)(
+      'answers %s by the time it is locked with link_invalid, setting nothing',
+      async (_case, link) => {
+        store.lockLink.mockResolvedValue(link);
+
+        await expectRefusal(
+          service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
+          'link_invalid',
+        );
+        expect(store.setPassword).not.toHaveBeenCalled();
+        expect(store.markLinkUsed).not.toHaveBeenCalled();
+      },
+    );
+
+    it('answers a child deleted by then with link_invalid', async () => {
+      store.lockChild.mockResolvedValue(undefined);
+
+      await expectRefusal(
+        service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
+        'link_invalid',
+      );
+      expect(store.lockLink).not.toHaveBeenCalled();
     });
   });
 
   describe('loginWithLink', () => {
     const request = { password: 'secret1', remember: true };
 
-    it('logs the child in with the right password and uses the link', async () => {
-      store.lockLinkByToken.mockResolvedValue(linkOf());
+    beforeEach(() => {
+      store.findLinkByToken.mockResolvedValue(linkOf());
+      store.lockLink.mockResolvedValue(linkOf());
       hasher.verify.mockResolvedValue(true);
+    });
 
+    it('logs the child in with the right password and uses the link', async () => {
       const login = await service.loginWithLink(newToken().token, request, FRESH_BROWSER);
 
       expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
@@ -343,19 +471,34 @@ describe('ChildLoginService', () => {
       expect(store.rememberDevice).toHaveBeenCalled();
     });
 
+    it('verifies the password before the transaction, and locks the child before the link', async () => {
+      const login = await service.loginWithLink(newToken().token, request, FRESH_BROWSER);
+
+      expectCalledInOrder(
+        hasher.verify,
+        transaction,
+        store.lockChild,
+        store.lockLink,
+        store.markLinkUsed,
+        store.rememberDevice,
+        committed,
+      );
+      expect(login.issuedAt).toEqual(NOW);
+    });
+
     it('refuses a wrong password with wrong_password and leaves the link unused', async () => {
-      store.lockLinkByToken.mockResolvedValue(linkOf());
+      hasher.verify.mockResolvedValue(false);
 
       await expectRefusal(
         service.loginWithLink(newToken().token, request, FRESH_BROWSER),
         'wrong_password',
       );
+      expect(transaction).not.toHaveBeenCalled();
       expect(store.markLinkUsed).not.toHaveBeenCalled();
-      expect(store.rememberDevice).not.toHaveBeenCalled();
     });
 
     it('refuses a child without a password with password_not_set', async () => {
-      store.lockLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
 
       await expectRefusal(
         service.loginWithLink(newToken().token, request, FRESH_BROWSER),
@@ -364,15 +507,42 @@ describe('ChildLoginService', () => {
       expect(hasher.verify).not.toHaveBeenCalled();
     });
 
+    it.each<[string, LoginCandidate, ErrorCode]>([
+      ['reset', XIAOMI_WITHOUT_PASSWORD, 'password_not_set'],
+      ['changed', { ...XIAOMI, passwordHash: OTHER_HASH }, 'wrong_password'],
+    ])(
+      'refuses a password %s after it was verified with %s, leaving the link unused',
+      async (_case, locked, code) => {
+        store.lockChild.mockResolvedValue(locked);
+
+        await expectRefusal(service.loginWithLink(newToken().token, request, FRESH_BROWSER), code);
+        expect(store.markLinkUsed).not.toHaveBeenCalled();
+        expect(store.rememberDevice).not.toHaveBeenCalled();
+      },
+    );
+
     it.each(unusableLinks)('answers %s with link_invalid', async (_case, link) => {
-      store.lockLinkByToken.mockResolvedValue(link);
-      hasher.verify.mockResolvedValue(true);
+      store.findLinkByToken.mockResolvedValue(link);
 
       await expectRefusal(
         service.loginWithLink(newToken().token, request, FRESH_BROWSER),
         'link_invalid',
       );
-      expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(hasher.verify).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
     });
+
+    it.each(unusableLinks)(
+      'answers %s by the time it is locked with link_invalid',
+      async (_case, link) => {
+        store.lockLink.mockResolvedValue(link);
+
+        await expectRefusal(
+          service.loginWithLink(newToken().token, request, FRESH_BROWSER),
+          'link_invalid',
+        );
+        expect(store.markLinkUsed).not.toHaveBeenCalled();
+      },
+    );
   });
 });
