@@ -22,6 +22,7 @@ export default defineConfig({
         'src/**/*.repository.ts',
         'src/main.ts',
         'src/server.ts',
+        'src/rebuild.ts',
         'src/create-app.ts',
         'src/infrastructure/database/schema.ts',
       ],
