@@ -66,20 +66,20 @@ PostgreSQL 里的表，用 Drizzle 定义，由迁移脚本建立。时间都存
 
 ## children：孩子
 
-| 字段                   | 类型                        | 说明                                                                |
-| ---------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `id`                   | uuid，主键                  | 孩子编号，也是孩子 JWT 里的编号                                     |
-| `family_id`            | uuid，必填，引用 `families` | 孩子属于的家庭                                                      |
-| `nickname`             | text，必填                  | 昵称的密文（AES-256-GCM，带密钥编号）；明文去掉前后空格后 1–10 个字 |
-| `account`              | text，必填                  | 账号的密文；明文是 1–20 个小写字母和数字                            |
-| `account_lookup`       | text，必填                  | 账号的查找值：家庭编号加账号的 HMAC-SHA256，写成十六进制            |
-| `password_hash`        | text，可空                  | argon2id 的散列字符串，带着参数；为空表示还没设密码                 |
-| `sessions_valid_after` | timestamptz，必填           | 在这之前签发的孩子 JWT 一律不认；添加孩子和重设密码时写入当时的时间 |
-| `consent_parent_id`    | uuid，必填，引用 `parents`  | 添加时勾选监护人同意的家长                                          |
-| `consent_version`      | text，必填                  | 同意文字的版本                                                      |
-| `consented_at`         | timestamptz，必填           | 同意的时间                                                          |
-| `created_at`           | timestamptz，必填           | 添加的时间，用来排顺序                                              |
-| `updated_at`           | timestamptz，必填           | 最后一次修改这一行的时间                                            |
+| 字段                   | 类型                        | 说明                                                                                                                                          |
+| ---------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                   | uuid，主键                  | 孩子编号，也是孩子 JWT 里的编号                                                                                                               |
+| `family_id`            | uuid，必填，引用 `families` | 孩子属于的家庭                                                                                                                                |
+| `nickname`             | text，必填                  | 昵称的密文（AES-256-GCM，带密钥编号）；明文去掉前后空格后 1–10 个字                                                                           |
+| `account`              | text，必填                  | 账号的密文；明文是 1–20 个小写字母和数字                                                                                                      |
+| `account_lookup`       | text，必填                  | 账号的查找值：家庭编号加账号的 HMAC-SHA256，写成十六进制                                                                                      |
+| `password_hash`        | text，可空                  | argon2id 的散列字符串，带着参数；为空表示还没设密码                                                                                           |
+| `sessions_valid_after` | timestamptz，必填           | 在这之前签发的孩子 JWT 一律不认，按整秒比较；添加孩子时写入当时的时间，重设密码时写入当时的时间进到下一个整秒，所以同一秒里早一点签发的也不认 |
+| `consent_parent_id`    | uuid，必填，引用 `parents`  | 添加时勾选监护人同意的家长                                                                                                                    |
+| `consent_version`      | text，必填                  | 同意文字的版本                                                                                                                                |
+| `consented_at`         | timestamptz，必填           | 同意的时间                                                                                                                                    |
+| `created_at`           | timestamptz，必填           | 添加的时间，用来排顺序                                                                                                                        |
+| `updated_at`           | timestamptz，必填           | 最后一次修改这一行的时间                                                                                                                      |
 
 - `(family_id, account_lookup)` 唯一，保证账号在家庭内唯一；登录时也按它查找。
 - 昵称、账号和设备名称是孩子的个人信息：加密保存，不写进日志，列进日志的遮挡列表。密码不写进日志，也不存明文。
