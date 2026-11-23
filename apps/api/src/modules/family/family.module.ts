@@ -21,7 +21,7 @@ import { MeController } from './me.controller.js';
  * applicant's and from the admin's side. Other modules use FamilyService,
  * and FamiliesService for its membership check (`checkAccess`), which every
  * route under `/api/families/{familyId}` passes, those of other modules
- * included.
+ * included, and for the families' codes, which a child logs in with.
  */
 @Module({
   imports: [DatabaseModule],

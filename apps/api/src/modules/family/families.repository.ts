@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { FamilyRole } from '@thinklet/contracts';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
@@ -99,6 +99,27 @@ export class FamilyStore {
       .from(families)
       .where(eq(families.id, familyId));
     return rows.at(0);
+  }
+
+  /** The id of the family with the code, or undefined when no family has it. */
+  async findIdByCode(code: string): Promise<string | undefined> {
+    const rows = await this.executor
+      .select({ id: families.id })
+      .from(families)
+      .where(eq(families.code, code));
+    return rows.at(0)?.id;
+  }
+
+  /** The current code of each of the families, by family id; a family that does not exist has none. */
+  async codesOf(familyIds: readonly string[]): Promise<Map<string, string>> {
+    if (familyIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.executor
+      .select({ id: families.id, code: families.code })
+      .from(families)
+      .where(inArray(families.id, [...familyIds]));
+    return new Map(rows.map((row) => [row.id, row.code]));
   }
 
   /** The family's parents in the order they joined it. */
