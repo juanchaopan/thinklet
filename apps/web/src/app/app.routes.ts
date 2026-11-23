@@ -18,9 +18,9 @@ import {
  * the start page is only for a parent without one (a parent with one goes
  * to `/`). An invitation link `/join/<code>` opens the join dialog over the
  * join page for a parent with a family and over the start page for one
- * without. A family's own pages, `/families/<id>` and its new members page,
- * make that family the current one; the new members page is its admin's.
- * Route titles become the browser title "<title> - 好奇星球"
+ * without. A family's own pages, `/families/<id>`, its children page and its
+ * new members page, make that family the current one; the new members page
+ * is its admin's. Route titles become the browser title "<title> - 好奇星球"
  * (core/page-title).
  *
  * Every page is loaded when it is first opened, and so is the signed-in
@@ -79,6 +79,13 @@ export const routes: Routes = [
         canActivate: [makeFamilyCurrent],
         loadComponent: () =>
           import('./features/family/family-page').then((module) => module.FamilyPage),
+      },
+      {
+        path: 'families/:familyId/children',
+        title: '孩子',
+        canActivate: [makeFamilyCurrent],
+        loadComponent: () =>
+          import('./features/children/children-page').then((module) => module.ChildrenPage),
       },
       {
         path: 'families/:familyId/new-members',

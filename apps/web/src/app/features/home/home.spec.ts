@@ -39,7 +39,7 @@ describe('Home', () => {
     stubSignedIn();
   });
 
-  it('welcomes the parent with the rabbit teacher and says children and books are coming', async () => {
+  it('welcomes the parent with the rabbit teacher and says the book library is coming', async () => {
     await renderApp('/');
 
     expect(document.title).toBe('好奇星球');
@@ -47,8 +47,8 @@ describe('Home', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent?.replace(/\s+/g, '')).toBe(
       '我是小兔老师，今天也一起学习吧！',
     );
-    expect(screen.getByRole('heading', { level: 2, name: '孩子和书库很快就来' })).toBeTruthy();
-    expect(screen.getByText('以后在这里看到这个家庭的孩子和书。')).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 2, name: '书库很快就来' })).toBeTruthy();
+    expect(screen.getByText('以后在这里挑书，分派给孩子。')).toBeTruthy();
     await expectNoAxeViolations();
     await expectScreenshotsAtEverySize('home-signed-in');
   });

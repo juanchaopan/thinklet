@@ -5,11 +5,12 @@ import { Card } from '../../shared/ui/card';
 
 /**
  * The home page of a signed-in parent with a family (rules.md, 首页): the
- * rabbit teacher's welcome banner, then a card saying the family's children
- * and books are still to come. The cards rise one after another; the rabbit
- * waves from the banner's right edge, cut off at its waist by the banner's
- * bottom, and rises 120 ms after the banner. Each line of the greeting is
- * kept whole, so it never breaks in the middle of a phrase.
+ * rabbit teacher's welcome banner, then a card saying the book library is
+ * still to come, where books will be picked and given to the children. The
+ * cards rise one after another; the rabbit waves from the banner's right
+ * edge, cut off at its waist by the banner's bottom, and rises 120 ms after
+ * the banner. Each line of the greeting is kept whole, so it never breaks in
+ * the middle of a phrase.
  */
 @Component({
   selector: 'app-home',
@@ -41,8 +42,8 @@ import { Card } from '../../shared/ui/card';
         <div class="flex items-center gap-4">
           <img alt="" appArt="seedling" class="size-12" />
           <div class="min-w-0 flex-1">
-            <h2 class="text-lg font-black">孩子和书库很快就来</h2>
-            <p class="mt-1 text-sm text-ink-soft">以后在这里看到这个家庭的孩子和书。</p>
+            <h2 class="text-lg font-black">书库很快就来</h2>
+            <p class="mt-1 text-sm text-ink-soft">以后在这里挑书，分派给孩子。</p>
           </div>
         </div>
       </section>
