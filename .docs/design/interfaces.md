@@ -18,7 +18,7 @@
 | `Cross-Origin-Resource-Policy` | `same-origin`                                                                                                                                                                                                  |
 | `Permissions-Policy`           | `accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()`                                                                                                |
 
-- 脚本、图片、字体和接口请求都只能来自本站，页面不能被任何页面嵌入。
+- 脚本、图片、字体和接口请求都只能来自本站，页面不能被任何页面嵌入。封面图经过前端的 `/api/*` 转发取，也算本站。
 - 样式允许内联，因为 Angular 运行时会把组件样式插成页面里的 `<style>`。
 - `Permissions-Policy` 关掉平台现在用不到的设备能力。以后有功能要用其中一项时，由那个 issue 打开。只列 Chrome 认得的名字，不认得的会在控制台报错。
 - 跳到 Authing 和从 Authing 回来都是整页跳转，不受 CSP 限制；所以前端不用放开 Authing 的域名。
@@ -35,17 +35,18 @@
 | `Cross-Origin-Resource-Policy` | `same-origin`                                |
 | `Permissions-Policy`           | 和前端一样                                   |
 
-- 后端只返回 JSON 和登录用的跳转，不加载任何资源，CSP 什么都不允许。
+- 后端返回 JSON、登录用的跳转和封面图，本身不加载任何资源，CSP 什么都不允许。封面图由前端页面里的 `<img>` 显示，不受后端这条 CSP 的限制。
 - 经过前端转发的 `/api/*` 响应带后端自己的这一份，不带前端的。
 
 ## 通用约定
 
-- **登录状态**：`/api/health`、`/api/auth/*`、`/api/child-auth/*` 和 `/api/child-login-links/{token}` 下的接口不用登录。孩子的接口（`/api/child/*`）只认孩子 cookie 里身份种类是 `child` 的 JWT；其余接口只认家长 cookie 里身份种类是 `parent` 的 JWT。没登录、JWT 过期、签名不对或身份种类不对时返回 `401`，错误码 `unauthenticated`。
+- **登录状态**：`/api/health`、`/api/auth/*`、`/api/child-auth/*` 和 `/api/child-login-links/{token}` 下的接口不用登录。孩子的接口（`/api/child/*`）只认孩子 cookie 里身份种类是 `child` 的 JWT；取封面图（`/api/books/{bookId}/cover`）家长或孩子登录都行；其余接口只认家长 cookie 里身份种类是 `parent` 的 JWT。没登录、JWT 过期、签名不对或身份种类不对时返回 `401`，错误码 `unauthenticated`。
 - **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。不用登录的接口也一样。
 - **家庭内的接口**在 `/api/families/{familyId}/...` 下，先查当前家长是不是这个家庭的成员：不是成员或家庭不存在都返回 `404`，错误码 `family_not_found`。要管理员的接口，不是管理员时返回 `403`，错误码 `not_admin`。
-- **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请），或者家长查的登录链接不存在（包括不是这个孩子的链接）时返回 `404`，错误码 `not_found`。
+- **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请），或者家长查的登录链接不存在（包括不是这个孩子的链接），或者封面不存在时返回 `404`，错误码 `not_found`。
 - **出错的响应**：`{ "error": { "code": "<错误码>", "requestId": "<请求编号>" } }`。界面上的提示由前端按错误码显示；界面上的错误编号是 `requestId` 的前 8 位，写成“a1f3-92c0”的样子。
 - **请求格式不对**：`400`，错误码 `invalid_request`，另带出错的字段 `fields: [{ "path": "name", "code": "too_long" }]`。字段出错的 `code` 有四种：`required`（没填）、`too_short`（太短）、`too_long`（太长）、`invalid`（格式不对）。
+- **分批**：列表接口带 `cursor` 参数取下一批，响应里的 `nextCursor` 是下一批的游标，没有更多时是 `null`。游标是不透明的字符串，格式不对时返回 `400`，字段 `cursor` 的 `code` 是 `invalid`。
 - **意外的错**：`500`，错误码 `internal`，只带请求编号，不带错误详情。
 
 ## GET /api/health
@@ -120,7 +121,7 @@
 ```
 
 - `email` 没有时是 `null`。
-- `families` 按加入时间排列；`pendingRequests` 只在当前家长是这个家庭的管理员时带，是等待中的申请数。
+- `families` 按加入时间排列；`pendingRequests` 只在当前家长是这个家庭的管理员时带，是等待中的申请数。家庭切换按钮上的数是这些数的和，「家庭管理」上的数是当前家庭的。
 - `requestResults` 是自己发出的申请里已同意、被拒绝、已失效且还没点「知道了」的条数，用来显示「加入家庭」和头像上的红点。
 
 ### PATCH /api/me
@@ -195,14 +196,13 @@
 - `code` 不分大小写，后端转成大写再查。
 - 申请人只能看到、撤回和清掉自己的申请；别人的申请当作不存在。
 
-## 新成员（管理员）
+## 等你处理（管理员）
 
-| 接口                                                              | 成功                                         | 出错                                                    |
-| ----------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
-| `GET /api/families/{familyId}/join-requests`                      | `200 { "pending": [...], "handled": [...] }` | `403 not_admin`                                         |
-| `POST /api/families/{familyId}/join-requests/{requestId}/approve` | `200` 处理后的申请                           | `403 not_admin`、`404 not_found`、`409 request_closed`  |
-| `POST /api/families/{familyId}/join-requests/{requestId}/reject`  | `200` 处理后的申请                           | `403 not_admin`、`404 not_found`、`409 request_closed`  |
-| `POST /api/families/{familyId}/join-requests/{requestId}/dismiss` | `204`（管理员的「知道了」）                  | `403 not_admin`、`404 not_found`、`409 request_pending` |
+| 接口                                                              | 成功                       | 出错                                                   |
+| ----------------------------------------------------------------- | -------------------------- | ------------------------------------------------------ |
+| `GET /api/families/{familyId}/join-requests`                      | `200 { "pending": [...] }` | `403 not_admin`                                        |
+| `POST /api/families/{familyId}/join-requests/{requestId}/approve` | `200` 处理后的申请         | `403 not_admin`、`404 not_found`、`409 request_closed` |
+| `POST /api/families/{familyId}/join-requests/{requestId}/reject`  | `200` 处理后的申请         | `403 not_admin`、`404 not_found`、`409 request_closed` |
 
 ```json
 {
@@ -214,21 +214,11 @@
       "email": "chenxiao@example.com",
       "createdAt": "2026-11-21T09:12:00Z"
     }
-  ],
-  "handled": [
-    {
-      "id": "77b0…",
-      "parentId": "c3d9…",
-      "name": "林建国",
-      "email": "jianguo.lin@example.com",
-      "status": "approved",
-      "closedAt": "2026-11-18T10:03:00Z"
-    }
   ]
 }
 ```
 
-- `pending` 按发出时间从新到旧；`handled` 是已同意、已拒绝、已失效且管理员还没点「知道了」的，按处理时间从新到旧。撤回的不列出。
+- `pending` 是等待中的申请，按发出时间从新到旧。处理过的不列出。
 - `parentId` 是申请人的家长编号，用来算头像颜色。
 - 同意时，申请人在同一个事务里成为普通家长。
 
@@ -272,7 +262,73 @@
 - `url` 是 `<本站地址>/child/qr/<令牌>`，令牌只在这个响应里出现。生成链接时，这个孩子之前还没用过的链接在同一个事务里作废。
 - 链接的 `status` 是 `active`、`used`、`expired` 或 `revoked`。
 - 重设密码在同一个事务里清掉密码、删掉这个孩子全部记住的设备，并让之前签发的孩子 JWT 作废；还没用掉的登录链接照常有效。
-- 删除孩子时，记住的设备和登录链接一起删掉。
+- 删除孩子时，记住的设备、登录链接和分派给他的书一起删掉。
+
+## 书库和书本（家长）
+
+家庭的成员都能用，管理员和普通家长一样。
+
+| 接口                                                         | 请求                               | 成功                            | 出错                                                                                             |
+| ------------------------------------------------------------ | ---------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `GET /api/families/{familyId}/books`                         | 查询参数见下                       | `200 { "books", "nextCursor" }` | `400`、`404 child_not_found`                                                                     |
+| `GET /api/families/{familyId}/book-filters`                  | 查询参数 `grade`、`scope`、`child` | `200 { "grades", "subjects" }`  | `400`、`404 child_not_found`                                                                     |
+| `GET /api/families/{familyId}/books/{bookId}`                | —                                  | `200` 书本详情                  | `404 book_not_found`                                                                             |
+| `PUT /api/families/{familyId}/books/{bookId}/acquisition`    | —                                  | `200` 书本详情（获取）          | `404 book_not_found`、`409 book_inactive`                                                        |
+| `DELETE /api/families/{familyId}/books/{bookId}/acquisition` | —                                  | `204`（移除）                   | `404 book_not_found`、`409 book_in_use`                                                          |
+| `PUT /api/families/{familyId}/books/{bookId}/readers`        | `{ "childIds": ["3f9b…"] }`        | `200` 书本详情                  | `400`、`404 book_not_found`、`404 child_not_found`、`409 book_not_acquired`、`409 book_inactive` |
+
+`GET /api/families/{familyId}/books` 的查询参数：
+
+| 参数      | 说明                                                                                      |
+| --------- | ----------------------------------------------------------------------------------------- |
+| `grade`   | 年级编号，可以重复，比如 `grade=grade-1&grade=grade-2`；不带就是全部年级                  |
+| `subject` | 学科编号，可以重复；不带就是全部学科                                                      |
+| `scope`   | `library`（默认，全部上架的书）、`family`（家里获取的书）或 `child`（分派给一个孩子的书） |
+| `child`   | `scope` 是 `child` 时必填，孩子编号                                                       |
+| `cursor`  | 下一批的游标                                                                              |
+
+- 一批 12 本，按书加进书本表的时间从新到旧，相同时按书本编号。
+- 不存在的年级和学科编号不报错，不算进筛选。`child` 不是这个家庭的孩子时返回 `404 child_not_found`，前端把范围换回书库。
+- `book-filters` 的 `grades` 是全部年级，按表里定的顺序；`subjects` 是在给出的年级和范围下有书的学科，按表里的顺序。
+
+书本（列表里的一本）：
+
+```json
+{
+  "id": "carrot-counting-adventure",
+  "title": "胡萝卜数数大冒险",
+  "intro": "小兔要把 20 根胡萝卜分给朋友们……",
+  "grade": { "id": "grade-1", "name": "一年级" },
+  "subject": { "id": "math", "name": "数学" },
+  "status": "active",
+  "coverUrl": "/api/books/carrot-counting-adventure/cover?v=9f2c…",
+  "acquired": true,
+  "readers": [{ "childId": "3f9b…", "nickname": "小米" }]
+}
+```
+
+- `coverUrl` 没有封面时是 `null`，前端用默认封面。
+- `readers` 是在读这本书的孩子，按添加孩子的时间排；家里没获取时是 `[]`。
+
+书本详情：上面的内容，再加 `replacement`：
+
+```json
+{ "replacement": { "id": "carrot-counting-adventure", "title": "胡萝卜数数大冒险" } }
+```
+
+- `replacement` 只在这本书已下架、有替代的书、替代的书是上架的时候带，其余时候是 `null`。
+- 书本不存在，或者是这个家庭没获取的已下架的书，返回 `404 book_not_found`。
+- 获取：家里已经获取了也返回 `200`。书已下架时返回 `409 book_inactive`。
+- 移除：家里没获取时也返回 `204`。还有孩子在读时返回 `409 book_in_use`。
+- `readers` 接口把在读的孩子设成 `childIds`：新加的分派，去掉的撤回，在一个事务里做；已经是这样的不报错。家里没获取时返回 `409 book_not_acquired`。书已下架时只能去掉，加了新孩子返回 `409 book_inactive`。`childIds` 里有不是这个家庭的孩子时返回 `404 child_not_found`，什么都不改。
+
+## 封面
+
+### GET /api/books/{bookId}/cover
+
+- 家长或孩子登录后才能取。参数 `v` 是封面的 SHA-256，和书本表里的不一样，或者这本书没有封面时返回 `404 not_found`。
+- 成功返回 `200` 和封面图本身，`Content-Type` 是 `image/webp` 或 `image/png`，`Cache-Control: private, max-age=31536000, immutable`。
+- 后端从对象存储的 `books/<书本编号>/cover.<格式>` 读出原样返回。
 
 ## 孩子登录
 
@@ -309,6 +365,30 @@
 
 - 孩子的每个请求都查这个孩子还在不在、JWT 是不是在最后一次重设密码之后签发的；不是就返回 `401 unauthenticated`。
 
+### GET /api/child/books
+
+分派给这个孩子的书，按分派的时间从新到旧，一次全部返回：
+
+```json
+{
+  "books": [
+    {
+      "id": "carrot-counting-adventure",
+      "title": "胡萝卜数数大冒险",
+      "intro": "小兔要把 20 根胡萝卜分给朋友们……",
+      "grade": { "id": "grade-1", "name": "一年级" },
+      "subject": { "id": "math", "name": "数学" },
+      "status": "active",
+      "coverUrl": "/api/books/carrot-counting-adventure/cover?v=9f2c…",
+      "isNew": true
+    }
+  ],
+  "newCount": 1
+}
+```
+
+- `isNew` 是孩子还没打开过这本书；`newCount` 是这些书的本数。
+
 ## 错误码和界面上的提示
 
 | 错误码                                     | 界面上的提示                                                                                                                             |
@@ -318,13 +398,17 @@
 | `already_member`                           | 你已经是这个家庭的成员                                                                                                                   |
 | `request_pending`                          | 查码或发申请时：你已经申请过了，等管理员处理；点「知道了」时：出了点问题，请稍后再试（界面上等待中的申请没有「知道了」，正常用不会碰到） |
 | `request_closed`                           | 管理员处理时：这个申请已经失效了；申请人撤回时：这个申请已经处理过了                                                                     |
-| `not_found`                                | 这个申请已经不在了，刷新列表；查登录二维码的状态时：二维码显示已失效                                                                     |
+| `not_found`                                | 这个申请已经不在了，刷新列表；查登录二维码的状态时：二维码显示已失效；取封面时：显示默认封面                                             |
 | `admin_cannot_leave`                       | 先把管理员设给别人才能离开                                                                                                               |
 | `not_admin`                                | 你已不是管理员                                                                                                                           |
 | `not_a_member`                             | 这位家长已经不在家庭里了                                                                                                                 |
 | `family_not_found`                         | 找不到这个家庭（整页）                                                                                                                   |
 | `account_taken`                            | 家里已经有孩子用这个账号了（账号框下面）                                                                                                 |
-| `child_not_found`                          | 这个孩子已经被删除了，刷新列表；查登录二维码的状态时：二维码显示已失效                                                                   |
+| `child_not_found`                          | 这个孩子已经被删除了，刷新列表或这本书；查登录二维码的状态时：二维码显示已失效；书库按孩子筛选时：范围换回书库，不提示                   |
+| `book_not_found`                           | 书本页：找不到这本书（整页）；书库里操作时：刷新书库，不提示                                                                             |
+| `book_in_use`                              | 还有孩子在读这本书，先在「谁能读」里取消                                                                                                 |
+| `book_not_acquired`                        | 这本书已经不在我家的书里了                                                                                                               |
+| `book_inactive`                            | 这本书已下架                                                                                                                             |
 | `login_failed`                             | 家庭码、账号或密码不对                                                                                                                   |
 | `remember_invalid`                         | 这台设备需要重新输入密码，打开填好家庭码和账号的表单                                                                                     |
 | `link_invalid`                             | 这个二维码已经失效了（整页）                                                                                                             |
@@ -334,4 +418,6 @@
 | `internal`、没有回应                       | 出了点问题，请稍后再试                                                                                                                   |
 | `invalid_request`                          | 按出错的字段显示 `rules.md` 里那个字段的提示                                                                                             |
 
-Last changed: #8 (2026-11-22)
+- `book_in_use`、`book_not_acquired`、`book_inactive` 都显示在顶部提示条里，然后刷新这本书。
+
+Last changed: #9 (2026-11-23)
