@@ -1,6 +1,7 @@
 import { Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase, type NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { Pool } from 'pg';
 import type { Environment } from '../config/environment.js';
 import { describeError } from '../logging/describe-error.js';
@@ -11,6 +12,9 @@ export const DATABASE = Symbol('DATABASE');
 
 /** Drizzle over the pool; `$client` is the pg pool itself, for driver options Drizzle does not pass on. */
 export type Database = NodePgDatabase<typeof schema> & { $client: Pool };
+
+/** The pool or a transaction on it: both run the same queries, so a repository's queries take either. */
+export type Executor = PgDatabase<NodePgQueryResultHKT, typeof schema>;
 
 /**
  * How long a query may wait for a connection, whether a new one or a free

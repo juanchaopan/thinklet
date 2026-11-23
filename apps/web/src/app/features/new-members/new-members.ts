@@ -51,7 +51,7 @@ const RESULTS: Record<HandledJoinRequest['status'], { label: string; tone: ChipT
                   class="flex flex-wrap items-center gap-3 overflow-hidden py-4 first:pt-0 last:pb-0"
                   [class.animate-slide-away]="store.isLeaving('pending', request.id)"
                 >
-                  <app-avatar [name]="request.name" [parentId]="request.parentId" size="list" />
+                  <app-avatar [name]="request.name" [personId]="request.parentId" size="list" />
                   <div class="min-w-0 flex-1">
                     <p [id]="nameId('pending', request.id)" class="font-bold">{{ request.name }}</p>
                     <p class="truncate text-sm text-ink-soft">
@@ -102,7 +102,7 @@ const RESULTS: Record<HandledJoinRequest['status'], { label: string; tone: ChipT
                 >
                   <app-avatar
                     [name]="request.name"
-                    [parentId]="request.parentId"
+                    [personId]="request.parentId"
                     size="large"
                     class="opacity-80"
                   />

@@ -5,6 +5,7 @@ import { settleAnimations } from '../../../testing/animations';
 import { renderApp } from '../../../testing/app';
 import { holdOverlaysAt } from '../../../testing/families';
 import { renderFamilyPage } from '../../../testing/family-page';
+import { closeMenu } from '../../../testing/menus';
 import { LINYUE_FAMILY_ID, stubSignedIn } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
@@ -13,23 +14,6 @@ const OPEN = 1000;
 
 /** A family that is not one of 林悦's. */
 const STRANGE_FAMILY_ID = 'f0f0f0f0-0000-4000-8000-000000000000';
-
-/**
- * Closes the menu as Escape does. The key is sent to the menu itself, since
- * a menu held at the start of its opening is out of sight and cannot be
- * clicked; and a key sent this way leaves the page in mouse mode, so the
- * menu opened next shows no keyboard focus ring.
- */
-async function closeMenu(): Promise<void> {
-  const menu = screen.queryByRole('menu');
-  if (!menu) {
-    return;
-  }
-  menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  await vi.waitFor(() => {
-    expect(screen.queryAllByRole('menu')).toHaveLength(0);
-  });
-}
 
 async function openMenu(): Promise<void> {
   await userEvent.click(screen.getByRole('button', { name: '林悦的家 切换家庭' }));

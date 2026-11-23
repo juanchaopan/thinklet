@@ -228,9 +228,15 @@ export function stubError(
   worker.use(http[method](path, () => HttpResponse.json(errorBody(code, extra), { status })));
 }
 
-/** Stubs `/api/me` as 401: nobody is signed in. */
+/** Stubs `/api/child/me` as 401: no child is signed in on this browser. */
+export function stubNoChild(): void {
+  stubError('get /api/child/me', 401, 'unauthenticated');
+}
+
+/** Stubs `/api/me` and `/api/child/me` as 401: nobody is signed in, neither a parent nor a child. */
 export function stubVisitor(): void {
   stubError('get /api/me', 401, 'unauthenticated');
+  stubNoChild();
 }
 
 /** Stubs `GET /api/join-requests` with the parent's own requests. */

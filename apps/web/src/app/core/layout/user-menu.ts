@@ -37,7 +37,7 @@ import { PARENT_PAGES } from './parent-pages';
         [class]="markCurrent() && onOwnPage() ? 'bg-tint' : 'hover:bg-surface/70'"
         (click)="open.set(true)"
       >
-        <app-avatar [name]="me.name" [parentId]="me.id" />
+        <app-avatar [name]="me.name" [personId]="me.id" />
         <span class="sr-only text-sm font-bold lg:not-sr-only">{{ me.name }}</span><span
           class="sr-only"
           >的菜单</span
@@ -59,7 +59,7 @@ import { PARENT_PAGES } from './parent-pages';
         (dismissed)="open.set(false)"
       >
         <div aria-hidden="true" class="flex items-center gap-3 px-3 py-3">
-          <app-avatar [name]="me.name" [parentId]="me.id" size="large" />
+          <app-avatar [name]="me.name" [personId]="me.id" size="large" />
           <p class="font-bold">{{ me.name }}</p>
         </div>
         <div role="separator" class="my-1 border-t border-line"></div>

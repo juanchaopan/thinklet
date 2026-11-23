@@ -3,19 +3,44 @@ import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../testing/accessibility';
 import { renderApp } from '../testing/app';
+import {
+  expectChildHome,
+  fillLoginForm,
+  stubChildSignedIn,
+  stubRemembered,
+} from '../testing/child-login';
 import { worker } from '../testing/network';
 import {
   ERROR_NUMBER,
+  LINYUE_FAMILY_ID,
   LINYUE_WITHOUT_FAMILY,
   stubError,
+  stubNoChild,
   stubSignedIn,
   stubVisitor,
 } from '../testing/sample-data';
+
+/** Opens the child login on a device that remembers no child, and expects it as it is. */
+async function openChildLogin(): Promise<void> {
+  stubRemembered();
+  const { router } = await renderApp('/child');
+
+  expect(router.url).toBe('/child');
+  expect(screen.getByRole('heading', { level: 1, name: '孩子登录' })).toBeTruthy();
+  expect(screen.queryByRole('navigation')).toBeNull();
+}
 
 describe('App', () => {
   describe('for a visitor', () => {
     beforeEach(() => {
       stubVisitor();
+    });
+
+    it('shows the product home at /', async () => {
+      const { router } = await renderApp('/');
+
+      expect(router.url).toBe('/');
+      expect(screen.getByRole('link', { name: '家长登录 / 注册' })).toBeTruthy();
     });
 
     it.each(['/profile', '/start', '/join'])(
@@ -32,10 +57,7 @@ describe('App', () => {
     );
 
     it('opens the child login without a login', async () => {
-      const { router } = await renderApp('/child');
-
-      expect(router.url).toBe('/child');
-      expect(screen.getByRole('heading', { level: 1, name: '孩子登录' })).toBeTruthy();
+      await openChildLogin();
     });
 
     it('sends an unknown address to the product home', async () => {
@@ -43,6 +65,33 @@ describe('App', () => {
 
       expect(router.url).toBe('/');
     });
+  });
+
+  describe('for a signed-in child alone', () => {
+    beforeEach(() => {
+      stubVisitor();
+      stubChildSignedIn();
+    });
+
+    it("shows the child's home page at /, titled with the product name", async () => {
+      const { router } = await renderApp('/');
+
+      expect(router.url).toBe('/');
+      expect(document.title).toBe('好奇星球');
+      await expectChildHome('小明');
+      expect(screen.queryByRole('link', { name: '家长登录 / 注册' })).toBeNull();
+    });
+
+    it.each(['/profile', `/families/${LINYUE_FAMILY_ID}`])(
+      "sends a parent's page %s to /, the child's home page",
+      async (path) => {
+        const { router } = await renderApp(path);
+
+        expect(router.url).toBe(`/?returnTo=${encodeURIComponent(path)}`);
+        await expectChildHome('小明');
+        expect(screen.queryByRole('navigation')).toBeNull();
+      },
+    );
   });
 
   describe('for a signed-in parent', () => {
@@ -56,13 +105,35 @@ describe('App', () => {
       await expectNoAxeViolations();
     });
 
+    it('shows the home page at / when a child is signed in on the same browser too', async () => {
+      stubSignedIn();
+      stubChildSignedIn();
+      await renderApp('/');
+
+      expect(screen.getByText('欢迎回来，林悦')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '退出' })).toBeNull();
+    });
+
     it('shows the child login as it is, without the menus', async () => {
       stubSignedIn();
-      const { router } = await renderApp('/child');
+      stubNoChild();
+      await openChildLogin();
+    });
 
+    it('stays signed in when a child login is turned down on the same browser', async () => {
+      stubSignedIn();
+      stubNoChild();
+      stubRemembered();
+      const { router, fixture } = await renderApp('/');
+      await router.navigateByUrl('/child');
+      await fixture.whenStable();
+      stubError('post /api/child-auth/login', 401, 'login_failed');
+
+      await fillLoginForm();
+      await userEvent.click(screen.getByRole('button', { name: '登录' }));
+
+      expect(await screen.findByText('家庭码、账号或密码不对')).toBeTruthy();
       expect(router.url).toBe('/child');
-      expect(screen.getByRole('heading', { level: 1, name: '孩子登录' })).toBeTruthy();
-      expect(screen.queryByRole('navigation')).toBeNull();
     });
 
     it('sends a parent with a family from the start page to the home page', async () => {
@@ -103,6 +174,7 @@ describe('App', () => {
       stubSignedIn();
       const { router, fixture } = await renderApp('/');
       stubError('get /api/me', 401, 'unauthenticated');
+      stubNoChild();
 
       await router.navigateByUrl('/profile');
       await fixture.whenStable();

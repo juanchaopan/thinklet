@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { errorResponseSchema, toFieldErrors } from './errors.js';
+import { setChildPasswordRequestSchema } from './child-auth.js';
+import { errorCodeSchema, errorResponseSchema, toFieldErrors } from './errors.js';
 import { createFamilyRequestSchema } from './families.js';
 import { updateMeRequestSchema } from './me.js';
 
 /** The field errors a request body is rejected with. */
 function fieldErrorsOf(
-  schema: typeof updateMeRequestSchema | typeof createFamilyRequestSchema,
+  schema:
+    | typeof updateMeRequestSchema
+    | typeof createFamilyRequestSchema
+    | typeof setChildPasswordRequestSchema,
   body: unknown,
 ) {
   const result = schema.safeParse(body);
@@ -29,6 +33,12 @@ describe('toFieldErrors', () => {
     ]);
   });
 
+  it('reports a value that is too short', () => {
+    expect(
+      fieldErrorsOf(setChildPasswordRequestSchema, { password: '12345', remember: true }),
+    ).toEqual([{ path: 'password', code: 'too_short' }]);
+  });
+
   it('lists every rejected field', () => {
     expect(fieldErrorsOf(createFamilyRequestSchema, { name: '', timezone: 'Mars/Phobos' })).toEqual(
       [
@@ -46,6 +56,23 @@ describe('toFieldErrors', () => {
   });
 });
 
+describe('errorCodeSchema', () => {
+  it('has the codes of child accounts and child login', () => {
+    for (const code of [
+      'account_taken',
+      'child_not_found',
+      'login_failed',
+      'remember_invalid',
+      'link_invalid',
+      'wrong_password',
+      'password_already_set',
+      'password_not_set',
+    ]) {
+      expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
+    }
+  });
+});
+
 describe('errorResponseSchema', () => {
   it('accepts an error with its request id', () => {
     const body = { error: { code: 'family_not_found', requestId: 'req-1' } };
@@ -58,7 +85,10 @@ describe('errorResponseSchema', () => {
       error: {
         code: 'invalid_request',
         requestId: 'req-2',
-        fields: [{ path: 'name', code: 'too_long' }],
+        fields: [
+          { path: 'name', code: 'too_long' },
+          { path: 'password', code: 'too_short' },
+        ],
       },
     };
 

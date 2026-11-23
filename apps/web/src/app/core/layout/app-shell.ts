@@ -35,9 +35,10 @@ interface NavItem {
 
 /**
  * The frame of the signed-in pages (look.md, 布局). The navigation has two
- * parts: the current family's pages (首页, 家庭管理, and 新成员 for the
- * family's admin) under the family switcher, and the parent's own pages
- * (加入家庭, 个人设置) under the parent's avatar and name.
+ * parts: the current family's pages (首页, 孩子 and 家庭管理 for every parent
+ * of the family, and 新成员 for its admin) under the family switcher, and
+ * the parent's own pages (加入家庭, 个人设置) under the parent's avatar and
+ * name.
  *
  * From 1024 px a 256 px sidebar holds the logo mark, the family switcher,
  * the family's pages and, under a line, the parent's group; there is no bar
@@ -99,7 +100,7 @@ interface NavItem {
           @if (session.me(); as me) {
             <nav [attr.aria-label]="me.name" class="flex flex-col gap-1 border-t border-line pt-5">
               <div class="flex min-h-12 items-center gap-3 px-3">
-                <app-avatar [name]="me.name" [parentId]="me.id" size="small" />
+                <app-avatar [name]="me.name" [personId]="me.id" size="small" />
                 <span class="font-bold">{{ me.name }}</span>
               </div>
               @for (page of parentPages; track page.link) {
@@ -205,6 +206,7 @@ export class AppShell {
     const familyPage = `/families/${family.id}`;
     return [
       { label: '首页', icon: 'home', link: '/' },
+      { label: '孩子', icon: 'child', link: `${familyPage}/children` },
       { label: '家庭管理', icon: 'settings', link: familyPage },
       ...(family.role === 'admin'
         ? [

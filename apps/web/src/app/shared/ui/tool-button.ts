@@ -4,9 +4,11 @@ import { PRESS } from './button';
 /**
  * A 44×44 outlined round button holding one of the line icons in the
  * primary colour, such as copying the family code. Screen readers announce
- * `label` as its name; with a mouse the same words show as a tooltip under
- * it while it is hovered or has the keyboard focus. Touch screens have no
- * tooltip. The owner listens to the click on the element.
+ * `label` as its name, and the element with the id `describedBy`, such as
+ * the name of the row the button is in, as its description; with a mouse the
+ * label shows as a tooltip under it while it is hovered or has the keyboard
+ * focus. Touch screens have no tooltip. The owner listens to the click on
+ * the element.
  *
  *   <app-tool-button label="复制家庭码" (click)="copy()"><app-line-icon name="copy" /></app-tool-button>
  */
@@ -17,6 +19,7 @@ import { PRESS } from './button';
     <button
       type="button"
       [attr.aria-label]="label()"
+      [attr.aria-describedby]="describedBy()"
       class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-primary hover:bg-canvas {{
         press
       }}"
@@ -33,6 +36,7 @@ import { PRESS } from './button';
 })
 export class ToolButton {
   readonly label = input.required<string>();
+  readonly describedBy = input<string | null>(null);
 
   protected readonly press = PRESS;
 }

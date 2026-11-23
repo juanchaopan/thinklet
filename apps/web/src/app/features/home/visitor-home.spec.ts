@@ -2,6 +2,7 @@ import { screen } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
+import { stubRemembered } from '../../../testing/child-login';
 import { emulateReducedMotion, nextFrames } from '../../../testing/pointer';
 import { stubVisitor } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
@@ -45,6 +46,7 @@ describe('VisitorHome', () => {
   });
 
   it('opens the child login', async () => {
+    stubRemembered();
     const { router, fixture } = await renderApp('/');
 
     await userEvent.click(screen.getByRole('link', { name: '孩子登录' }));

@@ -1,10 +1,11 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate as migrateFolder } from 'drizzle-orm/node-postgres/migrator';
 import { Client } from 'pg';
-import { apiDirectory } from './containers.js';
+import { apiDirectory, startDatabase } from './containers.js';
 
 const migrationsDirectory = join(apiDirectory, 'drizzle');
 
@@ -57,5 +58,32 @@ export async function migrateBefore(databaseUrl: string, tag: string): Promise<v
     }
   } finally {
     rmSync(folder, { recursive: true, force: true });
+  }
+}
+
+export interface DatabaseBefore {
+  database: StartedPostgreSqlContainer;
+  /** The connection URL, for `drizzle-kit migrate`. */
+  url: string;
+  /** A client connected to the database, for the test's own SQL. */
+  client: Client;
+}
+
+/**
+ * Starts a throwaway database at the version just before the migration
+ * with the given tag, with a client connected to it, so a test can write
+ * data in the earlier format before it migrates.
+ */
+export async function startDatabaseBefore(tag: string): Promise<DatabaseBefore> {
+  const database = await startDatabase();
+  try {
+    const url = database.getConnectionUri();
+    await migrateBefore(url, tag);
+    const client = new Client({ connectionString: url });
+    await client.connect();
+    return { database, url, client };
+  } catch (error) {
+    await database.stop();
+    throw error;
   }
 }

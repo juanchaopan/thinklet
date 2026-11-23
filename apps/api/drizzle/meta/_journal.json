@@ -8,6 +8,13 @@
       "when": 1795291917480,
       "tag": "0000_parents_and_families",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795387640715,
+      "tag": "0001_children_and_logins",
+      "breakpoints": true
     }
   ]
 }

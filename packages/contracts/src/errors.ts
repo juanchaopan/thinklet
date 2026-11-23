@@ -6,18 +6,28 @@ import { fieldErrorCodeSchema, type FieldErrorCode } from './fields.js';
 export const errorCodeSchema = z.enum([
   // 400: the request body, query or path did not pass its schema; `fields` says which.
   'invalid_request',
-  // 401: not signed in, or the JWT has expired or its signature is wrong.
+  // 401: not signed in, or the JWT has expired, its signature is wrong or it is of the other kind.
   'unauthenticated',
+  // 401: the family code, the account or the password of a child login is wrong, or the child has no password yet.
+  'login_failed',
+  // 401: the browser no longer remembers the child: revoked, expired or never there.
+  'remember_invalid',
+  // 401: the password entered on a login link is not the child's.
+  'wrong_password',
   // 403: a request that changes data came without this site's Origin.
   'bad_origin',
   // 403: the action needs the family's admin.
   'not_admin',
   // 404: the family does not exist or the parent is not one of its members.
   'family_not_found',
-  // 404: nothing at this address, or a join request that is not the parent's own.
+  // 404: nothing at this address, a join request that is not the parent's own, or a login link that is not the child's.
   'not_found',
   // 404: no family has this code.
   'code_not_found',
+  // 404: the family has no such child, or the child has been deleted.
+  'child_not_found',
+  // 404: the login link has expired, been used or revoked, does not exist, or its child has been deleted.
+  'link_invalid',
   // 409: the parent is already a member of the family.
   'already_member',
   // 409: the parent already has a pending request to the family, or the request is still pending.
@@ -28,6 +38,12 @@ export const errorCodeSchema = z.enum([
   'admin_cannot_leave',
   // 409: the parent is no longer a member of the family.
   'not_a_member',
+  // 409: another child of the family has this account.
+  'account_taken',
+  // 409: the child of the login link has a password already, so it is entered, not set.
+  'password_already_set',
+  // 409: the child of the login link has no password yet, so it is set, not entered.
+  'password_not_set',
   // 500: anything unexpected; the response carries only the request id.
   'internal',
 ]);

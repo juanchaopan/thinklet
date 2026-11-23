@@ -22,9 +22,18 @@ const ALGORITHM = 'ES256';
 const SESSION_TYPE = 'JWT';
 const LOGIN_TRANSACTION_TYPE = 'thinklet-login+jwt';
 
-/** A session JWT carries the parent's id and its issue and expiry times, nothing else. */
+/** Who a session JWT signs in: a parent or a child (decision 0033). */
+const IDENTITY_KINDS = ['parent', 'child'] as const;
+export type IdentityKind = (typeof IDENTITY_KINDS)[number];
+
+/**
+ * A session JWT carries the id of the parent or child, the kind of identity,
+ * and its issue and expiry times, nothing else. A token without the kind,
+ * or with any other kind, is not a session.
+ */
 const sessionClaimsSchema = z.strictObject({
   sub: z.uuid(),
+  kind: z.enum(IDENTITY_KINDS),
   iat: z.int(),
   exp: z.int(),
 });
@@ -39,9 +48,12 @@ const loginTransactionSchema = z.object({
 /** What a login under way keeps until the identity provider sends the parent back. */
 export type LoginTransaction = z.infer<typeof loginTransactionSchema>;
 
-/** A verified login: the signed-in parent and when the login expires. */
+/** A verified login of the kind asked for. */
 export interface Session {
-  parentId: string;
+  /** The id of the signed-in parent or child. */
+  id: string;
+  /** When the JWT was issued, in whole seconds, as the JWT carries it. */
+  issuedAt: Date;
   expiresAt: Date;
 }
 
@@ -49,10 +61,11 @@ const toSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
 
 /**
  * Signs and verifies the api's own tokens with the ES256 key in
- * JWT_SIGNING_KEY: the session JWT of a signed-in parent and the token of a
- * login under way. Both carry the key's `kid`, so the key can be rotated; a
- * token signed by any other key, with another algorithm (including `none`),
- * of the other kind, or past its expiry is not valid.
+ * JWT_SIGNING_KEY: the session JWT of a signed-in parent or child and the
+ * token of a parent's login under way. All carry the key's `kid`, so the
+ * key can be rotated; a token signed by any other key, with another
+ * algorithm (including `none`), of another type, of another identity kind,
+ * or past its expiry is not valid.
  */
 @Injectable()
 export class SessionTokensService {
@@ -67,18 +80,29 @@ export class SessionTokensService {
     this.keyId = jwk.kid;
   }
 
-  /** A new session JWT for the parent, valid for 7 days from `now`. */
-  issueSession(parentId: string, now = new Date()): Promise<string> {
-    return this.sign({ sub: parentId }, SESSION_TYPE, SESSION_LIFETIME_SECONDS, now);
+  /** A new session JWT for the parent or child, valid for 7 days from `now`. */
+  issueSession(kind: IdentityKind, id: string, now = new Date()): Promise<string> {
+    return this.sign({ sub: id, kind }, SESSION_TYPE, SESSION_LIFETIME_SECONDS, now);
   }
 
-  /** The login of a session JWT, or undefined when it is missing or not valid at `now`. */
-  async verifySession(token: string | undefined, now = new Date()): Promise<Session | undefined> {
+  /**
+   * The login of a session JWT of the given kind, or undefined when it is
+   * missing, not valid at `now`, or signs in another kind of identity.
+   */
+  async verifySession(
+    token: string | undefined,
+    kind: IdentityKind,
+    now = new Date(),
+  ): Promise<Session | undefined> {
     const claims = sessionClaimsSchema.safeParse(await this.verify(token, SESSION_TYPE, now));
-    if (!claims.success) {
+    if (!claims.success || claims.data.kind !== kind) {
       return undefined;
     }
-    return { parentId: claims.data.sub, expiresAt: new Date(claims.data.exp * 1000) };
+    return {
+      id: claims.data.sub,
+      issuedAt: new Date(claims.data.iat * 1000),
+      expiresAt: new Date(claims.data.exp * 1000),
+    };
   }
 
   /** A token holding a login under way, valid for 10 minutes from `now`. */

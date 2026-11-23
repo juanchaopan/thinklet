@@ -27,8 +27,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // provider and comes back to the page they wanted; the first login creates
 // the parent with the provider's name or the email's local part, else 家长;
 // every login updates the email and the consent; the login lasts 7 days and
-// is renewed with less than 3.5 days left; logging out clears the login and
-// leaves through the provider's logout, and a logout that fails keeps it.
+// is renewed with less than 3.5 days left; logging out clears the parent's
+// login, leaves a child signed in on the same browser alone and leaves
+// through the provider's logout, and a logout that fails keeps the login.
 describe('login', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -89,6 +90,7 @@ describe('login', () => {
         expect(set[name]?.attributes['max-age']).toBe(String(SEVEN_DAYS));
       }
       expectCleared(set['thinklet_login']);
+      expect(set['thinklet_child_session']).toBeUndefined();
 
       const parent = await parentOf(user.subject);
       expect(parent).toMatchObject({
@@ -99,8 +101,9 @@ describe('login', () => {
       expect(parent?.consented_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
 
       const session = decodeJwt(cookies.thinklet_session);
-      expect(Object.keys(session).sort()).toEqual(['exp', 'iat', 'sub']);
+      expect(Object.keys(session).sort()).toEqual(['exp', 'iat', 'kind', 'sub']);
       expect(session.sub).toBe(parent?.id);
+      expect(session['kind']).toBe('parent');
       expect((session.exp ?? 0) - (session.iat ?? 0)).toBe(SEVEN_DAYS);
       expect(decodeProtectedHeader(cookies.thinklet_session)).toMatchObject({
         alg: 'ES256',
@@ -279,7 +282,11 @@ describe('login', () => {
       const user = newUser();
       await signIn(app.getHttpServer(), user);
       const parentId = (await parentOf(user.subject))?.id ?? '';
-      const session = await tokens.issueSession(parentId, new Date(Date.now() - days * DAY_MS));
+      const session = await tokens.issueSession(
+        'parent',
+        parentId,
+        new Date(Date.now() - days * DAY_MS),
+      );
       const cookies: Record<string, string> = { thinklet_session: session };
       if (idToken !== undefined) {
         cookies['thinklet_id_token'] = idToken;
@@ -287,7 +294,7 @@ describe('login', () => {
       return request(app.getHttpServer()).get('/api/me').set('Cookie', cookieHeader(cookies));
     }
 
-    it('renews a login with less than 3.5 days left for 7 days, with the ID token', async () => {
+    it('renews a login with less than 3.5 days left for 7 days as a parent login, with the ID token', async () => {
       const response = await meWithSessionIssuedDaysAgo(4, 'id-token-1');
 
       expect(response.status).toBe(200);
@@ -296,6 +303,7 @@ describe('login', () => {
       expect(set['thinklet_session']?.attributes['max-age']).toBe(String(SEVEN_DAYS));
       const renewed = decodeJwt(set['thinklet_session']?.value ?? '');
       expect((renewed.exp ?? 0) * 1000).toBeGreaterThan(Date.now() + 6.9 * DAY_MS);
+      expect(renewed['kind']).toBe('parent');
       expectLoginCookieAttributes(set['thinklet_id_token']);
       expect(set['thinklet_id_token']).toMatchObject({
         value: 'id-token-1',
@@ -318,13 +326,16 @@ describe('login', () => {
   });
 
   describe('POST /api/auth/logout', () => {
-    it('clears both cookies and returns the logout address with the ID token', async () => {
-      const { cookies } = await signIn(app.getHttpServer(), newUser());
-
-      const response = await request(app.getHttpServer())
+    const logout = (cookies: Record<string, string>) =>
+      request(app.getHttpServer())
         .post('/api/auth/logout')
         .set('Origin', TEST_APP_ORIGIN)
         .set('Cookie', cookieHeader(cookies));
+
+    it('clears both cookies and returns the logout address with the ID token', async () => {
+      const { cookies } = await signIn(app.getHttpServer(), newUser());
+
+      const response = await logout(cookies);
 
       expect(response.status).toBe(200);
       const url = new URL(logoutResponseSchema.parse(response.body).endSessionUrl);
@@ -337,6 +348,18 @@ describe('login', () => {
       const set = setCookiesOf(response);
       expectCleared(set['thinklet_session']);
       expectCleared(set['thinklet_id_token']);
+    });
+
+    it('leaves a child signed in on the same browser alone', async () => {
+      const { cookies } = await signIn(app.getHttpServer(), newUser());
+      const childSession = await testSessionTokens().issueSession('child', crypto.randomUUID());
+
+      const response = await logout({ ...cookies, thinklet_child_session: childSession });
+
+      expect(response.status).toBe(200);
+      const set = setCookiesOf(response);
+      expect(Object.keys(set).sort()).toEqual(['thinklet_id_token', 'thinklet_session']);
+      expect(set['thinklet_child_session']).toBeUndefined();
     });
 
     it('works without a login, without the hint', async () => {
@@ -352,12 +375,9 @@ describe('login', () => {
 
     it('leaves the browser without a usable login', async () => {
       const { cookies } = await signIn(app.getHttpServer(), newUser());
-      const logout = await request(app.getHttpServer())
-        .post('/api/auth/logout')
-        .set('Origin', TEST_APP_ORIGIN)
-        .set('Cookie', cookieHeader(cookies));
+      const loggedOut = await logout(cookies);
       const left = Object.fromEntries(
-        Object.entries(setCookiesOf(logout)).map(([name, cookie]) => [name, cookie.value]),
+        Object.entries(setCookiesOf(loggedOut)).map(([name, cookie]) => [name, cookie.value]),
       );
 
       const response = await request(app.getHttpServer())
@@ -413,7 +433,11 @@ describe('logout when the identity provider cannot be reached', () => {
   });
 
   it('answers 500 internal and keeps both login cookies', async () => {
-    const session = await testSessionTokens().issueSession(crypto.randomUUID(), new Date());
+    const session = await testSessionTokens().issueSession(
+      'parent',
+      crypto.randomUUID(),
+      new Date(),
+    );
 
     const response = await request(app.getHttpServer())
       .post('/api/auth/logout')

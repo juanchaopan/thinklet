@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
 import {
   FAMILY_CODE_ALPHABET,
+  booleanFieldSchema,
   characterCount,
+  childAccountSchema,
+  childNicknameSchema,
+  childPasswordSchema,
   familyCodeSchema,
   familyNameSchema,
   idSchema,
   isTimeZone,
+  newChildPasswordSchema,
   parentNameSchema,
   timeZoneSchema,
   truncateCharacters,
@@ -16,6 +21,12 @@ import {
 function outcome(schema: z.ZodType, value: unknown) {
   const result = schema.safeParse(value);
   return result.success ? { value: result.data } : { error: result.error.issues[0]?.message };
+}
+
+/** Every field error code the value is rejected with; empty when it is accepted. */
+function errorCodes(schema: z.ZodType, value: unknown) {
+  const result = schema.safeParse(value);
+  return result.success ? [] : result.error.issues.map((issue) => issue.message);
 }
 
 describe('characterCount', () => {
@@ -72,6 +83,137 @@ describe.each([
     expect(outcome(schema, undefined)).toEqual({ error: 'required' });
     expect(outcome(schema, 5)).toEqual({ error: 'invalid' });
     expect(outcome(schema, null)).toEqual({ error: 'invalid' });
+  });
+});
+
+describe('childNicknameSchema', () => {
+  it('accepts 1 and 10 characters of any kind', () => {
+    expect(outcome(childNicknameSchema, '米')).toEqual({ value: '米' });
+    expect(outcome(childNicknameSchema, '米'.repeat(10))).toEqual({ value: '米'.repeat(10) });
+    expect(outcome(childNicknameSchema, 'Mi 小米 ✨')).toEqual({ value: 'Mi 小米 ✨' });
+  });
+
+  it('rejects 11 characters as too long', () => {
+    expect(outcome(childNicknameSchema, '米'.repeat(11))).toEqual({ error: 'too_long' });
+  });
+
+  it('counts an emoji as one character', () => {
+    expect(outcome(childNicknameSchema, '😀'.repeat(10))).toEqual({ value: '😀'.repeat(10) });
+    expect(outcome(childNicknameSchema, '😀'.repeat(11))).toEqual({ error: 'too_long' });
+    expect(outcome(childNicknameSchema, '👨‍👩‍👧'.repeat(10))).toEqual({ value: '👨‍👩‍👧'.repeat(10) });
+    expect(outcome(childNicknameSchema, '👨‍👩‍👧'.repeat(11))).toEqual({ error: 'too_long' });
+  });
+
+  it('trims the nickname before counting', () => {
+    expect(outcome(childNicknameSchema, `  ${'米'.repeat(10)}  `)).toEqual({
+      value: '米'.repeat(10),
+    });
+  });
+
+  it('rejects an empty, blank or missing nickname as required and a non-string as invalid', () => {
+    expect(outcome(childNicknameSchema, '')).toEqual({ error: 'required' });
+    expect(outcome(childNicknameSchema, ' \t　 ')).toEqual({ error: 'required' });
+    expect(outcome(childNicknameSchema, undefined)).toEqual({ error: 'required' });
+    expect(outcome(childNicknameSchema, 7)).toEqual({ error: 'invalid' });
+  });
+});
+
+describe('childAccountSchema', () => {
+  it('accepts 1 and 20 lower-case letters and digits', () => {
+    expect(outcome(childAccountSchema, 'x')).toEqual({ value: 'x' });
+    expect(outcome(childAccountSchema, 'xiaomi2016')).toEqual({ value: 'xiaomi2016' });
+    expect(outcome(childAccountSchema, 'a'.repeat(20))).toEqual({ value: 'a'.repeat(20) });
+    expect(outcome(childAccountSchema, '0123456789')).toEqual({ value: '0123456789' });
+  });
+
+  it('rejects 21 characters as too long', () => {
+    expect(errorCodes(childAccountSchema, 'a'.repeat(21))).toEqual(['too_long']);
+  });
+
+  it('trims the account before checking it', () => {
+    expect(outcome(childAccountSchema, `  ${'a'.repeat(20)} `)).toEqual({ value: 'a'.repeat(20) });
+  });
+
+  it('rejects capitals as invalid instead of lowering them', () => {
+    for (const value of ['Xiaomi', 'XIAOMI', 'xiaoMi']) {
+      expect(errorCodes(childAccountSchema, value), value).toEqual(['invalid']);
+    }
+  });
+
+  it('rejects any other character as invalid, whatever the length', () => {
+    for (const value of [
+      'xiao mi',
+      'xiao_mi',
+      'xiao-mi',
+      'xiaomi!',
+      '小米',
+      'xiaomí',
+      '😀',
+      'ａ',
+    ]) {
+      expect(errorCodes(childAccountSchema, value), value).toEqual(['invalid']);
+    }
+    expect(errorCodes(childAccountSchema, `${'a'.repeat(21)}A`)).toEqual(['invalid']);
+  });
+
+  it('rejects an empty, blank or missing account as required and a non-string as invalid', () => {
+    expect(errorCodes(childAccountSchema, '')).toEqual(['required']);
+    expect(errorCodes(childAccountSchema, '   ')).toEqual(['required']);
+    expect(errorCodes(childAccountSchema, undefined)).toEqual(['required']);
+    expect(errorCodes(childAccountSchema, 12)).toEqual(['invalid']);
+  });
+});
+
+describe('newChildPasswordSchema', () => {
+  it('rejects 5 characters as too short and accepts 6', () => {
+    expect(errorCodes(newChildPasswordSchema, 'abcde')).toEqual(['too_short']);
+    expect(outcome(newChildPasswordSchema, 'abcdef')).toEqual({ value: 'abcdef' });
+  });
+
+  it('accepts 32 characters and rejects 33 as too long', () => {
+    expect(outcome(newChildPasswordSchema, 'a'.repeat(32))).toEqual({ value: 'a'.repeat(32) });
+    expect(errorCodes(newChildPasswordSchema, 'a'.repeat(33))).toEqual(['too_long']);
+  });
+
+  it('counts characters as a reader does', () => {
+    expect(errorCodes(newChildPasswordSchema, '😀'.repeat(5))).toEqual(['too_short']);
+    expect(outcome(newChildPasswordSchema, '😀'.repeat(6))).toEqual({ value: '😀'.repeat(6) });
+    expect(outcome(newChildPasswordSchema, '密'.repeat(32))).toEqual({ value: '密'.repeat(32) });
+    expect(errorCodes(newChildPasswordSchema, '👨‍👩‍👧'.repeat(33))).toEqual(['too_long']);
+  });
+
+  it('keeps spaces, at the ends too, and counts them', () => {
+    expect(outcome(newChildPasswordSchema, ' a b c ')).toEqual({ value: ' a b c ' });
+    expect(errorCodes(newChildPasswordSchema, '  ab ')).toEqual(['too_short']);
+  });
+
+  it('rejects an empty or missing password as required and a non-string as invalid', () => {
+    expect(errorCodes(newChildPasswordSchema, '')).toEqual(['required']);
+    expect(errorCodes(newChildPasswordSchema, undefined)).toEqual(['required']);
+    expect(errorCodes(newChildPasswordSchema, 123456)).toEqual(['invalid']);
+  });
+});
+
+describe('childPasswordSchema', () => {
+  it('accepts a password of any length, as it is', () => {
+    for (const value of ['a', 'abcde', ' abc ', 'a'.repeat(33)]) {
+      expect(outcome(childPasswordSchema, value), value).toEqual({ value });
+    }
+  });
+
+  it('rejects an empty or missing password as required', () => {
+    expect(errorCodes(childPasswordSchema, '')).toEqual(['required']);
+    expect(errorCodes(childPasswordSchema, undefined)).toEqual(['required']);
+    expect(errorCodes(childPasswordSchema, null)).toEqual(['invalid']);
+  });
+});
+
+describe('booleanFieldSchema', () => {
+  it('accepts true and false only', () => {
+    expect(outcome(booleanFieldSchema, true)).toEqual({ value: true });
+    expect(outcome(booleanFieldSchema, false)).toEqual({ value: false });
+    expect(outcome(booleanFieldSchema, 'true')).toEqual({ error: 'invalid' });
+    expect(outcome(booleanFieldSchema, undefined)).toEqual({ error: 'required' });
   });
 });
 

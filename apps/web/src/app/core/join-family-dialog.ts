@@ -78,7 +78,7 @@ interface FoundFamily extends FamilyCodeLookupResponse {
           <div class="min-w-0">
             <p class="text-lg font-black">{{ family.familyName }}</p>
             <p class="mt-1 flex items-center gap-2 text-sm text-ink-soft">
-              <app-avatar [name]="family.adminName" [parentId]="family.adminId" size="tiny" />
+              <app-avatar [name]="family.adminName" [personId]="family.adminId" size="tiny" />
               管理员 {{ family.adminName }}
             </p>
           </div>

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { environmentSchema } from './infrastructure/config/environment.js';
 import { LoggingModule } from './infrastructure/logging/logging.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { ChildModule } from './modules/child/child.module.js';
 import { FamilyModule } from './modules/family/family.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 
@@ -19,6 +20,7 @@ import { HealthModule } from './modules/health/health.module.js';
     HealthModule,
     AuthModule,
     FamilyModule,
+    ChildModule,
   ],
 })
 export class AppModule {}

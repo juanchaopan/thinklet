@@ -18,6 +18,7 @@
 - `VERCEL_TOKEN` 由用户在 Vercel 网站上生成，存成不提交的文件，由代理从文件读入 GitHub。
 - 由建资源产生的值，直接从命令输出写进 GitHub，从不显示。
 - 登录用的五项都是后端运行时用的：`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`APP_ORIGIN` 是变量；`OIDC_CLIENT_SECRET` 由用户从 Authing 控制台存成不提交的文件，由代理读入 GitHub；`JWT_SIGNING_KEY` 由代理随机生成 ES256 私钥，直接写进 GitHub。
+- 加密孩子个人信息的 `CHILD_DATA_KEY` 也是后端运行时用的密钥，由代理随机生成，直接写进 GitHub（见决策 0034）。
 - 本站地址单设 `APP_ORIGIN`，不复用 `STAGING_URL`。
 
 ## 理由
@@ -36,8 +37,7 @@
 
 ## 何时重新考虑
 
-- 第一个存孩子个人信息的 issue，要加加密用的密钥。
 - 某个测试第一次需要外部账号。
 - 建生产环境时。
 
-Last changed: #7 (2026-11-20)
+Last changed: #8 (2026-11-22)
