@@ -6,7 +6,8 @@ let nextCheckboxId = 0;
  * A checkbox with its text, the content; the whole line is the 44 px target.
  * A ticked box is violet like every selection mark. With an `error` the
  * empty box turns red and the message shows under the text, fading in over
- * 200 ms; screen readers hear it with the box.
+ * 200 ms; screen readers hear it with the box. A `large` checkbox has 18 px
+ * text, for the child's pages.
  *
  *   <app-checkbox [(checked)]="agreed" [error]="error()">我同意…</app-checkbox>
  */
@@ -42,7 +43,7 @@ let nextCheckboxId = 0;
           </svg>
         }
       </span>
-      <span class="text-base leading-6"><ng-content /></span>
+      <span class="leading-6" [class]="large() ? 'text-lg' : 'text-base'"><ng-content /></span>
     </label>
     @if (error(); as message) {
       <p [id]="errorId" class="animate-fade pl-9 text-sm font-bold text-rose-ink">{{ message }}</p>
@@ -53,6 +54,7 @@ let nextCheckboxId = 0;
 export class Checkbox {
   readonly checked = model(false);
   readonly error = input<string | null>(null);
+  readonly large = input(false);
 
   protected readonly errorId = `app-checkbox-error-${String(nextCheckboxId++)}`;
 

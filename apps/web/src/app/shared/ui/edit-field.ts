@@ -14,8 +14,9 @@ import {
   viewChild,
   type ElementRef,
 } from '@angular/core';
-import { Button } from './button';
+import { Button, IconButton } from './button';
 import { Dialog } from './dialog';
+import { LineIcon } from './line-icon';
 import { restartAnimation } from './restart-animation';
 
 let nextFieldId = 0;
@@ -30,7 +31,8 @@ export type InputFilter = (text: string) => string;
  * A text box. With an error it turns red, shakes 6 px to each side in 300 ms
  * and shows the message under it, fading in over 200 ms; it shakes again for
  * every new `attempt`. Without an error a `hint` under it says what the box
- * takes. With `autofocus` it takes the focus when it appears.
+ * takes. With `autofocus` it takes the focus when it appears. A `large` box
+ * is taller with 18 px text, for the child's pages.
  *
  * A `filter` decides what the box takes as it is typed in or pasted into:
  * the box shows the filtered text at once and the caret stays after what was
@@ -38,29 +40,45 @@ export type InputFilter = (text: string) => string;
  * composed with an input method is filtered once it is complete. Such a box
  * is for codes and accounts, so the browser neither capitalises, corrects
  * nor fills it in.
+ *
+ * A `password` box hides what is typed and holds an eye button at its end,
+ * 显示密码, that shows the password until it is pressed again; the button
+ * tells screen readers whether it is pressed.
  */
 @Component({
   selector: 'app-text-field',
+  imports: [IconButton, LineIcon],
   template: `
-    <input
-      #box
-      type="text"
-      [attr.aria-label]="label()"
-      [attr.aria-invalid]="error() ? 'true' : null"
-      [attr.aria-describedby]="describedBy()"
-      [attr.autocomplete]="filter() ? 'off' : null"
-      [attr.autocapitalize]="filter() ? 'off' : null"
-      [attr.spellcheck]="filter() ? 'false' : null"
-      [value]="value()"
-      (input)="typed(box, $event)"
-      (compositionend)="typed(box)"
-      class="block min-h-12 w-full rounded-2xl border bg-surface px-4 text-base outline-none"
-      [class]="
-        error()
-          ? 'border-rose-ink ring-2 ring-rose'
-          : 'border-line-strong focus:border-violet focus:ring-2 focus:ring-violet/20'
-      "
-    />
+    <div class="relative">
+      <input
+        #box
+        [type]="password() && !revealed() ? 'password' : 'text'"
+        [attr.aria-label]="label()"
+        [attr.aria-invalid]="error() ? 'true' : null"
+        [attr.aria-describedby]="describedBy()"
+        [attr.autocomplete]="filter() ? 'off' : autocomplete()"
+        [attr.autocapitalize]="filter() || password() ? 'off' : null"
+        [attr.spellcheck]="filter() || password() ? 'false' : null"
+        [value]="value()"
+        (input)="typed(box, $event)"
+        (compositionend)="typed(box)"
+        class="block w-full rounded-2xl border bg-surface px-4 outline-none"
+        [class]="boxClasses()"
+      />
+      @if (password()) {
+        <span class="absolute inset-y-0 right-1.5 flex items-center">
+          <button
+            type="button"
+            appIconButton
+            aria-label="显示密码"
+            [attr.aria-pressed]="revealed()"
+            (click)="revealed.set(!revealed())"
+          >
+            <app-line-icon name="eye" />
+          </button>
+        </span>
+      }
+    </div>
     @if (error(); as message) {
       <p [id]="errorId" class="mt-2 animate-fade text-sm font-bold text-rose-ink">{{ message }}</p>
     } @else if (hint(); as text) {
@@ -79,9 +97,16 @@ export class TextField {
   /** Counts the failed attempts to save; each new one shakes the box. */
   readonly attempt = input(0);
   readonly autofocus = input(true);
+  readonly large = input(false);
+  readonly password = input(false);
+  /** What the browser may fill the box with, such as `current-password`. */
+  readonly autocomplete = input<string | null>(null);
 
   protected readonly errorId = `app-text-field-error-${String(nextFieldId)}`;
   protected readonly hintId = `app-text-field-hint-${String(nextFieldId++)}`;
+
+  /** Whether a password box shows what is typed. */
+  protected readonly revealed = signal(false);
 
   /** The line under the box that screen readers read with it: the error, else the hint. */
   protected readonly describedBy = computed(() => {
@@ -89,6 +114,16 @@ export class TextField {
       return this.errorId;
     }
     return this.hint() ? this.hintId : null;
+  });
+
+  /** The box's size, the room its eye button takes, and its border for an error or the focus. */
+  protected readonly boxClasses = computed(() => {
+    const size = this.large() ? 'min-h-14 text-lg' : 'min-h-12 text-base';
+    const room = this.password() ? 'pr-14' : '';
+    const border = this.error()
+      ? 'border-rose-ink ring-2 ring-rose'
+      : 'border-line-strong focus:border-violet focus:ring-2 focus:ring-violet/20';
+    return `${size} ${room} ${border}`;
   });
 
   private readonly box = viewChild.required<ElementRef<HTMLInputElement>>('box');

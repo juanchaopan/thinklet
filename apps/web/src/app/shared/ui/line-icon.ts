@@ -5,6 +5,7 @@ export type LineIconName =
   | 'share'
   | 'qr'
   | 'device'
+  | 'eye'
   | 'close'
   | 'pencil'
   | 'chevron'
@@ -17,14 +18,15 @@ export type LineIconName =
 /**
  * The project's line icons, drawn in the current text colour and hidden from
  * screen readers (the button around an icon carries the name). Copy, share,
- * QR and device are 20 px with 1.75 px strokes, round caps and joins: copy is
- * two overlapping rounded squares, share an arrow rising out of an open box,
- * QR three finder corners and a few modules, device a tablet standing upright
- * with a short bar for its home button, for a remembered device. The chevron
- * is 16 px and points down, for a button that opens a menu or a list; back
- * points left, for 返回; forward points right, for a card that leads on;
- * search is the magnifier of a search box; more is three dots in a row, for
- * the button that opens a row's actions.
+ * QR, device and eye are 20 px with 1.75 px strokes, round caps and joins:
+ * copy is two overlapping rounded squares, share an arrow rising out of an
+ * open box, QR three finder corners and a few modules, device a tablet
+ * standing upright with a short bar for its home button, for a remembered
+ * device, and eye an almond outline around a round pupil, for the button
+ * that shows a password. The chevron is 16 px and points down, for a button
+ * that opens a menu or a list; back points left, for 返回; forward points
+ * right, for a card that leads on; search is the magnifier of a search box;
+ * more is three dots in a row, for the button that opens a row's actions.
  */
 @Component({
   selector: 'app-line-icon',
@@ -97,6 +99,21 @@ export type LineIconName =
         >
           <rect x="4.5" y="2.5" width="11" height="15" rx="2.25" />
           <path d="M8.5 14.5h3" />
+        </svg>
+      }
+      @case ('eye') {
+        <svg
+          class="size-5"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10Z" />
+          <circle cx="10" cy="10" r="2.5" />
         </svg>
       }
       @case ('close') {

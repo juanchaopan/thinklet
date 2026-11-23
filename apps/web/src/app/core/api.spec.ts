@@ -1,6 +1,10 @@
 import { provideHttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { meResponseSchema } from '@thinklet/contracts';
+import {
+  childLoginResponseSchema,
+  childMeResponseSchema,
+  meResponseSchema,
+} from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { worker } from '../../testing/network';
 import { LINYUE, REQUEST_ID, stubError } from '../../testing/sample-data';
@@ -15,6 +19,14 @@ async function failure(call: Promise<unknown>): Promise<ApiError> {
   const error: unknown = await call.catch((caught: unknown) => caught);
   expect(error).toBeInstanceOf(ApiError);
   return error as ApiError;
+}
+
+/** Listens to both announcements of a 401. */
+function listen(client: Api): { parent: () => void; child: () => void } {
+  const heard = { parent: vi.fn(), child: vi.fn() };
+  client.unauthenticated.subscribe(heard.parent);
+  client.childUnauthenticated.subscribe(heard.child);
+  return heard;
 }
 
 describe('Api', () => {
@@ -62,16 +74,42 @@ describe('Api', () => {
     expect(error.code).toBe('network');
   });
 
-  it('announces every 401', async () => {
+  it("announces a parent's 401 as the parent not being signed in", async () => {
     stubError('get /api/me', 401, 'unauthenticated');
     const client = api();
-    const announced = vi.fn();
-    client.unauthenticated.subscribe(announced);
+    const heard = listen(client);
 
     const error = await failure(client.get('/api/me', meResponseSchema));
 
     expect(error.code).toBe('unauthenticated');
-    expect(announced).toHaveBeenCalledOnce();
+    expect(heard.parent).toHaveBeenCalledOnce();
+    expect(heard.child).not.toHaveBeenCalled();
+  });
+
+  it("announces a 401 of the child's api as the child not being signed in", async () => {
+    stubError('get /api/child/me', 401, 'unauthenticated');
+    const client = api();
+    const heard = listen(client);
+
+    const error = await failure(client.get('/api/child/me', childMeResponseSchema));
+
+    expect(error.code).toBe('unauthenticated');
+    expect(heard.child).toHaveBeenCalledOnce();
+    expect(heard.parent).not.toHaveBeenCalled();
+  });
+
+  it('announces nothing for a child login turned down', async () => {
+    stubError('post /api/child-auth/login', 401, 'login_failed');
+    const client = api();
+    const heard = listen(client);
+
+    const error = await failure(
+      client.send('POST', '/api/child-auth/login', {}, childLoginResponseSchema),
+    );
+
+    expect(error.code).toBe('login_failed');
+    expect(heard.parent).not.toHaveBeenCalled();
+    expect(heard.child).not.toHaveBeenCalled();
   });
 
   it('accepts an answer without content', async () => {

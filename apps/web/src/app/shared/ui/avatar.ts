@@ -18,12 +18,18 @@ export function avatarColor(personId: string): (typeof COLORS)[number] {
   return COLORS[hash % COLORS.length] ?? COLORS[0];
 }
 
+/** The big avatars of the child's pages stand out from their card with a white ring and a shadow. */
+const RAISED = 'shadow-card ring-4 ring-surface';
+
 const SIZES = {
   tiny: 'size-6 text-xs',
   small: 'size-8 text-sm',
   regular: 'size-9 text-sm',
   large: 'size-10 text-base',
   list: 'size-11 text-base',
+  bar: 'size-11 text-lg',
+  greeting: `size-24 text-4xl ${RAISED}`,
+  pick: `size-24 text-4xl sm:size-28 sm:text-5xl ${RAISED}`,
 } as const;
 
 /**
@@ -47,9 +53,12 @@ export class Avatar {
   /**
    * `tiny` goes inside a line of small text, such as the admin of a family
    * found by its code; `small` heads the parent's group in the sidebar;
-   * `large` heads the parent's menu and the actions of a member or a child;
-   * `list` leads a row of a list of people, such as the family's members or
-   * its children.
+   * `large` heads the parent's menu and the actions of a member or a child,
+   * and marks the child a notice is about; `list` leads a row of a list of
+   * people, such as the family's members or its children; `bar` is the
+   * signed-in child in the top bar of the child's home page; `greeting`
+   * greets the child on the QR login page; `pick` is a child to tap on the
+   * child login of a device that remembers children.
    */
   readonly size = input<keyof typeof SIZES>('regular');
 
