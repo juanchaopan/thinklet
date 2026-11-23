@@ -204,11 +204,15 @@ describe('toHandledRequest', () => {
       status: 'approved',
       closedAt: '2026-11-21T10:03:00.000Z',
     });
+    expect(toHandledRequest(familyRecord('rejected')).status).toBe('rejected');
   });
 
-  it.each<JoinRequestStatus>(['pending', 'withdrawn'])('refuses a %s request', (status) => {
-    expect(() => toHandledRequest({ ...familyRecord(status), closedAt: CLOSED_AT })).toThrow();
-  });
+  it.each<JoinRequestStatus>(['pending', 'withdrawn', 'expired'])(
+    'refuses a %s request, which the admin did not decide',
+    (status) => {
+      expect(() => toHandledRequest({ ...familyRecord(status), closedAt: CLOSED_AT })).toThrow();
+    },
+  );
 
   it('refuses a request without a closing time', () => {
     expect(() => toHandledRequest({ ...familyRecord('approved'), closedAt: null })).toThrow();
@@ -234,13 +238,6 @@ function createService(
       request && { ...familyRecord(request.status), id: requestId, parentId: request.parentId }
     );
   };
-  const familyRequestsWhere = (keep: (status: JoinRequestStatus) => boolean) =>
-    Promise.resolve(
-      [...requests.keys()]
-        .map(familyRequest)
-        .filter((record): record is FamilyRequestRecord => record !== undefined)
-        .filter((record) => keep(record.status)),
-    );
   const store = {
     lockFamily: vi.fn((familyId: string) => {
       calls.push(`lockFamily ${familyId}`);
@@ -304,9 +301,12 @@ function createService(
       );
     }),
     findFamilyRequest: vi.fn((requestId: string) => Promise.resolve(familyRequest(requestId))),
-    listPendingRequests: vi.fn(() => familyRequestsWhere((status) => status === 'pending')),
-    listHandledRequests: vi.fn(() =>
-      familyRequestsWhere((status) => status !== 'pending' && status !== 'withdrawn'),
+    listPendingRequests: vi.fn(() =>
+      Promise.resolve(
+        [...requests.keys()]
+          .map(familyRequest)
+          .filter((record): record is FamilyRequestRecord => record?.status === 'pending'),
+      ),
     ),
   };
   const repository = {
@@ -459,25 +459,22 @@ describe('JoinRequestsService', () => {
   });
 
   describe('listFamily', () => {
-    it("lists the pending and the handled requests with each applicant's parent id", async () => {
+    it("lists the pending requests with each applicant's parent id", async () => {
       const { service } = createService({ request: requestIn('pending') });
 
       await expect(service.listFamily(FAMILY_ID)).resolves.toEqual({
         pending: [expect.objectContaining({ id: REQUEST_ID, parentId: APPLICANT })],
-        handled: [],
       });
     });
 
-    it('puts an expired request among the handled ones', async () => {
-      const { service } = createService({ request: requestIn('expired') });
+    it.each<JoinRequestStatus>(['approved', 'rejected', 'withdrawn', 'expired'])(
+      'leaves a %s request out',
+      async (status) => {
+        const { service } = createService({ request: requestIn(status) });
 
-      const listed = await service.listFamily(FAMILY_ID);
-
-      expect(listed.pending).toEqual([]);
-      expect(listed.handled).toEqual([
-        expect.objectContaining({ parentId: APPLICANT, status: 'expired' }),
-      ]);
-    });
+        await expect(service.listFamily(FAMILY_ID)).resolves.toEqual({ pending: [] });
+      },
+    );
   });
 
   describe('decide', () => {

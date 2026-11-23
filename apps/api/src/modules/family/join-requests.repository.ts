@@ -199,7 +199,7 @@ export class JoinRequestStore extends FamilyStore {
   }
 
   async findFamilyRequest(requestId: string): Promise<FamilyRequestRecord | undefined> {
-    const rows = await this.familyRequests(eq(joinRequests.id, requestId), []);
+    const rows = await this.familyRequests(eq(joinRequests.id, requestId));
     return rows.at(0);
   }
 
@@ -207,18 +207,6 @@ export class JoinRequestStore extends FamilyStore {
   listPendingRequests(familyId: string): Promise<FamilyRequestRecord[]> {
     return this.familyRequests(
       and(eq(joinRequests.familyId, familyId), eq(joinRequests.status, 'pending')),
-      [desc(joinRequests.createdAt), desc(joinRequests.id)],
-    );
-  }
-
-  /** The family's approved, rejected and expired requests, the latest closed first. */
-  listHandledRequests(familyId: string): Promise<FamilyRequestRecord[]> {
-    return this.familyRequests(
-      and(
-        eq(joinRequests.familyId, familyId),
-        inArray(joinRequests.status, ['approved', 'rejected', 'expired']),
-      ),
-      [desc(joinRequests.closedAt), desc(joinRequests.id)],
     );
   }
 
@@ -241,8 +229,8 @@ export class JoinRequestStore extends FamilyStore {
       .orderBy(desc(joinRequests.createdAt), desc(joinRequests.id));
   }
 
-  /** Requests with their applicant's parent id, name and email, in the given order. */
-  private familyRequests(condition: SQL | undefined, order: SQL[]): Promise<FamilyRequestRecord[]> {
+  /** Requests with their applicant's parent id, name and email, newest first. */
+  private familyRequests(condition: SQL | undefined): Promise<FamilyRequestRecord[]> {
     return this.executor
       .select({
         id: joinRequests.id,
@@ -256,7 +244,7 @@ export class JoinRequestStore extends FamilyStore {
       .from(joinRequests)
       .innerJoin(parents, eq(parents.id, joinRequests.parentId))
       .where(condition)
-      .orderBy(...order);
+      .orderBy(desc(joinRequests.createdAt), desc(joinRequests.id));
   }
 }
 

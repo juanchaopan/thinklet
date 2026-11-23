@@ -26,13 +26,15 @@ import {
 // Acceptance criteria covered: parent B enters the code of parent A's family,
 // sees the family's name and its admin's name and applies; A's menu then
 // counts the pending request and A sees B's request among the family's
-// requests; after A approves, B is in the family and sees the approval; after
-// A rejects, B is not and sees the rejection on the start page; B's results
-// not yet seen are counted for the red dot; a withdrawn request disappears
-// from A's list; B's 「知道了」 clears the request from B's list only; after A
-// changes the code, the old code no longer works and the pending requests
-// made with it expire. The admin's list and the code lookup carry the parent
-// ids the avatars take their colours from.
+// pending requests; after A approves, B is in the family and sees the
+// approval; after A rejects, B is not and sees the rejection on the start
+// page; either way the request leaves A's list, which holds pending requests
+// alone; B's results not yet seen are counted for the red dot; a withdrawn
+// request disappears from A's list; B's 「知道了」 clears the request from
+// B's list only; after A changes the code, the old code no longer works and
+// the pending requests made with it expire. The admin's list and the code
+// lookup carry the parent ids the avatars take their colours from. The
+// admin has no 「知道了」 of their own: its route does not exist.
 describe('join requests', () => {
   const running = useAppWithServices();
 
@@ -239,7 +241,6 @@ describe('join requests', () => {
             createdAt: created.createdAt,
           },
         ],
-        handled: [],
       });
       expect(await requestResults(applicant)).toBe(0);
     });
@@ -406,7 +407,7 @@ describe('join requests', () => {
       const stored = await row(request.id);
       expect(stored).toMatchObject({ status: 'withdrawn', closed_by: null });
       expect(stored.closed_at).toBeInstanceOf(Date);
-      expect(await adminList(admin, family.id)).toEqual({ pending: [], handled: [] });
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
       expect(await ownList(applicant)).toEqual([]);
       expect(await pendingCount(admin, family.id)).toBe(0);
       expect(await requestResults(applicant)).toBe(0);
@@ -460,7 +461,7 @@ describe('join requests', () => {
   });
 
   describe('POST /api/join-requests/{requestId}/dismiss', () => {
-    it("clears a rejected request from the applicant's list only", async () => {
+    it("clears a rejected request from the applicant's list, which the admin's list never held", async () => {
       const { family, admin, applicant, request } = await rejectedRequest();
 
       const response = await dismissOwn(applicant, request.id);
@@ -468,7 +469,7 @@ describe('join requests', () => {
       expect(response.status).toBe(204);
       expect(await ownList(applicant)).toEqual([]);
       expect((await row(request.id)).dismissed_by_applicant_at).toBeInstanceOf(Date);
-      expect((await adminList(admin, family.id)).handled.map(({ id }) => id)).toEqual([request.id]);
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
     });
 
     it("clears an approved request from the applicant's list, leaving the membership", async () => {
@@ -481,7 +482,6 @@ describe('join requests', () => {
       expect(response.status).toBe(204);
       expect(await ownList(applicant)).toEqual([]);
       expect(await requestResults(applicant)).toBe(0);
-      expect((await adminList(admin, family.id)).handled.map(({ id }) => id)).toEqual([request.id]);
       expect(await members(family.id)).toEqual([
         { parent_id: admin.id, role: 'admin' },
         { parent_id: applicant.id, role: 'member' },
@@ -530,7 +530,7 @@ describe('join requests', () => {
   });
 
   describe('GET /api/families/{familyId}/join-requests', () => {
-    it('lists the pending requests newest first and the handled ones by when they were closed', async () => {
+    it('lists only the pending requests, newest first', async () => {
       const { family, admin } = await familyAndApplicant();
       const applied = await applicantsOf(family, ['甲', '乙', '丙', '丁', '戊']);
       const [first, second, approved, rejected, withdrawn] = applied;
@@ -541,40 +541,24 @@ describe('join requests', () => {
       await decide(admin, family.id, rejected.request.id, 'reject');
       await withdraw(withdrawn.applicant, withdrawn.request.id);
 
-      const listed = await adminList(admin, family.id);
-
-      expect(listed.pending).toEqual([
-        {
-          id: second.request.id,
-          parentId: second.applicant.id,
-          name: '乙',
-          email: null,
-          createdAt: second.request.createdAt,
-        },
-        {
-          id: first.request.id,
-          parentId: first.applicant.id,
-          name: '甲',
-          email: null,
-          createdAt: first.request.createdAt,
-        },
-      ]);
-      expect(
-        listed.handled.map(({ id, parentId, name, status }) => ({ id, parentId, name, status })),
-      ).toEqual([
-        {
-          id: rejected.request.id,
-          parentId: rejected.applicant.id,
-          name: '丁',
-          status: 'rejected',
-        },
-        {
-          id: approved.request.id,
-          parentId: approved.applicant.id,
-          name: '丙',
-          status: 'approved',
-        },
-      ]);
+      expect(await adminList(admin, family.id)).toEqual({
+        pending: [
+          {
+            id: second.request.id,
+            parentId: second.applicant.id,
+            name: '乙',
+            email: null,
+            createdAt: second.request.createdAt,
+          },
+          {
+            id: first.request.id,
+            parentId: first.applicant.id,
+            name: '甲',
+            email: null,
+            createdAt: first.request.createdAt,
+          },
+        ],
+      });
       expect(await pendingCount(admin, family.id)).toBe(2);
     });
 
@@ -583,7 +567,22 @@ describe('join requests', () => {
       const other = await newFamily(await parent());
       await apply(await parent(), other.code);
 
-      expect(await adminList(admin, family.id)).toEqual({ pending: [], handled: [] });
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
+    });
+  });
+
+  describe("the admin's 「知道了」", () => {
+    it('does not exist: its route answers 404 not_found and changes nothing', async () => {
+      const { family, admin, applicant, request } = await rejectedRequest();
+      const before = await row(request.id);
+
+      const response = await asParent(admin).post(
+        `/api/families/${family.id}/join-requests/${request.id}/dismiss`,
+      );
+
+      expect(outcomesOf([response])).toEqual([[404, 'not_found']]);
+      expect(await row(request.id)).toEqual(before);
+      expect(await ownList(applicant)).toEqual([{ ...request, status: 'rejected' }]);
     });
   });
 
@@ -617,6 +616,7 @@ describe('join requests', () => {
       expect(me.requestResults).toBe(1);
       expect(await ownList(applicant)).toEqual([{ ...request, status: 'approved' }]);
       expect(await pendingCount(admin, family.id)).toBe(0);
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
     });
 
     it('refuses a request already withdrawn, handled or expired with 409 request_closed', async () => {
@@ -689,6 +689,7 @@ describe('join requests', () => {
       expect(outcomesOf([opened])).toEqual([[404, 'family_not_found']]);
       expect(await ownList(applicant)).toEqual([{ ...request, status: 'rejected' }]);
       expect(await requestResults(applicant)).toBe(1);
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
     });
   });
 
@@ -701,11 +702,7 @@ describe('join requests', () => {
 
       expect(await ownList(applicant)).toEqual([{ ...request, status: 'expired' }]);
       expect(await requestResults(applicant)).toBe(1);
-      const listed = await adminList(admin, family.id);
-      expect(listed.pending).toEqual([]);
-      expect(listed.handled.map(({ id, parentId, status }) => ({ id, parentId, status }))).toEqual([
-        { id: request.id, parentId: applicant.id, status: 'expired' },
-      ]);
+      expect(await adminList(admin, family.id)).toEqual({ pending: [] });
       expect(await pendingCount(admin, family.id)).toBe(0);
       const stranger = await parent();
       const withOldCode = [

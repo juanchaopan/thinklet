@@ -136,14 +136,14 @@ export function toPendingRequest(record: FamilyRequestRecord): PendingJoinReques
   return { id, parentId, name, email, createdAt: createdAt.toISOString() };
 }
 
-/** A closed request as its family's admin sees it among the handled ones. */
+/** A request the admin has just approved or rejected, with when it was closed. */
 export function toHandledRequest(record: FamilyRequestRecord): HandledJoinRequest {
   const { id, parentId, name, email, status, closedAt } = record;
-  if (status !== 'approved' && status !== 'rejected' && status !== 'expired') {
-    throw new Error(`The admin is not shown ${status} requests as handled`);
+  if (status !== 'approved' && status !== 'rejected') {
+    throw new Error(`A ${status} request was not decided by the admin`);
   }
   if (closedAt === null) {
-    throw new Error('A handled request has no closing time');
+    throw new Error('A decided request has no closing time');
   }
   return { id, parentId, name, email, status, closedAt: closedAt.toISOString() };
 }
@@ -173,9 +173,10 @@ export type Decision = Extract<JoinRequestStatus, 'approved' | 'rejected'>;
  * Join requests to families (`.docs/design/interfaces.md`, "申请加入（申请人）"
  * and "等你处理（管理员）"; `.docs/design/rules.md`, "加入申请"). A request is
  * pending until the admin approves or rejects it, the applicant withdraws it
- * or the family's code changes; the applicant then dismisses it. Every
- * change locks the request's family first, as every change to a family
- * does, so the changes to one family run one after another.
+ * or the family's code changes; the applicant then dismisses it. The admin
+ * sees only the pending ones. Every change locks the request's family
+ * first, as every change to a family does, so the changes to one family run
+ * one after another.
  */
 @Injectable()
 export class JoinRequestsService {
@@ -244,13 +245,10 @@ export class JoinRequestsService {
     });
   }
 
-  /** The family's pending requests and its approved, rejected and expired ones. */
+  /** The family's pending requests, newest first, for its admin's 等你处理. */
   async listFamily(familyId: string): Promise<FamilyJoinRequestsResponse> {
-    const [pending, handled] = await Promise.all([
-      this.repository.listPendingRequests(familyId),
-      this.repository.listHandledRequests(familyId),
-    ]);
-    return { pending: pending.map(toPendingRequest), handled: handled.map(toHandledRequest) };
+    const pending = await this.repository.listPendingRequests(familyId);
+    return { pending: pending.map(toPendingRequest) };
   }
 
   /**

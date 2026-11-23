@@ -46,22 +46,25 @@ export const pendingJoinRequestSchema = z.strictObject({
 });
 
 /**
- * A request the admin approved or rejected, or one that expired with the
- * old family code. It is also the response body of approving and rejecting.
+ * A request the admin has just approved or rejected: the response body of
+ * `POST /api/families/{familyId}/join-requests/{requestId}/approve` and
+ * `.../reject`, with when it was closed.
  */
 export const handledJoinRequestSchema = z.strictObject({
   id: z.uuid(),
   parentId: z.uuid(),
   name: z.string(),
   email: z.string().nullable(),
-  status: joinRequestStatusSchema.extract(['approved', 'rejected', 'expired']),
+  status: joinRequestStatusSchema.extract(['approved', 'rejected']),
   closedAt: z.iso.datetime(),
 });
 
-/** Response body of `GET /api/families/{familyId}/join-requests`; both lists newest first. */
+/**
+ * Response body of `GET /api/families/{familyId}/join-requests`: the
+ * family's pending requests, newest first. Closed requests are not listed.
+ */
 export const familyJoinRequestsResponseSchema = z.strictObject({
   pending: z.array(pendingJoinRequestSchema),
-  handled: z.array(handledJoinRequestSchema),
 });
 
 export type JoinRequestStatus = z.infer<typeof joinRequestStatusSchema>;

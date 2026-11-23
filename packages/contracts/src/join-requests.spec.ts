@@ -69,30 +69,46 @@ describe('applicantJoinRequestListSchema', () => {
 });
 
 describe('familyJoinRequestsResponseSchema', () => {
-  it("accepts pending and handled requests with each applicant's parent id", () => {
-    const body = { pending: [pending], handled: [handled] };
+  it("accepts the pending requests with each applicant's parent id", () => {
+    const body = { pending: [pending] };
 
     expect(familyJoinRequestsResponseSchema.parse(body)).toEqual(body);
   });
 
-  it("requires the applicant's parent id as a uuid on both kinds", () => {
+  it('rejects a list of closed requests next to the pending ones', () => {
+    expect(
+      familyJoinRequestsResponseSchema.safeParse({ pending: [pending], handled: [handled] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("requires the applicant's parent id as a uuid", () => {
     expect(pendingJoinRequestSchema.safeParse({ ...pending, parentId: undefined }).success).toBe(
-      false,
-    );
-    expect(handledJoinRequestSchema.safeParse({ ...handled, parentId: undefined }).success).toBe(
       false,
     );
     expect(pendingJoinRequestSchema.safeParse({ ...pending, parentId: '陈晓' }).success).toBe(
       false,
     );
   });
+});
 
-  it('rejects withdrawn and pending requests among the handled ones', () => {
-    expect(handledJoinRequestSchema.safeParse({ ...handled, status: 'withdrawn' }).success).toBe(
+describe('handledJoinRequestSchema', () => {
+  it('accepts an approved and a rejected request with when it was closed', () => {
+    expect(handledJoinRequestSchema.parse(handled)).toEqual(handled);
+    expect(handledJoinRequestSchema.parse({ ...handled, status: 'rejected' }).status).toBe(
+      'rejected',
+    );
+  });
+
+  it("requires the applicant's parent id", () => {
+    expect(handledJoinRequestSchema.safeParse({ ...handled, parentId: undefined }).success).toBe(
       false,
     );
-    expect(handledJoinRequestSchema.safeParse({ ...handled, status: 'pending' }).success).toBe(
-      false,
-    );
+  });
+
+  it('rejects a request the admin did not decide', () => {
+    for (const status of ['pending', 'withdrawn', 'expired']) {
+      expect(handledJoinRequestSchema.safeParse({ ...handled, status }).success).toBe(false);
+    }
   });
 });
