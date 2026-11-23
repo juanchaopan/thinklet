@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -177,6 +177,13 @@ export function newSigningKey(): string {
  */
 export const testSigningKey = newSigningKey();
 
+/**
+ * The child data key of every api this test run starts, 32 random bytes in
+ * the base64 form CHILD_DATA_KEY takes, made once per process, so those apis
+ * read each other's encrypted child data.
+ */
+export const testChildDataKey = randomBytes(32).toString('base64');
+
 /** The api's environment variables for the given database, storage, OIDC client and site origin. */
 export function apiEnvironment(
   databaseUrl: string,
@@ -197,6 +204,7 @@ export function apiEnvironment(
     OIDC_CLIENT_SECRET: oidc.clientSecret,
     APP_ORIGIN: appOrigin,
     JWT_SIGNING_KEY: testSigningKey,
+    CHILD_DATA_KEY: testChildDataKey,
   };
 }
 

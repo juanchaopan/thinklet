@@ -55,6 +55,11 @@ const FRAME_ROUTES: Routes = [
       { path: '', component: Blank },
       { path: 'families/:familyId', canActivate: [makeFamilyCurrent], component: ProblemPage },
       {
+        path: 'families/:familyId/children',
+        canActivate: [makeFamilyCurrent],
+        component: Blank,
+      },
+      {
         path: 'families/:familyId/new-members',
         canActivate: [makeFamilyCurrent, requireFamilyAdmin],
         component: Blank,
@@ -117,10 +122,11 @@ describe('AppShell', () => {
       const menu = visibleMenu();
       expect(menu.closest('aside')).not.toBeNull();
       const links = within(menu).getAllByRole('link');
-      expect(linkTexts(menu)).toEqual(['首页', '家庭管理', '新成员2']);
+      expect(linkTexts(menu)).toEqual(['首页', '孩子', '家庭管理', '新成员2']);
       expect(links[0]?.getAttribute('href')).toBe('/');
-      expect(links[1]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}`);
-      expect(links[2]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}/new-members`);
+      expect(links[1]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}/children`);
+      expect(links[2]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}`);
+      expect(links[3]?.getAttribute('href')).toBe(`/families/${LINYUE_FAMILY_ID}/new-members`);
       expect(links[0]?.getAttribute('aria-current')).toBe('page');
 
       const group = parentGroup();
@@ -163,6 +169,15 @@ describe('AppShell', () => {
       ).toBe('page');
     });
 
+    it('marks 孩子 alone as current on the children page', async () => {
+      await renderApp(`/families/${LINYUE_FAMILY_ID}/children`, { routes: FRAME_ROUTES });
+
+      const current = within(visibleMenu())
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page');
+      expect(current.map((link) => link.textContent?.trim())).toEqual(['孩子']);
+    });
+
     it('puts a red dot on 加入家庭 while request results wait to be seen', async () => {
       stubSignedIn(LINYUE_WITH_RESULTS);
       await renderApp('/', { routes: FRAME_ROUTES });
@@ -190,7 +205,7 @@ describe('AppShell', () => {
       const menu = visibleMenu();
       expect(menu.closest('aside')).toBeNull();
       expect(menu.getBoundingClientRect().bottom).toBe(VIEWPORTS.phone.height);
-      expect(linkTexts(menu)).toEqual(['首页', '家庭管理', '2新成员']);
+      expect(linkTexts(menu)).toEqual(['首页', '孩子', '家庭管理', '2新成员']);
       expect(screen.getByRole('button', { name: AVATAR }).closest('header')).not.toBeNull();
       expect(screen.queryByRole('navigation', { name: '林悦' })).toBeNull();
       await expectNoAxeViolations();
@@ -270,11 +285,11 @@ describe('AppShell', () => {
     });
   });
 
-  it('shows no 新成员 to a parent who is not the admin', async () => {
+  it('shows 孩子 but no 新成员 to a parent who is not the admin', async () => {
     localStorage.setItem('thinklet.currentFamilyId', GRANDMA_FAMILY_ID);
     await renderApp('/', { routes: FRAME_ROUTES });
 
-    expect(linkTexts(visibleMenu())).toEqual(['首页', '家庭管理']);
+    expect(linkTexts(visibleMenu())).toEqual(['首页', '孩子', '家庭管理']);
   });
 
   it('opens the family used last on this browser, else the one joined first', async () => {
@@ -330,6 +345,11 @@ describe('AppShell', () => {
     });
 
     it.each([
+      [
+        'the children page',
+        `/families/${LINYUE_FAMILY_ID}/children`,
+        `/families/${GRANDMA_FAMILY_ID}/children`,
+      ],
       ['the family page', `/families/${LINYUE_FAMILY_ID}`, `/families/${GRANDMA_FAMILY_ID}`],
       [
         'the new members page, to a family they do not run',

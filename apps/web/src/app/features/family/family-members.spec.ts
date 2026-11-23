@@ -12,6 +12,7 @@ import {
   stubChangedWorld,
 } from '../../../testing/family-page';
 import { holdOverlaysAt } from '../../../testing/families';
+import { closeMenu } from '../../../testing/menus';
 import { emulateTouch } from '../../../testing/pointer';
 import {
   GRANDMA_FAMILY,
@@ -48,20 +49,9 @@ const WITHOUT_ZIHANG: FamilyDetail = {
   members: LINYUE_FAMILY.members.filter((member) => member.parentId !== ZIHANG_ID),
 };
 
-/**
- * Opens 周子航's actions afresh, as the current input device does it. An
- * open menu is closed with an Escape sent to the menu itself, which leaves
- * the page in mouse mode, so the menu opened next shows no keyboard focus
- * ring.
- */
+/** Opens 周子航's actions afresh, as the current input device does it, held fully open. */
 async function openZihangsActions(): Promise<void> {
-  const open = screen.queryByRole('menu');
-  if (open) {
-    open.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await vi.waitFor(() => {
-      expect(screen.queryAllByRole('menu')).toHaveLength(0);
-    });
-  }
+  await closeMenu();
   await userEvent.click(screen.getByRole('button', { name: '周子航的操作' }));
   await screen.findByRole('menu', { name: '周子航的操作' });
   await holdOverlaysAt(OPEN);

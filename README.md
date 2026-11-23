@@ -18,10 +18,16 @@ thinklet 是面向孩子的做题平台，用有趣的方式带孩子学习难�
 pnpm install
 cp .env.example .env
 pnpm exec task jwt-key
+pnpm exec task child-data-key
 pnpm exec task dev
 ```
 
-`pnpm install` 同时装好任务入口 Task 和 git hooks。`.env` 里是本机开发用的值，不提交；`.env.example` 里的值配合 Docker Compose 起的服务就能用，只有签发登录状态的私钥 `JWT_SIGNING_KEY` 是空的：`task jwt-key` 在本机新生成一把，打印出 `JWT_SIGNING_KEY='…'` 这一行，把它换掉 `.env` 里的那一行。这把私钥只在本机用，不要提交，也不要用到别的环境。
+`pnpm install` 同时装好任务入口 Task 和 git hooks。`.env` 里是本机开发用的值，不提交；`.env.example` 里的值配合 Docker Compose 起的服务就能用，只有两把密钥是空的：
+
+- 签发登录状态的私钥 `JWT_SIGNING_KEY`：`task jwt-key` 在本机新生成一把，打印出 `JWT_SIGNING_KEY='…'` 这一行，把它换掉 `.env` 里的那一行。
+- 加密孩子个人信息的主密钥 `CHILD_DATA_KEY`：`task child-data-key` 在本机新生成一把，打印出 `CHILD_DATA_KEY=…` 这一行，同样换掉 `.env` 里的那一行。这把密钥换了以后，本机数据库里已有的孩子信息就读不出来了，要清空本机数据重来。
+
+这两把密钥只在本机用，不要提交，也不要用到别的环境。
 
 `task dev` 起 PostgreSQL、SeaweedFS（模拟 S3）和 mock-oauth2-server（模拟 Authing 的 OIDC 登录服务）容器，执行数据库迁移，再启动前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。登录时会跳到模拟登录服务的页面，填任意用户名都能登录；这个服务不保存任何数据，容器重启后所有登录都要重来。
 
@@ -55,6 +61,7 @@ pnpm exec task dev
 | ---------------------------- | ------------------------------------------------------------------------ |
 | `dev`                        | 起容器、执行迁移，启动前后端                                             |
 | `jwt-key`                    | 新生成一把本机用的登录签名私钥，打印成 `.env` 里的一行                   |
+| `child-data-key`             | 新生成一把本机用的孩子信息主密钥，打印成 `.env` 里的一行                 |
 | `check`                      | 依次跑全部静态检查                                                       |
 | `format-fix`                 | 用 Prettier 改好格式                                                     |
 | `test-unit`                  | 单元测试，带覆盖率下限                                                   |

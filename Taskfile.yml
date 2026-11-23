@@ -273,6 +273,11 @@ tasks:
     cmds:
       - node tools/bin/jwt-key.ts
 
+  child-data-key:
+    desc: Print a new random CHILD_DATA_KEY line for .env (local development only; every environment has its own key)
+    cmds:
+      - node tools/bin/child-data-key.ts
+
   # Many tasks need the contracts built; within one `task` run they are
   # built once, however many of those tasks run.
   build-contracts:

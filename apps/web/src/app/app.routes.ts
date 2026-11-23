@@ -1,8 +1,11 @@
 import type { Routes } from '@angular/router';
 import {
+  leaveLoginWhenChildIn,
   makeFamilyCurrent,
+  matchChildOnly,
   matchFamily,
   matchVisitor,
+  requireChild,
   requireFamily,
   requireFamilyAdmin,
   requireNoFamily,
@@ -10,18 +13,26 @@ import {
 } from './core/guards';
 
 /**
- * `/` is the product home for a visitor and the home page for a signed-in
- * parent; `/child`, the child login, needs no login either and shows the same
- * to a signed-in parent. Every other page needs a signed-in parent; a visitor
- * is sent to the product home, and an unknown address goes to `/`. The
- * family pages need a family (a parent without one goes to `/start`), and
- * the start page is only for a parent without one (a parent with one goes
- * to `/`). An invitation link `/join/<code>` opens the join dialog over the
- * join page for a parent with a family and over the start page for one
- * without. A family's own pages, `/families/<id>` and its new members page,
- * make that family the current one; the new members page is its admin's.
- * Route titles become the browser title "<title> - 好奇星球"
- * (core/page-title).
+ * `/` shows whoever is signed in on this browser: the home page for a
+ * signed-in parent, the child's home page when only a child is signed in,
+ * and the product home for a visitor.
+ *
+ * The child's pages need no parent and have no parent menus: the child login
+ * `/child` (a signed-in child goes on to `/child/home`; a signed-in parent
+ * sees it as it is), the QR login `/child/qr/<token>`, shown whoever is
+ * signed in, and the child's home page `/child/home`, which needs a
+ * signed-in child (without one it is the child login).
+ *
+ * Every other page needs a signed-in parent; a visitor is sent to `/`, and
+ * an unknown address goes to `/`. The family pages need a family (a parent
+ * without one goes to `/start`), and the start page is only for a parent
+ * without one (a parent with one goes to `/`). An invitation link
+ * `/join/<code>` opens the join dialog over the join page for a parent with
+ * a family and over the start page for one without. A family's own pages,
+ * `/families/<id>`, its children page and its new members page, make that
+ * family the current one; the new members page is its admin's. Route titles
+ * become the browser title "<title> - 好奇星球" (core/page-title); the home
+ * pages carry the product name alone.
  *
  * Every page is loaded when it is first opened, and so is the signed-in
  * frame with its menus: a visitor's first page loads neither.
@@ -30,7 +41,25 @@ export const routes: Routes = [
   {
     path: 'child',
     title: '孩子登录',
+    canActivate: [leaveLoginWhenChildIn],
     loadComponent: () => import('./features/child/child-login').then((module) => module.ChildLogin),
+  },
+  {
+    path: 'child/qr/:token',
+    title: '扫码登录',
+    loadComponent: () =>
+      import('./features/child/child-qr-login').then((module) => module.ChildQrLogin),
+  },
+  {
+    path: 'child/home',
+    canActivate: [requireChild],
+    loadComponent: () => import('./features/child/child-home').then((module) => module.ChildHome),
+  },
+  {
+    path: '',
+    pathMatch: 'full',
+    canMatch: [matchChildOnly],
+    loadComponent: () => import('./features/child/child-home').then((module) => module.ChildHome),
   },
   {
     path: '',
@@ -79,6 +108,13 @@ export const routes: Routes = [
         canActivate: [makeFamilyCurrent],
         loadComponent: () =>
           import('./features/family/family-page').then((module) => module.FamilyPage),
+      },
+      {
+        path: 'families/:familyId/children',
+        title: '孩子',
+        canActivate: [makeFamilyCurrent],
+        loadComponent: () =>
+          import('./features/children/children-page').then((module) => module.ChildrenPage),
       },
       {
         path: 'families/:familyId/new-members',

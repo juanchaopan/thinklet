@@ -2,26 +2,7 @@ import request from 'supertest';
 import { startBuiltAppWithServices, type BuiltAppWithServices } from '../support/app.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
 import { as, createFamily, signInParent } from '../support/families.js';
-
-/** A logged request as the request log writes it. */
-interface LoggedRequest {
-  url?: unknown;
-  headers?: Record<string, unknown>;
-}
-
-/** Every request the output logged. */
-function loggedRequests(output: string): LoggedRequest[] {
-  return output
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as { req?: LoggedRequest })
-    .flatMap((entry) => (entry.req === undefined ? [] : [entry.req]));
-}
-
-/** The URL every logged request was written with. */
-function loggedUrls(output: string): string[] {
-  return loggedRequests(output).flatMap((req) => (typeof req.url === 'string' ? [req.url] : []));
-}
+import { loggedRequests, loggedUrls } from '../support/request-logs.js';
 
 /** The forms a family code takes in a page address: as written, in lower case and URL-encoded. */
 function codeForms(code: string): string[] {

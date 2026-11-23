@@ -49,8 +49,8 @@ export function filledCode(slots: readonly string[]): string | null {
  * empty box, `completed` gives the code.
  *
  * With an `error` the boxes turn red and the message shows under them; each
- * new `attempt` shakes them 6 px to each side in 300 ms. The first empty box
- * takes the focus when the boxes appear.
+ * new `attempt` shakes them 6 px to each side in 300 ms. With `autofocus`,
+ * the first empty box takes the focus when the boxes appear.
  */
 @Component({
   selector: 'app-code-boxes',
@@ -103,6 +103,7 @@ export class CodeBoxes {
   readonly error = input<string | null>(null);
   /** Counts the codes that were turned down; each new one shakes the boxes. */
   readonly attempt = input(0);
+  readonly autofocus = input(true);
 
   readonly completed = output<string>();
 
@@ -118,7 +119,9 @@ export class CodeBoxes {
 
   constructor() {
     afterNextRender(() => {
-      this.focusBox(this.firstEmpty());
+      if (this.autofocus()) {
+        this.focusBox(this.firstEmpty());
+      }
     });
     effect(() => {
       if (this.attempt() > 0 && this.error()) {

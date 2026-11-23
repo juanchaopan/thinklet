@@ -1,3 +1,4 @@
+import { createPrivateKey } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { errorResponseSchema } from '@thinklet/contracts';
@@ -38,6 +39,26 @@ function otherKeyTokens(sameKeyId: boolean): SessionTokensService {
   >);
 }
 
+/**
+ * A session-shaped JWT with the given claims, signed with the api's own key
+ * the way the api signs sessions, so only its claims can make it fail.
+ */
+function signedWithTestKey(claims: Record<string, unknown>): Promise<string> {
+  const { kid } = JSON.parse(testSigningKey) as { kid: string };
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: 'ES256', kid, typ: 'JWT' })
+    .setIssuedAt()
+    .setExpirationTime('1h')
+    .sign(createPrivateKey({ key: JSON.parse(testSigningKey) as object, format: 'jwk' }));
+}
+
+/** The token with its payload changed, keeping the header and signature. */
+function withPayloadChanged(token: string, changes: Record<string, unknown>): string {
+  const [header, , signature] = token.split('.');
+  const payload = { ...decodeJwt(token), ...changes };
+  return [header, base64url.encode(JSON.stringify(payload)), signature].join('.');
+}
+
 /** Asserts a callback that did not sign in: back home with the failure, no login, no login cookie. */
 function expectLoginFailed(response: request.Response): void {
   expect(response.status).toBe(302);
@@ -46,6 +67,13 @@ function expectLoginFailed(response: request.Response): void {
   expect(set['thinklet_session']).toBeUndefined();
   expect(set['thinklet_id_token']).toBeUndefined();
   expectCleared(set['thinklet_login']);
+}
+
+/** Asserts a 401 unauthenticated in the common error format that sets no cookie. */
+function expectUnauthenticated(response: request.Response): void {
+  expect(response.status).toBe(401);
+  expect(errorResponseSchema.parse(response.body).error.code).toBe('unauthenticated');
+  expect(response.headers['set-cookie']).toBeUndefined();
 }
 
 /** Asserts a 403 bad_origin in the common error format. */
@@ -87,8 +115,8 @@ describe('login security', () => {
     });
   });
 
-  // Acceptance criterion: a tampered, expired or wrongly signed login is
-  // not accepted.
+  // Acceptance criterion: a tampered, expired or wrongly signed login, or
+  // one of another identity kind, is not accepted.
   describe('the session JWT', () => {
     let parentId: string;
     let otherParentId: string;
@@ -115,41 +143,52 @@ describe('login security', () => {
       await meWith(session).expect(200);
     });
 
+    it("is accepted signed with the api's key and the parent's claims, so the forgeries below fail on their claims", async () => {
+      await meWith(await signedWithTestKey({ sub: parentId, kind: 'parent' })).expect(200);
+    });
+
     it.each<[string, () => Promise<string>]>([
       [
         'with another parent put into its payload',
-        () => {
-          const [header, , signature] = session.split('.');
-          const payload = { ...decodeJwt(session), sub: otherParentId };
-          return Promise.resolve(
-            [header, base64url.encode(JSON.stringify(payload)), signature].join('.'),
-          );
-        },
+        () => Promise.resolve(withPayloadChanged(session, { sub: otherParentId })),
       ],
-      ['signed by another key', () => otherKeyTokens(false).issueSession(parentId)],
+      ['signed by another key', () => otherKeyTokens(false).issueSession('parent', parentId)],
       [
         'signed by another key under the same key id',
-        () => otherKeyTokens(true).issueSession(parentId),
+        () => otherKeyTokens(true).issueSession('parent', parentId),
       ],
       [
         'unsigned (alg none)',
         () =>
           Promise.resolve(
-            new UnsecuredJWT({ sub: parentId }).setIssuedAt().setExpirationTime('1h').encode(),
+            new UnsecuredJWT({ sub: parentId, kind: 'parent' })
+              .setIssuedAt()
+              .setExpirationTime('1h')
+              .encode(),
           ),
       ],
       [
         'signed with HS256 and the public key as the secret',
         () => {
           const { kty, crv, x, y, kid } = JSON.parse(testSigningKey) as Record<string, string>;
-          return new SignJWT({ sub: parentId })
+          return new SignJWT({ sub: parentId, kind: 'parent' })
             .setProtectedHeader({ alg: 'HS256', kid, typ: 'JWT' })
             .setIssuedAt()
             .setExpirationTime('1h')
             .sign(new TextEncoder().encode(JSON.stringify({ kty, crv, x, y })));
         },
       ],
-      ['expired', () => tokens.issueSession(parentId, new Date(Date.now() - 7 * DAY_MS - 1000))],
+      [
+        'expired',
+        () => tokens.issueSession('parent', parentId, new Date(Date.now() - 7 * DAY_MS - 1000)),
+      ],
+      ['without an identity kind', () => signedWithTestKey({ sub: parentId })],
+      ['with an unknown identity kind', () => signedWithTestKey({ sub: parentId, kind: 'admin' })],
+      ["of a child, with the parent's id", () => tokens.issueSession('child', parentId)],
+      [
+        'with its kind changed to child',
+        () => Promise.resolve(withPayloadChanged(session, { kind: 'child' })),
+      ],
       [
         'a login transaction token instead',
         () =>
@@ -163,11 +202,63 @@ describe('login security', () => {
       ["the identity provider's ID token instead", () => Promise.resolve(idToken)],
       ['not a JWT', () => Promise.resolve('not-a-jwt')],
     ])('is refused %s with 401 unauthenticated', async (_name, forge) => {
-      const response = await meWith(await forge());
+      expectUnauthenticated(await meWith(await forge()));
+    });
+  });
 
-      expect(response.status).toBe(401);
-      expect(errorResponseSchema.parse(response.body).error.code).toBe('unauthenticated');
-      expect(response.headers['set-cookie']).toBeUndefined();
+  // Acceptance criterion: a child's login opens no parent page, whichever
+  // cookie it is put in.
+  describe("a child's login on a parent route", () => {
+    let subject: string;
+    let parentId: string;
+    let parentSession: string;
+
+    beforeAll(async () => {
+      const user = newUser({ name: '林悦' });
+      subject = user.subject;
+      ({
+        cookies: { thinklet_session: parentSession },
+      } = await signIn(app.getHttpServer(), user));
+      parentId = (await parentBySubject(started.databaseUrl, subject))?.id ?? '';
+    });
+
+    const meWithCookies = (cookies: Record<string, string>) =>
+      request(app.getHttpServer()).get('/api/me').set('Cookie', cookieHeader(cookies));
+
+    it.each<[string, (child: string) => Record<string, string>]>([
+      ["in the child's cookie", (child) => ({ thinklet_child_session: child })],
+      ["in the parent's cookie", (child) => ({ thinklet_session: child })],
+      ['in both cookies', (child) => ({ thinklet_session: child, thinklet_child_session: child })],
+    ])('is refused %s with 401 unauthenticated', async (_name, cookiesFor) => {
+      const child = await tokens.issueSession('child', parentId);
+
+      expectUnauthenticated(await meWithCookies(cookiesFor(child)));
+    });
+
+    it("is refused for PATCH /api/me in the parent's cookie, changing nothing", async () => {
+      const child = await tokens.issueSession('child', parentId);
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/me')
+        .set('Origin', TEST_APP_ORIGIN)
+        .set('Cookie', cookieHeader({ thinklet_session: child }))
+        .send({ name: '被改了' });
+
+      expectUnauthenticated(response);
+      expect((await parentBySubject(started.databaseUrl, subject))?.name).toBe('林悦');
+    });
+
+    it("does not let a parent's login in the child's cookie open a parent route", async () => {
+      expectUnauthenticated(await meWithCookies({ thinklet_child_session: parentSession }));
+    });
+
+    it("does not get in the way of a parent's login on the same browser", async () => {
+      const child = await tokens.issueSession('child', crypto.randomUUID());
+
+      await meWithCookies({
+        thinklet_session: parentSession,
+        thinklet_child_session: child,
+      }).expect(200);
     });
   });
 
@@ -208,9 +299,7 @@ describe('login security', () => {
 
     it('fails with a changed login cookie', async () => {
       const { authorizationUrl, loginCookie } = await startLogin(app.getHttpServer());
-      const [header, , signature] = loginCookie.split('.');
-      const payload = { ...decodeJwt(loginCookie), returnTo: '//evil.example' };
-      const changed = [header, base64url.encode(JSON.stringify(payload)), signature].join('.');
+      const changed = withPayloadChanged(loginCookie, { returnTo: '//evil.example' });
 
       expectLoginFailed(
         await callback(app.getHttpServer(), await authorize(authorizationUrl, newUser()), changed),

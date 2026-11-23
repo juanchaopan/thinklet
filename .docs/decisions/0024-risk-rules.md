@@ -16,7 +16,7 @@
 用常见的起点，改成本项目的路径，写在仓库根目录的 `risk-rules.yml` 里。具体路径见 `architecture.md` 的“风险规则”一节。
 
 - 高风险：流程和检查本身、截图基准图、登录认证、存家长和孩子数据的后端模块、迁移脚本、环境文件、部署配置、`apps/api/src/infrastructure/**`。
-- 存家长和孩子数据的后端模块逐个列出：`auth` 由 `**/auth/**` 覆盖，`family` 是 `apps/api/src/modules/family/**`。以后新加这类模块的 issue，把它的路径加进来。
+- 存家长和孩子数据的后端模块逐个列出：`auth` 由 `**/auth/**` 覆盖，`family` 是 `apps/api/src/modules/family/**`，`child` 是 `apps/api/src/modules/child/**`。以后新加这类模块的 issue，把它的路径加进来。
 - 低风险：`.docs/**`、`**/*.md`、`**/*.txt`、`LICENSE`。
 - 同时属于两边的，按高风险算。
 - 发版 PR 一律是高风险。
@@ -37,4 +37,4 @@
 - 加了存孩子数据的模块。
 - 高风险的 PR 多到批准成为负担。
 
-Last changed: #7 (2026-11-20)
+Last changed: #8 (2026-11-22)

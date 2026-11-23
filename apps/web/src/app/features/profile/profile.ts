@@ -15,10 +15,12 @@ import { Toaster } from '../../shared/ui/toast';
 
 /**
  * The hints for a name that cannot be saved (rules.md, 个人设置). A name is
- * any text, so only an empty or a long one is rejected.
+ * any text, so only an empty or a long one is rejected; a name is too short
+ * only when it is empty.
  */
 const NAME_HINTS: FieldHints = {
   required: '请填名字',
+  too_short: '请填名字',
   too_long: '名字最多 20 个字',
   invalid: '请填名字',
 };

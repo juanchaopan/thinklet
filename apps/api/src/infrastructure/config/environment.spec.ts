@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { environmentSchema } from './environment.js';
 
 /** A fresh ES256 private key as a JWK with a key id, as JWT_SIGNING_KEY holds it. */
@@ -9,6 +9,9 @@ function newSigningKey(): Record<string, string> {
 
 const signingKey = newSigningKey();
 const otherKey = newSigningKey();
+const childDataKey = randomBytes(32);
+/** childDataKey in the standard base64 that CHILD_DATA_KEY holds. */
+const childDataKeyText = childDataKey.toString('base64');
 
 const valid = {
   DATABASE_URL: 'postgresql://user:secret@localhost:5432/app',
@@ -22,6 +25,7 @@ const valid = {
   OIDC_CLIENT_SECRET: 'client-secret',
   APP_ORIGIN: 'http://localhost:4200',
   JWT_SIGNING_KEY: JSON.stringify(signingKey),
+  CHILD_DATA_KEY: childDataKeyText,
 };
 
 function failingVariables(input: Record<string, unknown>): string[] {
@@ -34,13 +38,17 @@ function signingKeyWith(changes: Record<string, string | undefined>): string {
   return JSON.stringify({ ...signingKey, ...changes });
 }
 
+/** 32 bytes whose base64 has both `+` and `/`, the characters base64url writes differently. */
+const keyWithBase64OnlyCharacters = Buffer.alloc(32, 0xfb);
+
 describe('environmentSchema', () => {
-  it('accepts a complete environment, applies defaults and parses the signing key', () => {
+  it('accepts a complete environment, applies defaults and parses the keys', () => {
     expect(environmentSchema.parse(valid)).toEqual({
       ...valid,
       PORT: 3000,
       S3_FORCE_PATH_STYLE: false,
       JWT_SIGNING_KEY: signingKey,
+      CHILD_DATA_KEY: childDataKey,
     });
   });
 
@@ -75,6 +83,7 @@ describe('environmentSchema', () => {
     'OIDC_CLIENT_SECRET',
     'APP_ORIGIN',
     'JWT_SIGNING_KEY',
+    'CHILD_DATA_KEY',
   ])('names %s when it is empty', (name) => {
     expect(failingVariables({ ...valid, [name]: '' })).toEqual([name]);
   });
@@ -156,6 +165,31 @@ describe('environmentSchema', () => {
     expect(failingVariables({ ...valid, JWT_SIGNING_KEY: value })).toEqual(['JWT_SIGNING_KEY']);
   });
 
+  it('decodes a child data key with every base64 character', () => {
+    const environment = environmentSchema.parse({
+      ...valid,
+      CHILD_DATA_KEY: keyWithBase64OnlyCharacters.toString('base64'),
+    });
+
+    expect(environment.CHILD_DATA_KEY).toEqual(keyWithBase64OnlyCharacters);
+  });
+
+  it.each([
+    ['text that is not base64', 'not base64 at all, not even close!!!!!!!!!!!'],
+    ['16 bytes', randomBytes(16).toString('base64')],
+    ['31 bytes', randomBytes(31).toString('base64')],
+    ['33 bytes', randomBytes(33).toString('base64')],
+    ['64 bytes', randomBytes(64).toString('base64')],
+    ['32 bytes in hex', childDataKey.toString('hex')],
+    ['32 bytes in base64url', keyWithBase64OnlyCharacters.toString('base64url')],
+    ['32 bytes in base64 without padding', childDataKeyText.replace(/=+$/, '')],
+    ['32 bytes in base64 with a line break', childDataKeyText.replace(/^.{20}/, '$&\n')],
+    ['32 bytes in base64 with spaces around', ` ${childDataKeyText} `],
+    ['32 bytes in base64 followed by more text', `${childDataKeyText}AAAA`],
+  ])('names CHILD_DATA_KEY when it holds %s', (_case, value) => {
+    expect(failingVariables({ ...valid, CHILD_DATA_KEY: value })).toEqual(['CHILD_DATA_KEY']);
+  });
+
   it('names every bad variable at once', () => {
     expect(failingVariables({ ...valid, DATABASE_URL: undefined, S3_BUCKET: '' })).toEqual([
       'DATABASE_URL',
@@ -180,5 +214,14 @@ describe('environmentSchema', () => {
     expect(result.success).toBe(false);
     expect(messages).not.toContain(signingKey['d']);
     expect(messages).not.toContain(otherKey['d']);
+  });
+
+  it('does not repeat the child data key in its messages', () => {
+    const cutOff = childDataKeyText.slice(0, -8);
+    const result = environmentSchema.safeParse({ ...valid, CHILD_DATA_KEY: cutOff });
+    const messages = JSON.stringify(result.error?.issues);
+
+    expect(result.success).toBe(false);
+    expect(messages).not.toContain(cutOff);
   });
 });

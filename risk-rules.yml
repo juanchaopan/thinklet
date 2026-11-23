@@ -35,6 +35,7 @@ high:
   # pattern above, every other one by its own path.
   - '**/auth/**'
   - 'apps/api/src/modules/family/**'
+  - 'apps/api/src/modules/child/**'
   - 'apps/api/drizzle/**'
   - '**/*.sql'
   - '**/.env*'

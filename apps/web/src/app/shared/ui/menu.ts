@@ -17,6 +17,7 @@ import {
   Injector,
   ViewContainerRef,
   afterNextRender,
+  computed,
   contentChildren,
   effect,
   inject,
@@ -63,6 +64,16 @@ export class MenuDivider {}
 /** Which edge of its button a drop-down lines up with. */
 export type MenuAlign = 'start' | 'end';
 
+/**
+ * How wide a drop-down is: `wide` (288 px) for entries with more than a
+ * label, such as the families with their tags; `medium` (208 px) for a few
+ * actions with longer labels, such as a child's; `narrow` (176 px) for a few
+ * short actions, such as a member's.
+ */
+export type MenuWidth = 'wide' | 'medium' | 'narrow';
+
+const WIDTHS: Record<MenuWidth, string> = { wide: 'w-72', medium: 'w-52', narrow: 'w-44' };
+
 /** Below the button at the chosen edge, 4 px down; the other edge when there is no room. */
 function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
   const start: ConnectedPosition = {
@@ -83,8 +94,7 @@ function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
  * screen. The owner chooses with `dropDown`: the mouse version drops down
  * where there is room under the button. A drop-down lines up with the
  * button's start edge, or with its end edge for a button at the far end of
- * a bar (`align`); it is 288 px wide, or 176 px when `narrow`, for a few
- * short actions.
+ * a bar or a row (`align`), and is as wide as `width` says.
  *
  * The first entry takes the focus; the arrow keys, Home and End move between
  * entries. Escape, Tab and a click outside emit `dismissed`; the owner then
@@ -102,11 +112,7 @@ function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
         tabindex="-1"
         [attr.aria-label]="label()"
         class="rounded-3xl border border-line bg-surface p-2 shadow-pop outline-none"
-        [class.w-72]="!narrow()"
-        [class.w-44]="narrow()"
-        [class.origin-top-left]="align() === 'start'"
-        [class.origin-top-right]="align() === 'end'"
-        [class]="layer.leaving() ? 'animate-drop-out' : 'animate-drop'"
+        [class]="dropDownClasses()"
         (keydown)="onKeydown($event)"
       >
         <ng-container [ngTemplateOutlet]="entries" />
@@ -149,8 +155,7 @@ export class Menu {
   readonly origin = input.required<HTMLElement>();
   readonly dropDown = input(true);
   readonly align = input<MenuAlign>('start');
-  /** A drop-down of a few short actions, 176 px wide instead of 288 px. */
-  readonly narrow = input(false);
+  readonly width = input<MenuWidth>('wide');
 
   readonly dismissed = output();
 
@@ -158,6 +163,13 @@ export class Menu {
   protected readonly sheetEnter = 'animate-sheet touch:animate-float';
   protected readonly sheetLeave = 'animate-sheet-out touch:animate-float-out';
   protected readonly layer: Layer;
+
+  /** The drop-down's width, the corner it unfolds from and its animation. */
+  protected readonly dropDownClasses = computed(() => {
+    const origin = this.align() === 'start' ? 'origin-top-left' : 'origin-top-right';
+    const animation = this.layer.leaving() ? 'animate-drop-out' : 'animate-drop';
+    return `${WIDTHS[this.width()]} ${origin} ${animation}`;
+  });
 
   private readonly items = contentChildren(MenuItem, { descendants: true });
   private readonly dropDownFrame = viewChild<TemplateRef<unknown>>('dropDownFrame');

@@ -27,9 +27,13 @@ import { FamilyCreation } from './family-creation';
 import { isSignedOut, rejectedFields, showSomethingWentWrong } from './failures';
 import { Session } from './session';
 
-/** The hints for a family name that cannot be saved (rules.md, 家庭). */
+/**
+ * The hints for a family name that cannot be saved (rules.md, 家庭). A name
+ * is too short only when it is empty, so both say to fill it in.
+ */
 export const FAMILY_NAME_HINTS: FieldHints = {
   required: '请填家庭名称',
+  too_short: '请填家庭名称',
   too_long: '家庭名称最多 20 个字',
   invalid: '请填家庭名称',
 };

@@ -133,6 +133,23 @@ export class FamiliesService {
     requireAccess(await this.repository.memberRole(familyId, parentId), access);
   }
 
+  /**
+   * The id of the family with the code, or undefined when no family has
+   * it, for a child's login, which names the family by its code.
+   */
+  findIdByCode(code: string): Promise<string | undefined> {
+    return this.repository.findIdByCode(code);
+  }
+
+  /**
+   * The current code of each of the families, by family id, for filling in
+   * the login form of a remembered child; a family that does not exist has
+   * none.
+   */
+  codesOf(familyIds: readonly string[]): Promise<Map<string, string>> {
+    return this.repository.codesOf(familyIds);
+  }
+
   /** Creates a family with a new code; the parent who creates it is its admin. */
   create(parentId: string, request: CreateFamilyRequest): Promise<FamilyDetail> {
     return this.withNewCode((code) =>

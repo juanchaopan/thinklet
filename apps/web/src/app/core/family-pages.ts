@@ -15,15 +15,29 @@ import { PageProblem } from '../shared/ui/page-problem';
 import type { Toaster } from '../shared/ui/toast';
 import { ApiError } from './api';
 import { whenBackInFront } from './connectivity';
-import { explainChange } from './failures';
+import { asApiError, explainChange, isSignedOut } from './failures';
 import { Session } from './session';
 
 /**
- * Why a page of one family (its family page, its new members page) shows no
- * family: the parent is not, or no longer, a member, or the server failed or
- * did not answer while the page was opening.
+ * Why a page of one family (its family page, its children page, its new
+ * members page) shows no family: the parent is not, or no longer, a member,
+ * or the server failed or did not answer while the page was opening.
  */
 export type FamilyTrouble = 'not-found' | ApiError;
+
+/**
+ * What a read of a page of one family that failed means for the page: null
+ * when the parent is signed out (the session has sent them to the product
+ * home), `not-found` for a family the parent is not in, and otherwise the
+ * failure.
+ */
+export function readTrouble(error: unknown): FamilyTrouble | null {
+  if (isSignedOut(error)) {
+    return null;
+  }
+  const failure = asApiError(error);
+  return failure.code === 'family_not_found' ? 'not-found' : failure;
+}
 
 /** What a page of one family reads it with. */
 export interface FamilyReader {
