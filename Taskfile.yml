@@ -31,14 +31,17 @@ vars:
 
 tasks:
   dev:
-    desc: Start PostgreSQL, SeaweedFS and the mock OIDC provider with Docker Compose, apply migrations, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    desc: Start PostgreSQL, SeaweedFS and the mock OIDC provider with Docker Compose, apply migrations, import the book covers, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
+    # The cover import reads the book table, so it runs after the migrations
+    # that create and fill it.
     cmds:
       - docker compose up --detach --wait
       - task: build-contracts
       - task: migrate
+      - task: rebuild
       - task: dev-servers
 
   check:
@@ -267,6 +270,15 @@ tasks:
     desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
     cmds:
       - pnpm --filter api run migrate
+
+  # The cover import is Nest code with decorators, so it runs from the api's
+  # build (nest build compiles src/rebuild.ts to dist/rebuild.js) rather
+  # than from the TypeScript source.
+  rebuild:
+    desc: Build the api, then import the book covers from content/books/ into object storage and record their hashes in the book table (MIGRATION_DATABASE_URL, else DATABASE_URL, and the S3_* variables); run it after migrate
+    deps: [build-api]
+    cmds:
+      - pnpm --filter api run rebuild
 
   jwt-key:
     desc: Print a new ES256 signing key as a JWT_SIGNING_KEY line for .env (local development only; every environment has its own key)

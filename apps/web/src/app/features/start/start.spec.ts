@@ -331,7 +331,7 @@ describe('Start', () => {
       },
     );
 
-    it('lands on the home page of the new family, which the parent runs, with 已创建', async () => {
+    it('lands on the library of the new family, which becomes the current one, with 已创建', async () => {
       const bodies: unknown[] = [];
       worker.use(
         http.post('/api/families', async ({ request }) => {
@@ -372,7 +372,9 @@ describe('Start', () => {
       });
       expect(await screen.findByText('已创建「林悦的家」')).toBeTruthy();
       expect(screen.getByText('欢迎回来，林悦')).toBeTruthy();
-      expect(screen.getAllByRole('link', { name: /新成员/ }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole('link', { name: '家庭管理' })[0]?.getAttribute('href')).toBe(
+        `/families/${GRANDMA_FAMILY_ID}`,
+      );
       await noDialog();
     });
   });

@@ -3,8 +3,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ChildRoute } from '../../infrastructure/authentication/child-route.decorator.js';
 import { currentParentIdOf } from '../../infrastructure/authentication/current-parent.js';
+import { ParentOrChildRoute } from '../../infrastructure/authentication/parent-or-child-route.decorator.js';
 import { Public } from '../../infrastructure/authentication/public.decorator.js';
 import { AuthGuard } from './auth.guard.js';
+import { ParentSessionService } from './parent-session.service.js';
 import type { Session, SessionTokensService } from './session-tokens.service.js';
 
 @Public()
@@ -12,6 +14,9 @@ class OpenController {}
 
 @ChildRoute()
 class ChildController {}
+
+@ParentOrChildRoute()
+class SharedController {}
 
 /** A controller with metadata of its own, but not marked public. */
 @SetMetadata('thinklet:other', true)
@@ -35,7 +40,10 @@ function setUp(session: Session | undefined, cookies: Record<string, string> = {
       getClass: () => controller,
       switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
     }) as unknown as ExecutionContext;
-  const guard = new AuthGuard(new Reflector(), tokens as unknown as SessionTokensService);
+  const guard = new AuthGuard(
+    new Reflector(),
+    new ParentSessionService(tokens as unknown as SessionTokensService),
+  );
   return {
     tokens,
     request,
@@ -43,6 +51,7 @@ function setUp(session: Session | undefined, cookies: Record<string, string> = {
     closed: () => guard.canActivate(contextFor(ClosedController)),
     open: () => guard.canActivate(contextFor(OpenController)),
     child: () => guard.canActivate(contextFor(ChildController)),
+    shared: () => guard.canActivate(contextFor(SharedController)),
   };
 }
 
@@ -66,6 +75,14 @@ describe('AuthGuard', () => {
     });
 
     await expect(child()).resolves.toBe(true);
+    expect(tokens.verifySession).not.toHaveBeenCalled();
+    expect(response.cookie).not.toHaveBeenCalled();
+  });
+
+  it("leaves a route for a parent or a child to the route's own check", async () => {
+    const { shared, tokens, response } = setUp(undefined);
+
+    await expect(shared()).resolves.toBe(true);
     expect(tokens.verifySession).not.toHaveBeenCalled();
     expect(response.cookie).not.toHaveBeenCalled();
   });

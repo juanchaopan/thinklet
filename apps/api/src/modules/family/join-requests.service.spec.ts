@@ -10,7 +10,6 @@ import {
 } from './join-requests.repository.js';
 import {
   JoinRequestsService,
-  requireAdminDismissal,
   requireApplicable,
   requireApplicantDismissal,
   requireDecision,
@@ -141,22 +140,6 @@ describe('requireApplicantDismissal', () => {
   });
 });
 
-describe('requireAdminDismissal', () => {
-  it.each(byStatus({ pending: 'request_pending', withdrawn: 'not_found' }))(
-    'answers the admin dismissing a %s request with %s',
-    (status, expected) => {
-      expect(codeOf(() => requireAdminDismissal(requestIn(status), FAMILY_ID))).toBe(expected);
-    },
-  );
-
-  it("answers another family's request as not found, whatever its state", () => {
-    expect(codeOf(() => requireAdminDismissal(undefined, FAMILY_ID))).toBe('not_found');
-    expect(codeOf(() => requireAdminDismissal(requestIn('approved'), OTHER_FAMILY_ID))).toBe(
-      'not_found',
-    );
-  });
-});
-
 describe('toApplicantRequest', () => {
   const record: ApplicantRequestRecord = {
     id: REQUEST_ID,
@@ -221,11 +204,15 @@ describe('toHandledRequest', () => {
       status: 'approved',
       closedAt: '2026-11-21T10:03:00.000Z',
     });
+    expect(toHandledRequest(familyRecord('rejected')).status).toBe('rejected');
   });
 
-  it.each<JoinRequestStatus>(['pending', 'withdrawn'])('refuses a %s request', (status) => {
-    expect(() => toHandledRequest({ ...familyRecord(status), closedAt: CLOSED_AT })).toThrow();
-  });
+  it.each<JoinRequestStatus>(['pending', 'withdrawn', 'expired'])(
+    'refuses a %s request, which the admin did not decide',
+    (status) => {
+      expect(() => toHandledRequest({ ...familyRecord(status), closedAt: CLOSED_AT })).toThrow();
+    },
+  );
 
   it('refuses a request without a closing time', () => {
     expect(() => toHandledRequest({ ...familyRecord('approved'), closedAt: null })).toThrow();
@@ -251,13 +238,6 @@ function createService(
       request && { ...familyRecord(request.status), id: requestId, parentId: request.parentId }
     );
   };
-  const familyRequestsWhere = (keep: (status: JoinRequestStatus) => boolean) =>
-    Promise.resolve(
-      [...requests.keys()]
-        .map(familyRequest)
-        .filter((record): record is FamilyRequestRecord => record !== undefined)
-        .filter((record) => keep(record.status)),
-    );
   const store = {
     lockFamily: vi.fn((familyId: string) => {
       calls.push(`lockFamily ${familyId}`);
@@ -303,8 +283,8 @@ function createService(
       roles.set(parentId, role);
       return Promise.resolve();
     }),
-    dismissRequest: vi.fn((_requestId: string, side: string) => {
-      calls.push(`dismissRequest ${side}`);
+    dismissRequest: vi.fn((requestId: string) => {
+      calls.push(`dismissRequest ${requestId}`);
       return Promise.resolve();
     }),
     findApplicantRequest: vi.fn((requestId: string) => {
@@ -321,9 +301,12 @@ function createService(
       );
     }),
     findFamilyRequest: vi.fn((requestId: string) => Promise.resolve(familyRequest(requestId))),
-    listPendingRequests: vi.fn(() => familyRequestsWhere((status) => status === 'pending')),
-    listHandledRequests: vi.fn(() =>
-      familyRequestsWhere((status) => status !== 'pending' && status !== 'withdrawn'),
+    listPendingRequests: vi.fn(() =>
+      Promise.resolve(
+        [...requests.keys()]
+          .map(familyRequest)
+          .filter((record): record is FamilyRequestRecord => record?.status === 'pending'),
+      ),
     ),
   };
   const repository = {
@@ -454,7 +437,7 @@ describe('JoinRequestsService', () => {
 
         await service.dismissOwn(APPLICANT, REQUEST_ID);
 
-        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest applicant']);
+        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, `dismissRequest ${REQUEST_ID}`]);
       },
     );
 
@@ -476,25 +459,22 @@ describe('JoinRequestsService', () => {
   });
 
   describe('listFamily', () => {
-    it("lists the pending and the handled requests with each applicant's parent id", async () => {
+    it("lists the pending requests with each applicant's parent id", async () => {
       const { service } = createService({ request: requestIn('pending') });
 
       await expect(service.listFamily(FAMILY_ID)).resolves.toEqual({
         pending: [expect.objectContaining({ id: REQUEST_ID, parentId: APPLICANT })],
-        handled: [],
       });
     });
 
-    it('puts an expired request among the handled ones', async () => {
-      const { service } = createService({ request: requestIn('expired') });
+    it.each<JoinRequestStatus>(['approved', 'rejected', 'withdrawn', 'expired'])(
+      'leaves a %s request out',
+      async (status) => {
+        const { service } = createService({ request: requestIn(status) });
 
-      const listed = await service.listFamily(FAMILY_ID);
-
-      expect(listed.pending).toEqual([]);
-      expect(listed.handled).toEqual([
-        expect.objectContaining({ parentId: APPLICANT, status: 'expired' }),
-      ]);
-    });
+        await expect(service.listFamily(FAMILY_ID)).resolves.toEqual({ pending: [] });
+      },
+    );
   });
 
   describe('decide', () => {
@@ -556,25 +536,6 @@ describe('JoinRequestsService', () => {
         await rejectionCode(service.decide(ADMIN, OTHER_FAMILY_ID, REQUEST_ID, 'approved')),
       ).toBe('not_found');
       expect(store.insertMember).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('dismissForFamily', () => {
-    it("records the admin's 「知道了」 under the lock", async () => {
-      const { service, calls } = createService({ request: requestIn('approved') });
-
-      await service.dismissForFamily(ADMIN, FAMILY_ID, REQUEST_ID);
-
-      expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'dismissRequest admin']);
-    });
-
-    it('refuses a pending request without writing', async () => {
-      const { service, store } = createService({ request: requestIn('pending') });
-
-      expect(await rejectionCode(service.dismissForFamily(ADMIN, FAMILY_ID, REQUEST_ID))).toBe(
-        'request_pending',
-      );
-      expect(store.dismissRequest).not.toHaveBeenCalled();
     });
   });
 });

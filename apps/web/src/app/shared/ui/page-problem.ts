@@ -3,11 +3,12 @@ import { Art, type IconArt } from './art';
 import { Button } from './button';
 import { Card } from './card';
 
-export type PageProblemKind = 'not-found' | 'server';
+export type PageProblemKind = 'not-found' | 'book-not-found' | 'server';
 
 interface ProblemText {
   readonly icon: IconArt;
   readonly title: string;
+  /** The line under the title; empty for none. */
   readonly text: string;
   readonly action: string;
 }
@@ -18,6 +19,12 @@ const PROBLEMS: Record<PageProblemKind, ProblemText> = {
     title: '找不到这个家庭',
     text: '它不存在，或者你已经不是成员。',
     action: '回到我的家庭',
+  },
+  'book-not-found': {
+    icon: 'search',
+    title: '找不到这本书',
+    text: '',
+    action: '回到书库',
   },
   server: {
     icon: 'wrench',
@@ -39,11 +46,12 @@ export function errorNumber(requestId: string): string {
 
 /**
  * A page whose content could not be shown, in place of that content: the
- * family is not there (or the parent is no longer a member), or the server
- * failed while the page was opening. The server problem shows the error
- * number of the request; without an answer from the server there is no
- * request id and no error number. The button emits `action`: back to the
- * parent's own family, or try again.
+ * family is not there (or the parent is no longer a member), the book is
+ * not there (or the family cannot see it), or the server failed while the
+ * page was opening. The server problem shows the error number of the
+ * request; without an answer from the server there is no request id and no
+ * error number. The button emits `action`: back to the parent's own family,
+ * back to the library, or try again.
  */
 @Component({
   selector: 'app-page-problem',
@@ -54,7 +62,9 @@ export function errorNumber(requestId: string): string {
       <div class="flex flex-col items-center text-center">
         <img alt="" [appArt]="problem().icon" class="size-16" />
         <h1 class="mt-4 text-2xl font-black">{{ problem().title }}</h1>
-        <p class="mt-2 text-base text-ink-soft">{{ problem().text }}</p>
+        @if (problem().text) {
+          <p class="mt-2 text-base text-ink-soft">{{ problem().text }}</p>
+        }
         @if (kind() === 'server' && number()) {
           <p class="mt-3 font-mono text-sm text-ink-muted">错误编号 {{ number() }}</p>
         }

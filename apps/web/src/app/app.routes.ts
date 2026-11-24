@@ -7,15 +7,14 @@ import {
   matchVisitor,
   requireChild,
   requireFamily,
-  requireFamilyAdmin,
   requireNoFamily,
   requireParent,
 } from './core/guards';
 
 /**
- * `/` shows whoever is signed in on this browser: the home page for a
- * signed-in parent, the child's home page when only a child is signed in,
- * and the product home for a visitor.
+ * `/` shows whoever is signed in on this browser: the current family's
+ * library for a signed-in parent, the child's home page when only a child
+ * is signed in, and the product home for a visitor.
  *
  * The child's pages need no parent and have no parent menus: the child login
  * `/child` (a signed-in child goes on to `/child/home`; a signed-in parent
@@ -26,13 +25,18 @@ import {
  * Every other page needs a signed-in parent; a visitor is sent to `/`, and
  * an unknown address goes to `/`. The family pages need a family (a parent
  * without one goes to `/start`), and the start page is only for a parent
- * without one (a parent with one goes to `/`). An invitation link
- * `/join/<code>` opens the join dialog over the join page for a parent with
- * a family and over the start page for one without. A family's own pages,
- * `/families/<id>`, its children page and its new members page, make that
- * family the current one; the new members page is its admin's. Route titles
- * become the browser title "<title> - 好奇星球" (core/page-title); the home
- * pages carry the product name alone.
+ * without one (a parent with one goes to `/`). The library keeps its
+ * filters in the address's query (`/?grade=…&scope=family`); a book's page
+ * `/books/<id>` shows the book as the current family sees it. An invitation
+ * link `/join/<code>` opens the join dialog over the join page for a parent
+ * with a family and over the start page for one without. A family's own
+ * pages, `/families/<id>` and its children page, make that family the
+ * current one; `/families/<id>/new-members` redirects to the family page,
+ * where 等你处理 lists the requests waiting, without a word (rules.md,
+ * 导航). Route titles become the browser title "<title> - 好奇星球"
+ * (core/page-title); the library and the child's home page carry the
+ * product name alone, and a book's page sets the book's title itself once
+ * the book is read.
  *
  * Every page is loaded when it is first opened, and so is the signed-in
  * frame with its menus: a visitor's first page loads neither.
@@ -77,7 +81,13 @@ export const routes: Routes = [
         path: '',
         pathMatch: 'full',
         canActivate: [requireFamily],
-        loadComponent: () => import('./features/home/home').then((module) => module.Home),
+        loadComponent: () =>
+          import('./features/library/library-page').then((module) => module.LibraryPage),
+      },
+      {
+        path: 'books/:bookId',
+        canActivate: [requireFamily],
+        loadComponent: () => import('./features/book/book-page').then((module) => module.BookPage),
       },
       {
         path: 'start',
@@ -116,13 +126,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/children/children-page').then((module) => module.ChildrenPage),
       },
-      {
-        path: 'families/:familyId/new-members',
-        title: '新成员',
-        canActivate: [makeFamilyCurrent, requireFamilyAdmin],
-        loadComponent: () =>
-          import('./features/new-members/new-members').then((module) => module.NewMembers),
-      },
+      { path: 'families/:familyId/new-members', redirectTo: '/families/:familyId' },
       {
         path: 'profile',
         title: '个人设置',

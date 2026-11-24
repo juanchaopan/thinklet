@@ -5,16 +5,15 @@ import { Session } from './session';
 /** The browser's local storage key for the family used last on this browser. */
 const STORAGE_KEY = 'thinklet.currentFamilyId';
 
-/** A family's own pages: its family page, its children page and its new members page. */
-const FAMILY_PAGE = /^\/families\/[^/?#]+(\/children|\/new-members)?(?:[?#].*)?$/;
+/** A family's own pages: its family page and its children page. */
+const FAMILY_PAGE = /^\/families\/[^/?#]+(\/children)?(?:[?#].*)?$/;
 
 /**
  * Where the parent goes after switching to the family `next` while on `url`
- * (rules.md, 导航): from a children page to the new family's children page;
- * from a family page to the new family's family page; from a new members
- * page to the new family's new members page when they are its admin, else
- * to its family page. Null on every other page (the home page, the join
- * page, the profile), which stays and shows the new family.
+ * (rules.md, 导航): from a children page to the new family's children page,
+ * and from a family page to the new family's family page. Null on every
+ * other page (the library, the join page, the profile), which stays and
+ * shows the new family.
  */
 export function pageAfterSwitch(url: string, next: MeFamily): string | null {
   const match = FAMILY_PAGE.exec(url);
@@ -22,11 +21,7 @@ export function pageAfterSwitch(url: string, next: MeFamily): string | null {
     return null;
   }
   const familyPage = `/families/${next.id}`;
-  if (match[1] === '/children') {
-    return `${familyPage}/children`;
-  }
-  const newMembers = match[1] === '/new-members' && next.role === 'admin';
-  return newMembers ? `${familyPage}/new-members` : familyPage;
+  return match[1] === '/children' ? `${familyPage}/children` : familyPage;
 }
 
 /**

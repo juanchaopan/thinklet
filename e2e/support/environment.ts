@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   apiDirectory,
   apiEnvironment,
+  importBuiltCovers,
   migrate,
   startServices,
 } from '../../apps/api/test/support/containers.ts';
@@ -48,6 +49,12 @@ export interface Environment {
   /** The mock identity provider the api signs in through: its issuer and the api's client id. */
   identityProvider: { issuer: string; clientId: string };
   /**
+   * The address of the environment's database, for the few tests that set
+   * up what no user can do any more through the site, such as a book a
+   * family acquired before it left the library.
+   */
+  databaseUrl: string;
+  /**
    * Stops everything that was started and removes the containers. Every call
    * returns the same promise, so a second caller (a signal handler while the
    * normal cleanup runs) waits for the cleanup to finish.
@@ -80,11 +87,13 @@ function createCleanup(): Cleanup {
 
 /**
  * Starts a throwaway copy of the whole system on random ports: PostgreSQL,
- * SeaweedFS and the mock OIDC provider in containers, the migrations, the
- * built web (apps/web/dist) behind a server that forwards /api like the
- * Vercel rewrite, and the built api (apps/api/dist) with that server's origin
- * as its own, so the login's callback, the logout's return address and the
- * allowed Origin all follow the web origin. Both apps must be built first.
+ * SeaweedFS and the mock OIDC provider in containers, the migrations and the
+ * cover import of the repository's content/books/ (the built
+ * apps/api/dist/rebuild.js), the built web (apps/web/dist) behind a server
+ * that forwards /api like the Vercel rewrite, and the built api
+ * (apps/api/dist) with that server's origin as its own, so the login's
+ * callback, the logout's return address and the allowed Origin all follow
+ * the web origin. Both apps must be built first.
  */
 export async function startEnvironment(options: EnvironmentOptions): Promise<Environment> {
   const cleanup = createCleanup();
@@ -93,6 +102,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     cleanup.add(stop);
     const databaseUrl = database.getConnectionUri();
     await migrate(databaseUrl);
+    await importBuiltCovers(databaseUrl, storage);
 
     // The web server starts first, so the api gets the origin it is reached
     // at; nothing calls /api before the api answers below.
@@ -124,6 +134,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     return {
       baseUrl,
       identityProvider: { issuer: oidc.issuer, clientId: oidc.clientId },
+      databaseUrl,
       stop: cleanup.run,
     };
   } catch (error) {

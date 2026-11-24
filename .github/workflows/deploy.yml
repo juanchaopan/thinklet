@@ -4,14 +4,18 @@
 #   gh workflow run deploy.yml --ref main -f target=staging -f version=v1.2.0
 # A run started by hand deploys only a commit on main (a release tag or a
 # commit of main's history) and stops before any change otherwise.
-# In order: the database migrations, the api's runtime variables copied from
-# the target's GitHub environment into its Vercel project, the api, the
-# web's vercel.json generated from API_ORIGIN, the web, then the smoke tests
-# against the target (only the @production-safe ones on production). There
-# are no data to rebuild yet. Every value comes from the target's GitHub
-# environment; a secret reaches a command only through the environment or
-# standard input, never its command line, and only the steps that need it
-# see it: the Vercel token only the steps that run the Vercel CLI.
+# In order: the database migrations (the book data included), the cover
+# import from content/books/ into the target's object storage, the api's
+# runtime variables copied from the target's GitHub environment into its
+# Vercel project, the api, the web's vercel.json generated from API_ORIGIN,
+# the web, then the smoke tests against the target (only the
+# @production-safe ones on production). The cover import runs after the
+# migrations because it looks up every book in the book table, and before
+# the api so the api serves the covers the import recorded. Every value comes
+# from the target's GitHub environment; a secret reaches a command only
+# through the environment or standard input, never its command line, and
+# only the steps that need it see it: the Vercel token only the steps that
+# run the Vercel CLI.
 #
 # The Vercel projects have their Root Directory set to apps/api and apps/web,
 # so the CLI runs from the repository root and the build traces the
@@ -37,7 +41,7 @@ on:
 permissions: {}
 
 # One deployment per target at a time; a running one is never cancelled, so
-# a migration is not cut off halfway.
+# a migration or a cover import is not cut off halfway.
 concurrency:
   group: deploy-${{ inputs.target || 'staging' }}
   cancel-in-progress: false
@@ -91,6 +95,20 @@ jobs:
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
         run: pnpm exec task migrate
+
+      # The task builds the contracts and the api first, then runs the
+      # import with the same direct database connection as the migrations
+      # and the target's object storage.
+      - name: Import the book covers
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          S3_REGION: ${{ vars.S3_REGION }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_FORCE_PATH_STYLE: ${{ vars.S3_FORCE_PATH_STYLE }}
+        run: pnpm exec task rebuild
 
       # Each value goes to the CLI on standard input; printf is a shell
       # builtin, so the value is never on a command line. Secrets are stored

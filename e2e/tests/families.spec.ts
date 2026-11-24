@@ -4,7 +4,9 @@ import {
   askToJoin,
   bringToFront,
   createFamily,
+  familyManagementLink,
   familyOfLinyue,
+  familySwitcher,
   firstFamily,
   handleWaitingRequest,
   pickTimeZone,
@@ -51,11 +53,11 @@ async function expectFamilyPage(page: Page, family: FamilySummary, timeZone: str
 
 // Creating a family, asking to join one and moving between families, through
 // the mock identity provider (.docs/design/rules.md, 家庭, 输入家庭码, 加入申请,
-// 当前家庭). The browser is in Shanghai, so a new family starts in that time
-// zone. The admin's side of a request (approving, rejecting) goes straight
-// through the api. A page is checked with axe once its content is shown.
-// Steps that read the sidebar run on a screen wide enough for it, on the
-// phone too.
+// 当前家庭, 通知). The browser is in Shanghai, so a new family starts in that
+// time zone. The admin's side of a request (approving, rejecting) goes
+// straight through the api. A page is checked with axe once its content is
+// shown. Steps that read the sidebar run on a screen wide enough for it, on
+// the phone too.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('families', () => {
@@ -78,7 +80,7 @@ test.describe('families', () => {
 
     await expect(page).toHaveURL('/');
     await expect(page.getByText('已创建「林悦的家」')).toBeVisible();
-    await expect(page.getByRole('button', { name: '林悦的家 切换家庭' })).toBeVisible();
+    await expect(familySwitcher(page, '林悦的家')).toBeVisible();
     const family = await firstFamily(page);
     expect(family).toMatchObject({ name: '林悦的家', timezone: 'Asia/Tokyo', role: 'admin' });
     expect(family.code).toMatch(FAMILY_CODE);
@@ -105,14 +107,16 @@ test.describe('families', () => {
     await expectAccessiblePage(page);
 
     await admin.goto('/');
-    await expect(admin.getByRole('link', { name: /^新成员\s*1$/ })).toBeVisible();
+    await expect(familySwitcher(admin, '林悦的家', 1)).toBeVisible();
+    await expect(familyManagementLink(admin, 1)).toBeVisible();
 
     await requestCard(page, '林悦的家').getByRole('button', { name: '撤回' }).click();
     await expect(requestCard(page, '林悦的家')).toHaveCount(0);
     await expect(page.getByText('先创建或加入一个家庭。')).toBeVisible();
 
     await admin.reload();
-    await expect(admin.getByRole('link', { name: /^新成员$/ })).toBeVisible();
+    await expect(familySwitcher(admin, '林悦的家')).toBeVisible();
+    await expect(familyManagementLink(admin)).toBeVisible();
   });
 
   test('the applicant sees the request rejected, clears it and may ask again', async ({
@@ -142,7 +146,7 @@ test.describe('families', () => {
 
     await expect(page).toHaveURL('/');
     await expect(page.getByText('你已加入「林悦的家」')).toBeVisible();
-    await expect(page.getByRole('button', { name: '林悦的家 切换家庭' })).toBeVisible();
+    await expect(familySwitcher(page, '林悦的家')).toBeVisible();
 
     const own = page.getByRole('navigation', { name: '周子航' });
     await own.getByRole('link', { name: /^加入家庭\s*，有新的申请结果$/ }).click();
@@ -162,7 +166,7 @@ test.describe('families', () => {
     const first = await createFamily(page, '林悦的家');
     await page.goto('/');
 
-    await page.getByRole('button', { name: '林悦的家 切换家庭' }).click();
+    await familySwitcher(page, '林悦的家').click();
     await page.getByRole('menuitem', { name: '创建家庭' }).click();
     const dialog = page.getByRole('dialog', { name: '创建家庭' });
     await dialog.getByRole('textbox', { name: '家庭名称' }).fill('外婆家');
@@ -170,7 +174,7 @@ test.describe('families', () => {
     await dialog.getByRole('button', { name: '创建' }).click();
     await expect(page.getByText('已创建「外婆家」')).toBeVisible();
 
-    await page.getByRole('button', { name: '外婆家 切换家庭' }).click();
+    await familySwitcher(page, '外婆家').click();
     await expect(page.getByRole('menu', { name: '切换家庭' }).getByRole('menuitem')).toHaveText([
       /^林悦的家/,
       /^外婆家/,
@@ -186,6 +190,6 @@ test.describe('families', () => {
     await expectFamilyPage(page, first, 'Asia/Shanghai（UTC+08:00）');
 
     await page.goto('/');
-    await expect(page.getByRole('button', { name: '林悦的家 切换家庭' })).toBeVisible();
+    await expect(familySwitcher(page, '林悦的家')).toBeVisible();
   });
 });

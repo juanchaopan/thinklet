@@ -7,10 +7,11 @@ import { PublicLayout } from '../../core/layout/public-layout';
 import { Art, Logo } from '../../shared/ui/art';
 import { Avatar } from '../../shared/ui/avatar';
 import { Button } from '../../shared/ui/button';
-import { Card } from '../../shared/ui/card';
 import { PageProblem } from '../../shared/ui/page-problem';
 import { Toaster } from '../../shared/ui/toast';
 import { WelcomeBanner } from '../../shared/ui/welcome-banner';
+import { ChildBooks } from './child-books';
+import { MyBooks } from './my-books';
 
 /**
  * The signed-in child's home page (rules.md, 孩子首页), at `/child/home` and
@@ -18,17 +19,20 @@ import { WelcomeBanner } from '../../shared/ui/welcome-banner';
  * and, at the right, the child's avatar and nickname and 退出, which signs
  * the child out (the children this device remembers stay) and opens the
  * child login. Under it the rabbit teacher's welcome banner greets the child
- * without an entrance, and a card says the books the parents assign will
- * show here; it rises into place.
+ * without an entrance, and 我的书 rises into place once the child's books
+ * have come: the books the parents assigned, or 还没有书.
  *
- * The child is asked about again whenever the window comes back to the
- * front, so a child deleted or whose password was reset meanwhile goes to
- * the child login. When the child cannot be loaded at all, the page says it
- * did not open, with a retry.
+ * The child and the books are asked about again whenever the window comes
+ * back to the front, so new books and their count catch up, and a child
+ * deleted or whose password was reset meanwhile goes to the child login.
+ * When the child cannot be loaded at all, the page says it did not open,
+ * with a retry; when the books cannot, the content under the top bar says
+ * so, and 退出 stays at hand.
  */
 @Component({
   selector: 'app-child-home',
-  imports: [Art, Avatar, Button, Card, Logo, PageProblem, PublicLayout, WelcomeBanner],
+  providers: [ChildBooks],
+  imports: [Art, Avatar, Button, Logo, MyBooks, PageProblem, PublicLayout, WelcomeBanner],
   template: `
     @if (child(); as child) {
       <div class="flex min-h-screen flex-col">
@@ -47,16 +51,20 @@ import { WelcomeBanner } from '../../shared/ui/welcome-banner';
           </div>
         </header>
         <main class="flex-1 px-4 py-6 sm:px-8 sm:py-10">
-          <div class="mx-auto flex max-w-5xl flex-col gap-6">
-            <app-welcome-banner [greeting]="greeting()" [large]="true" />
-            <section appCard class="animate-rise [animation-delay:40ms]">
-              <div class="flex flex-col items-center gap-3 py-8 text-center">
-                <img alt="" appArt="seedling" class="size-20" />
-                <h2 class="text-2xl font-black">还没有书</h2>
-                <p class="text-lg text-ink-soft">家长给你分派书以后，会出现在这里。</p>
-              </div>
-            </section>
-          </div>
+          @if (books.failure(); as failure) {
+            <app-page-problem
+              kind="server"
+              [requestId]="failure.requestId"
+              (action)="books.load()"
+            />
+          } @else {
+            <div class="mx-auto flex max-w-5xl flex-col gap-6">
+              <app-welcome-banner [greeting]="greeting()" [large]="true" />
+              @if (books.shelf(); as shelf) {
+                <app-my-books class="animate-rise [animation-delay:40ms]" [shelf]="shelf" />
+              }
+            </div>
+          }
         </main>
       </div>
     } @else if (childSession.status() === 'failed') {
@@ -75,6 +83,7 @@ import { WelcomeBanner } from '../../shared/ui/welcome-banner';
 })
 export class ChildHome {
   protected readonly childSession = inject(ChildSession);
+  protected readonly books = inject(ChildBooks);
   private readonly router = inject(Router);
   private readonly toaster = inject(Toaster);
 
@@ -84,7 +93,13 @@ export class ChildHome {
   protected readonly leaving = signal(false);
 
   constructor() {
-    whenBackInFront(() => void this.childSession.refresh());
+    if (this.childSession.status() === 'signed-in') {
+      void this.books.load();
+    }
+    whenBackInFront(() => {
+      void this.childSession.refresh();
+      void this.books.refresh();
+    });
   }
 
   protected async logout(): Promise<void> {
@@ -101,9 +116,13 @@ export class ChildHome {
     }
   }
 
+  /** Asks for the child again; once the child is there, the books follow. */
   protected async retry(): Promise<void> {
-    if ((await this.childSession.ensureLoaded()) === 'signed-out') {
+    const status = await this.childSession.ensureLoaded();
+    if (status === 'signed-out') {
       await this.router.navigateByUrl(CHILD_LOGIN_PATH);
+    } else if (status === 'signed-in') {
+      await this.books.load();
     }
   }
 }

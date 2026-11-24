@@ -1,8 +1,8 @@
 import { ChangeDetectionStrategy, Component, Injectable, inject, signal } from '@angular/core';
 import { Art, type IconArt } from './art';
 import { PRESS } from './button';
-import { LEAVE_DURATION } from './layer';
 import { LineIcon } from './line-icon';
+import { LEAVE_DURATION } from './motion';
 
 /** Good news stays 3 s, a problem 5 s (look.md). */
 export type ToastTone = 'success' | 'error';

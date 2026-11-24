@@ -34,22 +34,25 @@ export function showSomethingWentWrong(toaster: Toaster): void {
  * what the change was about changed meanwhile (rules.md, 同时操作), the toast
  * says why and `reload` reads it again; anything else, a request that got
  * no answer included, is 出了点问题 and leaves the screen as it was.
+ * Answers whether the failure was a change made meanwhile, so the caller
+ * can tell it from one that left the screen as it was.
  */
 export function explainChange(
   error: unknown,
   toaster: Toaster,
   changedMeanwhile: Partial<Record<ErrorCode, string>>,
   reload: () => void,
-): void {
+): boolean {
   if (isSignedOut(error)) {
-    return;
+    return false;
   }
   const { code } = asApiError(error);
   const message = code === 'network' ? undefined : changedMeanwhile[code];
   if (!message) {
     showSomethingWentWrong(toaster);
-    return;
+    return false;
   }
   toaster.show(message, 'error', 'wrench');
   reload();
+  return true;
 }

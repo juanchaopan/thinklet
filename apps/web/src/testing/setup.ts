@@ -1,22 +1,34 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { page } from 'vitest/browser';
+import { stubChildShelf } from './child-books';
 import { useFixedClock } from './clock';
+import { stubLibrary } from './library';
 import { startWorker, takeUnhandledApiRequests, worker } from './network';
 import { emulateReducedMotion, emulateTouch, moveMouseOffPage } from './pointer';
 import { VIEWPORTS } from './viewports';
 
 // Runs before every component test file (angular.json `setupFiles`). Each
 // test starts from the same state: a fixed clock, the desktop viewport with
-// a mouse that rests off the page and full motion, empty local storage and
-// no api stubs. Test data is written as fixed values in the tests, never
-// generated randomly, so screenshots and assertions repeat exactly.
+// a mouse that rests off the page and full motion, the window scrolled to
+// its top, empty local storage and only the books' api stubbed. Test data is
+// written as fixed values in the tests, never generated randomly, so
+// screenshots and assertions repeat exactly.
+//
+// The library is a signed-in parent's `/` and the child's books are on the
+// home page every child login ends at, which many tests pass through on
+// their way, so every test starts with the design's library, children and
+// 小明's books served (testing/library.ts, testing/child-books.ts); a test's
+// own stubs come later and win.
 //
 // Test files are not isolated: several run one after another on the same
 // browser page, in an order that depends on how many workers share them out.
 // Nothing a test leaves behind may reach the next one, so each test ends by
 // waiting for the requests it started, then tearing down its app with every
-// listener the app holds, and only then checks what reached the api.
+// listener the app holds, and only then checks what reached the api. The
+// window's scroll position belongs to the browser page as well, so a test
+// that scrolls (to the end of the library, say) never leaves the next one's
+// page scrolled down.
 
 /** How long the app may stay busy after a test before the test fails. */
 const SETTLE_TIMEOUT = 5000;
@@ -28,7 +40,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   useFixedClock();
   localStorage.clear();
+  stubChildShelf(stubLibrary());
   await page.viewport(VIEWPORTS.desktop.width, VIEWPORTS.desktop.height);
+  window.scrollTo(0, 0);
   await emulateTouch(false);
   await emulateReducedMotion(false);
   await moveMouseOffPage();

@@ -3,7 +3,9 @@ import { expectAccessiblePage } from '../support/accessibility.ts';
 import {
   bringToFront,
   createFamily,
+  familyManagementLink,
   familyOfLinyue,
+  familySwitcher,
   familyWithZihang,
   firstFamily,
   requestCard,
@@ -13,7 +15,7 @@ import { expect, test } from '../support/fixtures.ts';
 import { newUser, signIn } from '../support/sign-in.ts';
 import { SIDEBAR_SCREEN } from '../support/viewports.ts';
 
-/** The card with the heading on the new members page. */
+/** The card with the heading on the family page. */
 const card = (page: Page, heading: string) =>
   page.locator('section', { has: page.getByRole('heading', { name: heading }) });
 
@@ -34,14 +36,16 @@ async function expectNoFamily(page: Page, name: string, code: string): Promise<v
   await expect(page.getByText(code)).toHaveCount(0);
 }
 
-// The family page and the new members page, through the mock identity
-// provider (.docs/design/rules.md, 家庭, 加入申请, 权限): the admin changes the
-// settings, handles requests, changes the code, hands over the admin role and
-// takes a member out; a member leaves; a parent of another family sees none
-// of it. Each parent has a browser of their own. The browser is in Shanghai.
-// A page is checked with axe once its content is shown, so the content's
-// entering animations are among those the check finishes first. Steps that
-// read the sidebar run on a screen wide enough for it, on the phone too.
+// The family page, through the mock identity provider (.docs/design/rules.md,
+// 导航, 家庭, 加入申请, 等你处理, 通知, 权限): the admin changes the settings,
+// sees the waiting requests counted and handles them in 等你处理, changes the
+// code, hands over the admin role and takes a member out; a member leaves; a
+// parent of another family sees none of it. `/families/<id>/new-members`
+// opens the family page. Each parent has a browser of their own. The browser
+// is in Shanghai. A page is checked with axe once its content is shown, so
+// the content's entering animations are among those the check finishes
+// first. Steps that read the sidebar run on a screen wide enough for it, on
+// the phone too.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('family management', () => {
@@ -66,10 +70,10 @@ test.describe('family management', () => {
     await expect(page.getByRole('heading', { level: 1, name: '林家小院' })).toBeVisible();
     await expect(page.getByText('Asia/Shanghai（UTC+08:00）', { exact: true })).toBeVisible();
     await expect(page.getByText(/^当前位置/)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '林家小院 切换家庭' })).toBeVisible();
+    await expect(familySwitcher(page, '林家小院')).toBeVisible();
   });
 
-  test('the admin approves a request on the new members page, and the applicant is in', async ({
+  test('the admin sees the waiting request counted, approves it in 等你处理, and the applicant is in', async ({
     page,
     openParentPage,
   }) => {
@@ -77,17 +81,19 @@ test.describe('family management', () => {
     await admin.setViewportSize(SIDEBAR_SCREEN);
 
     await admin.goto('/');
-    await admin.getByRole('link', { name: /^新成员\s*1$/ }).click();
-    await expect(admin).toHaveURL(`/families/${family.id}/new-members`);
-    await expect(card(admin, '等你处理').getByText('周子航')).toBeVisible();
+    await expect(familySwitcher(admin, '林悦的家', 1)).toBeVisible();
+    await familyManagementLink(admin, 1).click();
+    await expect(admin).toHaveURL(`/families/${family.id}`);
+    const waiting = card(admin, '等你处理');
+    await expect(waiting.getByText('周子航')).toBeVisible();
     await expectAccessiblePage(admin);
-    await card(admin, '等你处理').getByRole('button', { name: '同意' }).click();
+    await waiting.getByRole('button', { name: '同意' }).click();
 
-    await expect(card(admin, '处理过的').locator('li', { hasText: '周子航' })).toContainText(
-      '已同意',
-    );
-    await expect(card(admin, '等你处理').getByText('没有新的申请')).toBeVisible();
-    await expect(admin.getByRole('link', { name: /^新成员$/ })).toBeVisible();
+    await expect(waiting).toHaveCount(0);
+    await expect(admin.getByRole('button', { name: '周子航的操作' })).toBeVisible();
+    await expect(admin.getByText('家长 · 2')).toBeVisible();
+    await expect(familyManagementLink(admin)).toBeVisible();
+    await expect(familySwitcher(admin, '林悦的家')).toBeVisible();
 
     await bringToFront(page);
     await expect(page).toHaveURL('/');
@@ -97,17 +103,20 @@ test.describe('family management', () => {
     await expect(page.getByText(/周子航\s*（你）/)).toBeVisible();
   });
 
-  test('the admin rejects a request, and the applicant sees it rejected', async ({
+  test('the new-members address opens the family page, where the admin rejects the request', async ({
     page,
     openParentPage,
   }) => {
     const { admin, family } = await requestOfZihang(page, openParentPage);
 
     await admin.goto(`/families/${family.id}/new-members`);
-    await card(admin, '等你处理').getByRole('button', { name: '拒绝' }).click();
-    await expect(card(admin, '处理过的').locator('li', { hasText: '周子航' })).toContainText(
-      '已拒绝',
-    );
+    await expect(admin).toHaveURL(`/families/${family.id}`);
+    await expect(admin.getByRole('heading', { level: 1, name: '林悦的家' })).toBeVisible();
+    const waiting = card(admin, '等你处理');
+    await waiting.getByRole('button', { name: '拒绝' }).click();
+    await expect(waiting).toHaveCount(0);
+    await expect(admin.getByText('家长 · 1')).toBeVisible();
+    await expect(admin.getByRole('button', { name: '周子航的操作' })).toHaveCount(0);
 
     await page.reload();
     await expect(requestCard(page, '林悦的家')).toContainText('被拒绝');
@@ -160,8 +169,8 @@ test.describe('family management', () => {
 
     await page.goto(`/families/${family.id}`);
     await expect(page.getByRole('button', { name: '更换家庭码' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '改家庭名称' })).toBeVisible();
     await expect(page.getByRole('button', { name: '林悦的操作' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /^新成员/ })).toBeVisible();
   });
 
   test('the admin takes a member out, who can no longer open the family', async ({
@@ -216,9 +225,10 @@ test.describe('family management', () => {
     await expectNoFamily(page, family.name, family.code);
     await expectAccessiblePage(page);
     await page.goto(`/families/${family.id}/new-members`);
+    await expect(page).toHaveURL(`/families/${family.id}`);
     await expectNoFamily(page, family.name, family.code);
 
-    await page.getByRole('button', { name: '周家 切换家庭' }).click();
+    await familySwitcher(page, '周家').click();
     await expect(page.getByRole('menu', { name: '切换家庭' }).getByRole('menuitem')).toHaveText([
       /^周家/,
       '创建家庭',

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { Client } from 'pg';
 import { migrate } from '../support/containers.js';
-import { startDatabaseBefore } from '../support/migrations.js';
+import { migrationRows, startDatabaseBefore } from '../support/migrations.js';
 
 const TAG = '0001_children_and_logins';
 
@@ -27,40 +27,13 @@ describe(`migration ${TAG}`, () => {
   let database: StartedPostgreSqlContainer;
   let client: Client;
   let earlier: EarlierData;
-
-  async function rows<T extends object>(text: string, values: unknown[] = []): Promise<T[]> {
-    return (await client.query<T>(text, values)).rows;
-  }
-
-  /** The id of the single row an insert returns. */
-  async function insertedId(text: string, values: unknown[]): Promise<string> {
-    const [row] = await rows<{ id: string }>(text, values);
-    if (!row) {
-      throw new Error('Nothing was inserted');
-    }
-    return row.id;
-  }
+  const { rows, insertedId, newParent, newFamily } = migrationRows(() => client);
 
   async function exists(relation: string): Promise<boolean> {
     const [row] = await rows<{ name: string | null }>('select to_regclass($1)::text as name', [
       `public.${relation}`,
     ]);
     return typeof row?.name === 'string';
-  }
-
-  function newParent(): Promise<string> {
-    return insertedId(
-      `insert into parents (oidc_issuer, oidc_subject, name, consent_version, consented_at)
-       values ('https://issuer.example', $1, '林悦', '2026-11-21', now()) returning id`,
-      [randomUUID()],
-    );
-  }
-
-  function newFamily(code = randomUUID().slice(0, 6).toUpperCase()): Promise<string> {
-    return insertedId(
-      `insert into families (name, timezone, code) values ('林悦的家', 'Asia/Shanghai', $1) returning id`,
-      [code],
-    );
   }
 
   function insertChild(familyId: string, parentId: string, accountLookup = randomHex()) {

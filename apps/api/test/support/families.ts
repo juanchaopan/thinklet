@@ -197,7 +197,6 @@ export interface JoinRequestRow {
   closed_at: Date | null;
   closed_by: string | null;
   dismissed_by_applicant_at: Date | null;
-  dismissed_by_admin_at: Date | null;
 }
 
 /** The family's join requests as the database holds them, oldest first. */

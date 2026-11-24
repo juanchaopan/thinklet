@@ -36,6 +36,8 @@ high:
   - '**/auth/**'
   - 'apps/api/src/modules/family/**'
   - 'apps/api/src/modules/child/**'
+  - 'apps/api/src/modules/book/**'
+  # The migrations, which also hold the book data.
   - 'apps/api/drizzle/**'
   - '**/*.sql'
   - '**/.env*'

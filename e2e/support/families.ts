@@ -41,7 +41,7 @@ export async function firstFamily(page: Page): Promise<FamilySummary> {
 
 /**
  * Approves or rejects the request waiting in the family, as its admin does
- * on the new members page, straight through the api.
+ * in 等你处理 on the family page, straight through the api.
  */
 export async function handleWaitingRequest(
   page: Page,
@@ -65,6 +65,34 @@ export async function handleWaitingRequest(
 /** The card of the applicant's request to the family with this name. */
 export function requestCard(page: Page, familyName: string) {
   return page.locator('[appcard]', { hasText: familyName });
+}
+
+/**
+ * What screen readers hear after the name of something that counts the
+ * join requests waiting (rules.md, 通知): nothing while none wait.
+ */
+function waitingPart(waiting: number): string {
+  return waiting > 0 ? `\\s*，${String(waiting)} 个申请等你处理` : '';
+}
+
+/**
+ * The family switcher of the family with this name, whose red count says
+ * how many join requests wait in every family the parent runs.
+ */
+export function familySwitcher(page: Page, familyName: string, waiting = 0): Locator {
+  return page.getByRole('button', {
+    name: new RegExp(`^${familyName} 切换家庭${waitingPart(waiting)}$`),
+  });
+}
+
+/**
+ * 家庭管理 in the main menu, whose red count says how many join requests
+ * wait in the current family for its admin.
+ */
+export function familyManagementLink(page: Page, waiting = 0): Locator {
+  return page
+    .getByRole('navigation', { name: '主菜单' })
+    .getByRole('link', { name: new RegExp(`^家庭管理${waitingPart(waiting)}$`) });
 }
 
 /**

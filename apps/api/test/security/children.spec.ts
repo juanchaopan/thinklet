@@ -1,5 +1,4 @@
 import { childLoginLinkSchema, type Child, type FamilyDetail } from '@thinklet/contracts';
-import request from 'supertest';
 import {
   addChild,
   childPath,
@@ -9,7 +8,6 @@ import {
   insertDevice,
   loginLinkRows,
 } from '../support/children.js';
-import { TEST_APP_ORIGIN } from '../support/containers.js';
 import {
   addMember,
   as,
@@ -19,7 +17,17 @@ import {
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
-import { cookieHeader, testSessionTokens } from '../support/login.js';
+import {
+  FOREIGN_ORIGINS,
+  each,
+  fromParent,
+  refusalsOn,
+  sendRoutes,
+  signedOut,
+  withChildLoginIn,
+  writes,
+  type Route,
+} from '../support/routes.js';
 
 /** A family with its admin, one member, and a child with a login link and a remembered device. */
 interface Household {
@@ -29,13 +37,6 @@ interface Household {
   child: Child;
   linkId: string;
   deviceId: string;
-}
-
-/** One of the children routes: its method, its path and the body it is sent with. */
-interface Route {
-  method: 'get' | 'post' | 'patch' | 'delete';
-  path: string;
-  body?: object;
 }
 
 /** The ids a children route can name. */
@@ -73,13 +74,6 @@ function everyRoute(ids: Ids): Route[] {
   ];
 }
 
-/** The routes that change data: every route but the reads. */
-const writes = (routes: Route[]) => routes.filter(({ method }) => method !== 'get');
-
-/** The same answer for every response. */
-const each = (responses: request.Response[], outcome: [number, string]) =>
-  responses.map(() => outcome);
-
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for the
 // children routes: a parent cannot see or change the children of a family
 // they are not in, whether by the family id in the address or by another
@@ -92,23 +86,9 @@ describe('children security', () => {
   let ours: Household;
   let theirs: Household;
 
-  /** Sends each route, with the request prepared as the case needs. */
-  async function send(
-    routes: Route[],
-    prepare: (call: request.Test) => request.Test,
-  ): Promise<request.Response[]> {
-    const responses: request.Response[] = [];
-    for (const { method, path, body } of routes) {
-      responses.push(await prepare(request(running.server)[method](path)).send(body));
-    }
-    return responses;
-  }
-
   /** Sends each route as the parent, with this site's Origin. */
   const sendAs = (parent: Parent, routes: Route[]) =>
-    send(routes, (call) =>
-      call.set('Origin', TEST_APP_ORIGIN).set('Cookie', cookieHeader(parent.cookies)),
-    );
+    sendRoutes(running.server, routes, fromParent(parent));
 
   async function household(name: string): Promise<Household> {
     const admin = await signInParent(running.server, { name: `${name}管理员` });
@@ -143,6 +123,9 @@ describe('children security', () => {
     linkId,
     deviceId,
   });
+
+  /** Refusals that must leave our family's state as it was. */
+  const refused = refusalsOn(running, () => stateOf(ours));
 
   beforeAll(async () => {
     ours = await household('我们家');
@@ -190,9 +173,7 @@ describe('children security', () => {
   });
 
   it('needs a login on every children route', async () => {
-    const responses = await send(everyRoute(idsOf(ours)), (call) =>
-      call.set('Origin', TEST_APP_ORIGIN),
-    );
+    const responses = await sendRoutes(running.server, everyRoute(idsOf(ours)), signedOut);
 
     expect(outcomesOf(responses)).toEqual(each(responses, [401, 'unauthenticated']));
   });
@@ -200,31 +181,19 @@ describe('children security', () => {
   it.each(['thinklet_child_session', 'thinklet_session'])(
     "does not open any children route with a child's login in the cookie %s",
     async (cookie) => {
-      const before = await stateOf(ours);
-      const login = await testSessionTokens().issueSession('child', ours.child.id);
-
-      const responses = await send(everyRoute(idsOf(ours)), (call) =>
-        call.set('Origin', TEST_APP_ORIGIN).set('Cookie', cookieHeader({ [cookie]: login })),
-      );
-
-      expect(outcomesOf(responses)).toEqual(each(responses, [401, 'unauthenticated']));
-      expect(await stateOf(ours)).toEqual(before);
+      await refused(everyRoute(idsOf(ours)), await withChildLoginIn(cookie, ours.child.id), [
+        401,
+        'unauthenticated',
+      ]);
     },
   );
 
-  it.each<[string, (call: request.Test) => request.Test]>([
-    ['without an Origin', (call) => call],
-    ['from another site', (call) => call.set('Origin', 'https://evil.example')],
-  ])("refuses every change %s even with a parent's login", async (_case, withOrigin) => {
-    const before = await stateOf(ours);
-
-    const responses = await send(writes(everyRoute(idsOf(ours))), (call) =>
-      withOrigin(call.set('Cookie', cookieHeader(ours.admin.cookies))),
-    );
-
-    expect(outcomesOf(responses)).toEqual(each(responses, [403, 'bad_origin']));
-    expect(await stateOf(ours)).toEqual(before);
-  });
+  it.each(FOREIGN_ORIGINS)(
+    "refuses every change %s even with a parent's login",
+    async (_case, foreign) => {
+      await refused(writes(everyRoute(idsOf(ours))), foreign(ours.admin), [403, 'bad_origin']);
+    },
+  );
 
   it('refuses fields that would set the family, the consent or the password', async () => {
     const before = await stateOf(ours);

@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -10,7 +11,8 @@ import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainer
 
 const supportDirectory = dirname(fileURLToPath(import.meta.url));
 export const apiDirectory = join(supportDirectory, '..', '..');
-const composeFile = join(apiDirectory, '..', '..', 'docker-compose.yml');
+const repositoryRoot = join(apiDirectory, '..', '..');
+const composeFile = join(repositoryRoot, 'docker-compose.yml');
 const S3_PORT = 8333;
 const OIDC_PORT = 8080;
 /** The mock OIDC provider serves an issuer under any first path segment; tests use this one. */
@@ -20,6 +22,9 @@ const OIDC_LOGIN_PAGE = '/login/login.html';
 
 /** The site origin of tests that run no web server in front of the api. */
 export const TEST_APP_ORIGIN = 'http://localhost:4200';
+
+/** The repository's book folders, which every test environment imports the covers from. */
+export const bookContentDirectory = join(repositoryRoot, 'content', 'books');
 
 /** Image references are read from docker-compose.yml so tests and development use the same pinned images. */
 function composeImage(name: string): string {
@@ -48,6 +53,9 @@ export interface StartedStorage {
   accessKeyId: string;
   secretAccessKey: string;
 }
+
+/** Where a test's storage is and how to sign in to it. */
+export type StorageAccess = Omit<StartedStorage, 'container'>;
 
 /** A throwaway SeaweedFS serving S3 with random credentials and one bucket created at start. */
 export async function startStorage(): Promise<StartedStorage> {
@@ -184,27 +192,53 @@ export const testSigningKey = newSigningKey();
  */
 export const testChildDataKey = randomBytes(32).toString('base64');
 
-/** The api's environment variables for the given database, storage, OIDC client and site origin. */
-export function apiEnvironment(
-  databaseUrl: string,
-  storage: Omit<StartedStorage, 'container'>,
-  oidc: OidcClient,
-  appOrigin = TEST_APP_ORIGIN,
-): Record<string, string> {
+/** The S3_* variables for the given storage. */
+function storageEnvironment(storage: StorageAccess): Record<string, string> {
   return {
-    DATABASE_URL: databaseUrl,
     S3_ENDPOINT: storage.endpoint,
     S3_REGION: 'us-east-1',
     S3_BUCKET: storage.bucket,
     S3_ACCESS_KEY_ID: storage.accessKeyId,
     S3_SECRET_ACCESS_KEY: storage.secretAccessKey,
     S3_FORCE_PATH_STYLE: 'true',
+  };
+}
+
+/** The api's environment variables for the given database, storage, OIDC client and site origin. */
+export function apiEnvironment(
+  databaseUrl: string,
+  storage: StorageAccess,
+  oidc: OidcClient,
+  appOrigin = TEST_APP_ORIGIN,
+): Record<string, string> {
+  return {
+    DATABASE_URL: databaseUrl,
+    ...storageEnvironment(storage),
     OIDC_ISSUER: oidc.issuer,
     OIDC_CLIENT_ID: oidc.clientId,
     OIDC_CLIENT_SECRET: oidc.clientSecret,
     APP_ORIGIN: appOrigin,
     JWT_SIGNING_KEY: testSigningKey,
     CHILD_DATA_KEY: testChildDataKey,
+  };
+}
+
+/**
+ * The cover import's environment variables for the given database, storage
+ * and book folders. MIGRATION_DATABASE_URL is set as well because the import
+ * prefers it, and a test run through Task has it from the local .env file,
+ * pointing at the development database.
+ */
+export function coverImportEnvironment(
+  databaseUrl: string,
+  storage: StorageAccess,
+  contentDirectory = bookContentDirectory,
+): Record<string, string> {
+  return {
+    DATABASE_URL: databaseUrl,
+    MIGRATION_DATABASE_URL: databaseUrl,
+    ...storageEnvironment(storage),
+    BOOK_CONTENT_DIRECTORY: contentDirectory,
   };
 }
 
@@ -219,4 +253,62 @@ export async function migrate(databaseUrl: string): Promise<void> {
     cwd: apiDirectory,
     env: { ...process.env, DATABASE_URL: databaseUrl, MIGRATION_DATABASE_URL: databaseUrl },
   });
+}
+
+/** A started built entry point of the api and what it has written. */
+export interface BuiltProcess {
+  child: ChildProcess;
+  /** Everything the process wrote to stdout and stderr so far. */
+  output: () => string;
+}
+
+/**
+ * Runs a built entry point of the api (`dist/<file>`) as a separate process
+ * with only the given variables, plus what the OS needs to start it.
+ */
+export function spawnBuiltEntry(file: string, environment: Record<string, string>): BuiltProcess {
+  const chunks: Buffer[] = [];
+  const child = spawn(process.execPath, [join(apiDirectory, 'dist', file)], {
+    cwd: apiDirectory,
+    env: {
+      PATH: process.env['PATH'] ?? '',
+      SYSTEMROOT: process.env['SYSTEMROOT'] ?? '',
+      ...environment,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
+  child.stderr?.on('data', (chunk: Buffer) => chunks.push(chunk));
+  return { child, output: () => Buffer.concat(chunks).toString('utf8') };
+}
+
+/** How a run of the cover import ended. */
+export interface CoverImportRun {
+  exitCode: number | null;
+  /** Everything it wrote to stdout and stderr. */
+  output: string;
+}
+
+/** Runs the built cover import (dist/rebuild.js), as `task rebuild` does, to its end. */
+export async function runBuiltCoverImport(
+  environment: Record<string, string>,
+): Promise<CoverImportRun> {
+  const { child, output } = spawnBuiltEntry('rebuild.js', environment);
+  // 'close' comes after both streams have ended, so the output is whole.
+  const [exitCode] = (await once(child, 'close')) as [number | null];
+  return { exitCode, output: output() };
+}
+
+/**
+ * Imports the repository's covers into the database and storage with the
+ * built cover import, as every environment does after its migrations.
+ */
+export async function importBuiltCovers(
+  databaseUrl: string,
+  storage: StorageAccess,
+): Promise<void> {
+  const run = await runBuiltCoverImport(coverImportEnvironment(databaseUrl, storage));
+  if (run.exitCode !== 0) {
+    throw new Error(`The cover import exited with code ${run.exitCode}:\n${run.output}`);
+  }
 }

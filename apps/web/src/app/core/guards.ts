@@ -41,7 +41,7 @@ export const requireFamily: CanActivateFn = async () => {
   return (await ownFamilies()).length > 0 || router.createUrlTree(['/start']);
 };
 
-/** The start page is for a parent without a family; one with a family goes to the home page. */
+/** The start page is for a parent without a family; one with a family goes to the library. */
 export const requireNoFamily: CanActivateFn = async () => {
   const router = inject(Router);
   return (await ownFamilies()).length === 0 || router.createUrlTree(['/']);
@@ -69,18 +69,6 @@ export const makeFamilyCurrent: CanActivateFn = async (route) => {
   return true;
 };
 
-/**
- * Pages only the family's admin sees. A member who is not the admin goes
- * straight to the family's page, without a word (rules.md, 导航); for a
- * family the parent is not in, the page itself says the family is not there.
- */
-export const requireFamilyAdmin: CanActivateFn = async (route) => {
-  const router = inject(Router);
-  const familyId = route.paramMap.get(FAMILY_ID_PARAMETER);
-  const family = (await ownFamilies()).find((own) => own.id === familyId);
-  return family?.role !== 'member' || router.createUrlTree(['/families', family.id]);
-};
-
 /** Whether no parent is signed in on this browser. */
 async function noParent(): Promise<boolean> {
   return (await inject(Session).ensureLoaded()) === 'visitor';
@@ -89,7 +77,7 @@ async function noParent(): Promise<boolean> {
 /**
  * `/` is the child's home page on a browser where only a child is signed in
  * (rules.md, 登录和登录状态). The child is asked about only when no parent
- * is signed in, since a signed-in parent sees their own home page.
+ * is signed in, since a signed-in parent sees their own family's library.
  */
 export const matchChildOnly: CanMatchFn = async () => {
   const childSession = inject(ChildSession);

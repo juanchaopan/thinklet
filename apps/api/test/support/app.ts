@@ -1,12 +1,16 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { join } from 'node:path';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { CoverImportSummary } from '../../src/modules/book/cover-import.service.js';
 import {
-  apiDirectory,
   apiEnvironment,
+  bookContentDirectory,
+  coverImportEnvironment,
+  importBuiltCovers,
   migrate,
+  spawnBuiltEntry,
   startServices,
+  type BuiltProcess,
   type StartedServices,
+  type StorageAccess,
 } from './containers.js';
 import { freePort, waitForHttp, type WatchedProcess } from './process.js';
 
@@ -26,6 +30,33 @@ export async function startApp(
   return app;
 }
 
+/**
+ * Runs the cover import in this test process, as rebuild.ts runs it, from
+ * the given book folders into the database and storage. Like startApp it
+ * sets the environment and resets the module registry first, so the
+ * import reads this configuration. A failure is thrown as it is.
+ */
+export async function importCovers(
+  databaseUrl: string,
+  storage: StorageAccess,
+  contentDirectory = bookContentDirectory,
+): Promise<CoverImportSummary> {
+  Object.assign(process.env, coverImportEnvironment(databaseUrl, storage, contentDirectory));
+  vi.resetModules();
+  const { NestFactory } = await import('@nestjs/core');
+  const { RebuildModule } = await import('../../src/rebuild.module.js');
+  const { CoverImportService } = await import('../../src/modules/book/cover-import.service.js');
+  const context = await NestFactory.createApplicationContext(RebuildModule, {
+    abortOnError: false,
+    logger: false,
+  });
+  try {
+    return await context.get(CoverImportService).importCovers(contentDirectory);
+  } finally {
+    await context.close();
+  }
+}
+
 export interface AppWithServices {
   app: NestExpressApplication;
   services: StartedServices;
@@ -37,13 +68,15 @@ export interface AppWithServices {
 
 /**
  * Starts the throwaway database, storage and OIDC provider, migrates the
- * database and starts the application against them.
+ * database, imports the repository's covers and starts the application
+ * against them.
  */
 export async function startAppWithServices(): Promise<AppWithServices> {
   const services = await startServices();
   try {
     const databaseUrl = services.database.getConnectionUri();
     await migrate(databaseUrl);
+    await importCovers(databaseUrl, services.storage);
     const app = await startApp(apiEnvironment(databaseUrl, services.storage, services.oidc));
     const stop = async () => {
       await app.close();
@@ -88,31 +121,16 @@ export async function startAppWithoutServices(): Promise<AppWithoutServices> {
   return { app, closedPort };
 }
 
-export interface RunningProcess extends WatchedProcess {
-  child: ChildProcess;
-  /** Everything the process wrote to stdout and stderr so far. */
-  output: () => string;
-}
+export type RunningProcess = BuiltProcess & WatchedProcess;
 
 /**
  * Runs the built long-running entry point (dist/main.js) as a separate
  * process with only the given variables, plus what the OS needs to start it.
  */
 export function runBuiltApp(environment: Record<string, string>): RunningProcess {
-  const chunks: Buffer[] = [];
-  const child = spawn(process.execPath, [join(apiDirectory, 'dist', 'main.js')], {
-    cwd: apiDirectory,
-    env: {
-      PATH: process.env['PATH'] ?? '',
-      SYSTEMROOT: process.env['SYSTEMROOT'] ?? '',
-      ...environment,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
-  child.stderr?.on('data', (chunk: Buffer) => chunks.push(chunk));
+  const { child, output } = spawnBuiltEntry('main.js', environment);
   const exited = new Promise<number | null>((resolve) => child.on('exit', resolve));
-  return { child, output: () => Buffer.concat(chunks).toString('utf8'), exited };
+  return { child, output, exited };
 }
 
 export interface BuiltAppWithServices {
@@ -125,12 +143,16 @@ export interface BuiltAppWithServices {
   stop: () => Promise<void>;
 }
 
-/** Runs the built api against the migrated services and waits until it answers. */
+/**
+ * Migrates the services, imports the repository's covers with the built
+ * import, runs the built api against them and waits until it answers.
+ */
 async function runMigratedBuiltApp(
   services: StartedServices,
 ): Promise<{ running: RunningProcess; port: number }> {
   const databaseUrl = services.database.getConnectionUri();
   await migrate(databaseUrl);
+  await importBuiltCovers(databaseUrl, services.storage);
   const port = await freePort();
   const running = runBuiltApp({
     ...apiEnvironment(databaseUrl, services.storage, services.oidc),

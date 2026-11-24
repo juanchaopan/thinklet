@@ -5,13 +5,17 @@ import { TitleStrategy, type RouterStateSnapshot } from '@angular/router';
 /** The product name, the whole title of the product home and the home page. */
 export const PRODUCT_NAME = '好奇星球';
 
-/** Browser titles read "<page> - 好奇星球"; a route without a title shows the product name alone. */
+/** The browser title of a page, "<page> - 好奇星球"; without a page, the product name alone. */
+export function pageTitle(page?: string): string {
+  return page ? `${page} - ${PRODUCT_NAME}` : PRODUCT_NAME;
+}
+
+/** Browser titles of the routes, from each route's own title (`pageTitle`). */
 @Injectable({ providedIn: 'root' })
 export class PageTitle extends TitleStrategy {
   private readonly title = inject(Title);
 
   override updateTitle(snapshot: RouterStateSnapshot): void {
-    const page = this.buildTitle(snapshot);
-    this.title.setTitle(page ? `${page} - ${PRODUCT_NAME}` : PRODUCT_NAME);
+    this.title.setTitle(pageTitle(this.buildTitle(snapshot)));
   }
 }

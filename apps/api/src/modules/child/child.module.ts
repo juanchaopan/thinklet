@@ -23,7 +23,9 @@ import { ChildrenService } from './children.service.js';
  * login link, and signs them in with the auth module's ChildSessionService;
  * ChildService serves the signed-in child, whose routes pass ChildGuard.
  * The children's personal data is encrypted in the repositories with the
- * child data cipher.
+ * child data cipher. Other modules use ChildrenService to look up the
+ * children of a family, and ChildService for its half of the child's
+ * login check (`isCurrent`) on their own routes for a signed-in child.
  */
 @Module({
   imports: [DatabaseModule, ChildDataModule, PasswordsModule, AuthModule, FamilyModule],
@@ -37,5 +39,6 @@ import { ChildrenService } from './children.service.js';
     ChildService,
     ChildGuard,
   ],
+  exports: [ChildrenService, ChildService],
 })
 export class ChildModule {}

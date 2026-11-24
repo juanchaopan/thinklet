@@ -71,6 +71,12 @@ describe('errorCodeSchema', () => {
       expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
     }
   });
+
+  it('has the codes of the library and its books', () => {
+    for (const code of ['book_not_found', 'book_in_use', 'book_not_acquired', 'book_inactive']) {
+      expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
+    }
+  });
 });
 
 describe('errorResponseSchema', () => {

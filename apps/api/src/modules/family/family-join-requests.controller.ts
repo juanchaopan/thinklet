@@ -20,7 +20,7 @@ import { RequestIdPipe } from './join-request-params.js';
 import { JoinRequestsService, type Decision } from './join-requests.service.js';
 
 /**
- * The family admin's new members page (`.docs/design/interfaces.md`, "新成员
+ * The family admin's join requests (`.docs/design/interfaces.md`, "等你处理
  * （管理员）"). Every route passes the membership check and needs the admin;
  * a request of another family is answered as one that does not exist.
  */
@@ -62,17 +62,6 @@ export class FamilyJoinRequestsController {
     @Param('requestId', RequestIdPipe) requestId: string,
   ): Promise<HandledJoinRequest> {
     return this.decide(parentId, familyId, requestId, 'rejected');
-  }
-
-  /** The admin's 「知道了」 on a handled request: 204. */
-  @Post(':requestId/dismiss')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async dismiss(
-    @CurrentParentId() parentId: string,
-    @Param('familyId', FamilyIdPipe) familyId: string,
-    @Param('requestId', RequestIdPipe) requestId: string,
-  ): Promise<void> {
-    await this.joinRequestsService.dismissForFamily(parentId, familyId, requestId);
   }
 
   private async decide(

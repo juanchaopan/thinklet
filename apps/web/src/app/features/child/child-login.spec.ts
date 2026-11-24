@@ -20,6 +20,7 @@ import { DUODUO_ID, XIAOMING_ID } from '../../../testing/children';
 import { boxValues, codeBoxes } from '../../../testing/families';
 import { recordCalls } from '../../../testing/family-page';
 import { holdNext } from '../../../testing/held-answers';
+import { moveMouseOffPage } from '../../../testing/pointer';
 import { errorBody, stubError, stubVisitor } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
@@ -33,6 +34,21 @@ function rememberBox(): HTMLInputElement {
 /** The avatar button of a remembered child, named by the nickname. */
 function avatarButton(nickname: string): HTMLElement {
   return screen.getByRole('button', { name: nickname });
+}
+
+/**
+ * Checks a state a click led to and captures it at every size, with nothing
+ * hovered. The click leaves the mouse where it pressed, over whatever the
+ * page shows there now (登录 after a failed login), and when the desktop
+ * size gives the page its mouse back, the browser marks that element hovered
+ * only once it next looks at the mouse, which on a busy machine may be
+ * before the capture or after it. With the mouse off the page, the capture
+ * never depends on that moment.
+ */
+async function expectAtRestAtEverySize(name: string): Promise<void> {
+  await moveMouseOffPage();
+  await expectNoAxeViolations();
+  await expectScreenshotsAtEverySize(name);
 }
 
 describe('ChildLogin', () => {
@@ -115,8 +131,7 @@ describe('ChildLogin', () => {
       expect(field('密码').value).toBe('');
       expect(boxValues().join('')).toBe(FAMILY_CODE);
       expect(field('账号').value).toBe('xiaoming');
-      await expectNoAxeViolations();
-      await expectScreenshotsAtEverySize('child-login-error');
+      await expectAtRestAtEverySize('child-login-error');
     });
 
     it('signs the child in and opens the home page, remembering the device when ticked', async () => {
@@ -200,8 +215,7 @@ describe('ChildLogin', () => {
       await vi.waitFor(() => {
         expect(document.activeElement).toBe(codeBoxes()[0]);
       });
-      await expectNoAxeViolations();
-      await expectScreenshotsAtEverySize('child-login-remembered-form');
+      await expectAtRestAtEverySize('child-login-remembered-form');
 
       await userEvent.click(screen.getByRole('button', { name: '返回' }));
 
@@ -239,8 +253,7 @@ describe('ChildLogin', () => {
       await vi.waitFor(() => {
         expect(document.activeElement).toBe(field('密码'));
       });
-      await expectNoAxeViolations();
-      await expectScreenshotsAtEverySize('child-login-relogin');
+      await expectAtRestAtEverySize('child-login-relogin');
 
       await userEvent.click(screen.getByRole('button', { name: '返回' }));
 

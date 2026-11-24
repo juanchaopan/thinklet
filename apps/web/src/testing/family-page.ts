@@ -16,8 +16,8 @@ import {
   stubSignedIn,
 } from './sample-data';
 
-// Helpers for the tests of a family's own pages: the family page and the new
-// members page.
+// Helpers for the tests of a family's own pages: the family page with its
+// requests waiting, and the frame around it.
 
 export interface FamilyPageOptions {
   me?: MeResponse;
