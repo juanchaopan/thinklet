@@ -75,7 +75,7 @@ export function filledCode(slots: readonly string[]): string | null {
             autocomplete="off"
             autocapitalize="characters"
             spellcheck="false"
-            class="peer block aspect-[4/5] w-full rounded-2xl border-2 text-center font-mono text-2xl font-black text-ink caret-transparent transition-colors duration-100 outline-none sm:text-3xl"
+            class="peer block aspect-4/5 w-full rounded-2xl border-2 text-center font-mono text-2xl font-black text-ink caret-transparent transition-colors duration-100 outline-none sm:text-3xl"
             [class]="boxClasses(character)"
             (focus)="box.select()"
             (input)="typed(index, box)"

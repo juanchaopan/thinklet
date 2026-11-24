@@ -4,7 +4,7 @@ export type ButtonKind = 'primary' | 'secondary' | 'danger' | 'text';
 
 /** Darkens on hover (mouse only) and shrinks slightly while pressed, both in 100 ms. */
 export const PRESS =
-  'transition duration-100 ease-move active:scale-[0.97] disabled:cursor-default disabled:opacity-60 disabled:active:scale-100';
+  'transition duration-100 ease-move active:scale-97 disabled:cursor-default disabled:opacity-60 disabled:active:scale-100';
 
 const KINDS: Record<ButtonKind, string> = {
   primary: 'min-h-12 px-6 bg-primary text-white hover:bg-primary-hover',
