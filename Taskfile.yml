@@ -31,7 +31,7 @@ vars:
 
 tasks:
   dev:
-    desc: Start PostgreSQL, SeaweedFS and the mock OIDC provider with Docker Compose, apply migrations, import the book covers, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    desc: Start PostgreSQL, SeaweedFS, Valkey and the mock OIDC provider with Docker Compose, apply the migrations, import the book covers, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
@@ -210,7 +210,7 @@ tasks:
         vars: { UPDATE_SCREENSHOTS: 'true' }
 
   test-integration:
-    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS and mock OIDC provider containers
+    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS, Valkey and mock OIDC provider containers
     deps: [build-contracts]
     cmds:
       - pnpm --filter api run test:integration
@@ -266,10 +266,17 @@ tasks:
     cmds:
       - node e2e/scripts/security-scan.ts
 
+  # The data migrations that need code or keys run after drizzle-kit migrate
+  # has brought the tables up to date. Like the cover import they are Nest
+  # code with decorators, so they run from the api's build (nest build
+  # compiles src/migrate-data.ts to dist/migrate-data.js) rather than from
+  # the TypeScript source.
   migrate:
-    desc: Apply the database migrations with drizzle-kit migrate (MIGRATION_DATABASE_URL, else DATABASE_URL)
+    desc: Build the api, then apply the database migrations with drizzle-kit migrate and run the data migrations written in code (MIGRATION_DATABASE_URL, else DATABASE_URL, and CHILD_DATA_KEY)
+    deps: [build-api]
     cmds:
       - pnpm --filter api run migrate
+      - pnpm --filter api run migrate-data
 
   # The cover import is Nest code with decorators, so it runs from the api's
   # build (nest build compiles src/rebuild.ts to dist/rebuild.js) rather
@@ -290,8 +297,8 @@ tasks:
     cmds:
       - node tools/bin/child-data-key.ts
 
-  # Many tasks need the contracts built; within one `task` run they are
-  # built once, however many of those tasks run.
+  # Many tasks need the contracts or the api built; within one `task` run
+  # each is built once, however many of those tasks run.
   build-contracts:
     internal: true
     run: once
@@ -300,6 +307,7 @@ tasks:
 
   build-api:
     internal: true
+    run: once
     cmds:
       - pnpm --filter "api..." run build
 
@@ -312,8 +320,9 @@ tasks:
     internal: true
     # The image is tagged with the hash of its Dockerfile: an image already
     # built from the same Dockerfile is reused, and a changed Dockerfile (a
-    # new base image digest, say) gets a new tag and is built again. The
-    # Dockerfile copies nothing in, so it is built without a context.
+    # new base image digest or font release, say) gets a new tag and is
+    # built again. The Dockerfile copies nothing in, so it is built without a
+    # context.
     vars:
       DOCKERFILE_HASH:
         sh: git hash-object {{.COMPONENT_TEST_DOCKERFILE}}

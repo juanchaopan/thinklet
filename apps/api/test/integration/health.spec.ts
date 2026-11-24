@@ -7,6 +7,7 @@ import request from 'supertest';
 import { CHECK_TIMEOUT_MS } from '../../src/modules/health/health.service.js';
 import { startApp } from '../support/app.js';
 import {
+  accessTo,
   apiEnvironment,
   migrate,
   startDatabase,
@@ -40,7 +41,7 @@ describe('GET /api/health', () => {
 
   /** The api's environment with the given database and, unless another is given, the shared storage. */
   const environmentWith = (databaseUrl: string, storage: StartedStorage = services.storage) =>
-    apiEnvironment(databaseUrl, storage, services.oidc);
+    apiEnvironment({ ...accessTo(services), databaseUrl, storage });
 
   beforeAll(async () => {
     services = await startServices();

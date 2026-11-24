@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { runBuiltApp, type RunningProcess } from '../support/app.js';
 import {
+  accessTo,
   apiEnvironment,
   startServices,
   testChildDataKey,
@@ -41,11 +42,11 @@ describe('Logs', () => {
       const url = new URL(services.database.getConnectionUri());
       url.password = `wrong-${crypto.randomUUID()}`;
       environment = {
-        ...apiEnvironment(
-          url.toString(),
-          { ...services.storage, secretAccessKey: `wrong-${crypto.randomUUID()}` },
-          services.oidc,
-        ),
+        ...apiEnvironment({
+          ...accessTo(services),
+          databaseUrl: url.toString(),
+          storage: { ...services.storage, secretAccessKey: `wrong-${crypto.randomUUID()}` },
+        }),
         PORT: String(port),
       };
       running = runBuiltApp(environment);
@@ -106,7 +107,7 @@ describe('Logs', () => {
   it('refuses to start on an invalid variable, naming it without its value', async () => {
     const invalidValue = `not-a-url-${crypto.randomUUID()}`;
     const running = runBuiltApp({
-      ...apiEnvironment(invalidValue, services.storage, services.oidc),
+      ...apiEnvironment({ ...accessTo(services), databaseUrl: invalidValue }),
       PORT: String(await freePort()),
     });
 
@@ -127,7 +128,7 @@ describe('Logs', () => {
 
   it('refuses to start on a signing key that is not one, naming it without its value', async () => {
     const running = runBuiltApp({
-      ...apiEnvironment(services.database.getConnectionUri(), services.storage, services.oidc),
+      ...apiEnvironment(accessTo(services)),
       JWT_SIGNING_KEY: testSigningKey.slice(0, -10),
       PORT: String(await freePort()),
     });
@@ -142,7 +143,7 @@ describe('Logs', () => {
   it('refuses to start on a child data key that is cut off, naming it without its value', async () => {
     const cutOff = testChildDataKey.slice(0, -8);
     const running = runBuiltApp({
-      ...apiEnvironment(services.database.getConnectionUri(), services.storage, services.oidc),
+      ...apiEnvironment(accessTo(services)),
       CHILD_DATA_KEY: cutOff,
       PORT: String(await freePort()),
     });

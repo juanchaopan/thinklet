@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  accessTo,
   apiDirectory,
   apiEnvironment,
   importBuiltCovers,
@@ -87,10 +88,10 @@ function createCleanup(): Cleanup {
 
 /**
  * Starts a throwaway copy of the whole system on random ports: PostgreSQL,
- * SeaweedFS and the mock OIDC provider in containers, the migrations and the
- * cover import of the repository's content/books/ (the built
- * apps/api/dist/rebuild.js), the built web (apps/web/dist) behind a server
- * that forwards /api like the Vercel rewrite, and the built api
+ * SeaweedFS, Valkey (for Redis) and the mock OIDC provider in containers,
+ * the migrations and the cover import of the repository's content/books/
+ * (the built apps/api/dist/rebuild.js), the built web (apps/web/dist) behind
+ * a server that forwards /api like the Vercel rewrite, and the built api
  * (apps/api/dist) with that server's origin as its own, so the login's
  * callback, the logout's return address and the allowed Origin all follow
  * the web origin. Both apps must be built first.
@@ -98,11 +99,11 @@ function createCleanup(): Cleanup {
 export async function startEnvironment(options: EnvironmentOptions): Promise<Environment> {
   const cleanup = createCleanup();
   try {
-    const { database, storage, oidc, stop } = await startServices();
-    cleanup.add(stop);
-    const databaseUrl = database.getConnectionUri();
+    const services = await startServices();
+    cleanup.add(services.stop);
+    const databaseUrl = services.database.getConnectionUri();
     await migrate(databaseUrl);
-    await importBuiltCovers(databaseUrl, storage);
+    await importBuiltCovers(databaseUrl, services.storage);
 
     // The web server starts first, so the api gets the origin it is reached
     // at; nothing calls /api before the api answers below.
@@ -122,7 +123,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       cwd: apiDirectory,
       env: {
         ...process.env,
-        ...apiEnvironment(databaseUrl, storage, oidc, baseUrl),
+        ...apiEnvironment(accessTo(services), baseUrl),
         PORT: String(apiPort),
       },
       stdio: ['ignore', 'ignore', 'inherit'],
@@ -133,7 +134,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
 
     return {
       baseUrl,
-      identityProvider: { issuer: oidc.issuer, clientId: oidc.clientId },
+      identityProvider: { issuer: services.oidc.issuer, clientId: services.oidc.clientId },
       databaseUrl,
       stop: cleanup.run,
     };

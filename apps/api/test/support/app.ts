@@ -1,6 +1,7 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { CoverImportSummary } from '../../src/modules/book/cover-import.service.js';
 import {
+  accessTo,
   apiEnvironment,
   bookContentDirectory,
   coverImportEnvironment,
@@ -67,8 +68,8 @@ export interface AppWithServices {
 }
 
 /**
- * Starts the throwaway database, storage and OIDC provider, migrates the
- * database, imports the repository's covers and starts the application
+ * Starts the throwaway database, storage, Redis and OIDC provider, migrates
+ * the database, imports the repository's covers and starts the application
  * against them.
  */
 export async function startAppWithServices(): Promise<AppWithServices> {
@@ -77,7 +78,7 @@ export async function startAppWithServices(): Promise<AppWithServices> {
     const databaseUrl = services.database.getConnectionUri();
     await migrate(databaseUrl);
     await importCovers(databaseUrl, services.storage);
-    const app = await startApp(apiEnvironment(databaseUrl, services.storage, services.oidc));
+    const app = await startApp(apiEnvironment(accessTo(services)));
     const stop = async () => {
       await app.close();
       await services.stop();
@@ -91,32 +92,33 @@ export async function startAppWithServices(): Promise<AppWithServices> {
 
 export interface AppWithoutServices {
   app: NestExpressApplication;
-  /** The port the database, the bucket and the OIDC issuer point at, on which nothing listens. */
+  /** The port the database, the bucket, Redis and the OIDC issuer point at, on which nothing listens. */
   closedPort: number;
 }
 
 /**
- * Starts the application with the database, the bucket and the OIDC issuer
- * pointing at a closed port, for tests that need no container: every health
- * check fails at once, so GET /api/health answers 503.
+ * Starts the application with the database, the bucket, Redis and the OIDC
+ * issuer pointing at a closed port, for tests that need no container: every
+ * health check fails at once, so GET /api/health answers 503.
  */
 export async function startAppWithoutServices(): Promise<AppWithoutServices> {
   const closedPort = await freePort();
   const app = await startApp(
-    apiEnvironment(
-      `postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`,
-      {
+    apiEnvironment({
+      databaseUrl: `postgresql://thinklet:not-used@127.0.0.1:${closedPort}/thinklet`,
+      storage: {
         endpoint: `http://127.0.0.1:${closedPort}`,
         bucket: 'bucket',
         accessKeyId: 'access-key-id',
         secretAccessKey: 'secret-access-key',
       },
-      {
+      oidc: {
         issuer: `http://127.0.0.1:${closedPort}/default`,
         clientId: 'client-id',
         clientSecret: 'client-secret',
       },
-    ),
+      redisUrl: `redis://127.0.0.1:${closedPort}`,
+    }),
   );
   return { app, closedPort };
 }
@@ -155,7 +157,7 @@ async function runMigratedBuiltApp(
   await importBuiltCovers(databaseUrl, services.storage);
   const port = await freePort();
   const running = runBuiltApp({
-    ...apiEnvironment(databaseUrl, services.storage, services.oidc),
+    ...apiEnvironment(accessTo(services)),
     PORT: String(port),
   });
   try {

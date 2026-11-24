@@ -14,6 +14,7 @@ export const apiDirectory = join(supportDirectory, '..', '..');
 const repositoryRoot = join(apiDirectory, '..', '..');
 const composeFile = join(repositoryRoot, 'docker-compose.yml');
 const S3_PORT = 8333;
+const REDIS_PORT = 6379;
 const OIDC_PORT = 8080;
 /** The mock OIDC provider serves an issuer under any first path segment; tests use this one. */
 const OIDC_ISSUER_ID = 'default';
@@ -22,6 +23,13 @@ const OIDC_LOGIN_PAGE = '/login/login.html';
 
 /** The site origin of tests that run no web server in front of the api. */
 export const TEST_APP_ORIGIN = 'http://localhost:4200';
+
+/**
+ * The request header the api under test takes the client's IP address from,
+ * as on a development machine. Nothing in front of the api sets it, so a
+ * test that needs a source sends this header itself.
+ */
+export const TEST_CLIENT_IP_HEADER = 'x-forwarded-for';
 
 /** The repository's book folders, which every test environment imports the covers from. */
 export const bookContentDirectory = join(repositoryRoot, 'content', 'books');
@@ -77,6 +85,29 @@ export async function startStorage(): Promise<StartedStorage> {
   };
 }
 
+export interface StartedRedis {
+  container: StartedTestContainer;
+  /** The redis:// address, with the password, that the api connects to. */
+  url: string;
+}
+
+/**
+ * A throwaway Valkey, which speaks the Redis protocol, with a random
+ * password on a random host port, as staging's Redis takes one.
+ */
+export async function startRedis(): Promise<StartedRedis> {
+  const password = `pw-${randomUUID()}`;
+  const container = await new GenericContainer(composeImage('valkey'))
+    .withCommand(['valkey-server', '--requirepass', password])
+    .withExposedPorts(REDIS_PORT)
+    .withWaitStrategy(Wait.forLogMessage('Ready to accept connections'))
+    .start();
+  return {
+    container,
+    url: `redis://:${password}@${container.getHost()}:${container.getMappedPort(REDIS_PORT)}`,
+  };
+}
+
 /** The OIDC provider and the client the api signs in through. */
 export interface OidcClient {
   issuer: string;
@@ -125,6 +156,7 @@ export async function startOidcProvider(): Promise<StartedOidcProvider> {
 export interface StartedServices {
   database: StartedPostgreSqlContainer;
   storage: StartedStorage;
+  redis: StartedRedis;
   oidc: StartedOidcProvider;
   /** Stops and removes the containers. */
   stop: () => Promise<void>;
@@ -139,21 +171,22 @@ function valueOf<T>(result: PromiseSettledResult<T>): T {
 }
 
 /**
- * Starts the database, the storage and the OIDC provider side by side. When
- * one of them fails to start, the others are stopped before the failure is
- * thrown, so none is left running.
+ * Starts the database, the storage, Redis and the OIDC provider side by
+ * side. When one of them fails to start, the others are stopped before the
+ * failure is thrown, so none is left running.
  */
 export async function startServices(): Promise<StartedServices> {
-  const [database, storage, oidc] = await Promise.allSettled([
+  const [database, storage, redis, oidc] = await Promise.allSettled([
     startDatabase(),
     startStorage(),
+    startRedis(),
     startOidcProvider(),
   ]);
   const containers: StartedTestContainer[] = [];
   if (database.status === 'fulfilled') {
     containers.push(database.value);
   }
-  for (const started of [storage, oidc]) {
+  for (const started of [storage, redis, oidc]) {
     if (started.status === 'fulfilled') {
       containers.push(started.value.container);
     }
@@ -162,11 +195,38 @@ export async function startServices(): Promise<StartedServices> {
     await Promise.all(containers.map((container) => container.stop()));
   };
   try {
-    return { database: valueOf(database), storage: valueOf(storage), oidc: valueOf(oidc), stop };
+    return {
+      database: valueOf(database),
+      storage: valueOf(storage),
+      redis: valueOf(redis),
+      oidc: valueOf(oidc),
+      stop,
+    };
   } catch (error) {
     await stop();
     throw error;
   }
+}
+
+/** Where the api under test finds each service it runs against. */
+export interface ServiceAccess {
+  databaseUrl: string;
+  storage: StorageAccess;
+  oidc: OidcClient;
+  redisUrl: string;
+}
+
+/**
+ * How the api reaches the started services. A test that points the api at
+ * a broken or missing service overrides that one field.
+ */
+export function accessTo(services: StartedServices): ServiceAccess {
+  return {
+    databaseUrl: services.database.getConnectionUri(),
+    storage: services.storage,
+    oidc: services.oidc,
+    redisUrl: services.redis.url,
+  };
 }
 
 /** A new ES256 private key as a JWK with a random key id, in the JSON form JWT_SIGNING_KEY takes. */
@@ -204,19 +264,19 @@ function storageEnvironment(storage: StorageAccess): Record<string, string> {
   };
 }
 
-/** The api's environment variables for the given database, storage, OIDC client and site origin. */
+/** The api's environment variables for the given services and site origin. */
 export function apiEnvironment(
-  databaseUrl: string,
-  storage: StorageAccess,
-  oidc: OidcClient,
+  access: ServiceAccess,
   appOrigin = TEST_APP_ORIGIN,
 ): Record<string, string> {
   return {
-    DATABASE_URL: databaseUrl,
-    ...storageEnvironment(storage),
-    OIDC_ISSUER: oidc.issuer,
-    OIDC_CLIENT_ID: oidc.clientId,
-    OIDC_CLIENT_SECRET: oidc.clientSecret,
+    DATABASE_URL: access.databaseUrl,
+    ...storageEnvironment(access.storage),
+    REDIS_URL: access.redisUrl,
+    CLIENT_IP_HEADER: TEST_CLIENT_IP_HEADER,
+    OIDC_ISSUER: access.oidc.issuer,
+    OIDC_CLIENT_ID: access.oidc.clientId,
+    OIDC_CLIENT_SECRET: access.oidc.clientSecret,
     APP_ORIGIN: appOrigin,
     JWT_SIGNING_KEY: testSigningKey,
     CHILD_DATA_KEY: testChildDataKey,

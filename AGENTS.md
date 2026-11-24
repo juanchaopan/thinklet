@@ -41,7 +41,7 @@
 | `test-security-scan`                                                                 | ZAP 基线扫描                                                    |
 | `test-smoke BASE_URL=<地址>`                                                         | 对已部署的目标跑冒烟测试；`PRODUCTION_SAFE=true` 只跑不改数据的 |
 | `test-component-update`                                                              | 重新生成截图基准图（只在 Linux 的 Playwright 镜像里生成）       |
-| `migrate`                                                                            | 执行数据库迁移（`drizzle-kit migrate`）                         |
+| `migrate`                                                                            | 执行数据库迁移（`drizzle-kit migrate`）和代码写的数据迁移       |
 | `rebuild`                                                                            | 把 `content/books/` 里的封面导入对象存储，在书本表里记下散列    |
 
 ## 改动怎么检查
