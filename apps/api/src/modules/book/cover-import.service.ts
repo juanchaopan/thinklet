@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { StorageService } from '../../infrastructure/storage/storage.service.js';
 import { readBookCover, type LocalCover } from './cover-files.js';
-import { COVER_MEDIA_TYPES, coverStorageKey } from './cover-image.js';
+import { COVER_MEDIA_TYPES, COVER_SHA256_METADATA, coverStorageKey } from './cover-image.js';
 import { CoverImportRepository } from './cover-import.repository.js';
-
-/** The metadata entry each stored cover carries with the SHA-256 of its bytes. */
-export const COVER_SHA256_METADATA = 'sha256';
 
 /** What one import did. */
 export interface CoverImportSummary {
@@ -57,6 +54,9 @@ export class CoverImportService {
    * or breaks the rules. Then writes each cover whose stored copy is missing
    * or differs, and last records every cover's type and hash in one
    * transaction, so the table never points at a cover that is not stored.
+   * Between a cover's write and the recording of its hash, the address with
+   * the recorded hash answers not found rather than the new bytes, as the
+   * cover service serves an object only under the hash in its metadata.
    * Running it again with the same files changes nothing.
    */
   async importCovers(contentDirectory: string): Promise<CoverImportSummary> {

@@ -75,10 +75,11 @@ describe('StorageService', () => {
     await expect(createService(send).headObject('key')).rejects.toThrow('AccessDenied');
   });
 
-  it('reads the whole body and media type of an object with GetObject', async () => {
+  it('reads the whole body, media type and metadata of an object with GetObject', async () => {
     const body = new Uint8Array([1, 2, 3]);
     const send = vi.fn().mockResolvedValue({
       ContentType: 'image/webp',
+      Metadata: { sha256: 'abc' },
       Body: { transformToByteArray: () => Promise.resolve(body) },
     });
 
@@ -87,14 +88,15 @@ describe('StorageService', () => {
     const [command] = send.mock.calls[0] as [GetObjectCommand];
     expect(command).toBeInstanceOf(GetObjectCommand);
     expect(command.input).toEqual({ Bucket: 'configured-bucket', Key: 'books/a/cover.webp' });
-    expect(object).toEqual({ contentType: 'image/webp', body });
+    expect(object).toEqual({ contentType: 'image/webp', metadata: { sha256: 'abc' }, body });
   });
 
-  it('reads an object without a body as empty', async () => {
+  it('reads an object without a body or metadata as empty', async () => {
     const send = vi.fn().mockResolvedValue({ ContentType: 'image/png' });
 
     expect(await createService(send).getObject('key')).toEqual({
       contentType: 'image/png',
+      metadata: {},
       body: new Uint8Array(),
     });
   });

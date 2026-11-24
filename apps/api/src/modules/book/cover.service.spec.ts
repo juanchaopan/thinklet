@@ -5,12 +5,23 @@ import { CoverService } from './cover.service.js';
 const HASH = 'a'.repeat(64);
 const BODY = new Uint8Array([1, 2, 3]);
 
-/** The service over a book whose recorded cover is `cover`, and storage holding `stored`. */
-function createService(cover: CoverRecord | undefined, stored = true) {
+/**
+ * The service over a book whose recorded cover is `cover`, and storage
+ * holding an object with the metadata `stored`, or no object when it is
+ * null.
+ */
+function createService(
+  cover: CoverRecord | undefined,
+  stored: Record<string, string> | null = { sha256: HASH },
+) {
   const repository = { findCover: vi.fn(() => Promise.resolve(cover)) };
   const storage = {
     getObject: vi.fn(() =>
-      Promise.resolve(stored ? { contentType: 'application/octet-stream', body: BODY } : undefined),
+      Promise.resolve(
+        stored === null
+          ? undefined
+          : { contentType: 'application/octet-stream', metadata: stored, body: BODY },
+      ),
     ),
   };
   const service = new CoverService(
@@ -46,10 +57,25 @@ describe('CoverService', () => {
   });
 
   it('answers a cover missing from storage with not_found', async () => {
-    const { service } = createService({ type: 'png', sha256: HASH }, false);
+    const { service } = createService({ type: 'png', sha256: HASH }, null);
 
     await expect(service.cover('carrot-counting', HASH)).rejects.toMatchObject({
       code: 'not_found',
     });
   });
+
+  it.each([
+    ['another hash', { sha256: 'b'.repeat(64) }],
+    ['no hash', {}],
+  ])(
+    'answers a stored cover whose metadata carries %s with not_found',
+    async (_case, stored: Record<string, string>) => {
+      const { service } = createService({ type: 'png', sha256: HASH }, stored);
+
+      await expect(service.cover('carrot-counting', HASH)).rejects.toMatchObject({
+        code: 'not_found',
+        status: 404,
+      });
+    },
+  );
 });

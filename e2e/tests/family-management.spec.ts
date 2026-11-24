@@ -40,12 +40,12 @@ async function expectNoFamily(page: Page, name: string, code: string): Promise<v
 // 导航, 家庭, 加入申请, 等你处理, 通知, 权限): the admin changes the settings,
 // sees the waiting requests counted and handles them in 等你处理, changes the
 // code, hands over the admin role and takes a member out; a member leaves; a
-// parent of another family sees none of it. The old address of the new
-// members page opens the family page. Each parent has a browser of their own.
-// The browser is in Shanghai. A page is checked with axe once its content is
-// shown, so the content's entering animations are among those the check
-// finishes first. Steps that read the sidebar run on a screen wide enough for
-// it, on the phone too.
+// parent of another family sees none of it. `/families/<id>/new-members`
+// opens the family page. Each parent has a browser of their own. The browser
+// is in Shanghai. A page is checked with axe once its content is shown, so
+// the content's entering animations are among those the check finishes
+// first. Steps that read the sidebar run on a screen wide enough for it, on
+// the phone too.
 test.use({ timezoneId: 'Asia/Shanghai' });
 
 test.describe('family management', () => {
@@ -103,7 +103,7 @@ test.describe('family management', () => {
     await expect(page.getByText(/周子航\s*（你）/)).toBeVisible();
   });
 
-  test('the old new members address opens the family page, where the admin rejects the request', async ({
+  test('the new-members address opens the family page, where the admin rejects the request', async ({
     page,
     openParentPage,
   }) => {

@@ -28,14 +28,18 @@ const coverPath = (bookId: string, version?: string) =>
 // Acceptance criteria covered: a book's cover is read through the api by a
 // signed-in parent or child, by the hash the book table records, exactly as
 // the repository holds it, for the browser to keep for good; any other hash,
-// a book without a cover and a cover missing from storage are not found, so
-// the web app shows the default cover.
+// a book without a cover, a cover missing from storage and a stored cover
+// under another hash are not found, so the web app shows the default cover.
 describe('covers', () => {
   const running = useAppWithServices();
   let parent: Parent;
   let cover: Buffer;
 
   const asParent = () => as(running.server, parent);
+
+  /** Records `hash` as the cover hash of the book. */
+  const recordHash = (bookId: string, hash: string) =>
+    query(running.databaseUrl, 'update books set cover_sha256 = $2 where id = $1', [bookId, hash]);
 
   beforeAll(async () => {
     parent = await signInParent(running.server, { name: '林悦' });
@@ -123,5 +127,22 @@ describe('covers', () => {
 
     expect(response.status).toBe(404);
     expect(response.body).toMatchObject({ error: { code: 'not_found' } });
+  });
+
+  it('answers the recorded hash with 404 not_found, kept by no cache, while storage holds a cover under another hash', async () => {
+    // The book table still records an earlier hash while storage already
+    // holds the bytes of the current cover, as between an import's upload
+    // and the recording of the hashes.
+    const recorded = 'b'.repeat(64);
+    await recordHash(ACTIVE_BOOK, recorded);
+    try {
+      const response = await asParent().get(coverPath(ACTIVE_BOOK, recorded));
+
+      expect(response.status).toBe(404);
+      expect(response.body).toMatchObject({ error: { code: 'not_found' } });
+      expect(response.headers['cache-control']).toBeUndefined();
+    } finally {
+      await recordHash(ACTIVE_BOOK, sha256(cover));
+    }
   });
 });

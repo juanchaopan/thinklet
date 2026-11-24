@@ -71,8 +71,8 @@ async function toggleReaders(page: Page, title: string, nicknames: readonly stri
 // of its own; `page` is the child's device. Books are acquired and assigned
 // straight through the api where a test is not about doing it; a book
 // acquired before it left the library is written into the database, as the
-// site no longer allows it. A page or dialog is checked with axe once its
-// content is shown.
+// site does not let a family acquire a book that has left it. A page or
+// dialog is checked with axe once its content is shown.
 test.describe('the family’s books', () => {
   test('a parent acquires a book, lets a child read it on the book page, and takes it back on the card; the child’s home follows', async ({
     page,

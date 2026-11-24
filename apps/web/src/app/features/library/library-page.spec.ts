@@ -142,6 +142,26 @@ function scrollToEnd(): void {
   window.scrollTo(0, document.documentElement.scrollHeight);
 }
 
+/** Moves a finger on the page, as a swipe at the bottom does when the page cannot scroll further. */
+function swipe(): void {
+  document.body.dispatchEvent(new Event('touchmove', { bubbles: true }));
+}
+
+/**
+ * Opens the library on a phone's touch screen and scrolls to the end of the
+ * list, where the next batch fails and says so.
+ */
+async function failBatchAtEndOnTouch(): Promise<void> {
+  await page.viewport(VIEWPORTS.phone.width, VIEWPORTS.phone.height);
+  await emulateTouch(true);
+  await renderLibrary();
+  failNext('get', BOOKS_PATH, 500);
+
+  scrollToEnd();
+  await expectToast('出了点问题，请稍后再试');
+  expect(titles()).toHaveLength(12);
+}
+
 describe('LibraryPage', () => {
   let fake: FakeLibrary;
 
@@ -281,19 +301,33 @@ describe('LibraryPage', () => {
     });
 
     it('tries again on a touch screen when the end scrolls into view again after a failure', async () => {
-      await page.viewport(VIEWPORTS.phone.width, VIEWPORTS.phone.height);
-      await emulateTouch(true);
-      await renderLibrary();
-      failNext('get', BOOKS_PATH, 500);
-
-      scrollToEnd();
-      await expectToast('出了点问题，请稍后再试');
-      expect(titles()).toHaveLength(12);
+      await failBatchAtEndOnTouch();
 
       window.scrollTo(0, 0);
       await nextFrames();
       await nextFrames();
       scrollToEnd();
+      await vi.waitFor(() => {
+        expect(titles()).toHaveLength(24);
+      });
+    });
+
+    it('tries again on a touch screen with the next swipe after a failure, while the end stays in view', async () => {
+      await failBatchAtEndOnTouch();
+      await settled();
+
+      const retry = holdNextBatch(fake);
+      let retried = false;
+      void retry.reached.then(() => {
+        retried = true;
+      });
+      await nextFrames();
+      await nextFrames();
+      expect(retried).toBe(false);
+
+      swipe();
+      await retry.reached;
+      await retry.release();
       await vi.waitFor(() => {
         expect(titles()).toHaveLength(24);
       });

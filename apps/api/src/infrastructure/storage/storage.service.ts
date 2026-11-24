@@ -18,9 +18,8 @@ export interface StoredObjectHead {
   metadata: Record<string, string>;
 }
 
-/** A stored object read whole. */
-export interface StoredObject {
-  contentType: string | undefined;
+/** A stored object read whole, with what its head says. */
+export interface StoredObject extends StoredObjectHead {
   body: Uint8Array;
 }
 
@@ -75,9 +74,10 @@ export class StorageService {
   }
 
   /**
-   * The object's bytes and media type, or undefined when there is no object
-   * at the key. The whole body is read into memory, so this is for small
-   * objects such as covers.
+   * The object's bytes, media type and metadata, or undefined when there is
+   * no object at the key. The bytes and the metadata come from one read, so
+   * they always belong to the same version of the object. The whole body is
+   * read into memory, so this is for small objects such as covers.
    */
   async getObject(key: string): Promise<StoredObject | undefined> {
     try {
@@ -85,7 +85,7 @@ export class StorageService {
         new GetObjectCommand({ Bucket: this.bucket, Key: key }),
       );
       const body = object.Body ? await object.Body.transformToByteArray() : new Uint8Array();
-      return { contentType: object.ContentType, body };
+      return { contentType: object.ContentType, metadata: object.Metadata ?? {}, body };
     } catch (error) {
       if (isMissingObject(error)) {
         return undefined;

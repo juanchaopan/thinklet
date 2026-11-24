@@ -2,7 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import { StorageService } from '../../infrastructure/storage/storage.service.js';
 import { BooksRepository } from './books.repository.js';
-import { COVER_MEDIA_TYPES, coverStorageKey } from './cover-image.js';
+import { COVER_MEDIA_TYPES, COVER_SHA256_METADATA, coverStorageKey } from './cover-image.js';
 
 /** A cover that does not exist, of a book that does not or under another hash, is answered the same. */
 export const coverNotFound = () => new ApiError('not_found', HttpStatus.NOT_FOUND);
@@ -27,8 +27,12 @@ export class CoverService {
 
   /**
    * The book's cover when `version` is the hash the book table records for
-   * it. A book without a cover, another hash, or a cover missing from
-   * storage is 404 `not_found`, and the web app shows the default cover.
+   * it and the stored object carries that hash in its metadata. A book
+   * without a cover, another hash, or a cover missing from storage is 404
+   * `not_found`, and the web app shows the default cover. So is a stored
+   * object under another hash, as while an import has written a cover's new
+   * bytes but not yet recorded their hash: the address of the recorded hash
+   * never answers bytes that are not the ones it names.
    */
   async cover(bookId: string, version: string | undefined): Promise<CoverImage> {
     const cover = await this.repository.findCover(bookId);
@@ -36,7 +40,7 @@ export class CoverService {
       throw coverNotFound();
     }
     const object = await this.storage.getObject(coverStorageKey(bookId, cover.type));
-    if (object === undefined) {
+    if (object?.metadata[COVER_SHA256_METADATA] !== cover.sha256) {
       throw coverNotFound();
     }
     return { body: object.body, contentType: COVER_MEDIA_TYPES[cover.type] };

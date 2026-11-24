@@ -17,7 +17,7 @@ import {
   recordCalls,
   stubChangedWorld,
 } from '../../../testing/family-page';
-import { holdNext, holdNextGet } from '../../../testing/held-answers';
+import { holdNext, holdNextGet, type HeldAnswer } from '../../../testing/held-answers';
 import { worker } from '../../../testing/network';
 import {
   CHENXIAO_ID,
@@ -37,7 +37,8 @@ import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 import { frameName, raiseStillToast, toastFrame } from '../../../testing/toasts';
 
 const PAGE = `/families/${LINYUE_FAMILY_ID}`;
-const REQUESTS_PATH = `/api/families/${LINYUE_FAMILY_ID}/join-requests`;
+const FAMILY_PATH = `/api/families/${LINYUE_FAMILY_ID}`;
+const REQUESTS_PATH = `${FAMILY_PATH}/join-requests`;
 
 const NONE: FamilyJoinRequestsResponse = { pending: [] };
 
@@ -69,13 +70,10 @@ const WITH_CHENXIAO: FamilyDetail = {
 
 type Decision = 'approve' | 'reject';
 
-/**
- * The api's answer to deciding 陈晓's request. From then on the parent has
- * one request less waiting and, once approved, 陈晓 is a member.
- */
-function decideChenxiao(decision: Decision): Response {
-  const { id, parentId, name, email } = CHENXIAO;
-  const decided: HandledJoinRequest = {
+/** The request as the api answers deciding it. */
+function handled(request: PendingJoinRequest, decision: Decision): HandledJoinRequest {
+  const { id, parentId, name, email } = request;
+  return {
     id,
     parentId,
     name,
@@ -83,8 +81,15 @@ function decideChenxiao(decision: Decision): Response {
     status: decision === 'approve' ? 'approved' : 'rejected',
     closedAt: '2026-11-22T11:30:00Z',
   };
+}
+
+/**
+ * The api's answer to deciding 陈晓's request. From then on the parent has
+ * one request less waiting and, once approved, 陈晓 is a member.
+ */
+function decideChenxiao(decision: Decision): Response {
   stubChangedWorld(linyueWaitingFor(1), decision === 'approve' ? WITH_CHENXIAO : LINYUE_FAMILY);
-  return HttpResponse.json(decided);
+  return HttpResponse.json(handled(CHENXIAO, decision));
 }
 
 /** Answers deciding 陈晓's request (decideChenxiao), recording the calls. */
@@ -268,6 +273,37 @@ describe('FamilyRequests', () => {
     expect(anyToast()).toBe(false);
   });
 
+  it('shows an approved applicant among the members when another request is rejected before the family is read again', async () => {
+    let reread: HeldAnswer | undefined;
+    recordCalls('post', `${REQUESTS_PATH}/${CHENXIAO.id}/approve`, () => {
+      const answer = decideChenxiao('approve');
+      reread = holdNextGet(FAMILY_PATH, () => HttpResponse.json(WITH_CHENXIAO));
+      return answer;
+    });
+    recordCalls('post', `${REQUESTS_PATH}/${YIFAN.id}/reject`, () => {
+      stubChangedWorld(linyueWaitingFor(0), WITH_CHENXIAO);
+      return HttpResponse.json(handled(YIFAN, 'reject'));
+    });
+    await renderRequests();
+
+    await userEvent.click(rowButton('陈晓', '同意'));
+    const held = await vi.waitFor(() => {
+      if (!reread) {
+        throw new Error('The family is not read again yet');
+      }
+      return reread;
+    });
+    await held.reached;
+    await userEvent.click(rowButton('王一凡', '拒绝'));
+    await vi.waitFor(() => {
+      expect(row('王一凡')).toBeNull();
+    });
+    await held.release();
+
+    expect(within(membersCard()).getByText('陈晓')).toBeTruthy();
+    expect(within(membersCard()).queryByText('王一凡')).toBeNull();
+  });
+
   it('takes the card away once the last request has been decided', async () => {
     stubDecision('reject');
     const { fixture } = await renderRequests({ me: linyueWaitingFor(1) }, { pending: [CHENXIAO] });
@@ -401,7 +437,7 @@ describe('FamilyRequests', () => {
     expect(await screen.findByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeTruthy();
   });
 
-  describe('the old address of the new members page', () => {
+  describe('the new-members address', () => {
     it.each([
       ['the admin', LINYUE_WITH_REQUESTS, [LINYUE_FAMILY, GRANDMA_FAMILY]],
       ['a member', ZIHANG, [LINYUE_FAMILY_FOR_ZIHANG]],

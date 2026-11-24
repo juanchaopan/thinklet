@@ -8,8 +8,8 @@ SET LOCAL statement_timeout = '5s';--> statement-breakpoint
 -- lock timeout above keeps the lock short or fails the migration.
 -- squawk-ignore disallowed-unique-constraint
 ALTER TABLE "children" ADD CONSTRAINT "children_id_family_unique" UNIQUE("id","family_id");--> statement-breakpoint
--- Only the applicant dismisses a closed request. The api released after this
--- migration no longer reads or writes the column.
+-- Only the applicant dismisses a closed request: the api keeps that in
+-- dismissed_by_applicant_at alone and has no use for the admin's column.
 -- squawk-ignore ban-drop-column
 ALTER TABLE "join_requests" DROP COLUMN "dismissed_by_admin_at";--> statement-breakpoint
 -- A grade's level runs from 0 to 12 and its position counts a dozen or so

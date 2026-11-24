@@ -55,9 +55,12 @@ const RISE_STEP = 40;
  *
  * Books come 12 at a time: with a mouse 加载更多 brings the next ones, on a
  * touch screen they come as the end of the list scrolls into view; once
- * every book is shown the page says 全部的书都在这里了. A card opens 谁能读
- * from its avatars, and asks before it removes a book from the family's
- * books.
+ * every book is shown the page says 全部的书都在这里了. When a batch fails
+ * on a touch screen, the next swipe tries it once more, even with the end
+ * of the list still in view (rules.md, 出错, 加载更多失败); each try needs a
+ * swipe of its own, so a server that keeps failing is not asked again and
+ * again. A card opens 谁能读 from its avatars, and asks before it removes a
+ * book from the family's books.
  *
  * The page opens with its parts rising one after another and the rabbit
  * rising 120 ms after its banner; a new batch, and the books of new filters,
@@ -81,6 +84,7 @@ const RISE_STEP = 40;
     RemoveBookDialog,
     WelcomeBanner,
   ],
+  host: { '(document:touchmove)': 'swiped()' },
   template: `
     @if (store.trouble(); as trouble) {
       <app-family-trouble [trouble]="trouble" (retry)="store.load()" />
@@ -113,7 +117,7 @@ const RISE_STEP = 40;
               </app-book-grid>
             }
             @if (listing.nextCursor && inputMode.touch()) {
-              @for (cursor of [listing.nextCursor]; track cursor) {
+              @for (end of [listing.nextCursor + '#' + endWatches()]; track end) {
                 <div
                   appInView
                   aria-hidden="true"
@@ -221,6 +225,15 @@ export class LibraryPage {
     return this.store.listing()?.books.find(({ id }) => id === book?.id) ?? book;
   });
 
+  /**
+   * How many times the end of the list has been watched afresh. The marker
+   * at the end is drawn anew for each count, and a new marker says at once
+   * whether it is in view.
+   */
+  protected readonly endWatches = signal(0);
+  /** Whether the batch the end of the list asked for failed, so the next swipe tries again. */
+  private retryOnSwipe = false;
+
   constructor() {
     let familyShown: string | null = null;
     effect(() => {
@@ -257,7 +270,18 @@ export class LibraryPage {
   /** The end of the list came into view on a touch screen: the next batch comes. */
   protected endInView(visible: boolean): void {
     if (visible) {
-      void this.store.loadMore();
+      void this.loadAtEnd();
+    }
+  }
+
+  /**
+   * A finger moved on the screen. After a failed batch the end of the list
+   * is watched afresh, which tries the batch again when it is in view.
+   */
+  protected swiped(): void {
+    if (this.retryOnSwipe) {
+      this.retryOnSwipe = false;
+      this.endWatches.update((count) => count + 1);
     }
   }
 
@@ -309,6 +333,14 @@ export class LibraryPage {
   protected async remove(book: BookCard): Promise<void> {
     await this.store.remove(book);
     this.close();
+  }
+
+  /** Loads the next batch for the end of the list; a failure waits for the next swipe. */
+  private async loadAtEnd(): Promise<void> {
+    this.retryOnSwipe = false;
+    if (!(await this.store.loadMore())) {
+      this.retryOnSwipe = true;
+    }
   }
 
   /** Shows the query, kept in the address in place of the one there. */

@@ -31,9 +31,9 @@ import {
  * link `/join/<code>` opens the join dialog over the join page for a parent
  * with a family and over the start page for one without. A family's own
  * pages, `/families/<id>` and its children page, make that family the
- * current one; the old address of its new members page,
- * `/families/<id>/new-members`, opens its family page without a word
- * (rules.md, 导航). Route titles become the browser title "<title> - 好奇星球"
+ * current one; `/families/<id>/new-members` redirects to the family page,
+ * where 等你处理 lists the requests waiting, without a word (rules.md,
+ * 导航). Route titles become the browser title "<title> - 好奇星球"
  * (core/page-title); the library and the child's home page carry the
  * product name alone, and a book's page sets the book's title itself once
  * the book is read.

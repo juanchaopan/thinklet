@@ -9,6 +9,13 @@ export const COVER_MEDIA_TYPES: Readonly<Record<CoverType, string>> = {
   png: 'image/png',
 };
 
+/**
+ * The metadata entry each stored cover carries with the SHA-256 of its
+ * bytes. The import compares it to skip covers already stored, and serving
+ * compares it to the hash asked for, so an address never names other bytes.
+ */
+export const COVER_SHA256_METADATA = 'sha256';
+
 /** The largest cover accepted: 300 KB, counted in KiB as file managers show it. */
 export const MAX_COVER_BYTES = 300 * 1024;
 

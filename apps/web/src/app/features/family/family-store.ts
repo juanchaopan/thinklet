@@ -78,9 +78,12 @@ export function familyAfterLeaving(
  * again, so the counts in the navigation follow. Each request is decided at
  * most once at a time; the other requests stay open meanwhile.
  *
- * A read shows its answer only when no newer read started and no change was
+ * The family and its requests each keep their own freshness: a read shows
+ * either only when no newer read of it started and no change to it was
  * shown meanwhile, so a slow read never puts back what a change replaced, a
- * request already decided, or a family the page has moved away from.
+ * request already decided, or a family the page has moved away from. A
+ * decision changes the requests and not the family, so deciding one request
+ * never drops the members an earlier approval read.
  *
  * A family the parent is not (or no longer) a member of is `not-found`; a
  * family or a request that changed meanwhile is explained in a toast and
@@ -100,7 +103,8 @@ export class FamilyStore {
   private readonly running = signal<FamilyAction | null>(null);
   private readonly deciding = signal<ReadonlySet<string>>(new Set());
   private readonly sliding = signal<ReadonlySet<string>>(new Set());
-  private readonly reads = new FreshReads();
+  private readonly familyReads = new FreshReads();
+  private readonly requestReads = new FreshReads();
   private familyId = '';
 
   /** The family as the parent sees it; null until it has been read. */
@@ -140,24 +144,27 @@ export class FamilyStore {
 
   /**
    * Reads the family again, and its waiting requests when the parent is its
-   * admin, so the page shows both at once. A failure while nothing is shown
-   * yet is kept in `problem`, so the page can say it did not open; a later
-   * one keeps the family that is shown.
+   * admin; each is shown while it is still fresh. A failure while nothing is
+   * shown yet is kept in `problem`, so the page can say it did not open; a
+   * later one keeps the family that is shown.
    */
   async load(): Promise<void> {
-    const fresh = this.reads.start();
+    const familyFresh = this.familyReads.start();
+    const requestsFresh = this.requestReads.start();
     const familyId = this.familyId;
     try {
       const family = await this.api.get(familyPath(familyId), familyDetailSchema);
       const requests = family.role === 'admin' ? await this.readRequests(familyId) : [];
-      if (fresh()) {
+      if (familyFresh()) {
         this.detail.set(family);
-        this.waiting.set(requests);
-        this.sliding.set(new Set());
         this.trouble.set(null);
       }
+      if (requestsFresh()) {
+        this.waiting.set(requests);
+        this.sliding.set(new Set());
+      }
     } catch (error) {
-      if (fresh()) {
+      if (familyFresh()) {
         this.loadFailed(error);
       }
     }
@@ -191,7 +198,7 @@ export class FamilyStore {
     }
   }
 
-  /** Replaces the family code; the old one stops working at once. */
+  /** Replaces the family code; the code it replaces stops working at once. */
   changeCode(): Promise<void> {
     return this.run('code', async (familyId) => {
       const family = await this.api.send(
@@ -245,7 +252,11 @@ export class FamilyStore {
     return this.sliding().has(requestId);
   }
 
-  /** Approves or rejects the waiting request. */
+  /**
+   * Approves or rejects the waiting request. The requests read before the
+   * decision are stale from then on; an approval reads the family again, so
+   * the applicant shows among the members.
+   */
   async decide(request: PendingJoinRequest, decision: Decision): Promise<void> {
     if (this.deciding().has(request.id)) {
       return;
@@ -260,7 +271,7 @@ export class FamilyStore {
         handledJoinRequestSchema,
       );
       if (familyId === this.familyId) {
-        this.reads.wrote();
+        this.requestReads.wrote();
         this.slideOut(request.id);
         if (decision === 'approve') {
           void this.readFamilyAgain(familyId);
@@ -298,7 +309,7 @@ export class FamilyStore {
    * the members while the request's row is still sliding out.
    */
   private async readFamilyAgain(familyId: string): Promise<void> {
-    const fresh = this.reads.start();
+    const fresh = this.familyReads.start();
     try {
       const family = await this.api.get(familyPath(familyId), familyDetailSchema);
       if (fresh()) {
@@ -363,11 +374,13 @@ export class FamilyStore {
 
   /**
    * Says a change to the family `familyId` was made, and shows the family as
-   * the change left it while the page still shows that family.
+   * the change left it while the page still shows that family. The change
+   * can take the admin role away, so the requests read before it are stale
+   * too.
    */
   private changed(familyId: string, family: FamilyDetail, text: string, icon: IconArt): void {
     if (familyId === this.familyId) {
-      this.reads.wrote();
+      this.wroteAll();
       this.detail.set(family);
     }
     this.toaster.show(text, 'success', icon);
@@ -387,11 +400,17 @@ export class FamilyStore {
 
   /** The parent is not, or no longer, a member: the page says so, and the navigation follows. */
   private notFound(): void {
-    this.reads.wrote();
+    this.wroteAll();
     this.detail.set(null);
     this.waiting.set([]);
     this.trouble.set('not-found');
     void this.session.refresh();
+  }
+
+  /** Marks both the family and its requests as newer than every read started so far. */
+  private wroteAll(): void {
+    this.familyReads.wrote();
+    this.requestReads.wrote();
   }
 
   private memberPath(parentId: string): string {

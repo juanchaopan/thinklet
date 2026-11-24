@@ -143,11 +143,15 @@ export class LibraryStore {
     }
   }
 
-  /** Adds the next batch of books to the list; a failure is said in a toast and nothing changes. */
-  async loadMore(): Promise<void> {
+  /**
+   * Adds the next batch of books to the list; a failure is said in a toast
+   * and nothing changes. Answers false when the batch failed, and true
+   * otherwise, also when there was no batch to read.
+   */
+  async loadMore(): Promise<boolean> {
     const listing = this.shownListing();
     if (!listing?.nextCursor || this.batchRunning()) {
-      return;
+      return true;
     }
     this.batchRunning.set(true);
     try {
@@ -164,8 +168,10 @@ export class LibraryStore {
           risingFrom: current.books.length,
         });
       }
+      return true;
     } catch (error) {
       this.batchFailed(error);
+      return false;
     } finally {
       this.batchRunning.set(false);
     }
