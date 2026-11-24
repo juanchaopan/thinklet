@@ -7,9 +7,7 @@ import {
 } from '@angular/cdk/overlay';
 import type { TemplatePortal } from '@angular/cdk/portal';
 import { signal, type Injector } from '@angular/core';
-
-/** Dialogs, sheets and menus leave in 150 ms (look.md). */
-export const LEAVE_DURATION = 150;
+import { LEAVE_DURATION } from './motion';
 
 /**
  * A layer covering the whole screen, for a dialog or a sheet with its

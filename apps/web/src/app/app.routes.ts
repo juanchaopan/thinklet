@@ -26,7 +26,8 @@ import {
  * an unknown address goes to `/`. The family pages need a family (a parent
  * without one goes to `/start`), and the start page is only for a parent
  * without one (a parent with one goes to `/`). The library keeps its
- * filters in the address's query (`/?grade=…&scope=family`). An invitation
+ * filters in the address's query (`/?grade=…&scope=family`); a book's page
+ * `/books/<id>` shows the book as the current family sees it. An invitation
  * link `/join/<code>` opens the join dialog over the join page for a parent
  * with a family and over the start page for one without. A family's own
  * pages, `/families/<id>` and its children page, make that family the
@@ -34,7 +35,8 @@ import {
  * `/families/<id>/new-members`, opens its family page without a word
  * (rules.md, 导航). Route titles become the browser title "<title> - 好奇星球"
  * (core/page-title); the library and the child's home page carry the
- * product name alone.
+ * product name alone, and a book's page sets the book's title itself once
+ * the book is read.
  *
  * Every page is loaded when it is first opened, and so is the signed-in
  * frame with its menus: a visitor's first page loads neither.
@@ -81,6 +83,11 @@ export const routes: Routes = [
         canActivate: [requireFamily],
         loadComponent: () =>
           import('./features/library/library-page').then((module) => module.LibraryPage),
+      },
+      {
+        path: 'books/:bookId',
+        canActivate: [requireFamily],
+        loadComponent: () => import('./features/book/book-page').then((module) => module.BookPage),
       },
       {
         path: 'start',

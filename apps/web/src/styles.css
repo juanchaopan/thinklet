@@ -48,6 +48,9 @@
 
   --shadow-card: 0 1px 2px rgb(60 45 20 / 0.04), 0 6px 20px rgb(60 45 20 / 0.05);
   --shadow-pop: 0 12px 40px rgb(22 26 43 / 0.16);
+  /* The large cover of a book page casts a deep, soft shadow below it, so it
+     stands off the page like a book. */
+  --shadow-book: 0 28px 48px -18px rgb(22 26 43 / 0.5), 0 6px 14px rgb(22 26 43 / 0.12);
 
   /* Motion follows the Fluent 2 tokens: things that arrive decelerate into
      place, things that leave accelerate away, things that move between two

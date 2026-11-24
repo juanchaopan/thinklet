@@ -1,20 +1,28 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import type { ArtName } from './art';
 import { Button } from './button';
-import { Dialog } from './dialog';
+import { Dialog, type DialogSize } from './dialog';
 
 /**
  * The dialog that asks before an action that cannot simply be taken back:
  * the icon and the question as its title, a line saying what will happen,
  * 取消 and the action. An action that loses something (`danger`) is red.
- * While the action runs (`busy`) its button says 处理中… and cannot be
- * pressed again. 取消, Escape and the backdrop emit `dismissed`.
+ * A question that names something long, such as a book's title, takes a
+ * wider dialog (`size`) to keep it on as few lines as possible. While the
+ * action runs (`busy`) its button says 处理中… and cannot be pressed again.
+ * 取消, Escape and the backdrop emit `dismissed`.
  */
 @Component({
   selector: 'app-confirm-dialog',
   imports: [Button, Dialog],
   template: `
-    <app-dialog [open]="open()" [title]="title()" [icon]="icon()" (dismissed)="dismissed.emit()">
+    <app-dialog
+      [open]="open()"
+      [title]="title()"
+      [icon]="icon()"
+      [size]="size()"
+      (dismissed)="dismissed.emit()"
+    >
       <p class="mt-3 text-base text-ink-soft">{{ text() }}</p>
       <button type="button" appButton="secondary" appDialogAction (click)="dismissed.emit()">
         取消
@@ -39,6 +47,7 @@ export class ConfirmDialog {
   readonly text = input.required<string>();
   readonly action = input.required<string>();
   readonly danger = input(false);
+  readonly size = input<DialogSize>('small');
   readonly busy = input(false);
 
   readonly confirmed = output();

@@ -13,14 +13,15 @@ import type { BookCard } from '@thinklet/contracts';
 import { whenBackInFront } from '../../core/connectivity';
 import { CurrentFamily } from '../../core/current-family';
 import { FamilyTroubleView } from '../../core/family-pages';
+import { LibraryAddress } from '../../core/library-address';
 import { Session } from '../../core/session';
 import { Art } from '../../shared/ui/art';
 import { BookGrid } from '../../shared/ui/book-tile';
 import { Button } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
-import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
 import { InputMode } from '../../shared/ui/input-mode';
 import { ReadersDialog } from '../../shared/ui/readers-dialog';
+import { RemoveBookDialog } from '../../shared/ui/remove-book-dialog';
 import { WelcomeBanner } from '../../shared/ui/welcome-banner';
 import { InView } from './in-view';
 import { LibraryCard } from './library-card';
@@ -54,7 +55,8 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
  * through, newest first. The filters are kept in the address, so a reload
  * or coming back from a book shows the same books; a grade or subject
  * pressed applies at once. Without books it says 没有符合条件的书 with
- * 清除筛选, which takes every filter back to the whole library.
+ * 清除筛选, which takes every filter back to the whole library. The filters
+ * shown are also remembered for 返回 on a book page (core/library-address).
  *
  * Books come 12 at a time: with a mouse 加载更多 brings the next ones, on a
  * touch screen they come as the end of the list scrolls into view; once
@@ -76,12 +78,12 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
     BookGrid,
     Button,
     Card,
-    ConfirmDialog,
     FamilyTroubleView,
     InView,
     LibraryCard,
     LibraryFilters,
     ReadersDialog,
+    RemoveBookDialog,
     WelcomeBanner,
   ],
   template: `
@@ -169,13 +171,9 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
         (confirmed)="saveReaders(book, $event)"
         (dismissed)="close()"
       />
-      <app-confirm-dialog
+      <app-remove-book-dialog
         [open]="dialog() === 'remove'"
-        icon="door"
-        [title]="'从我家的书里移除《' + book.title + '》？'"
-        text="这本书还在书库里时，可以再获取。"
-        action="移除"
-        [danger]="true"
+        [title]="book.title"
         [busy]="store.busy()?.action === 'remove'"
         (confirmed)="remove(book)"
         (dismissed)="close()"
@@ -190,6 +188,7 @@ export class LibraryPage {
   private readonly session = inject(Session);
   private readonly currentFamily = inject(CurrentFamily);
   private readonly router = inject(Router);
+  private readonly libraryAddress = inject(LibraryAddress);
   private readonly address = toSignal(inject(ActivatedRoute).queryParamMap, {
     requireSync: true,
   });
@@ -252,6 +251,9 @@ export class LibraryPage {
         this.close();
         void this.store.open(familyId, wanted);
       });
+    });
+    effect(() => {
+      this.libraryAddress.remember(addressOf(this.wanted()));
     });
     whenBackInFront(() => void this.store.refresh());
   }

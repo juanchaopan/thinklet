@@ -1,24 +1,22 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
-  bookDetailSchema,
   bookFiltersResponseSchema,
   bookListResponseSchema,
-  childListSchema,
   type BookCard,
   type BookDetail,
   type BookFiltersResponse,
   type BookListResponse,
   type Child,
-  type ErrorCode,
 } from '@thinklet/contracts';
-import { Api, ApiError } from '../../core/api';
+import { Api } from '../../core/api';
+import { asApiError, isSignedOut, showSomethingWentWrong } from '../../core/failures';
 import {
-  asApiError,
-  explainChange,
-  isSignedOut,
-  showSomethingWentWrong,
-} from '../../core/failures';
+  BookChanges,
+  FamilyBooks,
+  leaveLostFamily,
+  type BookOutcome,
+} from '../../core/family-books';
 import { familyPath, readTrouble, type FamilyTrouble } from '../../core/family-pages';
 import { FreshReads } from '../../core/fresh-reads';
 import { Session } from '../../core/session';
@@ -47,27 +45,6 @@ export interface Listing {
   readonly risingFrom: number | null;
 }
 
-/** A change to one book; only one runs at a time. */
-export type BookAction = 'acquire' | 'readers' | 'remove';
-
-/**
- * How a change ended: `done`; `failed`, said in a toast, with what is on the
- * screen left as it was; or `changed`, the book, a child or the family
- * changed meanwhile, which has been said and the book read again.
- */
-export type BookOutcome = 'done' | 'failed' | 'changed';
-
-/**
- * The error codes that mean the family's books or children changed
- * meanwhile (rules.md, 同时操作), with what the toast says.
- */
-const CHANGED_MEANWHILE: Partial<Record<ErrorCode, string>> = {
-  child_not_found: '这个孩子已经被删除了',
-  book_not_acquired: '这本书已经不在我家的书里了',
-  book_in_use: '还有孩子在读这本书，先在「谁能读」里取消',
-  book_inactive: '这本书已下架',
-};
-
 /** How a read of the books goes: a new list, or the list shown read again as far as it goes. */
 type ReadMode = 'new' | 'again';
 
@@ -84,11 +61,6 @@ interface ReadResult {
 function asCard(detail: BookDetail): BookCard {
   const { id, title, intro, grade, subject, status, coverUrl, acquired, readers } = detail;
   return { id, title, intro, grade, subject, status, coverUrl, acquired, readers };
-}
-
-/** The address of one of the family's books in the api, with what follows it. */
-function bookPath(familyId: string, bookId: string, suffix = ''): string {
-  return familyPath(familyId, `/books/${encodeURIComponent(bookId)}${suffix}`);
 }
 
 /** The api's address of one batch of the query, from the cursor's position when given. */
@@ -117,19 +89,26 @@ function lengthToKeep(mode: ReadMode, shown: Listing | null): number {
  * read for a list that has been replaced meanwhile is dropped.
  *
  * A change the family's books or children went through meanwhile is said in
- * a toast and the book is read again; a family the parent is no longer in
- * makes the parent's families read again, so the page moves to another
- * family, or to the start page without one. The page provides its own
- * instance.
+ * a toast and the book is read again (core/family-books); a family the
+ * parent is no longer in makes the parent's families read again, so the
+ * page moves to another family, or to the start page without one. The page
+ * provides its own instance.
  */
 @Injectable()
 export class LibraryStore {
   private readonly api = inject(Api);
+  private readonly books = inject(FamilyBooks);
   private readonly session = inject(Session);
   private readonly toaster = inject(Toaster);
   private readonly router = inject(Router);
 
   private readonly reads = new FreshReads();
+  private readonly changes = new BookChanges({
+    familyLost: () => {
+      this.notFound();
+    },
+    readAgain: (bookId) => void this.readBook(bookId),
+  });
   private familyId = '';
   private wanted: LibraryQuery | null = null;
   private nextKey = 0;
@@ -138,7 +117,6 @@ export class LibraryStore {
   private readonly shownListing = signal<Listing | null>(null);
   private readonly shownTrouble = signal<FamilyTrouble | null>(null);
   private readonly batchRunning = signal(false);
-  private readonly running = signal<{ bookId: string; action: BookAction } | null>(null);
 
   /** The family's children in the order they were added; null until they have been read. */
   readonly children = this.shownChildren.asReadonly();
@@ -149,7 +127,7 @@ export class LibraryStore {
   /** Whether the next batch is on its way. */
   readonly loadingMore = this.batchRunning.asReadonly();
   /** The change to a book running now. */
-  readonly busy = this.running.asReadonly();
+  readonly busy = this.changes.busy;
 
   /** Shows the library of the family with the id for the query, read afresh. */
   async open(familyId: string, query: LibraryQuery): Promise<void> {
@@ -212,27 +190,17 @@ export class LibraryStore {
 
   /** Takes the book into the family's books, without a word: the card's footer is the answer. */
   acquire(book: BookCard): Promise<BookOutcome> {
-    return this.run(book, 'acquire', async (familyId) => {
-      const detail = await this.api.send(
-        'PUT',
-        bookPath(familyId, book.id, '/acquisition'),
-        undefined,
-        bookDetailSchema,
-      );
-      this.update(familyId, detail);
+    const familyId = this.familyId;
+    return this.changes.run(book.id, 'acquire', async () => {
+      this.update(familyId, await this.books.acquire(familyId, book.id));
     });
   }
 
   /** Sets the children who read the book, without a word: the avatars are the answer. */
   setReaders(book: BookCard, childIds: readonly string[]): Promise<BookOutcome> {
-    return this.run(book, 'readers', async (familyId) => {
-      const detail = await this.api.send(
-        'PUT',
-        bookPath(familyId, book.id, '/readers'),
-        { childIds },
-        bookDetailSchema,
-      );
-      this.update(familyId, detail);
+    const familyId = this.familyId;
+    return this.changes.run(book.id, 'readers', async () => {
+      this.update(familyId, await this.books.setReaders(familyId, book.id, childIds));
     });
   }
 
@@ -242,8 +210,9 @@ export class LibraryStore {
    * book leaves the list, as only the family's books held it.
    */
   remove(book: BookCard): Promise<BookOutcome> {
-    return this.run(book, 'remove', async (familyId) => {
-      await this.api.sendWithoutContent('DELETE', bookPath(familyId, book.id, '/acquisition'));
+    const familyId = this.familyId;
+    return this.changes.run(book.id, 'remove', async () => {
+      await this.books.remove(familyId, book.id);
       this.update(familyId, { ...book, acquired: false, readers: [], replacement: null });
       this.toaster.show(`已移除《${book.title}》`, 'success', 'door');
     });
@@ -308,10 +277,7 @@ export class LibraryStore {
     count: number,
   ): Promise<ReadResult> {
     const known = this.shownChildren();
-    const children =
-      withChildren || known === null
-        ? await this.api.get(familyPath(familyId, '/children'), childListSchema)
-        : known;
+    const children = withChildren || known === null ? await this.books.children(familyId) : known;
     const scoped = withKnownChild(
       wanted,
       children.map(({ id }) => id),
@@ -371,46 +337,6 @@ export class LibraryStore {
   }
 
   /**
-   * Runs one change to a book while it is marked busy. Only one runs at a
-   * time: while another runs, nothing is done and the answer is `failed`.
-   */
-  private async run(
-    book: BookCard,
-    action: BookAction,
-    work: (familyId: string) => Promise<void>,
-  ): Promise<BookOutcome> {
-    if (this.running()) {
-      return 'failed';
-    }
-    this.running.set({ bookId: book.id, action });
-    try {
-      await work(this.familyId);
-      return 'done';
-    } catch (error) {
-      return this.changeFailed(error, book.id);
-    } finally {
-      this.running.set(null);
-    }
-  }
-
-  /**
-   * Explains a change to a book that failed: a family the parent is no
-   * longer in moves the page on, a change made meanwhile is said and the
-   * book and the children are read again, and anything else is 出了点问题.
-   */
-  private changeFailed(error: unknown, bookId: string): BookOutcome {
-    if (error instanceof ApiError && error.code === 'family_not_found') {
-      this.notFound();
-      return 'changed';
-    }
-    explainChange(error, this.toaster, CHANGED_MEANWHILE, () => {
-      void this.readBook(bookId);
-    });
-    const { code } = asApiError(error);
-    return code !== 'network' && CHANGED_MEANWHILE[code] ? 'changed' : 'failed';
-  }
-
-  /**
    * Reads one book and the children again after a change made meanwhile. A
    * book the family can no longer see leaves the list.
    */
@@ -418,8 +344,8 @@ export class LibraryStore {
     const familyId = this.familyId;
     try {
       const [detail, children] = await Promise.all([
-        this.api.get(bookPath(familyId, bookId), bookDetailSchema),
-        this.api.get(familyPath(familyId, '/children'), childListSchema),
+        this.books.detail(familyId, bookId),
+        this.books.children(familyId),
       ]);
       if (familyId === this.familyId) {
         this.shownChildren.set(children);
@@ -471,10 +397,6 @@ export class LibraryStore {
     this.reads.wrote();
     this.shownListing.set(null);
     this.shownTrouble.set('not-found');
-    void this.session.refresh().then(() => {
-      if ((this.session.me()?.families.length ?? 0) === 0) {
-        void this.router.navigateByUrl('/start');
-      }
-    });
+    leaveLostFamily(this.session, this.router);
   }
 }

@@ -1,10 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import {
+  NavigationEnd,
+  Router,
   RouterLink,
   RouterLinkActive,
   RouterOutlet,
   type IsActiveMatchOptions,
 } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { Art, Logo, type IconArt } from '../../shared/ui/art';
 import { Avatar } from '../../shared/ui/avatar';
 import { Badge, Dot } from '../../shared/ui/card';
@@ -18,12 +22,33 @@ import { PARENT_PAGES } from './parent-pages';
 import { UserMenu } from './user-menu';
 import { countText, waitingText } from './waiting-count';
 
+/**
+ * How an entry of the family's pages is current: `page` on its own page,
+ * `true` on a page that belongs to it (a book's page belongs to 书库), and
+ * null elsewhere. It is the entry's `aria-current`.
+ */
+type Current = 'page' | 'true' | null;
+
 interface NavItem {
   readonly label: string;
   readonly icon: IconArt;
   readonly link: string;
   /** The number of join requests waiting, shown as a red count when there are any. */
   readonly count: number;
+  readonly current: Current;
+}
+
+/** The path of an address, without its query and fragment. */
+function pathOf(url: string): string {
+  return url.split(/[?#]/, 1)[0] ?? url;
+}
+
+/** How the entry leading to `link` is current on `path`; pages under `section` belong to it. */
+function currentOf(path: string, link: string, section?: string): Current {
+  if (path === link) {
+    return 'page';
+  }
+  return section !== undefined && path.startsWith(section) ? 'true' : null;
 }
 
 /**
@@ -38,6 +63,8 @@ interface NavItem {
  * switcher and the avatar, which opens the parent's menu, and the family's
  * pages are a tab bar at the bottom. A parent without a family gets the bare
  * frame instead: the full logo and the avatar with its menu, no family pages.
+ * An entry is marked on its own page, whatever the query says; 书库 is also
+ * marked on a book's page, which is reached from the library.
  *
  * For the family's admin, 家庭管理 carries the red count of the join
  * requests waiting in the current family (rules.md, 通知); it reads "99+"
@@ -76,12 +103,9 @@ interface NavItem {
             @for (item of items; track item.link) {
               <a
                 [routerLink]="item.link"
-                routerLinkActive
-                #side="routerLinkActive"
-                [routerLinkActiveOptions]="samePage"
-                ariaCurrentWhenActive="page"
+                [attr.aria-current]="item.current"
                 class="flex min-h-12 items-center gap-3 rounded-2xl px-3 text-base font-bold transition-colors duration-150"
-                [class]="side.isActive ? 'bg-tint text-ink' : 'text-ink-soft hover:bg-canvas'"
+                [class]="item.current ? 'bg-tint text-ink' : 'text-ink-soft hover:bg-canvas'"
               >
                 <img alt="" [appArt]="item.icon" class="size-8" />
                 <span class="flex-1">{{ item.label }}</span>
@@ -140,12 +164,9 @@ interface NavItem {
             @for (item of items; track item.link) {
               <a
                 [routerLink]="item.link"
-                routerLinkActive
-                #tab="routerLinkActive"
-                [routerLinkActiveOptions]="samePage"
-                ariaCurrentWhenActive="page"
+                [attr.aria-current]="item.current"
                 class="relative flex min-h-16 flex-col items-center justify-center gap-0.5 text-xs font-bold"
-                [class]="tab.isActive ? 'text-ink' : 'text-ink-muted'"
+                [class]="item.current ? 'text-ink' : 'text-ink-muted'"
               >
                 <span class="relative">
                   <img alt="" [appArt]="item.icon" class="size-7" />
@@ -187,6 +208,7 @@ export class AppShell {
   protected readonly session = inject(Session);
   protected readonly creation = inject(FamilyCreation);
   private readonly currentFamily = inject(CurrentFamily);
+  private readonly router = inject(Router);
 
   protected readonly parentPages = PARENT_PAGES;
   protected readonly countText = countText;
@@ -200,20 +222,44 @@ export class AppShell {
     fragment: 'ignored',
   };
 
+  /** The path of the page shown, updated as each navigation ends. */
+  private readonly path = toSignal(
+    this.router.events.pipe(
+      filter((event) => event instanceof NavigationEnd),
+      map(() => pathOf(this.router.url)),
+    ),
+    { initialValue: pathOf(this.router.url) },
+  );
+
   protected readonly navItems = computed<readonly NavItem[] | null>(() => {
     const family = this.currentFamily.family();
     if (!family) {
       return null;
     }
+    const path = this.path();
     const familyPage = `/families/${family.id}`;
+    const childrenPage = `${familyPage}/children`;
     return [
-      { label: '书库', icon: 'home', link: '/', count: 0 },
-      { label: '孩子', icon: 'child', link: `${familyPage}/children`, count: 0 },
+      {
+        label: '书库',
+        icon: 'home',
+        link: '/',
+        count: 0,
+        current: currentOf(path, '/', '/books/'),
+      },
+      {
+        label: '孩子',
+        icon: 'child',
+        link: childrenPage,
+        count: 0,
+        current: currentOf(path, childrenPage),
+      },
       {
         label: '家庭管理',
         icon: 'settings',
         link: familyPage,
         count: family.role === 'admin' ? (family.pendingRequests ?? 0) : 0,
+        current: currentOf(path, familyPage),
       },
     ];
   });

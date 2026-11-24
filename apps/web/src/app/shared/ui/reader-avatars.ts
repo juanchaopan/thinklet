@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { Avatar, STACKED } from './avatar';
+import { Avatar, STACKED, STACKED_LARGE } from './avatar';
 import { LineIcon } from './line-icon';
 
 /** A child who reads a book, as the avatars show them. */
@@ -14,7 +14,9 @@ const SHOWN = 3;
 /**
  * The children who read a book (look.md, 书的卡片): their avatars, slightly
  * overlapping, at most three and then “+2” for the rest; while nobody reads
- * it, a 32 px dashed circle with a plus. Only a mark: the button around it
+ * it, a 32 px dashed circle with a plus. On a card the avatars are 24 px
+ * (28 px from 640 px); on a book page's 谁能读 button (`large`) they are
+ * 32 px and overlap a little more. Only a mark: the button around it
  * carries the name for screen readers.
  */
 @Component({
@@ -23,14 +25,18 @@ const SHOWN = 3;
   host: { 'aria-hidden': 'true', class: 'inline-flex' },
   template: `
     @if (readers().length > 0) {
-      <span class="flex -space-x-2 sm:-space-x-1.5">
+      <span class="flex" [class]="large() ? '-space-x-2' : '-space-x-2 sm:-space-x-1.5'">
         @for (reader of shown(); track reader.childId) {
-          <app-avatar [name]="reader.nickname" [personId]="reader.childId" size="stack" />
+          <app-avatar
+            [name]="reader.nickname"
+            [personId]="reader.childId"
+            [size]="large() ? 'stackLarge' : 'stack'"
+          />
         }
         @if (more() > 0) {
           <span
             class="inline-flex shrink-0 items-center justify-center rounded-full bg-canvas font-bold text-ink-soft {{
-              stacked
+              countSize()
             }}"
             >+{{ more() }}</span
           >
@@ -48,8 +54,10 @@ const SHOWN = 3;
 })
 export class ReaderAvatars {
   readonly readers = input.required<readonly Reader[]>();
+  /** Whether the avatars are those of a book page's 谁能读 button. */
+  readonly large = input(false);
 
-  protected readonly stacked = STACKED;
   protected readonly shown = computed(() => this.readers().slice(0, SHOWN));
   protected readonly more = computed(() => Math.max(0, this.readers().length - SHOWN));
+  protected readonly countSize = computed(() => (this.large() ? STACKED_LARGE : STACKED));
 }
