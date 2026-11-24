@@ -97,9 +97,9 @@ async function typePassword(page: Page, password: string): Promise<void> {
 // the families are made straight through the api where a test is not about
 // them. The address a QR code holds is read from the api's answer when the
 // dialog makes the link, not from the picture. A link that has run out after
-// 10 minutes is left to the api's integration tests, since these tests reach
-// neither the api's clock nor its database. A page is checked with axe once
-// its content is shown.
+// 10 minutes is left to the api's integration tests, which set the api's
+// clock; these tests run against the api as it is. A page is checked with axe
+// once its content is shown.
 test.describe('the child login', () => {
   test('a child scans the QR code, sets a password and is in; the parent sees it, and the code works once', async ({
     page,

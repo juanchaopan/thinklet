@@ -49,6 +49,12 @@ export interface Environment {
   /** The mock identity provider the api signs in through: its issuer and the api's client id. */
   identityProvider: { issuer: string; clientId: string };
   /**
+   * The address of the environment's database, for the few tests that set
+   * up what no user can do any more through the site, such as a book a
+   * family acquired before it left the library.
+   */
+  databaseUrl: string;
+  /**
    * Stops everything that was started and removes the containers. Every call
    * returns the same promise, so a second caller (a signal handler while the
    * normal cleanup runs) waits for the cleanup to finish.
@@ -128,6 +134,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     return {
       baseUrl,
       identityProvider: { issuer: oidc.issuer, clientId: oidc.clientId },
+      databaseUrl,
       stop: cleanup.run,
     };
   } catch (error) {
