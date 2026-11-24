@@ -6,6 +6,7 @@ import type {
   UpdateFamilyRequest,
 } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { AuditService, byParent } from '../audit/audit.service.js';
 import { generateFamilyCode } from './family-code.js';
 import {
   FamiliesRepository,
@@ -70,6 +71,11 @@ export function requireRemoval({ by, of, self }: Removal): void {
   }
 }
 
+/** The fields a change of a family names, in a fixed order, for its audit event. */
+export function changedFamilyFields(changes: UpdateFamilyRequest): Array<'name' | 'timezone'> {
+  return (['name', 'timezone'] as const).filter((field) => changes[field] !== undefined);
+}
+
 /**
  * A family as the signed-in parent sees it, with their own role and every
  * member marked as them or not. A parent who is not among the members is
@@ -123,11 +129,15 @@ export async function lockFor(
 /**
  * Families, their settings and their parents (`.docs/design/interfaces.md`,
  * "家庭"). Every operation checks the parent's membership and role in the
- * database, never from the login.
+ * database, never from the login. Every change is recorded as an audit
+ * event in its own transaction, by the parent who made it.
  */
 @Injectable()
 export class FamiliesService {
-  constructor(private readonly repository: FamiliesRepository) {}
+  constructor(
+    private readonly repository: FamiliesRepository,
+    private readonly audit: AuditService,
+  ) {}
 
   /** Checks that the parent may use a route of the family; the membership check of every family route. */
   async checkAccess(parentId: string, familyId: string, access: FamilyAccess): Promise<void> {
@@ -154,9 +164,15 @@ export class FamiliesService {
   /** Creates a family with a new code; the parent who creates it is its admin. */
   create(parentId: string, request: CreateFamilyRequest): Promise<FamilyDetail> {
     return this.withNewCode((code) =>
-      this.repository.transaction(async (store) => {
+      this.repository.transaction(async (store, transaction) => {
         const familyId = await store.insertFamily({ ...request, code });
         await store.insertMember(familyId, parentId, 'admin');
+        await this.audit.record(transaction, {
+          actor: byParent(parentId),
+          action: 'family.created',
+          targetId: familyId,
+          familyId,
+        });
         return readDetail(store, familyId, parentId);
       }),
     );
@@ -167,12 +183,23 @@ export class FamiliesService {
     return readDetail(this.repository, familyId, parentId);
   }
 
-  /** The admin changes the name, the time zone or both; the last change saved wins. */
+  /**
+   * The admin changes the name, the time zone or both; the last change saved
+   * wins. A change that names neither changes nothing and is not recorded.
+   */
   update(parentId: string, familyId: string, changes: UpdateFamilyRequest): Promise<FamilyDetail> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       await lockFor(store, familyId, parentId, 'admin');
-      if (changes.name !== undefined || changes.timezone !== undefined) {
+      const fields = changedFamilyFields(changes);
+      if (fields.length > 0) {
         await store.updateFamily(familyId, changes);
+        await this.audit.record(transaction, {
+          actor: byParent(parentId),
+          action: 'family.updated',
+          targetId: familyId,
+          familyId,
+          details: { fields },
+        });
       }
       return readDetail(store, familyId, parentId);
     });
@@ -184,10 +211,16 @@ export class FamiliesService {
    */
   changeCode(parentId: string, familyId: string): Promise<FamilyDetail> {
     return this.withNewCode((code) =>
-      this.repository.transaction(async (store) => {
+      this.repository.transaction(async (store, transaction) => {
         await lockFor(store, familyId, parentId, 'admin');
         await store.updateCode(familyId, code);
         await store.expirePendingRequests(familyId, new Date());
+        await this.audit.record(transaction, {
+          actor: byParent(parentId),
+          action: 'family.code_changed',
+          targetId: familyId,
+          familyId,
+        });
         return readDetail(store, familyId, parentId);
       }),
     );
@@ -200,7 +233,7 @@ export class FamiliesService {
    * admin per family never sees two.
    */
   transferAdmin(parentId: string, familyId: string, newAdminId: string): Promise<FamilyDetail> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       await lockFor(store, familyId, parentId, 'admin');
       if (newAdminId === parentId) {
         throw alreadyAdmin();
@@ -210,19 +243,32 @@ export class FamiliesService {
       }
       await store.setRole(familyId, parentId, 'member');
       await store.setRole(familyId, newAdminId, 'admin');
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: 'member.admin_transferred',
+        targetId: newAdminId,
+        familyId,
+        details: { from: parentId },
+      });
       return readDetail(store, familyId, parentId);
     });
   }
 
   /** The admin takes another member out of the family, or a member leaves it. */
   removeMember(parentId: string, familyId: string, memberId: string): Promise<void> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       await store.lockFamily(familyId);
       const by = await store.memberRole(familyId, parentId);
       const self = memberId === parentId;
       const of = self ? by : await store.memberRole(familyId, memberId);
       requireRemoval({ by, of, self });
       await store.deleteMember(familyId, memberId);
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: self ? 'member.left' : 'member.removed',
+        targetId: memberId,
+        familyId,
+      });
     });
   }
 

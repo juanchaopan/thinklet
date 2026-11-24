@@ -23,6 +23,7 @@ import {
   type ChildRow,
 } from '../support/children.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
+import { query } from '../support/database.js';
 import {
   addMember,
   as,
@@ -37,13 +38,14 @@ const HEX_SHA256 = /^[0-9a-f]{64}$/;
 const cipher = testChildDataCipher();
 
 // Acceptance criteria covered: every parent of a family can add a child
-// with the guardian's consent, see the children in the order they were
-// added, change a nickname and an account, and delete a child with its
-// login links and devices; an account is unique within the family; the
-// nickname, the account and the device names are stored encrypted; a
-// password reset clears the password, forgets the devices and ends the
-// logins issued before it while unused login links keep working; a new
-// login link revokes the older ones, and its state follows use, expiry and
+// with the guardian's consent, recorded with its version in the audit
+// events, see the children in the order they were added, change a
+// nickname and an account, and delete a child with its login links and
+// devices; an account is unique within the family; the nickname, the
+// account and the device names are stored encrypted; a password reset
+// clears the password, forgets the devices and ends the logins issued
+// before it while unused login links keep working; a new login link
+// revokes the older ones, and its state follows use, expiry and
 // revocation; the remembered devices are listed latest first and can be
 // revoked one by one or all at once.
 describe('children', () => {
@@ -108,21 +110,32 @@ describe('children', () => {
       expect(await listOf(familyId)).toEqual([first, second]);
     });
 
-    it("records the adding parent's consent, its version and time, and no password", async () => {
+    it("records the adding parent's consent and its version in the audit events, and no password", async () => {
       const before = Date.now();
 
       const child = await addChild(running.server, member, family.id);
 
       const row = await storedRow(child.id);
-      expect(row).toMatchObject({
+      expect(row).toMatchObject({ family_id: family.id, password_hash: null });
+      expect(row.sessions_valid_after.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      const [consent] = await query<{
+        actor_id: string;
+        family_id: string;
+        details: unknown;
+        occurred_at: Date;
+      }>(
+        running.databaseUrl,
+        `select actor_id, family_id, details, occurred_at from audit_events
+         where action = 'child.created' and target_id = $1`,
+        [child.id],
+      );
+      expect(consent).toMatchObject({
+        actor_id: member.id,
         family_id: family.id,
-        password_hash: null,
-        consent_parent_id: member.id,
-        consent_version: '2026-11-22',
+        details: { consentVersion: '2026-11-22' },
       });
-      expect(row.consented_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
-      expect(row.consented_at.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
-      expect(row.sessions_valid_after).toEqual(row.consented_at);
+      expect(consent?.occurred_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(consent?.occurred_at.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
     });
 
     it('stores the nickname and the account only as ciphertext, with a hex lookup value', async () => {

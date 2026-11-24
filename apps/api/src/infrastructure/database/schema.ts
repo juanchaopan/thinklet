@@ -7,6 +7,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -106,11 +107,11 @@ export const familyMembers = pgTable(
 );
 
 /**
- * Requests to join a family. Rows are never deleted; the partial unique
- * index allows one pending request per parent and family at a time. The
- * code is the family code the parent applied with, checked like the
- * family's own. Only the applicant dismisses a closed request; the admin
- * sees pending requests alone.
+ * Requests to join a family. The partial unique index allows one pending
+ * request per parent and family at a time. The code is the family code the
+ * parent applied with, checked like the family's own. Only the applicant
+ * dismisses a closed request; the admin sees pending requests alone. Who
+ * approved or rejected a request is in the audit events.
  */
 export const joinRequests = pgTable(
   'join_requests',
@@ -126,7 +127,6 @@ export const joinRequests = pgTable(
     status: text('status').$type<JoinRequestStatus>().notNull(),
     createdAt: timestamptz('created_at').notNull().defaultNow(),
     closedAt: timestamptz('closed_at'),
-    closedBy: uuid('closed_by').references(() => parents.id),
     dismissedByApplicantAt: timestamptz('dismissed_by_applicant_at'),
   },
   (table) => [
@@ -148,9 +148,10 @@ export const joinRequests = pgTable(
  * finds the child at login without decrypting. The unique constraint leads
  * with `family_id`, so it also serves listing a family's children. A null
  * `password_hash` means the child has not set a password yet. JWTs issued
- * before `sessions_valid_after` are refused. The guardian's consent is kept
- * in the row and goes with it. `(id, family_id)` is unique so that book
- * assignments can reference a child together with its family.
+ * before `sessions_valid_after` are refused. The guardian's consent is the
+ * child's `child.created` audit event, which outlives the child.
+ * `(id, family_id)` is unique so that book assignments can reference a
+ * child together with its family.
  *
  * A ciphertext is `<key id>.<iv>.<ciphertext>.<tag>`, each part after the
  * key id in unpadded base64url. AES-GCM keeps the length of the text, so
@@ -170,11 +171,6 @@ export const children = pgTable(
     accountLookup: text('account_lookup').notNull(),
     passwordHash: text('password_hash'),
     sessionsValidAfter: timestamptz('sessions_valid_after').notNull().defaultNow(),
-    consentParentId: uuid('consent_parent_id')
-      .notNull()
-      .references(() => parents.id),
-    consentVersion: text('consent_version').notNull(),
-    consentedAt: timestamptz('consented_at').notNull(),
     ...rowTimes(),
   },
   (table) => [
@@ -331,9 +327,6 @@ export const familyBooks = pgTable(
     bookId: text('book_id')
       .notNull()
       .references(() => books.id, { onDelete: 'restrict' }),
-    acquiredBy: uuid('acquired_by')
-      .notNull()
-      .references(() => parents.id),
     acquiredAt: timestamptz('acquired_at').notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.familyId, table.bookId] })],
@@ -353,9 +346,6 @@ export const bookAssignments = pgTable(
     childId: uuid('child_id').notNull(),
     familyId: uuid('family_id').notNull(),
     bookId: text('book_id').notNull(),
-    assignedBy: uuid('assigned_by')
-      .notNull()
-      .references(() => parents.id),
     assignedAt: timestamptz('assigned_at').notNull().defaultNow(),
     openedAt: timestamptz('opened_at'),
   },
@@ -372,5 +362,43 @@ export const bookAssignments = pgTable(
       foreignColumns: [familyBooks.familyId, familyBooks.bookId],
     }).onDelete('restrict'),
     index('book_assignments_family_book_idx').on(table.familyId, table.bookId),
+  ],
+);
+
+/** Who did what an audit event records: a parent, a child or the site itself. */
+export type AuditActorKind = 'parent' | 'child' | 'system';
+
+/**
+ * Who did what to which data, one row for every action that changed data
+ * (`.docs/design/data.md`, "audit_events"). It references no table, so a
+ * deleted parent, family or child leaves its rows as they are, holding ids
+ * that match nothing; the migration that creates it adds a trigger that
+ * refuses every update and delete, so the rows are only ever added. The
+ * rows hold ids and identifiers only, never a name, an email, a nickname,
+ * an account or a device name. The site itself acts without an id; a
+ * parent also has the issuer and subject of their Authing account. The
+ * indexes serve reading a family's events in time order and the events of
+ * one thing.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    occurredAt: timestamptz('occurred_at').notNull().defaultNow(),
+    actorKind: text('actor_kind').$type<AuditActorKind>().notNull(),
+    actorId: uuid('actor_id'),
+    actorIssuer: text('actor_issuer'),
+    actorSubject: text('actor_subject'),
+    action: text('action').notNull(),
+    targetKind: text('target_kind').notNull(),
+    targetId: text('target_id').notNull(),
+    familyId: uuid('family_id'),
+    details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    index('audit_events_family_occurred_at_idx').on(table.familyId, table.occurredAt),
+    index('audit_events_target_idx').on(table.targetKind, table.targetId),
+    check('audit_events_actor_kind_check', sql`actor_kind in ('parent', 'child', 'system')`),
+    check('audit_events_actor_id_check', sql`(actor_kind = 'system') = (actor_id is null)`),
   ],
 );

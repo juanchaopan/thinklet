@@ -1,5 +1,6 @@
 import type { ErrorCode } from '@thinklet/contracts';
 import type { PasswordHasher } from '../../infrastructure/passwords/password-hasher.js';
+import type { AuditService } from '../audit/audit.service.js';
 import type { FamiliesService } from '../family/families.service.js';
 import type {
   ChildLoginRepository,
@@ -26,9 +27,17 @@ const OTHER_HASH = '$argon2id$v=19$m=19456,t=2,p=1$b3RoZXJzYWx0$b3RoZXItaGFzaA';
 const IPAD =
   'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
 const LOGIN = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret1', remember: false };
-const XIAOMI: LoginCandidate = { id: CHILD_ID, nickname: '小米', passwordHash: HASH };
+const XIAOMI: LoginCandidate = {
+  id: CHILD_ID,
+  familyId: FAMILY_ID,
+  nickname: '小米',
+  passwordHash: HASH,
+};
 const XIAOMI_WITHOUT_PASSWORD: LoginCandidate = { ...XIAOMI, passwordHash: null };
 const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD };
+
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'child-login' };
 
 const minutesFromNow = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
 
@@ -70,11 +79,13 @@ describe('ChildLoginService', () => {
   };
   /** Called once a transaction's work has resolved; it moves the clock on, as time passes after a commit. */
   const committed = vi.fn<() => void>();
-  const transaction = vi.fn(async (work: (s: ChildLoginStore) => Promise<unknown>) => {
-    const result = await work(store as unknown as ChildLoginStore);
-    committed();
-    return result;
-  });
+  const transaction = vi.fn(
+    async (work: (s: ChildLoginStore, transaction: unknown) => Promise<unknown>) => {
+      const result = await work(store as unknown as ChildLoginStore, TRANSACTION);
+      committed();
+      return result;
+    },
+  );
   const repository = { ...store, transaction } as unknown as ChildLoginRepository;
   const families = {
     findIdByCode: vi.fn<FamiliesService['findIdByCode']>(),
@@ -84,6 +95,7 @@ describe('ChildLoginService', () => {
     hash: vi.fn<PasswordHasher['hash']>(),
     verify: vi.fn<PasswordHasher['verify']>(),
   };
+  const audit = { record: vi.fn<AuditService['record']>() };
   let service: ChildLoginService;
 
   beforeEach(() => {
@@ -97,6 +109,7 @@ describe('ChildLoginService', () => {
     });
     hasher.hash.mockReset();
     hasher.verify.mockReset().mockResolvedValue(false);
+    audit.record.mockReset().mockResolvedValue();
     families.findIdByCode.mockResolvedValue(FAMILY_ID);
     store.findLoginCandidate.mockResolvedValue(XIAOMI);
     store.lockChild.mockResolvedValue(XIAOMI);
@@ -104,6 +117,7 @@ describe('ChildLoginService', () => {
       repository,
       families as unknown as FamiliesService,
       hasher as unknown as PasswordHasher,
+      audit as unknown as AuditService,
     );
   });
 
@@ -112,7 +126,7 @@ describe('ChildLoginService', () => {
   });
 
   describe('login', () => {
-    it("logs the child in with the family's code, the account and the right password", async () => {
+    it("logs the child in with the family's code, the account and the right password, recording no audit event", async () => {
       hasher.verify.mockResolvedValue(true);
 
       const login = await service.login(LOGIN, FRESH_BROWSER);
@@ -126,6 +140,7 @@ describe('ChildLoginService', () => {
       expect(store.findLoginCandidate).toHaveBeenCalledWith(FAMILY_ID, 'xiaomi');
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
       expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("verifies the password before the transaction, then writes the device and takes the session's issue time under the child's lock", async () => {
@@ -293,6 +308,7 @@ describe('ChildLoginService', () => {
         new Date(NOW.getTime() + DEVICE_LIFETIME_MS),
       );
       expectCalledInOrder(transaction, store.lockChild, store.renewDevice, committed);
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('refuses a browser without a device token with remember_invalid, without a transaction', async () => {
@@ -369,6 +385,19 @@ describe('ChildLoginService', () => {
       expect(store.markLinkUsed).toHaveBeenCalledWith(LINK_ID, NOW);
     });
 
+    it('records the password the child set on a link, by the child, in the transaction', async () => {
+      await service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER);
+
+      expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+        actor: { kind: 'child', id: CHILD_ID },
+        action: 'child.password_set',
+        targetId: CHILD_ID,
+        familyId: FAMILY_ID,
+        details: { via: 'qr' },
+      });
+      expectCalledInOrder(store.setPassword, audit.record, store.markLinkUsed, committed);
+    });
+
     it('hashes the password before the transaction, and locks the child before the link', async () => {
       const login = await service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER);
 
@@ -394,6 +423,7 @@ describe('ChildLoginService', () => {
       );
       expect(hasher.hash).not.toHaveBeenCalled();
       expect(transaction).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('refuses with password_already_set a password set under the lock first, changing nothing', async () => {
@@ -406,6 +436,7 @@ describe('ChildLoginService', () => {
       expect(store.setPassword).not.toHaveBeenCalled();
       expect(store.markLinkUsed).not.toHaveBeenCalled();
       expect(store.rememberDevice).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it.each(unusableLinks)('answers %s with link_invalid, hashing nothing', async (_case, link) => {
@@ -432,6 +463,7 @@ describe('ChildLoginService', () => {
         );
         expect(store.setPassword).not.toHaveBeenCalled();
         expect(store.markLinkUsed).not.toHaveBeenCalled();
+        expect(audit.record).not.toHaveBeenCalled();
       },
     );
 
@@ -455,13 +487,14 @@ describe('ChildLoginService', () => {
       hasher.verify.mockResolvedValue(true);
     });
 
-    it('logs the child in with the right password and uses the link', async () => {
+    it('logs the child in with the right password and uses the link, recording no audit event', async () => {
       const login = await service.loginWithLink(newToken().token, request, FRESH_BROWSER);
 
       expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
       expect(store.markLinkUsed).toHaveBeenCalledWith(LINK_ID, NOW);
       expect(store.rememberDevice).toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('verifies the password before the transaction, and locks the child before the link', async () => {

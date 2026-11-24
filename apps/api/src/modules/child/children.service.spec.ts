@@ -2,6 +2,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { ErrorCode } from '@thinklet/contracts';
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import type { AuditEvent, AuditService } from '../audit/audit.service.js';
 import {
   AccountTakenError,
   type ChildChanges,
@@ -14,6 +15,7 @@ import {
 } from './children.repository.js';
 import {
   CHILD_CONSENT_VERSION,
+  changedChildFields,
   ChildrenService,
   LOGIN_LINK_LIFETIME_MS,
   loginLinkStatus,
@@ -29,6 +31,16 @@ const LINK_ID = 'link-1';
 const DEVICE_ID = 'device-1';
 const NOW = new Date('2026-11-22T09:00:00.000Z');
 const XIAOMI: ChildRecord = { id: CHILD_ID, nickname: '小米', account: 'xiaomi' };
+
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'children' };
+
+/** Who acted on which child of which family, as every audit event of the service names them. */
+const ON_XIAOMI = {
+  actor: { kind: 'parent', id: PARENT_ID },
+  targetId: CHILD_ID,
+  familyId: FAMILY_ID,
+} as const;
 
 const minutesFromNow = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
 
@@ -97,13 +109,28 @@ describe('toDevice', () => {
   });
 });
 
+describe('changedChildFields', () => {
+  it('names the fields a change gives, in a fixed order', () => {
+    expect(changedChildFields({ account: 'mimi', nickname: '米米' })).toEqual([
+      'nickname',
+      'account',
+    ]);
+    expect(changedChildFields({ account: 'mimi' })).toEqual(['account']);
+    expect(changedChildFields({})).toEqual([]);
+  });
+});
+
 /**
  * A repository double over one family with at most one child, held in
- * memory. A transaction runs its work on the same store; `calls` lists the
- * transactions, the locks and the writes in order.
+ * memory, the child remembered on one device unless told otherwise. A
+ * transaction runs its work on the same store; `calls` lists the
+ * transactions, the locks, the writes and the audit events in order.
  */
-function createService(options: { child?: boolean; link?: LoginLinkRecord } = {}) {
+function createService(
+  options: { child?: boolean; devices?: boolean; link?: LoginLinkRecord } = {},
+) {
   let exists = options.child ?? true;
+  let remembered = options.devices ?? true;
   const calls: string[] = [];
   const inFamily = (familyId: string, childId: string) =>
     exists && familyId === FAMILY_ID && childId === CHILD_ID;
@@ -145,24 +172,41 @@ function createService(options: { child?: boolean; link?: LoginLinkRecord } = {}
     listDevices: vi.fn((): Promise<DeviceRecord[]> => Promise.resolve([])),
     deleteDevice: vi.fn((childId: string, deviceId: string) => {
       calls.push(`deleteDevice ${childId} ${deviceId}`);
-      return Promise.resolve();
+      const deleted = remembered && deviceId === DEVICE_ID;
+      remembered = remembered && !deleted;
+      return Promise.resolve(deleted);
     }),
     deleteDevices: vi.fn((childId: string) => {
       calls.push(`deleteDevices ${childId}`);
-      return Promise.resolve();
+      const deleted = remembered ? 1 : 0;
+      remembered = false;
+      return Promise.resolve(deleted);
     }),
   };
   const repository = {
     ...store,
-    transaction: vi.fn(<T>(work: (transactionStore: typeof store) => Promise<T>) => {
-      calls.push('transaction');
-      return work(store);
+    transaction: vi.fn(
+      <T>(work: (transactionStore: typeof store, transaction: unknown) => Promise<T>) => {
+        calls.push('transaction');
+        return work(store, TRANSACTION);
+      },
+    ),
+  };
+  const audit = {
+    record: vi.fn((_transaction: unknown, event: AuditEvent) => {
+      calls.push(`audit ${event.action}`);
+      return Promise.resolve();
     }),
   };
   const config = { get: () => APP_ORIGIN } as unknown as ConfigService<Environment, true>;
   return {
-    service: new ChildrenService(repository as unknown as ChildrenRepository, config),
+    service: new ChildrenService(
+      repository as unknown as ChildrenRepository,
+      audit as unknown as AuditService,
+      config,
+    ),
     store,
+    audit,
     calls,
   };
 }
@@ -186,8 +230,8 @@ describe('ChildrenService', () => {
   });
 
   describe('add', () => {
-    it("records the adding parent's consent with its version and time", async () => {
-      const { service, store } = createService({ child: false });
+    it("adds the child as of now and records the adding parent's consent with its version", async () => {
+      const { service, store, audit, calls } = createService({ child: false });
 
       const child = await service.add(PARENT_ID, FAMILY_ID, newChild);
 
@@ -196,18 +240,23 @@ describe('ChildrenService', () => {
         familyId: FAMILY_ID,
         nickname: '小米',
         account: 'xiaomi',
-        consentParentId: PARENT_ID,
-        consentVersion: '2026-11-22',
-        consentedAt: NOW,
+        addedAt: NOW,
+      });
+      expect(calls).toEqual(['transaction', 'audit child.created']);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.created',
+        details: { consentVersion: '2026-11-22' },
       });
       expect(CHILD_CONSENT_VERSION).toBe('2026-11-22');
     });
 
     it('answers an account another child of the family has with account_taken', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
       store.insertChild.mockRejectedValueOnce(new AccountTakenError());
 
       expect(await refusalOf(service.add(PARENT_ID, FAMILY_ID, newChild))).toBe('account_taken');
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('passes any other failure on as it is', async () => {
@@ -220,62 +269,86 @@ describe('ChildrenService', () => {
   });
 
   describe('update', () => {
-    it('returns the child with the changes', async () => {
-      const { service } = createService();
+    it('returns the child with the changes and records the fields changed', async () => {
+      const { service, audit } = createService();
 
-      await expect(service.update(FAMILY_ID, CHILD_ID, { nickname: '米米' })).resolves.toEqual({
-        ...XIAOMI,
-        nickname: '米米',
+      await expect(
+        service.update(PARENT_ID, FAMILY_ID, CHILD_ID, { nickname: '米米' }),
+      ).resolves.toEqual({ ...XIAOMI, nickname: '米米' });
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.updated',
+        details: { fields: ['nickname'] },
       });
     });
 
-    it('answers a child the family does not have with child_not_found', async () => {
-      const { service } = createService();
+    it('records nothing for a change of neither field', async () => {
+      const { service, audit } = createService();
 
-      expect(await refusalOf(service.update('family-2', CHILD_ID, { nickname: '米米' }))).toBe(
-        'child_not_found',
-      );
+      await expect(service.update(PARENT_ID, FAMILY_ID, CHILD_ID, {})).resolves.toEqual(XIAOMI);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('answers a child the family does not have with child_not_found', async () => {
+      const { service, audit } = createService();
+
+      expect(
+        await refusalOf(service.update(PARENT_ID, 'family-2', CHILD_ID, { nickname: '米米' })),
+      ).toBe('child_not_found');
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers an account another child of the family has with account_taken', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
       store.updateChild.mockRejectedValueOnce(new AccountTakenError());
 
-      expect(await refusalOf(service.update(FAMILY_ID, CHILD_ID, { account: 'dami' }))).toBe(
-        'account_taken',
-      );
+      expect(
+        await refusalOf(service.update(PARENT_ID, FAMILY_ID, CHILD_ID, { account: 'dami' })),
+      ).toBe('account_taken');
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe('remove', () => {
-    it('deletes the child once, then answers it as not found', async () => {
-      const { service } = createService();
+    it('deletes the child once and records it, then answers it as not found', async () => {
+      const { service, audit } = createService();
 
-      await expect(service.remove(FAMILY_ID, CHILD_ID)).resolves.toBeUndefined();
-      expect(await refusalOf(service.remove(FAMILY_ID, CHILD_ID))).toBe('child_not_found');
+      await expect(service.remove(PARENT_ID, FAMILY_ID, CHILD_ID)).resolves.toBeUndefined();
+      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, CHILD_ID))).toBe(
+        'child_not_found',
+      );
+      expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.deleted',
+      });
     });
   });
 
   describe('resetPassword', () => {
-    it('locks the child, then clears the password as of now and forgets every device, in one transaction', async () => {
-      const { service, store, calls } = createService();
+    it('locks the child, then clears the password as of now, forgets every device and records it, in one transaction', async () => {
+      const { service, store, audit, calls } = createService();
 
-      await service.resetPassword(FAMILY_ID, CHILD_ID);
+      await service.resetPassword(PARENT_ID, FAMILY_ID, CHILD_ID);
 
       expect(calls).toEqual([
         'transaction',
         `lockChild ${CHILD_ID}`,
         `clearPassword ${CHILD_ID} ${NOW.toISOString()}`,
         `deleteDevices ${CHILD_ID}`,
+        'audit child.password_reset',
       ]);
       expect(store.revokeActiveLinks).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.password_reset',
+      });
     });
 
     it('refuses logins from the next whole second on when the reset falls within a second', async () => {
       const { service, store } = createService();
       vi.setSystemTime(new Date('2026-11-22T09:00:00.300Z'));
 
-      await service.resetPassword(FAMILY_ID, CHILD_ID);
+      await service.resetPassword(PARENT_ID, FAMILY_ID, CHILD_ID);
 
       expect(store.clearPassword).toHaveBeenCalledWith(
         FAMILY_ID,
@@ -285,17 +358,20 @@ describe('ChildrenService', () => {
     });
 
     it('answers a child of another family with child_not_found and changes nothing', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
 
-      expect(await refusalOf(service.resetPassword('family-2', CHILD_ID))).toBe('child_not_found');
+      expect(await refusalOf(service.resetPassword(PARENT_ID, 'family-2', CHILD_ID))).toBe(
+        'child_not_found',
+      );
       expect(store.clearPassword).not.toHaveBeenCalled();
       expect(store.deleteDevices).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe('createLoginLink', () => {
-    it("locks the child, revokes the child's active links, then records the new one", async () => {
-      const { service, calls } = createService();
+    it("locks the child, revokes the child's active links, then records the new one and its audit event", async () => {
+      const { service, audit, calls } = createService();
 
       await service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID);
 
@@ -304,7 +380,12 @@ describe('ChildrenService', () => {
         `lockChild ${CHILD_ID}`,
         `revokeActiveLinks ${CHILD_ID} ${NOW.toISOString()}`,
         `insertLoginLink ${CHILD_ID}`,
+        'audit child.login_link_created',
       ]);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.login_link_created',
+      });
     });
 
     it('answers with a link to the QR login page that expires in 10 minutes', async () => {
@@ -338,13 +419,14 @@ describe('ChildrenService', () => {
     });
 
     it('answers a child of another family with child_not_found and revokes nothing', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
 
       expect(await refusalOf(service.createLoginLink(PARENT_ID, 'family-2', CHILD_ID))).toBe(
         'child_not_found',
       );
       expect(store.revokeActiveLinks).not.toHaveBeenCalled();
       expect(store.insertLoginLink).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -396,36 +478,72 @@ describe('ChildrenService', () => {
       ]);
     });
 
-    it('forgets one device, or none when the id names no device', async () => {
-      const { service, calls } = createService();
+    it('forgets one device and records it with the device, or none when the id names no device', async () => {
+      const { service, audit, calls } = createService();
 
-      await service.revokeDevice(FAMILY_ID, CHILD_ID, DEVICE_ID);
-      await service.revokeDevice(FAMILY_ID, CHILD_ID, undefined);
+      await service.revokeDevice(PARENT_ID, FAMILY_ID, CHILD_ID, DEVICE_ID);
+      await service.revokeDevice(PARENT_ID, FAMILY_ID, CHILD_ID, undefined);
 
-      expect(calls).toEqual([`deleteDevice ${CHILD_ID} ${DEVICE_ID}`]);
+      expect(calls).toEqual([
+        'transaction',
+        `deleteDevice ${CHILD_ID} ${DEVICE_ID}`,
+        'audit child.devices_revoked',
+        'transaction',
+      ]);
+      expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.devices_revoked',
+        details: { deviceId: DEVICE_ID },
+      });
     });
 
-    it('forgets every device', async () => {
-      const { service, calls } = createService();
+    it('records nothing for a device that is gone already', async () => {
+      const { service, audit } = createService({ devices: false });
 
-      await service.revokeAllDevices(FAMILY_ID, CHILD_ID);
+      await service.revokeDevice(PARENT_ID, FAMILY_ID, CHILD_ID, DEVICE_ID);
 
-      expect(calls).toEqual([`deleteDevices ${CHILD_ID}`]);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('forgets every device and records it without a device', async () => {
+      const { service, audit, calls } = createService();
+
+      await service.revokeAllDevices(PARENT_ID, FAMILY_ID, CHILD_ID);
+
+      expect(calls).toEqual([
+        'transaction',
+        `deleteDevices ${CHILD_ID}`,
+        'audit child.devices_revoked',
+      ]);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_XIAOMI,
+        action: 'child.devices_revoked',
+        details: {},
+      });
+    });
+
+    it('records nothing when the child is remembered nowhere', async () => {
+      const { service, audit } = createService({ devices: false });
+
+      await service.revokeAllDevices(PARENT_ID, FAMILY_ID, CHILD_ID);
+
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers a child the family does not have with child_not_found and forgets nothing', async () => {
-      const { service, store } = createService({ child: false });
+      const { service, store, audit } = createService({ child: false });
 
       const codes = [
         await refusalOf(service.listDevices(FAMILY_ID, CHILD_ID)),
-        await refusalOf(service.revokeDevice(FAMILY_ID, CHILD_ID, DEVICE_ID)),
-        await refusalOf(service.revokeAllDevices(FAMILY_ID, CHILD_ID)),
+        await refusalOf(service.revokeDevice(PARENT_ID, FAMILY_ID, CHILD_ID, DEVICE_ID)),
+        await refusalOf(service.revokeAllDevices(PARENT_ID, FAMILY_ID, CHILD_ID)),
       ];
 
       expect(codes).toEqual(['child_not_found', 'child_not_found', 'child_not_found']);
       expect(store.listDevices).not.toHaveBeenCalled();
       expect(store.deleteDevice).not.toHaveBeenCalled();
       expect(store.deleteDevices).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 });

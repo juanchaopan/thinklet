@@ -1,5 +1,6 @@
 import { familyCodeSchema, type ErrorCode, type FamilyRole } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import type { AuditEvent, AuditService } from '../audit/audit.service.js';
 import {
   FamilyCodeTakenError,
   type FamiliesRepository,
@@ -8,6 +9,7 @@ import {
   type NewFamily,
 } from './families.repository.js';
 import {
+  changedFamilyFields,
   FAMILY_CODE_ATTEMPTS,
   FamiliesService,
   requireAccess,
@@ -28,6 +30,9 @@ const ADMIN_AND_MEMBER: Record<string, FamilyRole> = { [ADMIN]: 'admin', [MEMBER
 const NEW_FAMILY = { name: '林悦的家', timezone: 'Asia/Shanghai' };
 
 const family: FamilyRecord = { id: FAMILY_ID, ...NEW_FAMILY, code: '7KQ4MZ' };
+
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'family' };
 
 /** The error a call throws, or undefined when it returns. */
 function errorOf(call: () => unknown): ApiError | undefined {
@@ -62,9 +67,9 @@ async function rejectionCode(promise: Promise<unknown>): Promise<string> {
 
 /**
  * A repository double over one family's members held in memory. A
- * transaction runs its work on the same store; `calls` lists the lock and
- * the writes in order. Like the database's index, setting a second admin
- * fails.
+ * transaction runs its work on the same store; `calls` lists the lock, the
+ * writes and the audit events in order. Like the database's index, setting
+ * a second admin fails.
  */
 function createService(initialRoles: Record<string, FamilyRole> = {}) {
   const roles = new Map(Object.entries(initialRoles));
@@ -114,17 +119,18 @@ function createService(initialRoles: Record<string, FamilyRole> = {}) {
       return record(`deleteMember ${parentId}`);
     }),
   };
-  const repository = {
-    ...store,
-    transaction: vi.fn(<T>(work: (transactionStore: typeof store) => Promise<T>) => work(store)),
+  /** A transaction of the double: the work runs on the store, with the transaction double. */
+  const inTransaction = <T>(work: (scoped: typeof store, transaction: unknown) => Promise<T>) =>
+    work(store, TRANSACTION);
+  const repository = Object.assign({ transaction: vi.fn(inTransaction) }, store);
+  const audit = {
+    record: vi.fn((_transaction: unknown, { action }: AuditEvent) => record(`audit ${action}`)),
   };
-  return {
-    service: new FamiliesService(repository as unknown as FamiliesRepository),
-    store,
-    repository,
-    roles,
-    calls,
-  };
+  const service = new FamiliesService(
+    repository as unknown as FamiliesRepository,
+    audit as unknown as AuditService,
+  );
+  return { service, store, repository, audit, roles, calls };
 }
 
 describe('requireAccess', () => {
@@ -180,6 +186,17 @@ describe('requireRemoval', () => {
   });
 });
 
+describe('changedFamilyFields', () => {
+  it('names the fields a change gives, in a fixed order', () => {
+    expect(changedFamilyFields({ timezone: 'Europe/London', name: '外婆家' })).toEqual([
+      'name',
+      'timezone',
+    ]);
+    expect(changedFamilyFields({ timezone: 'Europe/London' })).toEqual(['timezone']);
+    expect(changedFamilyFields({})).toEqual([]);
+  });
+});
+
 describe('toFamilyDetail', () => {
   const members: MemberRecord[] = [
     { parentId: ADMIN, name: '林悦', email: 'linyue@example.com', role: 'admin' },
@@ -221,8 +238,8 @@ describe('FamiliesService', () => {
   });
 
   describe('create', () => {
-    it('makes the creator the admin and gives the family a valid code', async () => {
-      const { service, store } = createService();
+    it('makes the creator the admin, gives the family a valid code and records the creation', async () => {
+      const { service, store, audit } = createService();
 
       const detail = await service.create(ADMIN, NEW_FAMILY);
 
@@ -231,10 +248,16 @@ describe('FamiliesService', () => {
       expect(store.insertFamily).toHaveBeenCalledWith({ ...NEW_FAMILY, code });
       expect(store.insertMember).toHaveBeenCalledWith(FAMILY_ID, ADMIN, 'admin');
       expect(detail).toMatchObject({ role: 'admin', members: [{ parentId: ADMIN, you: true }] });
+      expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'family.created',
+        targetId: FAMILY_ID,
+        familyId: FAMILY_ID,
+      });
     });
 
     it('draws a new code in a new transaction each time the code is taken', async () => {
-      const { service, store, repository } = createService();
+      const { service, store, repository, audit } = createService();
       for (let taken = 1; taken < FAMILY_CODE_ATTEMPTS; taken += 1) {
         store.insertFamily.mockRejectedValueOnce(new FamilyCodeTakenError());
       }
@@ -246,10 +269,11 @@ describe('FamiliesService', () => {
       for (const [newFamily] of store.insertFamily.mock.calls) {
         expect(familyCodeSchema.safeParse(newFamily.code).success).toBe(true);
       }
+      expect(audit.record).toHaveBeenCalledTimes(1);
     });
 
     it('gives up after five taken codes', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
       store.insertFamily.mockRejectedValue(new FamilyCodeTakenError());
 
       await expect(service.create(ADMIN, NEW_FAMILY)).rejects.toThrow(
@@ -259,6 +283,7 @@ describe('FamiliesService', () => {
       expect(FAMILY_CODE_ATTEMPTS).toBe(5);
       expect(store.insertFamily).toHaveBeenCalledTimes(5);
       expect(store.insertMember).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('does not retry other failures', async () => {
@@ -280,51 +305,71 @@ describe('FamiliesService', () => {
   });
 
   describe('update', () => {
-    it('lets the admin change the settings under the lock of the family', async () => {
-      const { service, store, calls } = createService(ADMIN_AND_MEMBER);
+    it('lets the admin change the settings under the lock of the family and records the fields', async () => {
+      const { service, store, audit, calls } = createService(ADMIN_AND_MEMBER);
 
       await service.update(ADMIN, FAMILY_ID, { name: '外婆家' });
 
       expect(store.updateFamily).toHaveBeenCalledWith(FAMILY_ID, { name: '外婆家' });
-      expect(calls).toEqual(['lockFamily', 'updateFamily']);
+      expect(calls).toEqual(['lockFamily', 'updateFamily', 'audit family.updated']);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'family.updated',
+        targetId: FAMILY_ID,
+        familyId: FAMILY_ID,
+        details: { fields: ['name'] },
+      });
     });
 
-    it('writes nothing for an empty change', async () => {
-      const { service, store } = createService(ADMIN_AND_MEMBER);
+    it('writes and records nothing for an empty change', async () => {
+      const { service, store, audit } = createService(ADMIN_AND_MEMBER);
 
       await expect(service.update(ADMIN, FAMILY_ID, {})).resolves.toMatchObject({
         name: '林悦的家',
       });
       expect(store.updateFamily).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it.each([
       [MEMBER, 'not_admin'],
       [STRANGER, 'family_not_found'],
     ])('refuses %s with %s', async (parentId, code) => {
-      const { service, store } = createService(ADMIN_AND_MEMBER);
+      const { service, store, audit } = createService(ADMIN_AND_MEMBER);
 
       expect(
         await rejectionCode(service.update(parentId, FAMILY_ID, { timezone: 'Europe/London' })),
       ).toBe(code);
       expect(store.updateFamily).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe('changeCode', () => {
-    it('sets a valid new code and expires the pending requests in the same transaction', async () => {
-      const { service, store, repository, calls } = createService(ADMIN_AND_MEMBER);
+    it('sets a valid new code, expires the pending requests and records it in the same transaction', async () => {
+      const { service, store, repository, audit, calls } = createService(ADMIN_AND_MEMBER);
 
       await service.changeCode(ADMIN, FAMILY_ID);
 
       expect(familyCodeSchema.safeParse(store.updateCode.mock.calls[0]?.[1]).success).toBe(true);
       expect(store.expirePendingRequests).toHaveBeenCalledWith(FAMILY_ID, expect.any(Date));
-      expect(calls).toEqual(['lockFamily', 'updateCode', 'expirePendingRequests']);
+      expect(calls).toEqual([
+        'lockFamily',
+        'updateCode',
+        'expirePendingRequests',
+        'audit family.code_changed',
+      ]);
       expect(repository.transaction).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'family.code_changed',
+        targetId: FAMILY_ID,
+        familyId: FAMILY_ID,
+      });
     });
 
     it('draws again when the code is taken', async () => {
-      const { service, store, repository } = createService(ADMIN_AND_MEMBER);
+      const { service, store, repository, audit } = createService(ADMIN_AND_MEMBER);
       store.updateCode.mockRejectedValueOnce(new FamilyCodeTakenError());
 
       await service.changeCode(ADMIN, FAMILY_ID);
@@ -332,6 +377,7 @@ describe('FamiliesService', () => {
       expect(store.updateCode).toHaveBeenCalledTimes(2);
       expect(repository.transaction).toHaveBeenCalledTimes(2);
       expect(store.expirePendingRequests).toHaveBeenCalledTimes(1);
+      expect(audit.record).toHaveBeenCalledTimes(1);
     });
 
     it('gives up after five taken codes', async () => {
@@ -349,27 +395,40 @@ describe('FamiliesService', () => {
       [MEMBER, 'not_admin'],
       [STRANGER, 'family_not_found'],
     ])('refuses %s with %s and expires nothing', async (parentId, code) => {
-      const { service, store } = createService(ADMIN_AND_MEMBER);
+      const { service, store, audit } = createService(ADMIN_AND_MEMBER);
 
       expect(await rejectionCode(service.changeCode(parentId, FAMILY_ID))).toBe(code);
       expect(store.updateCode).not.toHaveBeenCalled();
       expect(store.expirePendingRequests).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe('transferAdmin', () => {
-    it('demotes the admin before promoting the new one', async () => {
-      const { service, calls, roles } = createService(ADMIN_AND_MEMBER);
+    it('demotes the admin before promoting the new one, then records the handover', async () => {
+      const { service, audit, calls, roles } = createService(ADMIN_AND_MEMBER);
 
       const detail = await service.transferAdmin(ADMIN, FAMILY_ID, MEMBER);
 
-      expect(calls).toEqual(['lockFamily', `setRole ${ADMIN} member`, `setRole ${MEMBER} admin`]);
+      expect(calls).toEqual([
+        'lockFamily',
+        `setRole ${ADMIN} member`,
+        `setRole ${MEMBER} admin`,
+        'audit member.admin_transferred',
+      ]);
       expect(Object.fromEntries(roles)).toEqual({ [ADMIN]: 'member', [MEMBER]: 'admin' });
       expect(detail.role).toBe('member');
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'member.admin_transferred',
+        targetId: MEMBER,
+        familyId: FAMILY_ID,
+        details: { from: ADMIN },
+      });
     });
 
     it('refuses the admin naming themself with 409 already_admin, changing nothing', async () => {
-      const { service, store, roles } = createService(ADMIN_AND_MEMBER);
+      const { service, store, audit, roles } = createService(ADMIN_AND_MEMBER);
 
       const error = await rejection(service.transferAdmin(ADMIN, FAMILY_ID, ADMIN));
 
@@ -378,6 +437,7 @@ describe('FamiliesService', () => {
         status: 409,
       });
       expect(store.setRole).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
       expect(Object.fromEntries(roles)).toEqual(ADMIN_AND_MEMBER);
     });
 
@@ -415,20 +475,32 @@ describe('FamiliesService', () => {
   });
 
   describe('removeMember', () => {
-    it('lets a member leave under the lock of the family', async () => {
-      const { service, calls } = createService(ADMIN_AND_MEMBER);
+    it('lets a member leave under the lock of the family, recorded as leaving', async () => {
+      const { service, audit, calls } = createService(ADMIN_AND_MEMBER);
 
       await service.removeMember(MEMBER, FAMILY_ID, MEMBER);
 
-      expect(calls).toEqual(['lockFamily', `deleteMember ${MEMBER}`]);
+      expect(calls).toEqual(['lockFamily', `deleteMember ${MEMBER}`, 'audit member.left']);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: MEMBER },
+        action: 'member.left',
+        targetId: MEMBER,
+        familyId: FAMILY_ID,
+      });
     });
 
-    it('lets the admin take out a member under the lock of the family', async () => {
-      const { service, calls } = createService(ADMIN_AND_MEMBER);
+    it('lets the admin take out a member under the lock of the family, recorded as a removal', async () => {
+      const { service, audit, calls } = createService(ADMIN_AND_MEMBER);
 
       await service.removeMember(ADMIN, FAMILY_ID, MEMBER);
 
-      expect(calls).toEqual(['lockFamily', `deleteMember ${MEMBER}`]);
+      expect(calls).toEqual(['lockFamily', `deleteMember ${MEMBER}`, 'audit member.removed']);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'member.removed',
+        targetId: MEMBER,
+        familyId: FAMILY_ID,
+      });
     });
 
     it.each([
@@ -438,10 +510,11 @@ describe('FamiliesService', () => {
       ['a non-member taking out a member', STRANGER, MEMBER, 'family_not_found'],
       ['a non-member leaving', STRANGER, STRANGER, 'family_not_found'],
     ])('refuses %s', async (_case, parentId, memberId, code) => {
-      const { service, store } = createService(ADMIN_AND_MEMBER);
+      const { service, store, audit } = createService(ADMIN_AND_MEMBER);
 
       expect(await rejectionCode(service.removeMember(parentId, FAMILY_ID, memberId))).toBe(code);
       expect(store.deleteMember).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('refuses taking out a parent who is already gone', async () => {

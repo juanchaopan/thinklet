@@ -7,6 +7,7 @@ import {
   type MeResponse,
 } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { AuditService, byParent } from '../audit/audit.service.js';
 import { FamilyRepository, type MembershipRecord } from './family.repository.js';
 
 /** The version of the user agreement and privacy policy a login agrees to (`.docs/design/rules.md`, "协议同意"). */
@@ -61,24 +62,43 @@ function toMeFamily({ pendingRequests, ...family }: MembershipRecord): MeFamily 
 
 const unauthenticated = () => new ApiError('unauthenticated', HttpStatus.UNAUTHORIZED);
 
-/** The parents' accounts. */
+/**
+ * The parents' accounts. Creating a parent and renaming one are recorded
+ * as audit events in the transaction of the change; a login that only
+ * updates the email and the consent is not.
+ */
 @Injectable()
 export class FamilyService {
-  constructor(private readonly repository: FamilyRepository) {}
+  constructor(
+    private readonly repository: FamilyRepository,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Records a login from the identity provider and returns the parent's id.
-   * The first login creates the parent with their initial name; every login
-   * updates the email and records the agreement's version and time.
+   * The first login creates the parent with their initial name, recorded
+   * as `parent.created`; every login updates the email and records the
+   * agreement's version and time.
    */
   recordLogin(issuer: string, subject: string, claims: LoginClaims): Promise<string> {
-    return this.repository.upsertParentLogin({
-      issuer,
-      subject,
-      name: initialName(claims),
-      email: emailOf(claims),
-      consentVersion: CONSENT_VERSION,
-      consentedAt: new Date(),
+    return this.repository.transaction(async (store, transaction) => {
+      const { id, created } = await store.upsertParentLogin({
+        issuer,
+        subject,
+        name: initialName(claims),
+        email: emailOf(claims),
+        consentVersion: CONSENT_VERSION,
+        consentedAt: new Date(),
+      });
+      if (created) {
+        await this.audit.record(transaction, {
+          actor: byParent(id),
+          action: 'parent.created',
+          targetId: id,
+          familyId: null,
+        });
+      }
+      return id;
     });
   }
 
@@ -100,9 +120,17 @@ export class FamilyService {
 
   /** Changes the parent's own name, already trimmed and checked, and returns them as `getMe` does. */
   async updateName(parentId: string, name: string): Promise<MeResponse> {
-    if (!(await this.repository.updateParentName(parentId, name))) {
-      throw unauthenticated();
-    }
+    await this.repository.transaction(async (store, transaction) => {
+      if (!(await store.updateParentName(parentId, name))) {
+        throw unauthenticated();
+      }
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: 'parent.renamed',
+        targetId: parentId,
+        familyId: null,
+      });
+    });
     return this.getMe(parentId);
   }
 }

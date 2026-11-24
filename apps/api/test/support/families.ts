@@ -195,7 +195,6 @@ export interface JoinRequestRow {
   status: string;
   created_at: Date;
   closed_at: Date | null;
-  closed_by: string | null;
   dismissed_by_applicant_at: Date | null;
 }
 

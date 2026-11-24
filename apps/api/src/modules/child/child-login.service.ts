@@ -7,8 +7,10 @@ import type {
   RememberedChild,
   SetChildPasswordRequest,
 } from '@thinklet/contracts';
+import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import { PasswordHasher } from '../../infrastructure/passwords/password-hasher.js';
+import { AuditService, byChild } from '../audit/audit.service.js';
 import { FamiliesService } from '../family/families.service.js';
 import {
   ChildLoginRepository,
@@ -59,15 +61,22 @@ interface FoundLink extends LinkRecord {
   tokenHash: string;
 }
 
+/** The locked child of a login, with the store and the transaction the login's writes are made in. */
+interface LockedLogin {
+  store: ChildLoginStore;
+  child: LoginCandidate;
+  transaction: Executor;
+}
+
 /**
  * The part of a login done under the child's lock: it refuses a login the
  * child's current row no longer allows, makes the login's writes and
  * returns the device token for the browser's cookie.
  */
-type LockedStep = (store: ChildLoginStore, child: LoginCandidate) => Promise<string | undefined>;
+type LockedStep = (login: LockedLogin) => Promise<string | undefined>;
 
 /** What a login on a link checks, and changes, of the link's locked child before the link is used. */
-type LinkStep = (store: ChildLoginStore, child: LoginCandidate) => Promise<void> | void;
+type LinkStep = (login: LockedLogin) => Promise<void> | void;
 
 /** The link, when it can be used at `now`; else 404 `link_invalid`. */
 function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
@@ -83,7 +92,8 @@ function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
  * by a login link, where a child without a password sets one. Every
  * successful login leaves the browser remembering the child or not, as the
  * child chose. Signing the child in is the controller's: it sets the
- * cookies of the completed login.
+ * cookies of the completed login. A login itself is not an audit event;
+ * the password a child sets is, by the child, in the login's transaction.
  *
  * Each login ends in one transaction that locks the child's row and then
  * re-checks what was checked before it, writes the browser's row and takes
@@ -100,6 +110,7 @@ export class ChildLoginService {
     private readonly repository: ChildLoginRepository,
     private readonly families: FamiliesService,
     private readonly hasher: PasswordHasher,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -120,7 +131,7 @@ export class ChildLoginService {
     if (candidate === undefined || passwordHash === null || !matches) {
       throw loginFailed();
     }
-    return this.locked(candidate.id, loginFailed, (store, child) => {
+    return this.locked(candidate.id, loginFailed, ({ store, child }) => {
       if (child.passwordHash !== passwordHash) {
         throw loginFailed();
       }
@@ -156,7 +167,7 @@ export class ChildLoginService {
     if (deviceToken === undefined) {
       throw rememberInvalid();
     }
-    return this.locked(childId, rememberInvalid, async (store, child) => {
+    return this.locked(childId, rememberInvalid, async ({ store, child }) => {
       const now = new Date();
       const renewed = await store.renewDevice(
         child.id,
@@ -183,8 +194,8 @@ export class ChildLoginService {
 
   /**
    * Sets the first password of the link's child, uses the link and logs
-   * the child in. A child who has a password by then is 409
-   * `password_already_set`.
+   * the child in; the password is recorded as `child.password_set` by the
+   * child. A child who has a password by then is 409 `password_already_set`.
    */
   async setPasswordWithLink(
     token: string,
@@ -196,12 +207,24 @@ export class ChildLoginService {
       throw passwordAlreadySet();
     }
     const passwordHash = await this.hasher.hash(request.password);
-    return this.loginOnLink(link, request.remember, browser, async (store, child) => {
-      if (child.passwordHash !== null) {
-        throw passwordAlreadySet();
-      }
-      await store.setPassword(child.id, passwordHash);
-    });
+    return this.loginOnLink(
+      link,
+      request.remember,
+      browser,
+      async ({ store, child, transaction }) => {
+        if (child.passwordHash !== null) {
+          throw passwordAlreadySet();
+        }
+        await store.setPassword(child.id, passwordHash);
+        await this.audit.record(transaction, {
+          actor: byChild(child.id),
+          action: 'child.password_set',
+          targetId: child.id,
+          familyId: child.familyId,
+          details: { via: 'qr' },
+        });
+      },
+    );
   }
 
   /**
@@ -223,7 +246,7 @@ export class ChildLoginService {
     if (!(await this.hasher.verify(request.password, verified))) {
       throw wrongPassword();
     }
-    return this.loginOnLink(link, request.remember, browser, (_store, child) => {
+    return this.loginOnLink(link, request.remember, browser, ({ child }) => {
       if (child.passwordHash === null) {
         throw passwordNotSet();
       }
@@ -253,9 +276,10 @@ export class ChildLoginService {
     browser: Browser,
     step: LinkStep,
   ): Promise<CompletedLogin> {
-    return this.locked(link.childId, linkInvalid, async (store, child) => {
+    return this.locked(link.childId, linkInvalid, async (login) => {
+      const { store, child } = login;
       const locked = requireActive(await store.lockLink(child.id, link.tokenHash), new Date());
-      await step(store, child);
+      await step(login);
       await store.markLinkUsed(locked.linkId, new Date());
       return this.applyRemember(store, child.id, remember, browser);
     });
@@ -267,12 +291,12 @@ export class ChildLoginService {
    * is taken after it. A child gone by then is refused with `gone`.
    */
   private locked(childId: string, gone: () => ApiError, step: LockedStep): Promise<CompletedLogin> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       const child = await store.lockChild(childId);
       if (child === undefined) {
         throw gone();
       }
-      const deviceToken = await step(store, child);
+      const deviceToken = await step({ store, child, transaction });
       return {
         child: { id: child.id, nickname: child.nickname },
         deviceToken,

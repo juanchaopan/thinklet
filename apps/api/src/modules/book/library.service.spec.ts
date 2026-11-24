@@ -1,5 +1,6 @@
 import type { BookListQuery, ErrorCode } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import type { AuditEvent, AuditService } from '../audit/audit.service.js';
 import type { ChildrenService } from '../child/children.service.js';
 import { decodeCursor, encodeCursor } from './book-cursor.js';
 import {
@@ -34,6 +35,16 @@ const SUBJECTS = [
   { id: 'chinese', name: '语文' },
   { id: 'math', name: '数学' },
 ];
+
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'books' };
+
+/** Who acted on which book of which family, as every audit event of the service names them. */
+const ON_CARROT_COUNTING = {
+  actor: { kind: 'parent', id: PARENT_ID },
+  targetId: 'carrot-counting',
+  familyId: FAMILY_ID,
+} as const;
 
 /**
  * The error code the call is refused with. A call that succeeds, or fails
@@ -230,8 +241,8 @@ describe('replacementOf', () => {
 /**
  * The service over a repository double of one family, which has the
  * books in `acquired` and whose children read the books in `readers`.
- * A transaction runs its work on the same store; `calls` lists the locks
- * and the writes in order.
+ * A transaction runs its work on the same store; `calls` lists the
+ * transactions, the locks, the writes and the audit events in order.
  */
 function createService(
   options: {
@@ -264,7 +275,7 @@ function createService(
     isAcquired: vi.fn(() => Promise.resolve(options.acquired ?? false)),
     insertFamilyBook: vi.fn(() => {
       calls.push('insertFamilyBook');
-      return Promise.resolve();
+      return Promise.resolve(!(options.acquired ?? false));
     }),
     lockFamilyBook: vi.fn(() => {
       calls.push('lockFamilyBook');
@@ -279,26 +290,33 @@ function createService(
       calls.push(`deleteAssignments ${childIds.join(',')}`);
       return Promise.resolve();
     }),
-    insertAssignments: vi.fn(
-      (_familyId: string, _bookId: string, _parentId: string, childIds: readonly string[]) => {
-        calls.push(`insertAssignments ${childIds.join(',')}`);
-        return Promise.resolve();
-      },
-    ),
+    insertAssignments: vi.fn((_familyId: string, _bookId: string, childIds: readonly string[]) => {
+      calls.push(`insertAssignments ${childIds.join(',')}`);
+      return Promise.resolve();
+    }),
   };
   const repository = {
     ...store,
-    transaction: vi.fn(async (work: (transaction: typeof store) => Promise<unknown>) => {
-      calls.push('transaction');
-      return work(store);
-    }),
+    transaction: vi.fn(
+      async (work: (transactionStore: typeof store, transaction: unknown) => Promise<unknown>) => {
+        calls.push('transaction');
+        return work(store, TRANSACTION);
+      },
+    ),
   };
   const children = { list: vi.fn(() => Promise.resolve([XIAOMI, DOUDOU])) };
+  const audit = {
+    record: vi.fn((_transaction: unknown, event: AuditEvent) => {
+      calls.push(`audit ${event.action}`);
+      return Promise.resolve();
+    }),
+  };
   const service = new LibraryService(
     repository as unknown as BooksRepository,
     children as unknown as ChildrenService,
+    audit as unknown as AuditService,
   );
-  return { service, store, calls };
+  return { service, store, audit, calls };
 }
 
 describe('LibraryService', () => {
@@ -439,17 +457,30 @@ describe('LibraryService', () => {
   });
 
   describe('acquire', () => {
-    it('records an active book for the family and answers it', async () => {
-      const { service, store } = createService();
+    it('records an active book for the family and its audit event, then answers it', async () => {
+      const { service, store, audit, calls } = createService();
 
       expect(await service.acquire(PARENT_ID, FAMILY_ID, 'carrot-counting')).toMatchObject({
         acquired: true,
       });
-      expect(store.insertFamilyBook).toHaveBeenCalledWith(FAMILY_ID, 'carrot-counting', PARENT_ID);
+      expect(store.insertFamilyBook).toHaveBeenCalledWith(FAMILY_ID, 'carrot-counting');
+      expect(calls).toEqual(['transaction', 'insertFamilyBook', 'audit book.acquired']);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_CARROT_COUNTING,
+        action: 'book.acquired',
+      });
+    });
+
+    it('records nothing for an active book the family has already', async () => {
+      const { service, audit } = createService({ acquired: true });
+
+      await service.acquire(PARENT_ID, FAMILY_ID, 'carrot-counting');
+
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers an inactive book the family has without writing', async () => {
-      const { service, store } = createService({
+      const { service, store, audit } = createService({
         status: 'inactive',
         acquired: true,
         detail: page({ status: 'inactive' }),
@@ -458,48 +489,64 @@ describe('LibraryService', () => {
       await service.acquire(PARENT_ID, FAMILY_ID, 'bunny-counts');
 
       expect(store.insertFamilyBook).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it.each<[string, 'inactive' | undefined, ErrorCode]>([
       ['an inactive book the family does not have', 'inactive', 'book_inactive'],
       ['a missing book', undefined, 'book_not_found'],
     ])('refuses %s', async (_case, status, code) => {
-      const { service, store } = createService({ status, acquired: false });
+      const { service, store, audit } = createService({ status, acquired: false });
 
       expect(await refusalOf(service.acquire(PARENT_ID, FAMILY_ID, 'x'))).toBe(code);
       expect(store.insertFamilyBook).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
   describe('remove', () => {
-    it("removes a book no child reads under the family book's lock", async () => {
-      const { service, calls } = createService();
+    it("removes a book no child reads under the family book's lock and records it", async () => {
+      const { service, audit, calls } = createService();
 
-      await service.remove(FAMILY_ID, 'carrot-counting');
+      await service.remove(PARENT_ID, FAMILY_ID, 'carrot-counting');
 
-      expect(calls).toEqual(['transaction', 'lockFamilyBook', 'deleteFamilyBook']);
+      expect(calls).toEqual([
+        'transaction',
+        'lockFamilyBook',
+        'deleteFamilyBook',
+        'audit book.removed',
+      ]);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_CARROT_COUNTING,
+        action: 'book.removed',
+      });
     });
 
     it('does nothing for a book the family does not have', async () => {
       const { service, calls } = createService({ acquired: false });
 
-      await service.remove(FAMILY_ID, 'carrot-counting');
+      await service.remove(PARENT_ID, FAMILY_ID, 'carrot-counting');
 
       expect(calls).toEqual(['transaction', 'lockFamilyBook']);
     });
 
     it('refuses a book a child reads as book_in_use', async () => {
-      const { service, calls } = createService({ readers: [XIAOMI.id] });
+      const { service, audit, calls } = createService({ readers: [XIAOMI.id] });
 
-      expect(await refusalOf(service.remove(FAMILY_ID, 'carrot-counting'))).toBe('book_in_use');
+      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, 'carrot-counting'))).toBe(
+        'book_in_use',
+      );
       expect(calls).not.toContain('deleteFamilyBook');
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it("answers the assignments' key refusing the removal as book_in_use", async () => {
       const { service, store } = createService();
       store.deleteFamilyBook.mockRejectedValueOnce(new BookInUseError());
 
-      expect(await refusalOf(service.remove(FAMILY_ID, 'carrot-counting'))).toBe('book_in_use');
+      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, 'carrot-counting'))).toBe(
+        'book_in_use',
+      );
     });
 
     it('passes on any other failure', async () => {
@@ -507,19 +554,19 @@ describe('LibraryService', () => {
       const failure = new Error('connection lost');
       store.deleteFamilyBook.mockRejectedValueOnce(failure);
 
-      await expect(service.remove(FAMILY_ID, 'carrot-counting')).rejects.toBe(failure);
+      await expect(service.remove(PARENT_ID, FAMILY_ID, 'carrot-counting')).rejects.toBe(failure);
     });
 
     it('refuses a missing book as book_not_found', async () => {
       const { service } = createService({ status: undefined });
 
-      expect(await refusalOf(service.remove(FAMILY_ID, 'x'))).toBe('book_not_found');
+      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, 'x'))).toBe('book_not_found');
     });
   });
 
   describe('setReaders', () => {
-    it("takes the book away and assigns it under the family book's lock, then answers it", async () => {
-      const { service, calls, store } = createService({ readers: [XIAOMI.id] });
+    it("takes the book away and assigns it under the family book's lock, records both, then answers it", async () => {
+      const { service, audit, calls, store } = createService({ readers: [XIAOMI.id] });
 
       await service.setReaders(PARENT_ID, FAMILY_ID, 'carrot-counting', [DOUDOU.id]);
 
@@ -528,14 +575,26 @@ describe('LibraryService', () => {
         'lockFamilyBook',
         `deleteAssignments ${XIAOMI.id}`,
         `insertAssignments ${DOUDOU.id}`,
+        'audit book.readers_changed',
       ]);
-      expect(store.insertAssignments).toHaveBeenCalledWith(
-        FAMILY_ID,
-        'carrot-counting',
-        PARENT_ID,
-        [DOUDOU.id],
-      );
+      expect(store.insertAssignments).toHaveBeenCalledWith(FAMILY_ID, 'carrot-counting', [
+        DOUDOU.id,
+      ]);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        ...ON_CARROT_COUNTING,
+        action: 'book.readers_changed',
+        details: { added: [DOUDOU.id], removed: [XIAOMI.id] },
+      });
       expect(store.findBook).toHaveBeenCalled();
+    });
+
+    it('writes and records nothing when the readers are as wanted already', async () => {
+      const { service, audit, calls } = createService({ readers: [XIAOMI.id] });
+
+      await service.setReaders(PARENT_ID, FAMILY_ID, 'carrot-counting', [XIAOMI.id]);
+
+      expect(calls).toEqual(['transaction', 'lockFamilyBook']);
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it.each<[string, Parameters<typeof createService>[0], string[], ErrorCode]>([
@@ -544,11 +603,12 @@ describe('LibraryService', () => {
       ['a child of another family', {}, ['child-9'], 'child_not_found'],
       ['a new reader of an inactive book', { status: 'inactive' }, [XIAOMI.id], 'book_inactive'],
     ])('refuses %s and writes nothing', async (_case, options, childIds, code) => {
-      const { service, store } = createService(options);
+      const { service, store, audit } = createService(options);
 
       expect(await refusalOf(service.setReaders(PARENT_ID, FAMILY_ID, 'x', childIds))).toBe(code);
       expect(store.deleteAssignments).not.toHaveBeenCalled();
       expect(store.insertAssignments).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers a child deleted meanwhile as child_not_found', async () => {

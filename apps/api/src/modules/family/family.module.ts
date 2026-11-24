@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
+import { AuditModule } from '../audit/audit.module.js';
 import { FamiliesController } from './families.controller.js';
 import { FamiliesRepository } from './families.repository.js';
 import { FamiliesService } from './families.service.js';
@@ -18,13 +19,14 @@ import { MeController } from './me.controller.js';
  * Parents' accounts and their families. FamilyService keeps the parents;
  * FamiliesService keeps the families, their settings and their members;
  * JoinRequestsService keeps the requests to join a family, from the
- * applicant's and from the admin's side. Other modules use FamilyService,
- * and FamiliesService for its membership check (`checkAccess`), which every
- * route under `/api/families/{familyId}` passes, those of other modules
- * included, and for the families' codes, which a child logs in with.
+ * applicant's and from the admin's side. Each records its changes with the
+ * audit module. Other modules use FamilyService, and FamiliesService for
+ * its membership check (`checkAccess`), which every route under
+ * `/api/families/{familyId}` passes, those of other modules included, and
+ * for the families' codes, which a child logs in with.
  */
 @Module({
-  imports: [DatabaseModule],
+  imports: [DatabaseModule, AuditModule],
   controllers: [
     MeController,
     FamiliesController,

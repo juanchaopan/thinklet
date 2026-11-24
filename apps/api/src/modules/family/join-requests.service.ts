@@ -8,6 +8,7 @@ import type {
   PendingJoinRequest,
 } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { AuditService, byParent } from '../audit/audit.service.js';
 import { lockFor } from './families.service.js';
 import {
   JoinRequestsRepository,
@@ -85,9 +86,12 @@ function stillPending(request: RequestState): RequestState {
   return request;
 }
 
-/** The applicant withdraws their own request, which must still be pending. */
-export function requireWithdrawal(request: RequestState | undefined, parentId: string): void {
-  stillPending(ownRequest(request, parentId));
+/** The applicant withdraws their own request, which must still be pending; returns it. */
+export function requireWithdrawal(
+  request: RequestState | undefined,
+  parentId: string,
+): RequestState {
+  return stillPending(ownRequest(request, parentId));
 }
 
 /** The admin approves or rejects a request of the family, which must still be pending; returns it. */
@@ -97,20 +101,22 @@ export function requireDecision(request: RequestState | undefined, familyId: str
 
 /**
  * The applicant's 「知道了」: on their own approved, rejected and expired
- * requests. A pending request is still waiting; a withdrawn request is
- * never shown to the applicant, so it is answered as no request at all.
+ * requests; returns the request. A pending request is still waiting; a
+ * withdrawn request is never shown to the applicant, so it is answered as
+ * no request at all.
  */
 export function requireApplicantDismissal(
   request: RequestState | undefined,
   parentId: string,
-): void {
-  const { status } = ownRequest(request, parentId);
-  if (status === 'pending') {
+): RequestState {
+  const own = ownRequest(request, parentId);
+  if (own.status === 'pending') {
     throw requestPending();
   }
-  if (status === 'withdrawn') {
+  if (own.status === 'withdrawn') {
     throw requestNotFound();
   }
+  return own;
 }
 
 /** A request read back right after it was written. */
@@ -176,11 +182,14 @@ export type Decision = Extract<JoinRequestStatus, 'approved' | 'rejected'>;
  * or the family's code changes; the applicant then dismisses it. The admin
  * sees only the pending ones. Every change locks the request's family
  * first, as every change to a family does, so the changes to one family run
- * one after another.
+ * one after another, and is recorded as an audit event in its transaction.
  */
 @Injectable()
 export class JoinRequestsService {
-  constructor(private readonly repository: JoinRequestsRepository) {}
+  constructor(
+    private readonly repository: JoinRequestsRepository,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * The family the code belongs to and its admin, for the applicant to
@@ -203,13 +212,19 @@ export class JoinRequestsService {
    */
   async apply(parentId: string, code: string): Promise<ApplicantJoinRequest> {
     try {
-      return await this.repository.transaction(async (store) => {
+      return await this.repository.transaction(async (store, transaction) => {
         const familyId = await store.lockFamilyByCode(code);
         if (familyId === undefined) {
           throw codeNotFound();
         }
         await checkApplicable(store, familyId, parentId);
         const requestId = await store.insertRequest({ familyId, parentId, code });
+        await this.audit.record(transaction, {
+          actor: byParent(parentId),
+          action: 'join_request.created',
+          targetId: requestId,
+          familyId,
+        });
         return toApplicantRequest(written(await store.findApplicantRequest(requestId)));
       });
     } catch (error) {
@@ -227,21 +242,33 @@ export class JoinRequestsService {
 
   /** The applicant withdraws their own pending request. */
   withdraw(parentId: string, requestId: string): Promise<void> {
-    return this.repository.transaction(async (store) => {
-      requireWithdrawal(await lockRequest(store, requestId), parentId);
-      await store.closeRequest(requestId, {
-        status: 'withdrawn',
-        closedAt: new Date(),
-        closedBy: null,
+    return this.repository.transaction(async (store, transaction) => {
+      const request = requireWithdrawal(await lockRequest(store, requestId), parentId);
+      await store.closeRequest(requestId, { status: 'withdrawn', closedAt: new Date() });
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: 'join_request.withdrawn',
+        targetId: requestId,
+        familyId: request.familyId,
       });
     });
   }
 
-  /** The applicant's 「知道了」 on their own approved, rejected or expired request. */
+  /**
+   * The applicant's 「知道了」 on their own approved, rejected or expired
+   * request. Dismissing a request again changes nothing and is not recorded.
+   */
   dismissOwn(parentId: string, requestId: string): Promise<void> {
-    return this.repository.transaction(async (store) => {
-      requireApplicantDismissal(await lockRequest(store, requestId), parentId);
-      await store.dismissRequest(requestId, new Date());
+    return this.repository.transaction(async (store, transaction) => {
+      const request = requireApplicantDismissal(await lockRequest(store, requestId), parentId);
+      if (await store.dismissRequest(requestId, new Date())) {
+        await this.audit.record(transaction, {
+          actor: byParent(parentId),
+          action: 'join_request.dismissed',
+          targetId: requestId,
+          familyId: request.familyId,
+        });
+      }
     });
   }
 
@@ -253,7 +280,8 @@ export class JoinRequestsService {
 
   /**
    * The admin approves or rejects a pending request of the family; an
-   * approved applicant becomes a member in the same transaction.
+   * approved applicant becomes a member in the same transaction. The audit
+   * event names the admin and the applicant.
    */
   decide(
     adminId: string,
@@ -261,17 +289,20 @@ export class JoinRequestsService {
     requestId: string,
     decision: Decision,
   ): Promise<HandledJoinRequest> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       await lockFor(store, familyId, adminId, 'admin');
       const request = requireDecision(await store.findRequest(requestId), familyId);
-      await store.closeRequest(requestId, {
-        status: decision,
-        closedAt: new Date(),
-        closedBy: adminId,
-      });
+      await store.closeRequest(requestId, { status: decision, closedAt: new Date() });
       if (decision === 'approved') {
         await store.insertMember(familyId, request.parentId, 'member');
       }
+      await this.audit.record(transaction, {
+        actor: byParent(adminId),
+        action: decision === 'approved' ? 'join_request.approved' : 'join_request.rejected',
+        targetId: requestId,
+        familyId,
+        details: { parentId: request.parentId },
+      });
       return toHandledRequest(written(await store.findFamilyRequest(requestId)));
     });
   }

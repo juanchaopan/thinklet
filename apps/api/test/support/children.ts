@@ -57,9 +57,6 @@ export interface ChildRow {
   account_lookup: string;
   password_hash: string | null;
   sessions_valid_after: Date;
-  consent_parent_id: string;
-  consent_version: string;
-  consented_at: Date;
   created_at: Date;
   updated_at: Date;
 }

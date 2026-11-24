@@ -13,6 +13,7 @@ const { children, childLoginLinks, childDevices } = schema;
 /** A child as a login checks it: found by the family and the account, or locked by its id. */
 export interface LoginCandidate {
   id: string;
+  familyId: string;
   nickname: string;
   /** The argon2id hash of the child's password, or null when the child has none yet. */
   passwordHash: string | null;
@@ -51,6 +52,13 @@ export interface RememberedDevice {
   expiresAt: Date;
 }
 
+const candidateColumns = {
+  id: children.id,
+  familyId: children.familyId,
+  nickname: children.nickname,
+  passwordHash: children.passwordHash,
+};
+
 const linkStateColumns = {
   linkId: childLoginLinks.id,
   childId: childLoginLinks.childId,
@@ -79,7 +87,7 @@ export class ChildLoginStore {
   /** The family's child with the account, found by its lookup value, or undefined. */
   async findLoginCandidate(familyId: string, account: string): Promise<LoginCandidate | undefined> {
     const rows = await this.executor
-      .select({ id: children.id, nickname: children.nickname, passwordHash: children.passwordHash })
+      .select(candidateColumns)
       .from(children)
       .where(
         and(
@@ -97,7 +105,7 @@ export class ChildLoginStore {
    */
   async lockChild(childId: string): Promise<LoginCandidate | undefined> {
     const rows = await this.executor
-      .select({ id: children.id, nickname: children.nickname, passwordHash: children.passwordHash })
+      .select(candidateColumns)
       .from(children)
       .where(eq(children.id, childId))
       .for('update');
@@ -253,7 +261,8 @@ export class ChildLoginStore {
 /**
  * The data of children's logins. Its own queries run on the pool;
  * `transaction` runs a unit of work with the same queries inside one
- * transaction.
+ * transaction, and hands the work the transaction too, for the audit event
+ * of a change the login makes.
  */
 @Injectable()
 export class ChildLoginRepository extends ChildLoginStore {
@@ -265,9 +274,9 @@ export class ChildLoginRepository extends ChildLoginStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: ChildLoginStore) => Promise<T>): Promise<T> {
+  transaction<T>(work: (store: ChildLoginStore, transaction: Executor) => Promise<T>): Promise<T> {
     return this.database.transaction((transaction) =>
-      work(new ChildLoginStore(transaction, this.cipher)),
+      work(new ChildLoginStore(transaction, this.cipher), transaction),
     );
   }
 }

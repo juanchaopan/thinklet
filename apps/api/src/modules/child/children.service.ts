@@ -11,10 +11,12 @@ import type {
 } from '@thinklet/contracts';
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { AuditService, byParent, type AuditActor } from '../audit/audit.service.js';
 import { sessionsValidAfterReset } from './child.service.js';
 import {
   AccountTakenError,
   ChildrenRepository,
+  type ChildStore,
   type DeviceRecord,
   type LoginLinkRecord,
 } from './children.repository.js';
@@ -22,7 +24,7 @@ import { newToken } from './tokens.js';
 
 /**
  * The version of the guardian's consent a parent ticks when adding a child
- * (`.docs/design/rules.md`, "孩子"), kept with the child.
+ * (`.docs/design/rules.md`, "孩子"), recorded with the child's creation.
  */
 export const CHILD_CONSENT_VERSION = '2026-11-22';
 
@@ -65,6 +67,20 @@ export function toDevice(record: DeviceRecord): ChildDevice {
   };
 }
 
+/** The fields a change of a child names, in a fixed order, for its audit event. */
+export function changedChildFields(changes: UpdateChildRequest): Array<'nickname' | 'account'> {
+  return (['nickname', 'account'] as const).filter((field) => changes[field] !== undefined);
+}
+
+/** Who acted on which child of which family, the part every child's audit event shares. */
+function onChild(
+  parentId: string,
+  familyId: string,
+  childId: string,
+): { actor: AuditActor; targetId: string; familyId: string } {
+  return { actor: byParent(parentId), targetId: childId, familyId };
+}
+
 /** Runs a write of a child's account, answering a taken account with 409 `account_taken`. */
 async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
   try {
@@ -83,7 +99,9 @@ async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
  * family may use it, the admin and the other parents alike; the routes'
  * membership check runs before it. A child is always looked up within the
  * family, so a child of another family is not found. The repository's
- * child records are what the parents see of a child.
+ * child records are what the parents see of a child. Every change is
+ * recorded as an audit event of the parent in its transaction; one that
+ * changes nothing is not.
  */
 @Injectable()
 export class ChildrenService {
@@ -91,6 +109,7 @@ export class ChildrenService {
 
   constructor(
     private readonly repository: ChildrenRepository,
+    private readonly audit: AuditService,
     config: ConfigService<Environment, true>,
   ) {
     this.appOrigin = config.get('APP_ORIGIN', { infer: true });
@@ -102,38 +121,66 @@ export class ChildrenService {
   }
 
   /**
-   * Adds a child without a password, with the guardian's consent of the
-   * parent who adds it: the parent, the time and the consent's version.
+   * Adds a child without a password. The guardian's consent of the parent
+   * who adds it is the audit event of the addition, with the consent's
+   * version.
    */
   add(parentId: string, familyId: string, request: AddChildRequest): Promise<Child> {
     return claimingAccount(() =>
-      this.repository.insertChild({
-        familyId,
-        nickname: request.nickname,
-        account: request.account,
-        consentParentId: parentId,
-        consentVersion: CHILD_CONSENT_VERSION,
-        consentedAt: new Date(),
+      this.repository.transaction(async (store, transaction) => {
+        const child = await store.insertChild({
+          familyId,
+          nickname: request.nickname,
+          account: request.account,
+          addedAt: new Date(),
+        });
+        await this.audit.record(transaction, {
+          ...onChild(parentId, familyId, child.id),
+          action: 'child.created',
+          details: { consentVersion: CHILD_CONSENT_VERSION },
+        });
+        return child;
       }),
     );
   }
 
   /** Changes the nickname, the account or both; the last change saved wins. */
-  async update(familyId: string, childId: string, changes: UpdateChildRequest): Promise<Child> {
-    const record = await claimingAccount(() =>
-      this.repository.updateChild(familyId, childId, changes),
+  update(
+    parentId: string,
+    familyId: string,
+    childId: string,
+    changes: UpdateChildRequest,
+  ): Promise<Child> {
+    return claimingAccount(() =>
+      this.repository.transaction(async (store, transaction) => {
+        const record = await store.updateChild(familyId, childId, changes);
+        if (record === undefined) {
+          throw childNotFound();
+        }
+        const fields = changedChildFields(changes);
+        if (fields.length > 0) {
+          await this.audit.record(transaction, {
+            ...onChild(parentId, familyId, childId),
+            action: 'child.updated',
+            details: { fields },
+          });
+        }
+        return record;
+      }),
     );
-    if (record === undefined) {
-      throw childNotFound();
-    }
-    return record;
   }
 
-  /** Deletes the child with its consent, its login links and its devices. */
-  async remove(familyId: string, childId: string): Promise<void> {
-    if (!(await this.repository.deleteChild(familyId, childId))) {
-      throw childNotFound();
-    }
+  /** Deletes the child with its login links and its devices; its audit events stay. */
+  remove(parentId: string, familyId: string, childId: string): Promise<void> {
+    return this.repository.transaction(async (store, transaction) => {
+      if (!(await store.deleteChild(familyId, childId))) {
+        throw childNotFound();
+      }
+      await this.audit.record(transaction, {
+        ...onChild(parentId, familyId, childId),
+        action: 'child.deleted',
+      });
+    });
   }
 
   /**
@@ -144,13 +191,17 @@ export class ChildrenService {
    * before the time of the reset is taken, so a login holding the lock
    * finishes first and its session, issued before that time, is refused.
    */
-  resetPassword(familyId: string, childId: string): Promise<void> {
-    return this.repository.transaction(async (store) => {
+  resetPassword(parentId: string, familyId: string, childId: string): Promise<void> {
+    return this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockChild(familyId, childId))) {
         throw childNotFound();
       }
       await store.clearPassword(familyId, childId, sessionsValidAfterReset(new Date()));
       await store.deleteDevices(childId);
+      await this.audit.record(transaction, {
+        ...onChild(parentId, familyId, childId),
+        action: 'child.password_reset',
+      });
     });
   }
 
@@ -168,18 +219,23 @@ export class ChildrenService {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + LOGIN_LINK_LIFETIME_MS);
     const { token, hash } = newToken();
-    const id = await this.repository.transaction(async (store) => {
+    const id = await this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockChild(familyId, childId))) {
         throw childNotFound();
       }
       await store.revokeActiveLinks(childId, now);
-      return store.insertLoginLink({
+      const linkId = await store.insertLoginLink({
         childId,
         tokenHash: hash,
         createdBy: parentId,
         createdAt: now,
         expiresAt,
       });
+      await this.audit.record(transaction, {
+        ...onChild(parentId, familyId, childId),
+        action: 'child.login_link_created',
+      });
+      return linkId;
     });
     return {
       id,
@@ -194,7 +250,7 @@ export class ChildrenService {
     childId: string,
     linkId: string,
   ): Promise<ChildLoginLinkStatusResponse> {
-    await this.requireChild(familyId, childId);
+    await requireChild(this.repository, familyId, childId);
     const link = await this.repository.findLoginLink(childId, linkId);
     if (link === undefined) {
       throw linkNotFound();
@@ -204,7 +260,7 @@ export class ChildrenService {
 
   /** The browsers the child is remembered on, the latest login first. */
   async listDevices(familyId: string, childId: string): Promise<ChildDevice[]> {
-    await this.requireChild(familyId, childId);
+    await requireChild(this.repository, familyId, childId);
     return (await this.repository.listDevices(childId)).map(toDevice);
   }
 
@@ -212,26 +268,42 @@ export class ChildrenService {
    * Forgets one browser of the child. A device that is gone already, or an
    * id that names no device, leaves nothing to do and is not an error.
    */
-  async revokeDevice(
+  revokeDevice(
+    parentId: string,
     familyId: string,
     childId: string,
     deviceId: string | undefined,
   ): Promise<void> {
-    await this.requireChild(familyId, childId);
-    if (deviceId !== undefined) {
-      await this.repository.deleteDevice(childId, deviceId);
-    }
+    return this.repository.transaction(async (store, transaction) => {
+      await requireChild(store, familyId, childId);
+      if (deviceId !== undefined && (await store.deleteDevice(childId, deviceId))) {
+        await this.audit.record(transaction, {
+          ...onChild(parentId, familyId, childId),
+          action: 'child.devices_revoked',
+          details: { deviceId },
+        });
+      }
+    });
   }
 
-  /** Forgets every browser of the child. */
-  async revokeAllDevices(familyId: string, childId: string): Promise<void> {
-    await this.requireChild(familyId, childId);
-    await this.repository.deleteDevices(childId);
+  /** Forgets every browser of the child; a child remembered nowhere leaves nothing to do. */
+  revokeAllDevices(parentId: string, familyId: string, childId: string): Promise<void> {
+    return this.repository.transaction(async (store, transaction) => {
+      await requireChild(store, familyId, childId);
+      if ((await store.deleteDevices(childId)) > 0) {
+        await this.audit.record(transaction, {
+          ...onChild(parentId, familyId, childId),
+          action: 'child.devices_revoked',
+          details: {},
+        });
+      }
+    });
   }
+}
 
-  private async requireChild(familyId: string, childId: string): Promise<void> {
-    if (!(await this.repository.childExists(familyId, childId))) {
-      throw childNotFound();
-    }
+/** Checks with the store's queries that the family has the child; else 404 `child_not_found`. */
+async function requireChild(store: ChildStore, familyId: string, childId: string): Promise<void> {
+  if (!(await store.childExists(familyId, childId))) {
+    throw childNotFound();
   }
 }

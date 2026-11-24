@@ -1,8 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { Client } from 'pg';
-import { migrate } from '../support/containers.js';
-import { migrationRows, startDatabaseBefore } from '../support/migrations.js';
+import { migrateThrough, migrationRows, startDatabaseBefore } from '../support/migrations.js';
 
 const TAG = '0002_library_and_books';
 
@@ -148,7 +147,7 @@ describe(`migration ${TAG}`, () => {
     );
     earlier = { parentId, familyId, childId, pendingRequestId, rejectedRequestId, dismissedAt };
 
-    await migrate(started.url);
+    await migrateThrough(started.url, TAG);
   });
 
   afterAll(async () => {

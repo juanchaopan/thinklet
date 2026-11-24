@@ -9,6 +9,7 @@ import {
   type FamilyDetail,
   type FamilyJoinRequestsResponse,
 } from '@thinklet/contracts';
+import { query } from '../support/database.js';
 import {
   addMember,
   applyToFamily,
@@ -29,12 +30,13 @@ import {
 // pending requests; after A approves, B is in the family and sees the
 // approval; after A rejects, B is not and sees the rejection on the start
 // page; either way the request leaves A's list, which holds pending requests
-// alone; B's results not yet seen are counted for the red dot; a withdrawn
-// request disappears from A's list; B's 「知道了」 clears the request from
-// B's list only; after A changes the code, the old code no longer works and
-// the pending requests made with it expire. The admin's list and the code
-// lookup carry the parent ids the avatars take their colours from. The
-// admin has no 「知道了」 of their own: its route does not exist.
+// alone, and the audit events name A as the one who decided; B's results
+// not yet seen are counted for the red dot; a withdrawn request disappears
+// from A's list; B's 「知道了」 clears the request from B's list only; after
+// A changes the code, the old code no longer works and the pending requests
+// made with it expire. The admin's list and the code lookup carry the
+// parent ids the avatars take their colours from. The admin has no
+// 「知道了」 of their own: its route does not exist.
 describe('join requests', () => {
   const running = useAppWithServices();
 
@@ -46,6 +48,16 @@ describe('join requests', () => {
   const row = (requestId: string) => joinRequestRow(running.databaseUrl, requestId);
   const rows = (familyId: string) => joinRequestRows(running.databaseUrl, familyId);
   const members = (familyId: string) => memberRows(running.databaseUrl, familyId);
+
+  /** Who approved or rejected the request, as its audit events record it. */
+  const decisionsOf = (requestId: string) =>
+    query<{ action: string; actor_id: string }>(
+      running.databaseUrl,
+      `select action, actor_id from audit_events
+       where target_kind = 'join_request' and target_id = $1
+         and action in ('join_request.approved', 'join_request.rejected')`,
+      [requestId],
+    );
 
   const decide = (admin: Parent, familyId: string, requestId: string, decision: string) =>
     asParent(admin).post(`/api/families/${familyId}/join-requests/${requestId}/${decision}`);
@@ -227,7 +239,6 @@ describe('join requests', () => {
         code: family.code,
         status: 'pending',
         closed_at: null,
-        closed_by: null,
       });
       expect(created.createdAt).toBe(stored.created_at.toISOString());
       expect(await pendingCount(admin, family.id)).toBe(1);
@@ -405,7 +416,7 @@ describe('join requests', () => {
       expect(response.status).toBe(204);
       expect(response.text).toBe('');
       const stored = await row(request.id);
-      expect(stored).toMatchObject({ status: 'withdrawn', closed_by: null });
+      expect(stored).toMatchObject({ status: 'withdrawn' });
       expect(stored.closed_at).toBeInstanceOf(Date);
       expect(await adminList(admin, family.id)).toEqual({ pending: [] });
       expect(await ownList(applicant)).toEqual([]);
@@ -604,7 +615,10 @@ describe('join requests', () => {
         status: 'approved',
         closedAt: stored.closed_at?.toISOString(),
       });
-      expect(stored).toMatchObject({ status: 'approved', closed_by: admin.id });
+      expect(stored).toMatchObject({ status: 'approved' });
+      expect(await decisionsOf(request.id)).toEqual([
+        { action: 'join_request.approved', actor_id: admin.id },
+      ]);
       expect(await members(family.id)).toEqual([
         { parent_id: admin.id, role: 'admin' },
         { parent_id: applicant.id, role: 'member' },
@@ -683,7 +697,10 @@ describe('join requests', () => {
         parentId: applicant.id,
         status: 'rejected',
       });
-      expect(await row(request.id)).toMatchObject({ status: 'rejected', closed_by: admin.id });
+      expect(await row(request.id)).toMatchObject({ status: 'rejected' });
+      expect(await decisionsOf(request.id)).toEqual([
+        { action: 'join_request.rejected', actor_id: admin.id },
+      ]);
       expect(await members(family.id)).toEqual([{ parent_id: admin.id, role: 'admin' }]);
       const opened = await asParent(applicant).get(`/api/families/${family.id}`);
       expect(outcomesOf([opened])).toEqual([[404, 'family_not_found']]);
@@ -765,6 +782,7 @@ describe('join requests', () => {
         [409, 'request_closed'],
       ]);
       expect(await members(family.id)).toHaveLength(2);
+      expect(await decisionsOf(request.id)).toHaveLength(1);
     });
 
     it('either approves or rejects a request, never both', async () => {

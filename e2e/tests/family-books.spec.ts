@@ -184,7 +184,7 @@ test.describe('the family’s books', () => {
     const linyue = await familyWithXiaomiWithPassword(openParentPage, request);
     const { admin, family, child } = linyue;
     await addChild(admin, family.id, '豆豆', 'doudou');
-    await acquiredBeforeItLeft(admin, family.id, BUNNY.id, [child.id]);
+    await acquiredBeforeItLeft(family.id, BUNNY.id, [child.id]);
 
     await admin.goto('/');
     await pickFilter(admin, '年级', ['一年级']);

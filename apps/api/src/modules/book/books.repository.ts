@@ -310,12 +310,17 @@ export class BookStore {
     return rows.length > 0;
   }
 
-  /** Records that the family has the book; a family that has it already keeps its record. */
-  async insertFamilyBook(familyId: string, bookId: string, acquiredBy: string): Promise<void> {
-    await this.executor
+  /**
+   * Records that the family has the book and returns whether it is new to
+   * the family; a family that has it already keeps its record.
+   */
+  async insertFamilyBook(familyId: string, bookId: string): Promise<boolean> {
+    const rows = await this.executor
       .insert(familyBooks)
-      .values({ familyId, bookId, acquiredBy })
-      .onConflictDoNothing();
+      .values({ familyId, bookId })
+      .onConflictDoNothing()
+      .returning({ bookId: familyBooks.bookId });
+    return rows.length > 0;
   }
 
   /**
@@ -377,7 +382,6 @@ export class BookStore {
   async insertAssignments(
     familyId: string,
     bookId: string,
-    assignedBy: string,
     childIds: readonly string[],
   ): Promise<void> {
     if (childIds.length === 0) {
@@ -390,7 +394,7 @@ export class BookStore {
       () =>
         this.executor
           .insert(bookAssignments)
-          .values(childIds.map((childId) => ({ childId, familyId, bookId, assignedBy }))),
+          .values(childIds.map((childId) => ({ childId, familyId, bookId }))),
     );
   }
 
@@ -425,7 +429,8 @@ export class BookStore {
 /**
  * The library, the families' books and the children's assignments. Its own
  * queries run on the pool; `transaction` runs a unit of work with the same
- * queries inside one transaction.
+ * queries inside one transaction, and hands the work the transaction too,
+ * for the audit event of its change.
  */
 @Injectable()
 export class BooksRepository extends BookStore {
@@ -434,7 +439,9 @@ export class BooksRepository extends BookStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: BookStore) => Promise<T>): Promise<T> {
-    return this.database.transaction((transaction) => work(new BookStore(transaction)));
+  transaction<T>(work: (store: BookStore, transaction: Executor) => Promise<T>): Promise<T> {
+    return this.database.transaction((transaction) =>
+      work(new BookStore(transaction), transaction),
+    );
   }
 }

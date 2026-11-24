@@ -1,5 +1,11 @@
 import { parentNameSchema, utf8Length } from '@thinklet/contracts';
-import type { FamilyRepository, MembershipRecord, ParentRecord } from './family.repository.js';
+import type { AuditService } from '../audit/audit.service.js';
+import type {
+  FamilyRepository,
+  MembershipRecord,
+  ParentRecord,
+  RecordedLogin,
+} from './family.repository.js';
 import {
   CONSENT_VERSION,
   emailOf,
@@ -16,22 +22,45 @@ const FAMILY = '👨‍👩‍👧';
 /** A combining accent: two bytes of UTF-8 that add no character. */
 const ACUTE = String.fromCodePoint(0x301);
 
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'parent' };
+
 interface Stored {
   /** Whether the parent exists. */
   exists?: boolean;
+  /** Whether the next login creates the parent. */
+  created?: boolean;
   memberships?: MembershipRecord[];
   requestResults?: number;
 }
 
-function createService({ exists = true, memberships = [], requestResults = 0 }: Stored = {}) {
-  const repository = {
-    upsertParentLogin: vi.fn(() => Promise.resolve('parent-1')),
+/**
+ * The service over a repository double of one parent; a transaction runs
+ * its work on the same queries.
+ */
+function createService({
+  exists = true,
+  created = false,
+  memberships = [],
+  requestResults = 0,
+}: Stored = {}) {
+  const queries = {
+    upsertParentLogin: vi.fn(() => Promise.resolve<RecordedLogin>({ id: 'parent-1', created })),
     findParent: vi.fn(() => Promise.resolve(exists ? parent : undefined)),
     listMemberships: vi.fn(() => Promise.resolve(memberships)),
     countRequestResults: vi.fn(() => Promise.resolve(requestResults)),
     updateParentName: vi.fn(() => Promise.resolve(exists)),
   };
-  return { service: new FamilyService(repository as unknown as FamilyRepository), repository };
+  const audit = { record: vi.fn(() => Promise.resolve()) };
+  const transaction = vi.fn(<T>(work: (scoped: typeof queries, made: unknown) => Promise<T>) =>
+    work(queries, TRANSACTION),
+  );
+  const repository = { ...queries, transaction } as unknown as FamilyRepository;
+  return {
+    service: new FamilyService(repository, audit as unknown as AuditService),
+    repository: queries,
+    audit,
+  };
 }
 
 describe('initialName', () => {
@@ -146,6 +175,27 @@ describe('FamilyService', () => {
     expect(CONSENT_VERSION).toBe('2026-11-21');
   });
 
+  it('records the first login, which creates the parent, as parent.created by them', async () => {
+    const { service, audit } = createService({ created: true });
+
+    await service.recordLogin('https://idp.example.com', 'subject-1', { name: '林悦' });
+
+    expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+      actor: { kind: 'parent', id: 'parent-1' },
+      action: 'parent.created',
+      targetId: 'parent-1',
+      familyId: null,
+    });
+  });
+
+  it('records no audit event for a later login', async () => {
+    const { service, audit } = createService({ created: false });
+
+    await service.recordLogin('https://idp.example.com', 'subject-1', { name: '林悦' });
+
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
   it('records a login without an email with a null email', async () => {
     const { service, repository } = createService();
 
@@ -208,8 +258,8 @@ describe('FamilyService', () => {
     });
   });
 
-  it('treats a parent that no longer exists as not signed in', async () => {
-    const { service } = createService({ exists: false });
+  it('treats a parent that no longer exists as not signed in, recording nothing', async () => {
+    const { service, audit } = createService({ exists: false });
 
     await expect(service.getMe('parent-1')).rejects.toMatchObject({
       code: 'unauthenticated',
@@ -218,15 +268,22 @@ describe('FamilyService', () => {
     await expect(service.updateName('parent-1', '林悦')).rejects.toMatchObject({
       code: 'unauthenticated',
     });
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
-  it("changes the parent's own name and returns them with their request results", async () => {
-    const { service, repository } = createService({ requestResults: 1 });
+  it("changes the parent's own name, records it and returns them with their request results", async () => {
+    const { service, repository, audit } = createService({ requestResults: 1 });
 
     await expect(service.updateName('parent-1', '林悦')).resolves.toMatchObject({
       id: 'parent-1',
       requestResults: 1,
     });
     expect(repository.updateParentName).toHaveBeenCalledWith('parent-1', '林悦');
+    expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+      actor: { kind: 'parent', id: 'parent-1' },
+      action: 'parent.renamed',
+      targetId: 'parent-1',
+      familyId: null,
+    });
   });
 });

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ChildDataModule } from '../../infrastructure/child-data/child-data.module.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { PasswordsModule } from '../../infrastructure/passwords/passwords.module.js';
+import { AuditModule } from '../audit/audit.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { FamilyModule } from '../family/family.module.js';
 import { ChildLoginController } from './child-login.controller.js';
@@ -22,13 +23,21 @@ import { ChildrenService } from './children.service.js';
  * ChildLoginService logs children in, by account, remembered browser or
  * login link, and signs them in with the auth module's ChildSessionService;
  * ChildService serves the signed-in child, whose routes pass ChildGuard.
- * The children's personal data is encrypted in the repositories with the
- * child data cipher. Other modules use ChildrenService to look up the
- * children of a family, and ChildService for its half of the child's
- * login check (`isCurrent`) on their own routes for a signed-in child.
+ * The changes are recorded with the audit module. The children's personal
+ * data is encrypted in the repositories with the child data cipher. Other
+ * modules use ChildrenService to look up the children of a family, and
+ * ChildService for its half of the child's login check (`isCurrent`) on
+ * their own routes for a signed-in child.
  */
 @Module({
-  imports: [DatabaseModule, ChildDataModule, PasswordsModule, AuthModule, FamilyModule],
+  imports: [
+    DatabaseModule,
+    ChildDataModule,
+    PasswordsModule,
+    AuditModule,
+    AuthModule,
+    FamilyModule,
+  ],
   controllers: [ChildrenController, ChildLoginController, ChildController],
   providers: [
     ChildrenRepository,

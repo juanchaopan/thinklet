@@ -33,10 +33,8 @@ export interface NewChild {
   familyId: string;
   nickname: string;
   account: string;
-  /** The parent who ticked the guardian's consent, and the version and time of it. */
-  consentParentId: string;
-  consentVersion: string;
-  consentedAt: Date;
+  /** When the child is added; logins issued before it are refused. */
+  addedAt: Date;
 }
 
 /** A change to a child; a field left out keeps its value. */
@@ -143,10 +141,10 @@ export class ChildStore {
   }
 
   /**
-   * Adds the child without a password, refusing logins issued before its
-   * consent; throws AccountTakenError when another child of the family has
-   * the account. The child is returned from what was written, so only its
-   * id is read back.
+   * Adds the child without a password, refusing logins issued before it
+   * was added; throws AccountTakenError when another child of the family
+   * has the account. The child is returned from what was written, so only
+   * its id is read back.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
     const rows = await settingAccount(() =>
@@ -157,10 +155,7 @@ export class ChildStore {
           nickname: this.cipher.encrypt(child.nickname),
           account: this.cipher.encrypt(child.account),
           accountLookup: this.cipher.lookup(child.familyId, child.account),
-          sessionsValidAfter: child.consentedAt,
-          consentParentId: child.consentParentId,
-          consentVersion: child.consentVersion,
-          consentedAt: child.consentedAt,
+          sessionsValidAfter: child.addedAt,
         })
         .returning({ id: children.id }),
     );
@@ -281,16 +276,25 @@ export class ChildStore {
     return rows.map((row) => ({ ...row, name: this.cipher.decrypt(row.name) }));
   }
 
-  /** Forgets one browser of the child; one that is gone already is no change. */
-  async deleteDevice(childId: string, deviceId: string): Promise<void> {
-    await this.executor
+  /**
+   * Forgets one browser of the child and returns whether there was one; a
+   * device that is gone already is no change.
+   */
+  async deleteDevice(childId: string, deviceId: string): Promise<boolean> {
+    const rows = await this.executor
       .delete(childDevices)
-      .where(and(eq(childDevices.id, deviceId), eq(childDevices.childId, childId)));
+      .where(and(eq(childDevices.id, deviceId), eq(childDevices.childId, childId)))
+      .returning({ id: childDevices.id });
+    return rows.length > 0;
   }
 
-  /** Forgets every browser of the child. */
-  async deleteDevices(childId: string): Promise<void> {
-    await this.executor.delete(childDevices).where(eq(childDevices.childId, childId));
+  /** Forgets every browser of the child and returns how many there were. */
+  async deleteDevices(childId: string): Promise<number> {
+    const rows = await this.executor
+      .delete(childDevices)
+      .where(eq(childDevices.childId, childId))
+      .returning({ id: childDevices.id });
+    return rows.length;
   }
 
   private readChildren(rows: ChildRecord[]): ChildRecord[] {
@@ -305,7 +309,8 @@ export class ChildStore {
 /**
  * Children, their login links and their devices. Its own queries run on the
  * pool; `transaction` runs a unit of work with the same queries inside one
- * transaction.
+ * transaction, and hands the work the transaction too, for the audit event
+ * of its change.
  */
 @Injectable()
 export class ChildrenRepository extends ChildStore {
@@ -317,9 +322,9 @@ export class ChildrenRepository extends ChildStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: ChildStore) => Promise<T>): Promise<T> {
+  transaction<T>(work: (store: ChildStore, transaction: Executor) => Promise<T>): Promise<T> {
     return this.database.transaction((transaction) =>
-      work(new ChildStore(transaction, this.cipher)),
+      work(new ChildStore(transaction, this.cipher), transaction),
     );
   }
 }

@@ -344,9 +344,9 @@ describe('families', () => {
       const closedAt = new Date('2026-11-01T08:00:00Z');
       const [rejected] = await query<{ id: string }>(
         started.databaseUrl,
-        `insert into join_requests (family_id, parent_id, code, status, closed_at, closed_by)
-         values ($1, $2, $3, 'rejected', $4, $5) returning id`,
-        [family.id, (await parent()).id, family.code, closedAt, admin.id],
+        `insert into join_requests (family_id, parent_id, code, status, closed_at)
+         values ($1, $2, $3, 'rejected', $4) returning id`,
+        [family.id, (await parent()).id, family.code, closedAt],
       );
       const [clock] = await query<{ now: Date }>(started.databaseUrl, 'select now() as now');
 
@@ -357,23 +357,17 @@ describe('families', () => {
       expect(changed.code).not.toBe(family.code);
       expect(changed.code).toMatch(FAMILY_CODE);
       expect(await familyOf(family.id)).toMatchObject({ code: changed.code });
-      const requests = await query<{
-        id: string;
-        status: string;
-        closed_at: Date | null;
-        closed_by: string | null;
-      }>(
+      const requests = await query<{ id: string; status: string; closed_at: Date | null }>(
         started.databaseUrl,
-        'select id, status, closed_at, closed_by from join_requests where family_id = $1',
+        'select id, status, closed_at from join_requests where family_id = $1',
         [family.id],
       );
       const expired = requests.find(({ id }) => id === pending);
-      expect(expired).toMatchObject({ status: 'expired', closed_by: null });
+      expect(expired).toMatchObject({ status: 'expired' });
       expect(expired?.closed_at?.getTime()).toBeGreaterThan((clock?.now.getTime() ?? 0) - 60_000);
       expect(requests.find(({ id }) => id === rejected?.id)).toMatchObject({
         status: 'rejected',
         closed_at: closedAt,
-        closed_by: admin.id,
       });
     });
 

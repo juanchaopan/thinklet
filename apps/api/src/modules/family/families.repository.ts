@@ -187,7 +187,8 @@ export class FamilyStore {
 
 /**
  * Families and their members. Its own queries run on the pool; `transaction`
- * runs a unit of work with the same queries inside one transaction.
+ * runs a unit of work with the same queries inside one transaction, and
+ * hands the work the transaction too, for the audit event of its change.
  */
 @Injectable()
 export class FamiliesRepository extends FamilyStore {
@@ -196,7 +197,9 @@ export class FamiliesRepository extends FamilyStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: FamilyStore) => Promise<T>): Promise<T> {
-    return this.database.transaction((transaction) => work(new FamilyStore(transaction)));
+  transaction<T>(work: (store: FamilyStore, transaction: Executor) => Promise<T>): Promise<T> {
+    return this.database.transaction((transaction) =>
+      work(new FamilyStore(transaction), transaction),
+    );
   }
 }
