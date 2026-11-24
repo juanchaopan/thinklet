@@ -16,10 +16,7 @@ export interface LibraryQuery {
 }
 
 /** A grade or a subject among the filter options. */
-export interface FilterOption {
-  readonly id: string;
-  readonly name: string;
-}
+export type FilterOption = BookFiltersResponse['grades'][number];
 
 /** Every grade and subject of the whole library: no filter at all. */
 export const WHOLE_LIBRARY: LibraryQuery = {
@@ -62,26 +59,30 @@ export function addressOf(query: LibraryQuery): Params {
   return params;
 }
 
+/** What the api's query string holds besides the grades and the scope. */
+export interface SearchParts {
+  /** Whether the subjects go in. */
+  readonly subjects: boolean;
+  /** Where a batch of the books starts, when it is not the first. */
+  readonly cursor?: string | null;
+}
+
 /**
- * The api's query string of the query, `?grade=…&scope=…`: the grades, the
- * subjects when `include.subjects` asks for them, and the scope with its
- * child; empty for the whole library.
+ * The api's query string of the query, `?grade=…&scope=…`, encoded as the
+ * address is (`addressOf`): the grades, the subjects when `include.subjects`
+ * asks for them, the scope with its child and then the cursor when there
+ * is one; empty for the whole library's first batch.
  */
-export function searchOf(query: LibraryQuery, include: { subjects: boolean }): string {
+export function searchOf(query: LibraryQuery, include: SearchParts): string {
   const search = new URLSearchParams();
-  for (const grade of query.grades) {
-    search.append('grade', grade);
-  }
-  if (include.subjects) {
-    for (const subject of query.subjects) {
-      search.append('subject', subject);
+  const params = addressOf(include.subjects ? query : { ...query, subjects: [] });
+  for (const [name, value] of Object.entries(params)) {
+    for (const each of [value as string | string[]].flat()) {
+      search.append(name, each);
     }
   }
-  if (query.scope !== 'library') {
-    search.set('scope', query.scope);
-  }
-  if (query.scope === 'child' && query.child) {
-    search.set('child', query.child);
+  if (include.cursor) {
+    search.append('cursor', include.cursor);
   }
   const text = search.toString();
   return text ? `?${text}` : '';

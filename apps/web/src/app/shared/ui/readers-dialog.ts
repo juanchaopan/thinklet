@@ -10,11 +10,17 @@ import { Avatar } from './avatar';
 import { Button } from './button';
 import { Dialog } from './dialog';
 import { LineIcon } from './line-icon';
+import type { Reader } from './reader-avatars';
 
 /** A child of the family, as the dialog lists them. */
 export interface FamilyChild {
   readonly id: string;
   readonly nickname: string;
+}
+
+/** Whether two lists hold the same ids in the same order. */
+function sameList(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length && first.every((id, index) => id === second[index]);
 }
 
 /** Whether two lists hold the same ids, in any order. */
@@ -27,7 +33,7 @@ function sameIds(first: ReadonlySet<string>, second: readonly string[]): boolean
  * they were added, one row each with the avatar and the nickname; the whole
  * row ticks or unticks the child. A ticked row is tinted and ends in the
  * violet tick. The choice starts from the children who read the book each
- * time the dialog opens.
+ * time the dialog opens, and again only when the readers themselves change.
  *
  * 取消 is always there; 确定 appears only once the choice differs from the
  * readers, and emits the children chosen. An inactive book (`retired`)
@@ -100,8 +106,8 @@ export class ReadersDialog {
   /** The book's title. */
   readonly title = input.required<string>();
   readonly children = input.required<readonly FamilyChild[]>();
-  /** The ids of the children who read the book. */
-  readonly readers = input.required<readonly string[]>();
+  /** The children who read the book. */
+  readonly readers = input.required<readonly Reader[]>();
   readonly retired = input(false);
   readonly busy = input(false);
 
@@ -109,13 +115,21 @@ export class ReadersDialog {
   readonly confirmed = output<string[]>();
   readonly dismissed = output();
 
+  /**
+   * The ids of the readers. A book read again with the same readers keeps
+   * the same ids, so the choice under way is not reset.
+   */
+  private readonly readerIds = computed(() => this.readers().map(({ childId }) => childId), {
+    equal: sameList,
+  });
+
   /** The children ticked so far, from the readers each time the dialog opens. */
   protected readonly chosen = linkedSignal({
-    source: () => ({ open: this.open(), readers: this.readers() }),
+    source: () => ({ open: this.open(), readers: this.readerIds() }),
     computation: ({ readers }) => new Set(readers),
   });
 
-  protected readonly changed = computed(() => !sameIds(this.chosen(), this.readers()));
+  protected readonly changed = computed(() => !sameIds(this.chosen(), this.readerIds()));
 
   /** The children chosen, in the order the family added them. */
   protected choice(): string[] {
@@ -129,7 +143,7 @@ export class ReadersDialog {
 
   /** A child who does not read an inactive book cannot be given it. */
   protected locked(childId: string): boolean {
-    return this.retired() && !this.readers().includes(childId);
+    return this.retired() && !this.readerIds().includes(childId);
   }
 
   protected rowClasses(childId: string): string {

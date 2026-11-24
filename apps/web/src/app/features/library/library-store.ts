@@ -4,13 +4,12 @@ import {
   bookFiltersResponseSchema,
   bookListResponseSchema,
   type BookCard,
-  type BookDetail,
   type BookFiltersResponse,
   type BookListResponse,
   type Child,
 } from '@thinklet/contracts';
 import { Api } from '../../core/api';
-import { asApiError, isSignedOut, showSomethingWentWrong } from '../../core/failures';
+import { asApiError, showSomethingWentWrong } from '../../core/failures';
 import {
   BookChanges,
   FamilyBooks,
@@ -57,25 +56,9 @@ interface ReadResult {
   readonly options: BookFiltersResponse;
 }
 
-/** The book as a card shows it. */
-function asCard(detail: BookDetail): BookCard {
-  const { id, title, intro, grade, subject, status, coverUrl, acquired, readers } = detail;
-  return { id, title, intro, grade, subject, status, coverUrl, acquired, readers };
-}
-
 /** The api's address of one batch of the query, from the cursor's position when given. */
 function batchPath(familyId: string, query: LibraryQuery, cursor: string | null): string {
-  const search = searchOf(query, { subjects: true });
-  if (cursor === null) {
-    return familyPath(familyId, `/books${search}`);
-  }
-  const position = `cursor=${encodeURIComponent(cursor)}`;
-  return familyPath(familyId, `/books${search ? `${search}&` : '?'}${position}`);
-}
-
-/** How many books a read keeps: as many as are shown when the list is read again, else a batch. */
-function lengthToKeep(mode: ReadMode, shown: Listing | null): number {
-  return mode === 'again' && shown ? shown.books.length : 0;
+  return familyPath(familyId, `/books${searchOf(query, { subjects: true, cursor })}`);
 }
 
 /**
@@ -213,14 +196,15 @@ export class LibraryStore {
     const familyId = this.familyId;
     return this.changes.run(book.id, 'remove', async () => {
       await this.books.remove(familyId, book.id);
-      this.update(familyId, { ...book, acquired: false, readers: [], replacement: null });
+      this.update(familyId, { ...book, acquired: false, readers: [] });
       this.toaster.show(`已移除《${book.title}》`, 'success', 'door');
     });
   }
 
   /**
    * Reads the library for the query asked for last and shows it, unless
-   * something newer was shown meanwhile.
+   * something newer was shown meanwhile. A list read again keeps as many
+   * books as are shown.
    */
   private async read(mode: ReadMode, withChildren: boolean): Promise<void> {
     const wanted = this.wanted;
@@ -234,7 +218,7 @@ export class LibraryStore {
         this.familyId,
         wanted,
         withChildren,
-        lengthToKeep(mode, shown),
+        mode === 'again' && shown ? shown.books.length : 0,
       );
       if (fresh()) {
         this.shownChildren.set(children);
@@ -326,14 +310,12 @@ export class LibraryStore {
 
   /** A batch that failed: 出了点问题, unless the parent is signed out or no longer a member. */
   private batchFailed(error: unknown): void {
-    if (isSignedOut(error)) {
-      return;
-    }
-    if (asApiError(error).code === 'family_not_found') {
+    const trouble = readTrouble(error);
+    if (trouble === 'not-found') {
       this.notFound();
-      return;
+    } else if (trouble !== null) {
+      showSomethingWentWrong(this.toaster);
     }
-    showSomethingWentWrong(this.toaster);
   }
 
   /**
@@ -367,12 +349,11 @@ export class LibraryStore {
    * page still shows that family. An inactive book leaves the library's
    * own scope, and every scope once the family no longer has it.
    */
-  private update(familyId: string, detail: BookDetail): void {
+  private update(familyId: string, card: BookCard): void {
     if (familyId !== this.familyId) {
       return;
     }
     this.reads.wrote();
-    const card = asCard(detail);
     this.shownListing.update((listing) => {
       if (!listing) {
         return listing;

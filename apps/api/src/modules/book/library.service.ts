@@ -157,7 +157,8 @@ export function replacementOf(book: BookDetailRecord): BookDetail['replacement']
  * acquiring and removing a book, and setting the children who read it.
  * Every member of the family may use it; the routes' membership check runs
  * before it. The family's children are looked up through the child module,
- * which keeps their nicknames; this module stores only their ids.
+ * which keeps their nicknames; this module stores only their ids. Lookups
+ * that do not depend on each other run at the same time.
  */
 @Injectable()
 export class LibraryService {
@@ -170,16 +171,17 @@ export class LibraryService {
    * One batch of the books of the query, newest first and then by id,
    * after the cursor's position when there is one; `nextCursor` names the
    * batch's last book when more follow. One book more than a batch is read
-   * to tell whether more follow.
+   * to tell whether more follow. The grades and subjects are looked up only
+   * when the query filters by them.
    */
   async list(familyId: string, query: BookListQuery): Promise<BookListResponse> {
     const position = this.positionOf(query.cursor);
-    const children = await this.childrenService.list(familyId);
-    const scope = scopeOf(familyId, query, children);
-    const [grades, subjects] = await Promise.all([
-      this.repository.listGrades(),
-      this.repository.listSubjects(),
+    const [children, grades, subjects] = await Promise.all([
+      this.childrenService.list(familyId),
+      query.grade.length > 0 ? this.repository.listGrades() : [],
+      query.subject.length > 0 ? this.repository.listSubjects() : [],
     ]);
+    const scope = scopeOf(familyId, query, children);
     const rows = await this.repository.listBooks(
       {
         ...scope,
@@ -210,10 +212,12 @@ export class LibraryService {
    * grades asked for, both in their set order.
    */
   async filters(familyId: string, query: BookFiltersQuery): Promise<BookFiltersResponse> {
-    const scope = scopeOf(familyId, query, await this.childrenService.list(familyId));
-    const grades = await this.repository.listGrades();
+    const [children, grades] = await Promise.all([
+      this.childrenService.list(familyId),
+      this.repository.listGrades(),
+    ]);
     const subjects = await this.repository.listSubjectsWithBooks({
-      ...scope,
+      ...scopeOf(familyId, query, children),
       gradeIds: knownIds(query.grade, grades),
     });
     return { grades, subjects };
@@ -223,18 +227,8 @@ export class LibraryService {
    * The book's page for the family. A book that does not exist, or one
    * that is inactive and the family does not have, is 404 `book_not_found`.
    */
-  async detail(familyId: string, bookId: string): Promise<BookDetail> {
-    const book = await this.repository.findBook(familyId, bookId);
-    if (book === undefined || (book.status === 'inactive' && !book.acquired)) {
-      throw bookNotFound();
-    }
-    const readers = book.acquired
-      ? readersByBook(
-          await this.repository.listReaders(familyId, [bookId]),
-          await this.childrenService.list(familyId),
-        )
-      : new Map<string, BookReader[]>();
-    return { ...toCard(book, readers), replacement: replacementOf(book) };
+  detail(familyId: string, bookId: string): Promise<BookDetail> {
+    return this.pageOf(familyId, bookId, () => this.childrenService.list(familyId));
   }
 
   /**
@@ -291,8 +285,10 @@ export class LibraryService {
     bookId: string,
     childIds: readonly string[],
   ): Promise<BookDetail> {
-    const status = await this.requireBook(bookId);
-    const children = await this.childrenService.list(familyId);
+    const [status, children] = await Promise.all([
+      this.requireBook(bookId),
+      this.childrenService.list(familyId),
+    ]);
     const familyChildIds = new Set(children.map(({ id }) => id));
     await this.repository.transaction(async (store) => {
       if (!(await store.lockFamilyBook(familyId, bookId))) {
@@ -307,7 +303,31 @@ export class LibraryService {
         throw error instanceof ReaderGoneError ? childNotFound() : error;
       }
     });
-    return this.detail(familyId, bookId);
+    return this.pageOf(familyId, bookId, () => Promise.resolve(children));
+  }
+
+  /**
+   * The book's page, with the family's children that `children` gives; a
+   * book the family has reads its readers and the children at the same time.
+   */
+  private async pageOf(
+    familyId: string,
+    bookId: string,
+    children: () => Promise<readonly FamilyChild[]>,
+  ): Promise<BookDetail> {
+    const book = await this.repository.findBook(familyId, bookId);
+    if (book === undefined || (book.status === 'inactive' && !book.acquired)) {
+      throw bookNotFound();
+    }
+    let readers = new Map<string, BookReader[]>();
+    if (book.acquired) {
+      const [records, familyChildren] = await Promise.all([
+        this.repository.listReaders(familyId, [bookId]),
+        children(),
+      ]);
+      readers = readersByBook(records, familyChildren);
+    }
+    return { ...toCard(book, readers), replacement: replacementOf(book) };
   }
 
   /** The book's status; a book that does not exist is 404 `book_not_found`. */

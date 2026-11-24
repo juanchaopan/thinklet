@@ -44,11 +44,6 @@ type BookDialog = 'readers' | 'remove';
 /** The time between two cards rising one after another, in ms (look.md, 动画). */
 const RISE_STEP = 40;
 
-/** Whether two lists hold the same ids in the same order. */
-function sameIds(first: readonly string[], second: readonly string[]): boolean {
-  return first.length === second.length && first.every((id, index) => id === second[index]);
-}
-
 /**
  * The current family's library at `/` (rules.md, 书库): the rabbit
  * teacher's low welcome banner, the three filters and the books they let
@@ -91,11 +86,7 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
       <app-family-trouble [trouble]="trouble" (retry)="store.load()" />
     } @else if (store.listing(); as listing) {
       <div class="mx-auto flex w-full max-w-5xl stagger flex-col gap-5">
-        <app-welcome-banner
-          [greeting]="greeting()"
-          line="挑几本书，分派给孩子吧。"
-          [rises]="true"
-        />
+        <app-welcome-banner [greeting]="greeting()" line="挑几本书，分派给孩子吧。" />
         <app-library-filters
           [query]="shown() ?? listing.query"
           [options]="listing.options"
@@ -112,7 +103,7 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
                   <app-library-card
                     [book]="book"
                     [acquiring]="store.busy()?.bookId === book.id"
-                    [class.animate-rise]="rises(index)"
+                    [class.animate-rise]="riseDelay(index) !== null"
                     [style.animation-delay.ms]="riseDelay(index)"
                     (acquire)="store.acquire(book)"
                     (readers)="ask('readers', book)"
@@ -165,7 +156,7 @@ function sameIds(first: readonly string[], second: readonly string[]): boolean {
         [open]="dialog() === 'readers'"
         [title]="book.title"
         [children]="store.children() ?? []"
-        [readers]="askedReaders()"
+        [readers]="book.readers"
         [retired]="book.status === 'inactive'"
         [busy]="store.busy()?.action === 'readers'"
         (confirmed)="saveReaders(book, $event)"
@@ -229,10 +220,6 @@ export class LibraryPage {
     const book = this.askedBook();
     return this.store.listing()?.books.find(({ id }) => id === book?.id) ?? book;
   });
-  protected readonly askedReaders = computed(
-    () => this.asked()?.readers.map(({ childId }) => childId) ?? [],
-    { equal: sameIds },
-  );
 
   constructor() {
     let familyShown: string | null = null;
@@ -258,13 +245,10 @@ export class LibraryPage {
     whenBackInFront(() => void this.store.refresh());
   }
 
-  /** Whether the card at `index` rises into place as it comes in. */
-  protected rises(index: number): boolean {
-    const from = this.store.listing()?.risingFrom ?? null;
-    return from !== null && index >= from;
-  }
-
-  /** How long the card at `index` waits to rise, after the cards before it in its batch. */
+  /**
+   * How long the card at `index` waits to rise, after the cards before it in
+   * its batch; null for a card that does not rise as it comes in.
+   */
   protected riseDelay(index: number): number | null {
     const from = this.store.listing()?.risingFrom ?? null;
     return from !== null && index >= from ? (index - from) * RISE_STEP : null;

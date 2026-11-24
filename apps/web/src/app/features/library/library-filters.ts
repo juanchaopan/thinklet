@@ -13,10 +13,13 @@ import { Avatar } from '../../shared/ui/avatar';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { FilterPopover } from './filter-popover';
-import { chosenText, namesOf, type LibraryQuery } from './library-query';
+import { chosenText, namesOf, type FilterOption, type LibraryQuery } from './library-query';
 
 /** One of the three filters. */
 type Filter = 'grade' | 'subject' | 'scope';
+
+/** A filter that takes any number of values: 年级 or 学科. */
+type ManyFilter = Exclude<Filter, 'scope'>;
 
 /** A scope as the parent picks it: the library, the family's books or one child's. */
 export interface ScopeChoice {
@@ -28,6 +31,22 @@ export interface ScopeChoice {
 interface ScopeEntry extends ScopeChoice {
   readonly name: string;
   readonly art: IconArt | null;
+}
+
+/** 年级 or 学科 as its pill and its tiles show it. */
+interface ManyFilterView {
+  readonly filter: ManyFilter;
+  readonly label: string;
+  /** What the pill says the filter lets through. */
+  readonly text: string;
+  readonly chosen: readonly string[];
+  readonly options: readonly FilterOption[];
+  /** The grid's columns. */
+  readonly columns: string;
+  /** The tiles' padding and text size. */
+  readonly tile: string;
+  /** The index of the tile that starts a row of its own; -1 for none. */
+  readonly rowStart: number;
 }
 
 /** How many tiles make a row of the grades. */
@@ -53,85 +72,48 @@ const GRADES_PER_ROW = 3;
   imports: [Art, Avatar, FilterPopover, LineIcon],
   host: { class: 'flex flex-wrap gap-2' },
   template: `
-    <button
-      #gradeButton
-      type="button"
-      aria-haspopup="dialog"
-      [attr.aria-expanded]="open() === 'grade'"
-      [class]="buttonClasses('grade', query().grades.length > 0)"
-      (click)="open.set('grade')"
-    >
-      年级：{{ gradeText() }}<app-line-icon name="chevron" class="text-ink-muted" />
-    </button>
-    <app-filter-popover
-      class="contents"
-      label="年级"
-      width="grade"
-      [open]="open() === 'grade'"
-      [origin]="gradeButton"
-      [dropDown]="!inputMode.touch()"
-      [multiple]="true"
-      (dismissed)="open.set(null)"
-      (cleared)="grades.emit(null)"
-    >
-      <div class="grid grid-cols-3 gap-1.5">
-        @for (grade of options().grades; track grade.id; let index = $index) {
-          <button
-            type="button"
-            role="checkbox"
-            class="flex min-h-11 items-center gap-1 rounded-xl border px-2.5 text-sm font-bold"
-            [class]="tileClasses(query().grades.includes(grade.id), index === firstFullRow())"
-            [attr.aria-checked]="query().grades.includes(grade.id)"
-            (click)="grades.emit(grade.id)"
-          >
-            <span class="min-w-0 flex-1 text-left">{{ grade.name }}</span>
-            @if (query().grades.includes(grade.id)) {
-              <app-line-icon name="check" class="text-violet" />
-            }
-          </button>
-        }
-      </div>
-    </app-filter-popover>
-
-    <button
-      #subjectButton
-      type="button"
-      aria-haspopup="dialog"
-      [attr.aria-expanded]="open() === 'subject'"
-      [class]="buttonClasses('subject', query().subjects.length > 0)"
-      (click)="open.set('subject')"
-    >
-      学科：{{ subjectText() }}<app-line-icon name="chevron" class="text-ink-muted" />
-    </button>
-    <app-filter-popover
-      class="contents"
-      label="学科"
-      width="subject"
-      [open]="open() === 'subject'"
-      [origin]="subjectButton"
-      [dropDown]="!inputMode.touch()"
-      [multiple]="true"
-      (dismissed)="open.set(null)"
-      (cleared)="subjects.emit(null)"
-    >
-      <div class="grid grid-cols-2 gap-1.5">
-        @for (subject of options().subjects; track subject.id) {
-          <button
-            type="button"
-            role="checkbox"
-            class="flex min-h-11 items-center gap-1 rounded-xl border px-3 font-bold"
-            [class]="tileClasses(query().subjects.includes(subject.id), false)"
-            [attr.aria-checked]="query().subjects.includes(subject.id)"
-            (click)="subjects.emit(subject.id)"
-          >
-            <span class="min-w-0 flex-1 text-left">{{ subject.name }}</span>
-            @if (query().subjects.includes(subject.id)) {
-              <app-line-icon name="check" class="text-violet" />
-            }
-          </button>
-        }
-      </div>
-    </app-filter-popover>
+    @for (view of manyFilters(); track view.filter) {
+      <button
+        #filterButton
+        type="button"
+        aria-haspopup="dialog"
+        [attr.aria-expanded]="open() === view.filter"
+        [class]="buttonClasses(view.filter, view.chosen.length > 0)"
+        (click)="open.set(view.filter)"
+      >
+        {{ view.label }}：{{ view.text }}<app-line-icon name="chevron" class="text-ink-muted" />
+      </button>
+      <app-filter-popover
+        class="contents"
+        [label]="view.label"
+        [width]="view.filter"
+        [open]="open() === view.filter"
+        [origin]="filterButton"
+        [dropDown]="!inputMode.touch()"
+        [multiple]="true"
+        (dismissed)="open.set(null)"
+        (cleared)="pick(view.filter, null)"
+      >
+        <div class="grid gap-1.5" [class]="view.columns">
+          @for (option of view.options; track option.id; let index = $index) {
+            @let ticked = view.chosen.includes(option.id);
+            <button
+              type="button"
+              role="checkbox"
+              class="flex min-h-11 items-center gap-1 rounded-xl border font-bold"
+              [class]="tileClasses(view.tile, ticked, index === view.rowStart)"
+              [attr.aria-checked]="ticked"
+              (click)="pick(view.filter, option.id)"
+            >
+              <span class="min-w-0 flex-1 text-left">{{ option.name }}</span>
+              @if (ticked) {
+                <app-line-icon name="check" class="text-violet" />
+              }
+            </button>
+          }
+        </div>
+      </app-filter-popover>
+    }
 
     <button
       #scopeButton
@@ -197,6 +179,38 @@ export class LibraryFilters {
   protected readonly inputMode = inject(InputMode);
   protected readonly open = signal<Filter | null>(null);
 
+  /**
+   * 年级 and 学科. The grades are three to a row, the grades left over
+   * standing alone on the row before the first full one; the subjects are
+   * two to a row.
+   */
+  protected readonly manyFilters = computed<ManyFilterView[]>(() => {
+    const { grades, subjects } = this.query();
+    const options = this.options();
+    return [
+      {
+        filter: 'grade',
+        label: '年级',
+        text: chosenText(namesOf(grades, options.grades)),
+        chosen: grades,
+        options: options.grades,
+        columns: 'grid-cols-3',
+        tile: 'px-2.5 text-sm',
+        rowStart: options.grades.length % GRADES_PER_ROW || -1,
+      },
+      {
+        filter: 'subject',
+        label: '学科',
+        text: chosenText(namesOf(subjects, options.subjects)),
+        chosen: subjects,
+        options: options.subjects,
+        columns: 'grid-cols-2',
+        tile: 'px-3',
+        rowStart: -1,
+      },
+    ];
+  });
+
   /** 书库 with the cabin, 我家的书 with the heart-shaped house, then each child. */
   protected readonly scopes = computed<ScopeEntry[]>(() => [
     { scope: 'library', child: null, name: '书库', art: 'home' },
@@ -209,23 +223,8 @@ export class LibraryFilters {
     })),
   ]);
 
-  protected readonly gradeText = computed(() =>
-    chosenText(namesOf(this.query().grades, this.options().grades)),
-  );
-  protected readonly subjectText = computed(() =>
-    chosenText(namesOf(this.query().subjects, this.options().subjects)),
-  );
   protected readonly scopeText = computed(
     () => this.scopes().find((entry) => this.isChosen(entry))?.name ?? '书库',
-  );
-
-  /**
-   * The index of the grade that starts the first full row of three; the
-   * grades left over stand alone on the row before it. -1 when the grades
-   * fill their rows.
-   */
-  protected readonly firstFullRow = computed(
-    () => this.options().grades.length % GRADES_PER_ROW || -1,
   );
 
   protected buttonClasses(filter: Filter, narrowed: boolean): string {
@@ -239,9 +238,18 @@ export class LibraryFilters {
       : `${base} border-line-strong bg-surface hover:bg-canvas`;
   }
 
-  protected tileClasses(chosen: boolean, startsRow: boolean): string {
+  protected tileClasses(tile: string, chosen: boolean, startsRow: boolean): string {
     const state = chosen ? 'border-violet/30 bg-tint' : 'border-line hover:bg-canvas';
-    return startsRow ? `${state} col-start-1` : state;
+    return startsRow ? `${tile} ${state} col-start-1` : `${tile} ${state}`;
+  }
+
+  /** A grade or a subject pressed, or null for 清除. */
+  protected pick(filter: ManyFilter, id: string | null): void {
+    if (filter === 'grade') {
+      this.grades.emit(id);
+    } else {
+      this.subjects.emit(id);
+    }
   }
 
   protected isChosen(entry: ScopeChoice): boolean {

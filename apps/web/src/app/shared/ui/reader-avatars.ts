@@ -1,15 +1,23 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import type { BookReader } from '@thinklet/contracts';
 import { Avatar, STACKED, STACKED_LARGE } from './avatar';
 import { LineIcon } from './line-icon';
 
 /** A child who reads a book, as the avatars show them. */
-export interface Reader {
-  readonly childId: string;
-  readonly nickname: string;
-}
+export type Reader = BookReader;
 
 /** How many readers show as avatars before the rest are counted. */
 const SHOWN = 3;
+
+/**
+ * Who reads a book, in words: the nicknames joined by 、 and then 可以读,
+ * as in “小明、朵朵可以读”; `whenNone` while nobody reads it.
+ */
+export function readersInWords(readers: readonly Reader[], whenNone: string): string {
+  return readers.length > 0
+    ? `${readers.map(({ nickname }) => nickname).join('、')}可以读`
+    : whenNone;
+}
 
 /**
  * The children who read a book (look.md, 书的卡片): their avatars, slightly

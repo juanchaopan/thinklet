@@ -14,7 +14,7 @@ import { Button, IconButton, PRESS } from '../../shared/ui/button';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Menu, MenuItem } from '../../shared/ui/menu';
-import { ReaderAvatars } from '../../shared/ui/reader-avatars';
+import { ReaderAvatars, readersInWords } from '../../shared/ui/reader-avatars';
 
 /**
  * A book of the library as the family sees it (rules.md, 书的卡片): the card
@@ -143,12 +143,9 @@ export class LibraryCard {
   protected readonly readersId = computed(() => `app-library-readers-${this.book().id}`);
 
   /** Who reads the book, in words, as the avatars show it. */
-  protected readonly readersText = computed(() => {
-    const { readers } = this.book();
-    return readers.length > 0
-      ? `${readers.map(({ nickname }) => nickname).join('、')}可以读`
-      : '还没有孩子在读';
-  });
+  protected readonly readersText = computed(() =>
+    readersInWords(this.book().readers, '还没有孩子在读'),
+  );
 
   protected askToRemove(): void {
     this.menuOpen.set(false);

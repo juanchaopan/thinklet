@@ -5,7 +5,7 @@ import type { ErrorCode, MeResponse } from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { renderApp } from './app';
-import { dialogGone } from './family-page';
+import { dialogGone, openDialog } from './family-page';
 import { LINYUE_AS_DRAWN } from './library';
 import { worker } from './network';
 import { nextFrames } from './pointer';
@@ -35,9 +35,8 @@ export function ticks(options: HTMLElement, role: 'checkbox' | 'radio'): Array<s
 }
 
 /** Opens 谁能读 for the book with the title, with the button of that name. */
-export async function openReaders(button: string | RegExp, title: string): Promise<HTMLElement> {
-  await userEvent.click(screen.getByRole('button', { name: button }));
-  return screen.findByRole('dialog', { name: `谁能读《${title}》` });
+export function openReaders(button: string | RegExp, title: string): Promise<HTMLElement> {
+  return openDialog(button, `谁能读《${title}》`);
 }
 
 /** The row of a child in 谁能读. */

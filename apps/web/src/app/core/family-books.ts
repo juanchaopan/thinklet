@@ -9,7 +9,7 @@ import {
 } from '@thinklet/contracts';
 import { Toaster } from '../shared/ui/toast';
 import { Api, ApiError } from './api';
-import { asApiError, explainChange } from './failures';
+import { explainChange } from './failures';
 import { familyPath } from './family-pages';
 import { Session } from './session';
 
@@ -140,11 +140,10 @@ export class BookChanges {
       this.handlers.familyLost();
       return 'changed';
     }
-    explainChange(error, this.toaster, CHANGED_MEANWHILE, () => {
+    const changed = explainChange(error, this.toaster, CHANGED_MEANWHILE, () => {
       this.handlers.readAgain(bookId);
     });
-    const { code } = asApiError(error);
-    return code !== 'network' && CHANGED_MEANWHILE[code] ? 'changed' : 'failed';
+    return changed ? 'changed' : 'failed';
   }
 }
 

@@ -17,11 +17,11 @@ import { whenBackInFront } from '../../core/connectivity';
 import { CurrentFamily } from '../../core/current-family';
 import { FamilyTroubleView } from '../../core/family-pages';
 import { LibraryAddress } from '../../core/library-address';
-import { PRODUCT_NAME } from '../../core/page-title';
+import { pageTitle } from '../../core/page-title';
 import { Button, PRESS } from '../../shared/ui/button';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { PageProblem } from '../../shared/ui/page-problem';
-import { ReaderAvatars } from '../../shared/ui/reader-avatars';
+import { ReaderAvatars, readersInWords } from '../../shared/ui/reader-avatars';
 import { ReadersDialog } from '../../shared/ui/readers-dialog';
 import { RemoveBookDialog } from '../../shared/ui/remove-book-dialog';
 import { BookObject, CoverGlow } from './book-hero';
@@ -193,7 +193,7 @@ const TEXT_BUTTON = `inline-flex min-h-11 items-center justify-center rounded-fu
         [open]="dialog() === 'readers'"
         [title]="book.title"
         [children]="store.children()"
-        [readers]="readerIds()"
+        [readers]="book.readers"
         [retired]="book.status === 'inactive'"
         [busy]="store.busy()?.action === 'readers'"
         (confirmed)="saveReaders($event)"
@@ -243,17 +243,10 @@ export class BookPage {
     computation: (book, previous) => book ?? previous?.value ?? null,
   });
 
-  protected readonly readerIds = computed(
-    () => this.store.book()?.readers.map(({ childId }) => childId) ?? [],
-  );
-
   /** Who reads the book, in words, as its 谁能读 button says it. */
-  protected readonly readersText = computed(() => {
-    const readers = this.store.book()?.readers ?? [];
-    return readers.length > 0
-      ? `${readers.map(({ nickname }) => nickname).join('、')}可以读`
-      : '选择谁能读';
-  });
+  protected readonly readersText = computed(() =>
+    readersInWords(this.store.book()?.readers ?? [], '选择谁能读'),
+  );
 
   constructor() {
     let bookShown: string | null = null;
@@ -276,9 +269,9 @@ export class BookPage {
       const book = this.store.book();
       const trouble = this.store.trouble();
       if (book) {
-        this.title.setTitle(`${book.title} - ${PRODUCT_NAME}`);
+        this.title.setTitle(pageTitle(book.title));
       } else if (trouble === 'book-not-found') {
-        this.title.setTitle(`找不到这本书 - ${PRODUCT_NAME}`);
+        this.title.setTitle(pageTitle('找不到这本书'));
       }
     });
     whenBackInFront(() => void this.store.load());

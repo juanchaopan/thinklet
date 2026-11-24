@@ -8,12 +8,10 @@ import { Art } from './art';
  *
  * The child's banner is `large`: the greeting, then 我是小兔老师，今天也一起学习
  * 吧！ in big text that suits children, each line kept whole so it never
- * breaks in the middle of a phrase. The library's banner is low, so the
- * books start high on the page: the greeting as its heading and one `line`
- * of what to do there, with a smaller rabbit.
- *
- * On the library the rabbit `rises` 120 ms after the banner; the child's
- * home page has no entrance.
+ * breaks in the middle of a phrase; it has no entrance. The library's banner
+ * is low, so the books start high on the page: the greeting as its heading
+ * and one `line` of what to do there, with a smaller rabbit that rises
+ * 120 ms after the banner.
  */
 @Component({
   selector: 'app-welcome-banner',
@@ -35,7 +33,6 @@ import { Art } from './art';
       <div
         aria-hidden="true"
         class="absolute right-0 -bottom-2 w-32 sm:right-8 sm:w-52 lg:right-16 lg:w-60"
-        [class]="rises() ? 'animate-rabbit [animation-delay:120ms]' : ''"
       >
         <img alt="" appArt="rabbit-wave" class="w-full" />
       </div>
@@ -46,8 +43,7 @@ import { Art } from './art';
       </div>
       <div
         aria-hidden="true"
-        class="absolute right-1 -bottom-5 w-24 sm:right-10 sm:-bottom-6 sm:w-32 lg:right-14"
-        [class]="rises() ? 'animate-rabbit [animation-delay:120ms]' : ''"
+        class="absolute right-1 -bottom-5 w-24 animate-rabbit [animation-delay:120ms] sm:right-10 sm:-bottom-6 sm:w-32 lg:right-14"
       >
         <img alt="" appArt="rabbit-wave" class="w-full" />
       </div>
@@ -60,5 +56,4 @@ export class WelcomeBanner {
   /** What the low banner says under the greeting. */
   readonly line = input('');
   readonly large = input(false);
-  readonly rises = input(false);
 }
