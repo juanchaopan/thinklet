@@ -87,7 +87,10 @@ ALTER TABLE "book_assignments" ADD CONSTRAINT "book_assignments_assigned_by_pare
 ALTER TABLE "book_assignments" ADD CONSTRAINT "book_assignments_child_fk" FOREIGN KEY ("child_id","family_id") REFERENCES "public"."children"("id","family_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "book_assignments" ADD CONSTRAINT "book_assignments_family_book_fk" FOREIGN KEY ("family_id","book_id") REFERENCES "public"."family_books"("family_id","book_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "book_assignments_family_book_idx" ON "book_assignments" USING btree ("family_id","book_id");--> statement-breakpoint
-CREATE INDEX "books_created_at_id_idx" ON "books" USING btree ("created_at" DESC NULLS LAST,"id");--> statement-breakpoint
+-- The library's order exactly as the book query sorts it, created_at DESC
+-- (nulls first, as PostgreSQL orders a descending column) and then id, so
+-- each batch is read from the index without a sort.
+CREATE INDEX "books_created_at_id_idx" ON "books" USING btree ("created_at" DESC NULLS FIRST,"id");--> statement-breakpoint
 -- The grades from preschool (level 0) to the last year of senior high
 -- (level 12), shown in that order.
 INSERT INTO "grades" ("id", "name", "level", "position") VALUES

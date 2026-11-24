@@ -259,8 +259,13 @@ export const subjects = pgTable(
  * cover in `content/books/`. An inactive book has left the library and
  * stays with the families that have it; `replacement_id` names the book
  * that takes its place. The cover import sets `cover_type` and
- * `cover_sha256` together. The index serves the library's order, newest
- * first and then by id.
+ * `cover_sha256` together.
+ *
+ * The index serves the library's order, newest first and then by id, as
+ * the query writes it: `created_at DESC, id`. PostgreSQL puts nulls first
+ * in a descending order and Drizzle puts them last unless told, so the
+ * index names `NULLS FIRST`; with nulls last it could not give that order
+ * and every batch would be sorted.
  */
 export const books = pgTable(
   'books',
@@ -281,7 +286,7 @@ export const books = pgTable(
     ...rowTimes(),
   },
   (table) => [
-    index('books_created_at_id_idx').on(table.createdAt.desc(), table.id),
+    index('books_created_at_id_idx').on(table.createdAt.desc().nullsFirst(), table.id),
     check('books_id_check', sql`id ~ '^[a-z0-9-]{1,60}$'`),
     check('books_title_length_check', sql`char_length(title) between 1 and 30`),
     check('books_intro_length_check', sql`char_length(intro) between 1 and 200`),
