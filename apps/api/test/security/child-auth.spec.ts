@@ -19,6 +19,19 @@ import {
 } from '../support/families.js';
 import { cookieHeader } from '../support/login.js';
 
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
+
+/**
+ * Passwords no child can have: past 32 characters, past 128 bytes in seven
+ * characters, and as long as a request body may carry.
+ */
+const PASSWORDS_PAST_THE_LIMITS: Array<[string, string]> = [
+  ['33 characters', 'a'.repeat(33)],
+  ['129 bytes', `abcdefg${ACUTE.repeat(61)}`],
+  ['50 000 characters', 'a'.repeat(50_000)],
+];
+
 /** What a response tells: its status, the fields and code of its error, and the cookies it sets. */
 function whatItTells(response: request.Response) {
   const { error } = errorResponseSchema.parse(response.body);
@@ -32,9 +45,11 @@ function whatItTells(response: request.Response) {
 
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for a
 // child's login: a failed login does not say which item was wrong; a
-// child's login opens no parent route and a parent's login no child route;
-// one child's remembered browser does not log in another child; the routes
-// that change data need this site's Origin, though they need no login.
+// password past the limits is refused like a wrong one, and cannot be set;
+// a child's login opens no parent route and a parent's login no child
+// route; one child's remembered browser does not log in another child; the
+// routes that change data need this site's Origin, though they need no
+// login.
 describe('child login security', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -77,6 +92,70 @@ describe('child login security', () => {
         cookies: undefined,
       })),
     );
+  });
+
+  describe('a password past the limits', () => {
+    it.each(PASSWORDS_PAST_THE_LIMITS)(
+      'of %s is answered at login as a wrong password, signing nobody in',
+      async (_name, password) => {
+        const response = await browser().login({ ...loginOf(child), password });
+
+        expect(whatItTells(response)).toEqual({
+          status: 401,
+          fields: ['code', 'requestId'],
+          code: 'login_failed',
+          cookies: undefined,
+        });
+      },
+    );
+
+    it.each(PASSWORDS_PAST_THE_LIMITS)(
+      'of %s is a wrong password on a login link, which stays usable',
+      async (_name, password) => {
+        const { token } = await newLoginLink(running.server, parent, family.id, child.id);
+        const kid = browser();
+
+        const refused = await kid.post(`${linkPath(token)}/login`, { password, remember: false });
+
+        expect(whatItTells(refused)).toEqual({
+          status: 401,
+          fields: ['code', 'requestId'],
+          code: 'wrong_password',
+          cookies: undefined,
+        });
+        const accepted = await kid.post(`${linkPath(token)}/login`, {
+          password: child.password,
+          remember: false,
+        });
+        expect(accepted.status).toBe(200);
+      },
+    );
+
+    it('cannot be set as a first password, which leaves the link unused', async () => {
+      const fresh = await addChild(running.server, parent, family.id);
+      const { token } = await newLoginLink(running.server, parent, family.id, fresh.id);
+      const kid = browser();
+
+      const answers = [];
+      for (const [, password] of PASSWORDS_PAST_THE_LIMITS) {
+        const answer = await kid.post(`${linkPath(token)}/password`, { password, remember: true });
+        answers.push({
+          status: answer.status,
+          fields: errorResponseSchema.parse(answer.body).error.fields,
+          cookies: answer.headers['set-cookie'],
+        });
+      }
+
+      expect(answers).toEqual(
+        PASSWORDS_PAST_THE_LIMITS.map(() => ({
+          status: 400,
+          fields: [{ path: 'password', code: 'too_long' }],
+          cookies: undefined,
+        })),
+      );
+      const [link] = await loginLinkRows(running.databaseUrl, fresh.id);
+      expect(link?.used_at).toBeNull();
+    });
   });
 
   describe("a child's login", () => {

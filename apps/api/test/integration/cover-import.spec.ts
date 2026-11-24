@@ -197,19 +197,42 @@ describe('cover import', () => {
       );
     });
 
-    it('stores a cover that turned into a WebP under its new name and type', async () => {
-      const [, , third = ''] = bookIds;
-      await rm(coverPath(third));
-      await writeFile(coverPath(third, 'webp'), webpCover());
+    // The third book's cover turns into a WebP, and then back into a PNG
+    // (the fourth book's): each time only the new format is left in storage.
+    it.each([
+      ['a WebP', 'png', 'webp'],
+      ['a PNG again', 'webp', 'png'],
+    ] as const)(
+      'stores a cover that turned into %s under its new name, and deletes the old format',
+      async (_name, from, to) => {
+        const [, , third = '', fourth = ''] = bookIds;
+        const bytes = to === 'webp' ? webpCover() : await readFile(coverPath(fourth));
+        await rm(coverPath(third, from));
+        await writeFile(coverPath(third, to), bytes);
 
-      expect(await run()).toMatchObject({ uploaded: 1, recorded: 1 });
+        expect(await run()).toMatchObject({ uploaded: 1, recorded: 1 });
 
-      const row = (await rows()).find((candidate) => candidate.id === third);
-      expect(row).toMatchObject({ cover_type: 'webp', cover_sha256: sha256(webpCover()) });
-      expect(await stored(`books/${third}/cover.webp`)).toEqual({
-        contentType: 'image/webp',
-        body: new Uint8Array(webpCover()),
-      });
+        const row = (await rows()).find((candidate) => candidate.id === third);
+        expect(row).toMatchObject({ cover_type: to, cover_sha256: sha256(bytes) });
+        expect(await stored(`books/${third}/cover.${to}`)).toEqual({
+          contentType: `image/${to}`,
+          body: new Uint8Array(bytes),
+        });
+        expect((await storedKeys()).filter((key) => key.startsWith(`books/${third}/`))).toEqual([
+          `books/${third}/cover.${to}`,
+        ]);
+      },
+    );
+
+    it('keeps one cover per book, of the recorded format, and the covers of books that are gone', async () => {
+      const recorded = await rows();
+
+      expect(await storedKeys()).toEqual(
+        [
+          ...recorded.map((row) => `books/${row.id}/cover.${row.cover_type ?? ''}`),
+          'books/removed-book/cover.png',
+        ].sort(),
+      );
     });
 
     it('stores again a cover that is gone from storage, without recording anything', async () => {

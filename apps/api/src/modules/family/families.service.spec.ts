@@ -42,17 +42,22 @@ function errorOf(call: () => unknown): ApiError | undefined {
   return undefined;
 }
 
-/** The error code a promise rejects with; fails when it resolves. */
-async function rejectionCode(promise: Promise<unknown>): Promise<string> {
+/** The error a promise rejects with; fails when it resolves. */
+async function rejection(promise: Promise<unknown>): Promise<ApiError> {
   try {
     await promise;
   } catch (error) {
     if (error instanceof ApiError) {
-      return error.code;
+      return error;
     }
     throw error;
   }
   throw new Error('The call succeeded');
+}
+
+/** The error code a promise rejects with; fails when it resolves. */
+async function rejectionCode(promise: Promise<unknown>): Promise<string> {
+  return (await rejection(promise)).code;
 }
 
 /**
@@ -363,6 +368,19 @@ describe('FamiliesService', () => {
       expect(detail.role).toBe('member');
     });
 
+    it('refuses the admin naming themself with 409 already_admin, changing nothing', async () => {
+      const { service, store, roles } = createService(ADMIN_AND_MEMBER);
+
+      const error = await rejection(service.transferAdmin(ADMIN, FAMILY_ID, ADMIN));
+
+      expect({ code: error.code, status: error.getStatus() }).toEqual({
+        code: 'already_admin',
+        status: 409,
+      });
+      expect(store.setRole).not.toHaveBeenCalled();
+      expect(Object.fromEntries(roles)).toEqual(ADMIN_AND_MEMBER);
+    });
+
     it('refuses a new admin who is not a member', async () => {
       const { service, store } = createService(ADMIN_AND_MEMBER);
 
@@ -374,8 +392,9 @@ describe('FamiliesService', () => {
 
     it.each([
       [MEMBER, ADMIN, 'not_admin'],
+      [MEMBER, MEMBER, 'not_admin'],
       [STRANGER, MEMBER, 'family_not_found'],
-    ])('refuses %s with %s', async (parentId, newAdminId, code) => {
+    ])('refuses %s naming %s with %s', async (parentId, newAdminId, code) => {
       const { service, store } = createService(ADMIN_AND_MEMBER);
 
       expect(await rejectionCode(service.transferAdmin(parentId, FAMILY_ID, newAdminId))).toBe(

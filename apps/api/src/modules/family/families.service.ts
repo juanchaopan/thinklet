@@ -26,6 +26,7 @@ export const familyNotFound = () => new ApiError('family_not_found', HttpStatus.
 const notAdmin = () => new ApiError('not_admin', HttpStatus.FORBIDDEN);
 const notAMember = () => new ApiError('not_a_member', HttpStatus.CONFLICT);
 const adminCannotLeave = () => new ApiError('admin_cannot_leave', HttpStatus.CONFLICT);
+const alreadyAdmin = () => new ApiError('already_admin', HttpStatus.CONFLICT);
 
 /**
  * Checks the parent's role in a family against what the route needs
@@ -194,12 +195,16 @@ export class FamiliesService {
 
   /**
    * The admin hands the admin role to another member and becomes a member.
-   * The admin is demoted before the new one is promoted, so the index that
-   * allows one admin per family never sees two.
+   * Naming themself is 409 `already_admin` and changes nothing. The admin
+   * is demoted before the new one is promoted, so the index that allows one
+   * admin per family never sees two.
    */
   transferAdmin(parentId: string, familyId: string, newAdminId: string): Promise<FamilyDetail> {
     return this.repository.transaction(async (store) => {
       await lockFor(store, familyId, parentId, 'admin');
+      if (newAdminId === parentId) {
+        throw alreadyAdmin();
+      }
       if ((await store.memberRole(familyId, newAdminId)) === undefined) {
         throw notAMember();
       }

@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import {
   FAMILY_CODE_ALPHABET,
   booleanFieldSchema,
+  canonicalTimeZone,
   characterCount,
   childAccountSchema,
   childNicknameSchema,
@@ -15,6 +16,8 @@ import {
   parentNameSchema,
   timeZoneSchema,
   truncateCharacters,
+  utf8Length,
+  withinChildPasswordLimits,
 } from './fields.js';
 
 /** The parsed value, or the field error code the value is rejected with. */
@@ -29,13 +32,45 @@ function errorCodes(schema: z.ZodType, value: unknown) {
   return result.success ? [] : result.error.issues.map((issue) => issue.message);
 }
 
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
+
+/** A family of three: one character of 18 bytes, joined from three emoji. */
+const FAMILY = '👨‍👩‍👧';
+
+/**
+ * Text of the given number of UTF-8 bytes in two characters: a letter
+ * carrying a run of accents, then one more letter (or two, when the byte
+ * count is odd).
+ */
+function twoCharactersOf(bytes: number): string {
+  const accents = Math.floor((bytes - 2) / 2);
+  const text = `a${ACUTE.repeat(accents)}b${bytes % 2 === 1 ? 'c' : ''}`;
+  if (utf8Length(text) !== bytes) {
+    throw new Error(`Made ${String(utf8Length(text))} bytes instead of ${String(bytes)}`);
+  }
+  return text;
+}
+
 describe('characterCount', () => {
   it('counts characters, not bytes or UTF-16 code units', () => {
     expect(characterCount('林悦的家')).toBe(4);
     expect(characterCount('😀')).toBe(1);
-    expect(characterCount('👨‍👩‍👧')).toBe(1);
+    expect(characterCount(FAMILY)).toBe(1);
     expect(characterCount('é')).toBe(1);
+    expect(characterCount(`a${ACUTE.repeat(100)}`)).toBe(1);
     expect(characterCount('')).toBe(0);
+  });
+});
+
+describe('utf8Length', () => {
+  it('counts the bytes of UTF-8', () => {
+    expect(utf8Length('abc')).toBe(3);
+    expect(utf8Length('林悦')).toBe(6);
+    expect(utf8Length('😀')).toBe(4);
+    expect(utf8Length(FAMILY)).toBe(18);
+    expect(utf8Length(`a${ACUTE}`)).toBe(3);
+    expect(utf8Length('')).toBe(0);
   });
 });
 
@@ -43,7 +78,19 @@ describe('truncateCharacters', () => {
   it('keeps the first characters without splitting an emoji', () => {
     expect(truncateCharacters('😀'.repeat(21), 20)).toBe('😀'.repeat(20));
     expect(truncateCharacters('林悦', 20)).toBe('林悦');
-    expect(truncateCharacters('ab👨‍👩‍👧cd', 3)).toBe('ab👨‍👩‍👧');
+    expect(truncateCharacters(`ab${FAMILY}cd`, 3)).toBe(`ab${FAMILY}`);
+  });
+
+  it('stops before the character that would pass the bytes allowed', () => {
+    expect(truncateCharacters('林悦的家', 20, 9)).toBe('林悦的');
+    expect(truncateCharacters('林悦的家', 20, 8)).toBe('林悦');
+    expect(truncateCharacters(`林${ACUTE.repeat(200)}悦`, 20, 320)).toBe('');
+    expect(truncateCharacters(`林悦${ACUTE.repeat(200)}`, 20, 320)).toBe('林');
+  });
+
+  it('keeps whichever limit is reached first', () => {
+    expect(truncateCharacters('a'.repeat(400), 20, 320)).toBe('a'.repeat(20));
+    expect(truncateCharacters('家'.repeat(30), 20, 30)).toBe('家'.repeat(10));
   });
 });
 
@@ -68,6 +115,21 @@ describe.each([
     expect(outcome(schema, '家'.repeat(21))).toEqual({ error: 'too_long' });
   });
 
+  it('accepts 320 bytes and rejects 321 as too long, however few the characters', () => {
+    expect(outcome(schema, twoCharactersOf(320))).toEqual({ value: twoCharactersOf(320) });
+    expect(errorCodes(schema, twoCharactersOf(321))).toEqual(['too_long']);
+  });
+
+  it('counts the bytes once the name is trimmed', () => {
+    expect(outcome(schema, `  ${twoCharactersOf(320)}  `)).toEqual({
+      value: twoCharactersOf(320),
+    });
+  });
+
+  it('reports a name too long in both ways once', () => {
+    expect(errorCodes(schema, '家'.repeat(200))).toEqual(['too_long']);
+  });
+
   it('trims the name before counting', () => {
     expect(outcome(schema, '  林悦的家  ')).toEqual({ value: '林悦的家' });
     expect(outcome(schema, ` ${'a'.repeat(20)} `)).toEqual({ value: 'a'.repeat(20) });
@@ -76,7 +138,11 @@ describe.each([
   it('counts an emoji as one character', () => {
     expect(outcome(schema, '😀'.repeat(20))).toEqual({ value: '😀'.repeat(20) });
     expect(outcome(schema, '😀'.repeat(21))).toEqual({ error: 'too_long' });
-    expect(outcome(schema, '👨‍👩‍👧'.repeat(20))).toEqual({ value: '👨‍👩‍👧'.repeat(20) });
+    expect(outcome(schema, FAMILY.repeat(17))).toEqual({ value: FAMILY.repeat(17) });
+  });
+
+  it('rejects joined emoji past 320 bytes as too long, before 20 characters', () => {
+    expect(errorCodes(schema, FAMILY.repeat(18))).toEqual(['too_long']);
   });
 
   it('rejects a missing name as required and a non-string as invalid', () => {
@@ -97,11 +163,22 @@ describe('childNicknameSchema', () => {
     expect(outcome(childNicknameSchema, '米'.repeat(11))).toEqual({ error: 'too_long' });
   });
 
+  it('accepts 160 bytes and rejects 161 as too long, however few the characters', () => {
+    expect(outcome(childNicknameSchema, twoCharactersOf(160))).toEqual({
+      value: twoCharactersOf(160),
+    });
+    expect(errorCodes(childNicknameSchema, twoCharactersOf(161))).toEqual(['too_long']);
+  });
+
   it('counts an emoji as one character', () => {
     expect(outcome(childNicknameSchema, '😀'.repeat(10))).toEqual({ value: '😀'.repeat(10) });
     expect(outcome(childNicknameSchema, '😀'.repeat(11))).toEqual({ error: 'too_long' });
-    expect(outcome(childNicknameSchema, '👨‍👩‍👧'.repeat(10))).toEqual({ value: '👨‍👩‍👧'.repeat(10) });
-    expect(outcome(childNicknameSchema, '👨‍👩‍👧'.repeat(11))).toEqual({ error: 'too_long' });
+    expect(outcome(childNicknameSchema, FAMILY.repeat(8))).toEqual({ value: FAMILY.repeat(8) });
+    expect(outcome(childNicknameSchema, FAMILY.repeat(11))).toEqual({ error: 'too_long' });
+  });
+
+  it('rejects joined emoji past 160 bytes as too long, before 10 characters', () => {
+    expect(errorCodes(childNicknameSchema, FAMILY.repeat(9))).toEqual(['too_long']);
   });
 
   it('trims the nickname before counting', () => {
@@ -164,6 +241,25 @@ describe('childAccountSchema', () => {
   });
 });
 
+describe('withinChildPasswordLimits', () => {
+  it('allows 32 characters and 128 bytes', () => {
+    expect(withinChildPasswordLimits('a'.repeat(32))).toBe(true);
+    expect(withinChildPasswordLimits('😀'.repeat(32))).toBe(true);
+    expect(withinChildPasswordLimits('')).toBe(true);
+  });
+
+  it('refuses 33 characters', () => {
+    expect(withinChildPasswordLimits('a'.repeat(33))).toBe(false);
+  });
+
+  it('refuses 129 bytes, however few the characters', () => {
+    expect(withinChildPasswordLimits(twoCharactersOf(128))).toBe(true);
+    expect(withinChildPasswordLimits(twoCharactersOf(129))).toBe(false);
+    expect(withinChildPasswordLimits(FAMILY.repeat(8))).toBe(false);
+    expect(withinChildPasswordLimits('a'.repeat(100_000))).toBe(false);
+  });
+});
+
 describe('newChildPasswordSchema', () => {
   it('rejects 5 characters as too short and accepts 6', () => {
     expect(errorCodes(newChildPasswordSchema, 'abcde')).toEqual(['too_short']);
@@ -175,11 +271,18 @@ describe('newChildPasswordSchema', () => {
     expect(errorCodes(newChildPasswordSchema, 'a'.repeat(33))).toEqual(['too_long']);
   });
 
+  it('accepts 128 bytes and rejects 129 as too long', () => {
+    expect(outcome(newChildPasswordSchema, '😀'.repeat(32))).toEqual({ value: '😀'.repeat(32) });
+    const heavy = `abcde${twoCharactersOf(124)}`;
+    expect(utf8Length(heavy)).toBe(129);
+    expect(errorCodes(newChildPasswordSchema, heavy)).toEqual(['too_long']);
+  });
+
   it('counts characters as a reader does', () => {
     expect(errorCodes(newChildPasswordSchema, '😀'.repeat(5))).toEqual(['too_short']);
     expect(outcome(newChildPasswordSchema, '😀'.repeat(6))).toEqual({ value: '😀'.repeat(6) });
     expect(outcome(newChildPasswordSchema, '密'.repeat(32))).toEqual({ value: '密'.repeat(32) });
-    expect(errorCodes(newChildPasswordSchema, '👨‍👩‍👧'.repeat(33))).toEqual(['too_long']);
+    expect(outcome(newChildPasswordSchema, FAMILY.repeat(6))).toEqual({ value: FAMILY.repeat(6) });
   });
 
   it('keeps spaces, at the ends too, and counts them', () => {
@@ -196,7 +299,7 @@ describe('newChildPasswordSchema', () => {
 
 describe('childPasswordSchema', () => {
   it('accepts a password of any length, as it is', () => {
-    for (const value of ['a', 'abcde', ' abc ', 'a'.repeat(33)]) {
+    for (const value of ['a', 'abcde', ' abc ', 'a'.repeat(33), twoCharactersOf(129)]) {
       expect(outcome(childPasswordSchema, value), value).toEqual({ value });
     }
   });
@@ -253,6 +356,33 @@ describe('familyCodeSchema', () => {
   });
 });
 
+describe('canonicalTimeZone', () => {
+  it.each([
+    ['Asia/Shanghai', 'Asia/Shanghai'],
+    ['Asia/Calcutta', 'Asia/Kolkata'],
+    ['Asia/Kolkata', 'Asia/Kolkata'],
+    ['Asia/Saigon', 'Asia/Ho_Chi_Minh'],
+    ['Europe/Kiev', 'Europe/Kyiv'],
+    ['America/Buenos_Aires', 'America/Argentina/Buenos_Aires'],
+    ['US/Pacific', 'America/Los_Angeles'],
+    ['Etc/UTC', 'UTC'],
+  ])('gives %s as %s', (name, standard) => {
+    expect(canonicalTimeZone(name)).toBe(standard);
+  });
+
+  it('gives every time zone Intl lists as a name it keeps as it is', () => {
+    for (const name of Intl.supportedValuesOf('timeZone')) {
+      const standard = canonicalTimeZone(name) ?? '';
+      expect(canonicalTimeZone(standard), name).toBe(standard);
+    }
+  });
+
+  it('knows no zone Intl does not know', () => {
+    expect(canonicalTimeZone('Mars/Olympus_Mons')).toBeNull();
+    expect(canonicalTimeZone('')).toBeNull();
+  });
+});
+
 describe('isTimeZone', () => {
   it('accepts IANA time zone names', () => {
     for (const name of [
@@ -296,8 +426,18 @@ describe('timeZoneSchema', () => {
     expect(outcome(timeZoneSchema, 'Asia/Shanghai')).toEqual({ value: 'Asia/Shanghai' });
   });
 
+  it.each([
+    ['Asia/Calcutta', 'Asia/Kolkata'],
+    ['Europe/Kiev', 'Europe/Kyiv'],
+    ['US/Pacific', 'America/Los_Angeles'],
+    ['Etc/UTC', 'UTC'],
+  ])('gives the alias %s as the standard name %s', (alias, standard) => {
+    expect(outcome(timeZoneSchema, alias)).toEqual({ value: standard });
+  });
+
   it('rejects an unknown time zone as invalid', () => {
     expect(outcome(timeZoneSchema, 'Mars/Phobos')).toEqual({ error: 'invalid' });
+    expect(outcome(timeZoneSchema, 'asia/shanghai')).toEqual({ error: 'invalid' });
     expect(outcome(timeZoneSchema, 8)).toEqual({ error: 'invalid' });
   });
 

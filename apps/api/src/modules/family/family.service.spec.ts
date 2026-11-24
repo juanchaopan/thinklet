@@ -1,3 +1,4 @@
+import { parentNameSchema, utf8Length } from '@thinklet/contracts';
 import type { FamilyRepository, MembershipRecord, ParentRecord } from './family.repository.js';
 import {
   CONSENT_VERSION,
@@ -8,6 +9,12 @@ import {
 } from './family.service.js';
 
 const parent: ParentRecord = { id: 'parent-1', name: '林悦', email: 'linyue@example.com' };
+
+/** A family of three: one character of 18 bytes, joined from three emoji. */
+const FAMILY = '👨‍👩‍👧';
+
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
 
 interface Stored {
   /** Whether the parent exists. */
@@ -50,7 +57,29 @@ describe('initialName', () => {
     expect(initialName({ name: '一二三四五六七八九十一二三四五六七八九十多' })).toBe(
       '一二三四五六七八九十一二三四五六七八九十',
     );
-    expect(initialName({ name: '👨‍👩‍👧'.repeat(21) })).toBe('👨‍👩‍👧'.repeat(20));
+    expect(initialName({ name: '😀'.repeat(21) })).toBe('😀'.repeat(20));
+  });
+
+  it('cuts a name to the 320 bytes a name may take, before a character that would pass them', () => {
+    const name = initialName({ name: FAMILY.repeat(20) });
+
+    expect(name).toBe(FAMILY.repeat(17));
+    expect(utf8Length(name)).toBe(306);
+  });
+
+  it('gives a name the parent could have typed, however long the one given', () => {
+    for (const given of [
+      FAMILY.repeat(30),
+      `林${ACUTE.repeat(150)}悦`,
+      'a'.repeat(10_000),
+      `${'b'.repeat(19)}${ACUTE.repeat(200)}`,
+    ]) {
+      expect(parentNameSchema.safeParse(initialName({ name: given })).success, given).toBe(true);
+    }
+  });
+
+  it('uses 家长 when the first character alone is past the bytes', () => {
+    expect(initialName({ name: `林${ACUTE.repeat(200)}` })).toBe('家长');
   });
 
   it('cuts the email part to 20 characters too', () => {

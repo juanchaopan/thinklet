@@ -23,7 +23,6 @@ const LINK_ID = '7a8b9c0d-1e2f-4a3b-9c4d-5e6f7a8b9c0d';
 const HASH =
   '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0$aGFzaGhhc2hoYXNoaGFzaGhhc2hoYXNoaGFzaGhhcw';
 const OTHER_HASH = '$argon2id$v=19$m=19456,t=2,p=1$b3RoZXJzYWx0$b3RoZXItaGFzaA';
-const STAND_IN = '$argon2id$v=19$m=19456,t=2,p=1$c3RhbmRpbg$c3RhbmQtaW4';
 const IPAD =
   'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
 const LOGIN = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret1', remember: false };
@@ -96,12 +95,16 @@ describe('ChildLoginService', () => {
     committed.mockReset().mockImplementation(() => {
       vi.setSystemTime(AFTER_COMMIT);
     });
-    hasher.hash.mockReset().mockResolvedValue(STAND_IN);
+    hasher.hash.mockReset();
     hasher.verify.mockReset().mockResolvedValue(false);
     families.findIdByCode.mockResolvedValue(FAMILY_ID);
     store.findLoginCandidate.mockResolvedValue(XIAOMI);
     store.lockChild.mockResolvedValue(XIAOMI);
-    service = new ChildLoginService(repository, families as unknown as FamiliesService, hasher);
+    service = new ChildLoginService(
+      repository,
+      families as unknown as FamiliesService,
+      hasher as unknown as PasswordHasher,
+    );
   });
 
   afterEach(() => {
@@ -151,14 +154,14 @@ describe('ChildLoginService', () => {
         () => store.findLoginCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD),
       ],
     ])(
-      'refuses %s with login_failed, checking the password against the stand-in hash',
+      'refuses %s with login_failed, still checking the password with no hash to check it against',
       async (_case, arrange) => {
         arrange();
         hasher.verify.mockResolvedValue(true);
 
         await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
         expect(hasher.verify).toHaveBeenCalledTimes(1);
-        expect(hasher.verify).toHaveBeenCalledWith('secret1', STAND_IN);
+        expect(hasher.verify).toHaveBeenCalledWith('secret1', null);
         expect(transaction).not.toHaveBeenCalled();
       },
     );
@@ -186,16 +189,6 @@ describe('ChildLoginService', () => {
         expect(store.rememberDevice).not.toHaveBeenCalled();
       },
     );
-
-    it('makes the stand-in hash once, with the cost of every new hash', async () => {
-      families.findIdByCode.mockResolvedValue(undefined);
-
-      await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
-      await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
-
-      expect(hasher.hash).toHaveBeenCalledTimes(1);
-      expect(hasher.verify).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe('remembering the browser on a login', () => {

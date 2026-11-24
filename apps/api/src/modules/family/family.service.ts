@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
+  NAME_MAX_BYTES,
   NAME_MAX_LENGTH,
   truncateCharacters,
   type MeFamily,
@@ -39,14 +40,17 @@ function localPart(email: string): string {
 
 /**
  * The name a new parent starts with: the ID token's name, else the part of
- * the email before the `@`, cut to 20 characters (`.docs/design/rules.md`,
- * "家长账号"). A name or an email of spaces only counts as none; with
- * neither, a generic name the parent can change.
+ * the email before the `@`, cut to 20 characters and to the 320 bytes a
+ * name may take (`.docs/design/rules.md`, "家长账号"), so it is a name the
+ * parent could have typed. A name or an email of spaces only counts as
+ * none, and so does one whose first character alone is past the bytes;
+ * with neither, a generic name the parent can change.
  */
 export function initialName(claims: LoginClaims): string {
   const email = emailOf(claims);
   const source = textOf(claims['name']) ?? (email === null ? undefined : textOf(localPart(email)));
-  const name = source === undefined ? '' : truncateCharacters(source, NAME_MAX_LENGTH).trim();
+  const name =
+    source === undefined ? '' : truncateCharacters(source, NAME_MAX_LENGTH, NAME_MAX_BYTES).trim();
   return name === '' ? FALLBACK_PARENT_NAME : name;
 }
 

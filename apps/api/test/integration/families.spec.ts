@@ -21,16 +21,25 @@ import {
 
 const FAMILY_CODE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/;
 
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
+
+/** A name of ten characters that takes 330 bytes: each character carries fifteen accents. */
+const HEAVY_NAME = `家${ACUTE.repeat(15)}`.repeat(10);
+
 // Acceptance criteria covered: creating a family makes the parent its admin
 // with a six-character code of the allowed characters and the chosen time
-// zone; a parent of two families has both; the admin's new name and time
-// zone stay after a reload; a new code replaces the old one and expires the
-// pending requests made with it; a parent who is not the admin cannot change
-// the family or take anyone out; a removed or departed parent can no longer
-// open the family; the admin cannot leave before handing over the admin
-// role, after which the new admin can change the settings and the old one
-// cannot, but can leave; a parent who is not a member cannot read or change
-// the family by changing the id in the address.
+// zone; a time zone alias is saved by its standard name; a parent of two
+// families has both; the admin's new name and time zone stay after a
+// reload; a name past 320 bytes is refused, however few its characters; a
+// new code replaces the old one and expires the pending requests made with
+// it; a parent who is not the admin cannot change the family or take anyone
+// out; a removed or departed parent can no longer open the family; the
+// admin cannot leave before handing over the admin role, after which the
+// new admin can change the settings and the old one cannot, but can leave;
+// the admin naming themself as the new admin is refused with
+// already_admin and changes nothing; a parent who is not a member cannot
+// read or change the family by changing the id in the address.
 describe('families', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -103,6 +112,18 @@ describe('families', () => {
       expect(await members(family.id)).toEqual([{ parent_id: creator.id, role: 'admin' }]);
     });
 
+    it('saves a time zone alias by the standard name it stands for', async () => {
+      const response = await asParent(await parent()).post('/api/families', {
+        name: '林悦的家',
+        timezone: 'Asia/Calcutta',
+      });
+
+      expect(response.status).toBe(201);
+      const family = familyDetailSchema.parse(response.body);
+      expect(family.timezone).toBe('Asia/Kolkata');
+      expect(await familyOf(family.id)).toMatchObject({ timezone: 'Asia/Kolkata' });
+    });
+
     it('gives every family its own code', async () => {
       const creator = await parent();
 
@@ -133,6 +154,7 @@ describe('families', () => {
         { name: '一二三四五六七八九十一二三四五六七八九十多', timezone: 'Asia/Shanghai' },
         [{ path: 'name', code: 'too_long' }],
       ],
+      [{ name: HEAVY_NAME, timezone: 'Asia/Shanghai' }, [{ path: 'name', code: 'too_long' }]],
       [{ name: '林悦的家', timezone: 'Mars/Phobos' }, [{ path: 'timezone', code: 'invalid' }]],
       [{ name: '林悦的家' }, [{ path: 'timezone', code: 'required' }]],
     ])('refuses %j with 400 and the fields', async (body, fields) => {
@@ -254,6 +276,22 @@ describe('families', () => {
       expect(after.updated_at).not.toEqual(before.updated_at);
     });
 
+    it.each([
+      ['US/Pacific', 'America/Los_Angeles'],
+      ['Europe/Kiev', 'Europe/Kyiv'],
+      ['Etc/UTC', 'UTC'],
+    ])('saves the alias %s by its standard name %s', async (alias, standard) => {
+      const { family, admin } = await familyWithMember();
+
+      const response = await asParent(admin).patch(`/api/families/${family.id}`, {
+        timezone: alias,
+      });
+
+      expect(response.status).toBe(200);
+      expect(familyDetailSchema.parse(response.body).timezone).toBe(standard);
+      expect(await familyOf(family.id)).toMatchObject({ timezone: standard });
+    });
+
     it('keeps the last of two changes', async () => {
       const { family, admin } = await familyWithMember();
 
@@ -280,6 +318,20 @@ describe('families', () => {
             { path: 'timezone', code: 'invalid' },
           ],
         },
+      });
+      expect(await familyOf(family.id)).toMatchObject({ name: '林悦的家' });
+    });
+
+    it('refuses a name past 320 bytes as too long, however few its characters', async () => {
+      const { family, admin } = await familyWithMember();
+
+      const response = await asParent(admin).patch(`/api/families/${family.id}`, {
+        name: HEAVY_NAME,
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        error: { code: 'invalid_request', fields: [{ path: 'name', code: 'too_long' }] },
       });
       expect(await familyOf(family.id)).toMatchObject({ name: '林悦的家' });
     });
@@ -378,6 +430,18 @@ describe('families', () => {
       );
       expect(leaving.status).toBe(204);
       expect(await members(family.id)).toEqual([{ parent_id: member.id, role: 'admin' }]);
+    });
+
+    it('refuses the admin naming themself with 409 already_admin and changes nothing', async () => {
+      const { family, admin } = await familyWithMember();
+      const before = await stateOf(family.id);
+
+      const response = await asParent(admin).put(`/api/families/${family.id}/admin`, {
+        parentId: admin.id,
+      });
+
+      expect(outcomesOf([response])).toEqual([[409, 'already_admin']]);
+      expect(await stateOf(family.id)).toEqual(before);
     });
 
     it('refuses a new admin who is not a member with 409 not_a_member', async () => {

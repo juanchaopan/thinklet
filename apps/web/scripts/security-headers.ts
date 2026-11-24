@@ -36,4 +36,8 @@ export const WEB_SECURITY_HEADERS: Readonly<Record<string, string>> = Object.fre
     'payment=()',
     'usb=()',
   ].join(', '),
+  // No request a page makes, and no link it follows, carries its address, so
+  // a family code in `/join/<code>` or a token in `/child/qr/<token>` never
+  // leaves the page in a Referer.
+  'Referrer-Policy': 'no-referrer',
 });

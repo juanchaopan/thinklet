@@ -96,9 +96,6 @@ function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
  */
 @Injectable()
 export class ChildLoginService {
-  /** A hash of a random password, made once and checked when there is no hash to check. */
-  private standIn: Promise<string> | undefined;
-
   constructor(
     private readonly repository: ChildLoginRepository,
     private readonly families: FamiliesService,
@@ -108,9 +105,9 @@ export class ChildLoginService {
   /**
    * Logs the child in with the family code, the account and the password.
    * A wrong code, account or password, and a child without a password yet,
-   * are all 401 `login_failed`. A password is checked against a hash every
-   * time, a stand-in one with the same cost when there is no child or no
-   * password, so the time taken does not tell which was wrong either.
+   * are all 401 `login_failed`. The password is checked every time, against
+   * the hasher's stand-in hash when there is no child or no password, so
+   * the time taken does not tell which was wrong either.
    */
   async login(request: ChildLoginRequest, browser: Browser): Promise<CompletedLogin> {
     const familyId = await this.families.findIdByCode(request.code);
@@ -119,10 +116,7 @@ export class ChildLoginService {
         ? undefined
         : await this.repository.findLoginCandidate(familyId, request.account);
     const passwordHash = candidate?.passwordHash ?? null;
-    const matches = await this.hasher.verify(
-      request.password,
-      passwordHash ?? (await this.standInHash()),
-    );
+    const matches = await this.hasher.verify(request.password, passwordHash);
     if (candidate === undefined || passwordHash === null || !matches) {
       throw loginFailed();
     }
@@ -318,11 +312,5 @@ export class ChildLoginService {
       expiresAt: rememberedUntil(now),
     });
     return token;
-  }
-
-  /** The stand-in hash, made on first use with the cost of every new hash. */
-  private standInHash(): Promise<string> {
-    this.standIn ??= this.hasher.hash(newToken().token);
-    return this.standIn;
   }
 }

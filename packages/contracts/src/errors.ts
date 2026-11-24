@@ -38,6 +38,8 @@ export const errorCodeSchema = z.enum([
   'request_closed',
   // 409: the admin has to hand the admin role to someone else before leaving.
   'admin_cannot_leave',
+  // 409: the parent named as the family's new admin is its admin already.
+  'already_admin',
   // 409: the parent is no longer a member of the family.
   'not_a_member',
   // 409: another child of the family has this account.

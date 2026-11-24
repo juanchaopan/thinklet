@@ -33,7 +33,12 @@ function rowTimes() {
   };
 }
 
-/** A parent, known by the issuer and subject of their Authing account. */
+/**
+ * A parent, known by the issuer and subject of their Authing account. The
+ * name takes at most 320 bytes, the contracts' NAME_MAX_BYTES: the api
+ * counts characters, and the database bounds what is stored however the
+ * characters are made up.
+ */
 export const parents = pgTable(
   'parents',
   {
@@ -46,13 +51,16 @@ export const parents = pgTable(
     consentedAt: timestamptz('consented_at').notNull(),
     ...rowTimes(),
   },
-  (table) => [unique('parents_oidc_identity_unique').on(table.oidcIssuer, table.oidcSubject)],
+  (table) => [
+    unique('parents_oidc_identity_unique').on(table.oidcIssuer, table.oidcSubject),
+    check('parents_name_length_check', sql`octet_length(name) <= 320`),
+  ],
 );
 
 /**
  * A family; its code is unique across the platform. Family codes are text
  * with a length check: char(6) would pad a shorter value instead of
- * rejecting it.
+ * rejecting it. The name takes at most 320 bytes, as a parent's does.
  */
 export const families = pgTable(
   'families',
@@ -63,13 +71,17 @@ export const families = pgTable(
     code: text('code').notNull().unique('families_code_unique'),
     ...rowTimes(),
   },
-  () => [check('families_code_length_check', sql`char_length(code) = 6`)],
+  () => [
+    check('families_code_length_check', sql`char_length(code) = 6`),
+    check('families_name_length_check', sql`octet_length(name) <= 320`),
+  ],
 );
 
 /**
  * The parents of a family. Leaving or being removed deletes the row. The
  * partial unique index allows at most one admin per family; the services
- * keep it at exactly one.
+ * keep it at exactly one. The primary key leads with the family, so a
+ * parent's own families are found by the index on `parent_id`.
  */
 export const familyMembers = pgTable(
   'family_members',
@@ -88,6 +100,7 @@ export const familyMembers = pgTable(
     uniqueIndex('family_members_one_admin_per_family')
       .on(table.familyId)
       .where(sql`role = 'admin'`),
+    index('family_members_parent_id_idx').on(table.parentId),
     check('family_members_role_check', sql`role in ('admin', 'member')`),
   ],
 );
@@ -138,6 +151,12 @@ export const joinRequests = pgTable(
  * before `sessions_valid_after` are refused. The guardian's consent is kept
  * in the row and goes with it. `(id, family_id)` is unique so that book
  * assignments can reference a child together with its family.
+ *
+ * A ciphertext is `<key id>.<iv>.<ciphertext>.<tag>`, each part after the
+ * key id in unpadded base64url. AES-GCM keeps the length of the text, so
+ * the third part has at most 214 characters exactly when the nickname
+ * takes at most 160 bytes, the contracts' NICKNAME_MAX_BYTES: the database
+ * bounds the nickname without reading it.
  */
 export const children = pgTable(
   'children',
@@ -161,6 +180,7 @@ export const children = pgTable(
   (table) => [
     unique('children_family_account_unique').on(table.familyId, table.accountLookup),
     unique('children_id_family_unique').on(table.id, table.familyId),
+    check('children_nickname_length_check', sql`octet_length(split_part(nickname, '.', 3)) <= 214`),
   ],
 );
 
