@@ -81,34 +81,34 @@ export interface FamilyWithChild {
   child: Child;
 }
 
-/** 林悦's family with 小明 (account xiaoming), 林悦 signed in on a page of her own. */
-export async function familyWithXiaoming(openParentPage: OpenParentPage): Promise<FamilyWithChild> {
+/** 林悦's family with 小米 (account xiaomi), 林悦 signed in on a page of her own. */
+export async function familyWithXiaomi(openParentPage: OpenParentPage): Promise<FamilyWithChild> {
   const { admin, family } = await familyOfLinyue(openParentPage);
-  return { admin, family, child: await addChild(admin, family.id, '小明', 'xiaoming') };
+  return { admin, family, child: await addChild(admin, family.id, '小米', 'xiaomi') };
 }
 
 /**
- * 林悦's family, made by the parent signed in on `admin`, with 小明, who has
+ * 林悦's family, made by the parent signed in on `admin`, with 小米, who has
  * set the password `PASSWORD` with a first login link from `request`.
  */
-export async function familyWithXiaomingOn(
+export async function familyWithXiaomiOn(
   admin: Page,
   request: APIRequestContext,
 ): Promise<FamilyWithChild> {
   const family = await createFamily(admin, '林悦的家');
-  const child = await addChild(admin, family.id, '小明', 'xiaoming');
+  const child = await addChild(admin, family.id, '小米', 'xiaomi');
   await setPasswordByLink(request, await makeLoginLink(admin, family.id, child));
   return { admin, family, child };
 }
 
-/** Like `familyWithXiaomingOn`, with 林悦 signed in on a page of her own. */
-export async function familyWithXiaomingWithPassword(
+/** Like `familyWithXiaomiOn`, with 林悦 signed in on a page of her own. */
+export async function familyWithXiaomiWithPassword(
   openParentPage: OpenParentPage,
   request: APIRequestContext,
 ): Promise<FamilyWithChild> {
   const admin = await openParentPage();
   await signIn(admin, newUser('林悦'));
-  return familyWithXiaomingOn(admin, request);
+  return familyWithXiaomiOn(admin, request);
 }
 
 /** The row of the child with this nickname on the children page. */

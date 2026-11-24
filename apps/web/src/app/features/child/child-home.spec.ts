@@ -6,7 +6,7 @@ import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
 import { NO_BOOKS, stubChildBooks, stubChildShelf } from '../../../testing/child-books';
 import { expectChildHome, stubChildSignedIn, stubRemembered } from '../../../testing/child-login';
-import { DUODUO_ID, XIAOMING_ID } from '../../../testing/children';
+import { DOUDOU_ID, XIAOMI_ID } from '../../../testing/children';
 import { backToFront, recordCalls } from '../../../testing/family-page';
 import { holdNext } from '../../../testing/held-answers';
 import { stubLibrary, type FakeLibrary } from '../../../testing/library';
@@ -14,8 +14,8 @@ import { worker } from '../../../testing/network';
 import { ERROR_NUMBER, stubError, stubNoChild, stubVisitor } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
-/** 小明's books as the design draws them, latest assignment first. */
-const XIAOMING_TITLES = [
+/** 小米's books as the design draws them, latest assignment first. */
+const XIAOMI_TITLES = [
   '胡萝卜数数大冒险',
   '四季里的古诗',
   '一起来写日记',
@@ -23,7 +23,7 @@ const XIAOMING_TITLES = [
   '小兔数萝卜',
 ];
 
-/** Opens the child's home page with 小明 signed in and no parent. */
+/** Opens the child's home page with 小米 signed in and no parent. */
 async function renderChildHome() {
   stubVisitor();
   stubChildSignedIn();
@@ -106,9 +106,9 @@ describe('ChildHome', () => {
 
       const heading = await findMyBooksHeading();
       expect(document.title).toBe('好奇星球');
-      expect(screen.getByText('你好，小明！')).toBeTruthy();
+      expect(screen.getByText('你好，小米！')).toBeTruthy();
       expect(heading.querySelector('[appBadge]')?.textContent.trim()).toBe('2');
-      expect(titles()).toEqual(XIAOMING_TITLES);
+      expect(titles()).toEqual(XIAOMI_TITLES);
       expect(coverTags('胡萝卜数数大冒险')).toEqual(['新']);
       expect(coverTags('四季里的古诗')).toEqual(['新']);
       expect(coverTags('一起来写日记')).toEqual([]);
@@ -145,7 +145,7 @@ describe('ChildHome', () => {
 
     it('shows no count while the child has opened every book', async () => {
       const shelf = stubChildShelf(stubLibrary());
-      shelf.childId = DUODUO_ID;
+      shelf.childId = DOUDOU_ID;
       await renderChildHome();
 
       const heading = await findMyBooksHeading();
@@ -190,8 +190,8 @@ describe('ChildHome', () => {
       const bar = screen.getByRole('banner');
       expect(bar.querySelector('app-avatar')?.textContent).toBe('小');
       expect(bar.querySelector('app-avatar')?.classList).toContain('bg-fuchsia');
-      expect(bar.textContent).toContain('小明');
-      expect(screen.getByText('你好，小明！')).toBeTruthy();
+      expect(bar.textContent).toContain('小米');
+      expect(screen.getByText('你好，小米！')).toBeTruthy();
       expect(screen.getByRole('heading', { level: 1 }).textContent).toContain('我是小兔老师');
       expect(screen.getByText('家长给你分派书以后，会出现在这里。')).toBeTruthy();
       expect(screen.queryByRole('heading', { name: /^我的书/ })).toBeNull();
@@ -205,7 +205,7 @@ describe('ChildHome', () => {
       const { fixture } = await renderChildHome();
       await findMyBooksHeading();
 
-      library.owned.get('robot-maze')?.push(XIAOMING_ID);
+      library.owned.get('robot-maze')?.push(XIAOMI_ID);
       library.owned.set('write-a-diary', []);
       backToFront();
       await fixture.whenStable();
@@ -231,7 +231,7 @@ describe('ChildHome', () => {
       backToFront();
       await fixture.whenStable();
 
-      expect(titles()).toEqual(XIAOMING_TITLES);
+      expect(titles()).toEqual(XIAOMI_TITLES);
       expect(screen.queryByRole('heading', { name: '页面没能打开' })).toBeNull();
       expect(document.querySelector('app-toast-outlet')?.childElementCount ?? 0).toBe(0);
     });
@@ -242,9 +242,9 @@ describe('ChildHome', () => {
 
       expect(screen.getByRole('heading', { name: '页面没能打开' })).toBeTruthy();
       expect(screen.getByText(`错误编号 ${ERROR_NUMBER}`)).toBeTruthy();
-      expect(screen.getByRole('banner').textContent).toContain('小明');
+      expect(screen.getByRole('banner').textContent).toContain('小米');
       expect(screen.getByRole('button', { name: '退出' })).toBeTruthy();
-      expect(screen.queryByText('你好，小明！')).toBeNull();
+      expect(screen.queryByText('你好，小米！')).toBeNull();
       await expectNoAxeViolations();
       await expectScreenshotsAtEverySize('child-home-error');
 
@@ -252,7 +252,7 @@ describe('ChildHome', () => {
       await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
       await findMyBooksHeading();
-      expect(titles()).toEqual(XIAOMING_TITLES);
+      expect(titles()).toEqual(XIAOMI_TITLES);
       expect(screen.queryByRole('heading', { name: '页面没能打开' })).toBeNull();
     });
 
@@ -311,7 +311,7 @@ describe('ChildHome', () => {
     });
     await held.release();
     expect(await screen.findByText('出了点问题，请稍后再试')).toBeTruthy();
-    await expectChildHome('小明');
+    await expectChildHome('小米');
   });
 
   it('goes to the child login when the login has ended meanwhile', async () => {
@@ -336,8 +336,8 @@ describe('ChildHome', () => {
     stubChildSignedIn();
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
-    await expectChildHome('小明');
+    await expectChildHome('小米');
     await findMyBooksHeading();
-    expect(titles()).toEqual(XIAOMING_TITLES);
+    expect(titles()).toEqual(XIAOMI_TITLES);
   });
 });

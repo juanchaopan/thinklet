@@ -1,5 +1,5 @@
 import { render } from '@testing-library/angular';
-import { DUODUO_ID, LELE_ID, XIAOMING_ID } from '../../../testing/children';
+import { ALE_ID, DOUDOU_ID, XIAOMI_ID } from '../../../testing/children';
 import { JIANGUO_ID, LINYUE_ID, ZIHANG_ID } from '../../../testing/sample-data';
 import { Avatar, avatarColor } from './avatar';
 
@@ -17,9 +17,9 @@ describe('avatarColor', () => {
   });
 
   it('gives the children of the design their colours by the same rule', () => {
-    expect(avatarColor(XIAOMING_ID)).toBe('bg-fuchsia');
-    expect(avatarColor(DUODUO_ID)).toBe('bg-sun-ink');
-    expect(avatarColor(LELE_ID)).toBe('bg-mint-ink');
+    expect(avatarColor(XIAOMI_ID)).toBe('bg-fuchsia');
+    expect(avatarColor(DOUDOU_ID)).toBe('bg-sun-ink');
+    expect(avatarColor(ALE_ID)).toBe('bg-mint-ink');
   });
 
   it('gives the same person the same colour every time', () => {

@@ -5,7 +5,7 @@ import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
 import {
-  DUODUO_SIGNED_IN,
+  DOUDOU_SIGNED_IN,
   LINK_HAS_PASSWORD,
   LINK_NEEDS_PASSWORD,
   LINK_PATH,
@@ -19,7 +19,7 @@ import {
   stubLink,
   stubRemembered,
 } from '../../../testing/child-login';
-import { DUODUO_ID } from '../../../testing/children';
+import { DOUDOU_ID } from '../../../testing/children';
 import { recordCalls } from '../../../testing/family-page';
 import { holdNext } from '../../../testing/held-answers';
 import { moveMouseOffPage } from '../../../testing/pointer';
@@ -45,7 +45,7 @@ describe('ChildQrLogin', () => {
       await renderQrLogin(LINK_NEEDS_PASSWORD);
 
       expect(document.title).toBe('扫码登录 - 好奇星球');
-      expect(screen.getByRole('heading', { level: 1, name: '你好，小明！' })).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 1, name: '你好，小米！' })).toBeTruthy();
       expect(screen.getByText('先设一个密码，以后登录要用。')).toBeTruthy();
       expect(field('密码').type).toBe('password');
       expect(field('密码').getAttribute('aria-describedby')).toBe(
@@ -89,7 +89,7 @@ describe('ChildQrLogin', () => {
 
       await submit('设好了，进入');
 
-      await expectChildHome('小明');
+      await expectChildHome('小米');
       expect(sets).toEqual([{ password: thumbs, remember: true }]);
     });
 
@@ -118,7 +118,7 @@ describe('ChildQrLogin', () => {
 
       await submit('设好了，进入');
 
-      await expectChildHome('小明');
+      await expectChildHome('小米');
       expect(router.url).toBe('/child/home');
       expect(sets).toEqual([{ password: PASSWORD, remember: false }]);
     });
@@ -171,7 +171,7 @@ describe('ChildQrLogin', () => {
     it('greets the child and asks for the password, remembering the device', async () => {
       await renderQrLogin(LINK_HAS_PASSWORD);
 
-      expect(screen.getByRole('heading', { level: 1, name: '你好，小明！' })).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 1, name: '你好，小米！' })).toBeTruthy();
       expect(screen.getByText('输入你的密码。')).toBeTruthy();
       expect(screen.queryByLabelText('再输一遍')).toBeNull();
       expect(screen.getByRole<HTMLInputElement>('checkbox', { name: REMEMBER }).checked).toBe(true);
@@ -208,7 +208,7 @@ describe('ChildQrLogin', () => {
       await userEvent.type(field('密码'), PASSWORD);
       await submit('登录');
 
-      await expectChildHome('小明');
+      await expectChildHome('小米');
       expect(logins).toEqual([{ password: PASSWORD, remember: true }]);
     });
 
@@ -271,9 +271,9 @@ describe('ChildQrLogin', () => {
     stubVisitor();
     stubChildSignedIn();
     const { router, fixture } = await renderApp('/child/home');
-    await expectChildHome('小明');
-    stubLink({ childId: DUODUO_ID, nickname: '朵朵', needsPassword: false });
-    recordCalls('post', `${LINK_PATH}/login`, signedIn(DUODUO_SIGNED_IN));
+    await expectChildHome('小米');
+    stubLink({ childId: DOUDOU_ID, nickname: '豆豆', needsPassword: false });
+    recordCalls('post', `${LINK_PATH}/login`, signedIn(DOUDOU_SIGNED_IN));
 
     await router.navigateByUrl(QR_PAGE);
     await fixture.whenStable();
@@ -282,7 +282,7 @@ describe('ChildQrLogin', () => {
     await userEvent.type(field('密码'), PASSWORD);
     await submit('登录');
 
-    await expectChildHome('朵朵');
+    await expectChildHome('豆豆');
     expect(router.url).toBe('/child/home');
   });
 });

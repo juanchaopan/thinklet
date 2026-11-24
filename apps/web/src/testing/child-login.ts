@@ -3,13 +3,13 @@ import type { ChildLoginLinkInfo, ChildMeResponse, RememberedChild } from '@thin
 import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { renderApp } from './app';
-import { DUODUO_ID, XIAOMING_ID } from './children';
+import { DOUDOU_ID, XIAOMI_ID } from './children';
 import { codeBoxes, typeCode } from './families';
 import { worker } from './network';
 import { LINYUE_FAMILY, errorBody, stubVisitor } from './sample-data';
 
-// The child's side as the design draws it: 小明 (account xiaoming) and 朵朵
-// (account duoduo) of 林悦的家, whose family code is 7KQ4MZ, and helpers for
+// The child's side as the design draws it: 小米 (account xiaomi) and 豆豆
+// (account doudou) of 林悦的家, whose family code is 7KQ4MZ, and helpers for
 // the tests of the child login, the QR login and the child's home page.
 
 /** The family code of 林悦的家, which the children type to log in. */
@@ -18,25 +18,25 @@ export const FAMILY_CODE = LINYUE_FAMILY.code;
 /** The password the design shows typed in. */
 export const PASSWORD = 'xm2019abc';
 
-/** 小明 signed in, as `/api/child/me` and every login answer. */
-export const XIAOMING_SIGNED_IN: ChildMeResponse = { id: XIAOMING_ID, nickname: '小明' };
+/** 小米 signed in, as `/api/child/me` and every login answer. */
+export const XIAOMI_SIGNED_IN: ChildMeResponse = { id: XIAOMI_ID, nickname: '小米' };
 
-/** 朵朵 signed in. */
-export const DUODUO_SIGNED_IN: ChildMeResponse = { id: DUODUO_ID, nickname: '朵朵' };
+/** 豆豆 signed in. */
+export const DOUDOU_SIGNED_IN: ChildMeResponse = { id: DOUDOU_ID, nickname: '豆豆' };
 
-/** 小明 and 朵朵 as a device that remembers them lists them. */
-export const REMEMBERED_XIAOMING: RememberedChild = {
-  childId: XIAOMING_ID,
-  nickname: '小明',
+/** 小米 and 豆豆 as a device that remembers them lists them. */
+export const REMEMBERED_XIAOMI: RememberedChild = {
+  childId: XIAOMI_ID,
+  nickname: '小米',
   familyCode: FAMILY_CODE,
-  account: 'xiaoming',
+  account: 'xiaomi',
 };
 
-export const REMEMBERED_DUODUO: RememberedChild = {
-  childId: DUODUO_ID,
-  nickname: '朵朵',
+export const REMEMBERED_DOUDOU: RememberedChild = {
+  childId: DOUDOU_ID,
+  nickname: '豆豆',
   familyCode: FAMILY_CODE,
-  account: 'duoduo',
+  account: 'doudou',
 };
 
 /** The token of the login link in the tests, as the design's link writes it. */
@@ -48,10 +48,10 @@ export const QR_PAGE = `/child/qr/${LINK_TOKEN}`;
 /** The link in the api. */
 export const LINK_PATH = `/api/child-login-links/${LINK_TOKEN}`;
 
-/** The link of 小明 before he has a password, and once he has one. */
+/** The link of 小米 before the child has a password, and once the child has one. */
 export const LINK_NEEDS_PASSWORD: ChildLoginLinkInfo = {
-  childId: XIAOMING_ID,
-  nickname: '小明',
+  childId: XIAOMI_ID,
+  nickname: '小米',
   needsPassword: true,
 };
 
@@ -61,7 +61,7 @@ export const LINK_HAS_PASSWORD: ChildLoginLinkInfo = {
 };
 
 /** Stubs `/api/child/me` with the child signed in on this browser. */
-export function stubChildSignedIn(child: ChildMeResponse = XIAOMING_SIGNED_IN): void {
+export function stubChildSignedIn(child: ChildMeResponse = XIAOMI_SIGNED_IN): void {
   worker.use(http.get('/api/child/me', () => HttpResponse.json(child)));
 }
 
@@ -82,7 +82,7 @@ export function stubLink(link: ChildLoginLinkInfo | 'invalid'): void {
 }
 
 /** A login the api lets in, answered with the child now signed in. */
-export function signedIn(child: ChildMeResponse = XIAOMING_SIGNED_IN): () => Response {
+export function signedIn(child: ChildMeResponse = XIAOMI_SIGNED_IN): () => Response {
   return () => HttpResponse.json(child);
 }
 
@@ -111,7 +111,7 @@ export function field(name: string): HTMLInputElement {
 /** Types the family code from its first box, then the account and the password, into the login form. */
 export async function fillLoginForm(
   code: string = FAMILY_CODE,
-  account = 'xiaoming',
+  account = 'xiaomi',
   password: string = PASSWORD,
 ): Promise<void> {
   const [first] = codeBoxes();

@@ -4,11 +4,11 @@ import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
 import {
-  DUODUO_SIGNED_IN,
+  DOUDOU_SIGNED_IN,
   FAMILY_CODE,
   PASSWORD,
-  REMEMBERED_DUODUO,
-  REMEMBERED_XIAOMING,
+  REMEMBERED_DOUDOU,
+  REMEMBERED_XIAOMI,
   expectChildHome,
   field,
   fillLoginForm,
@@ -16,7 +16,7 @@ import {
   signedIn,
   stubChildSignedIn,
 } from '../../../testing/child-login';
-import { DUODUO_ID, XIAOMING_ID } from '../../../testing/children';
+import { DOUDOU_ID, XIAOMI_ID } from '../../../testing/children';
 import { boxValues, codeBoxes } from '../../../testing/families';
 import { recordCalls } from '../../../testing/family-page';
 import { holdNext } from '../../../testing/held-answers';
@@ -77,10 +77,10 @@ describe('ChildLogin', () => {
     it('takes the family code by the code rules and the account in small letters and digits', async () => {
       await renderChildLogin();
 
-      await fillLoginForm('7kq4mz', 'XiaoMing_01', PASSWORD);
+      await fillLoginForm('7kq4mz', 'XiaoMi_01', PASSWORD);
 
       expect(boxValues()).toEqual(['7', 'K', 'Q', '4', 'M', 'Z']);
-      expect(field('账号').value).toBe('xiaoming01');
+      expect(field('账号').value).toBe('xiaomi01');
       expect(screen.queryByText('没有这个家庭码')).toBeNull();
     });
 
@@ -126,11 +126,11 @@ describe('ChildLogin', () => {
 
       expect((await screen.findByRole('alert')).textContent?.trim()).toBe('家庭码、账号或密码不对');
       expect(logins).toEqual([
-        { code: FAMILY_CODE, account: 'xiaoming', password: PASSWORD, remember: false },
+        { code: FAMILY_CODE, account: 'xiaomi', password: PASSWORD, remember: false },
       ]);
       expect(field('密码').value).toBe('');
       expect(boxValues().join('')).toBe(FAMILY_CODE);
-      expect(field('账号').value).toBe('xiaoming');
+      expect(field('账号').value).toBe('xiaomi');
       await expectAtRestAtEverySize('child-login-error');
     });
 
@@ -142,9 +142,9 @@ describe('ChildLogin', () => {
 
       await userEvent.click(screen.getByRole('button', { name: '登录' }));
 
-      await expectChildHome('小明');
+      await expectChildHome('小米');
       expect(logins).toEqual([
-        { code: FAMILY_CODE, account: 'xiaoming', password: PASSWORD, remember: true },
+        { code: FAMILY_CODE, account: 'xiaomi', password: PASSWORD, remember: true },
       ]);
     });
 
@@ -188,16 +188,16 @@ describe('ChildLogin', () => {
 
   describe('on a device that remembers children', () => {
     it('shows each child as a big avatar to tap', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING, REMEMBERED_DUODUO]);
+      await renderChildLogin([REMEMBERED_XIAOMI, REMEMBERED_DOUDOU]);
 
       expect(screen.getByRole('heading', { level: 1, name: '点你的头像登录' })).toBeTruthy();
       const avatars = within(screen.getByRole('list')).getAllByRole('button');
       expect(avatars.map((avatar) => avatar.textContent?.replace(/\s/g, ''))).toEqual([
-        '小小明',
-        '朵朵朵',
+        '小小米',
+        '豆豆豆',
       ]);
-      expect(avatarButton('小明').querySelector('app-avatar')?.classList).toContain('bg-fuchsia');
-      expect(avatarButton('朵朵').querySelector('app-avatar')?.classList).toContain('bg-sun-ink');
+      expect(avatarButton('小米').querySelector('app-avatar')?.classList).toContain('bg-fuchsia');
+      expect(avatarButton('豆豆').querySelector('app-avatar')?.classList).toContain('bg-sun-ink');
       expect(screen.getByRole('button', { name: '用账号登录' })).toBeTruthy();
       expect(screen.getByRole('link', { name: '回到首页' })).toBeTruthy();
       await expectNoAxeViolations();
@@ -205,7 +205,7 @@ describe('ChildLogin', () => {
     });
 
     it('opens the form from 用账号登录, with 返回 back to the avatars', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING, REMEMBERED_DUODUO]);
+      await renderChildLogin([REMEMBERED_XIAOMI, REMEMBERED_DOUDOU]);
 
       await userEvent.click(screen.getByRole('button', { name: '用账号登录' }));
 
@@ -223,32 +223,32 @@ describe('ChildLogin', () => {
     });
 
     it('signs a tapped child in without a password', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING, REMEMBERED_DUODUO]);
+      await renderChildLogin([REMEMBERED_XIAOMI, REMEMBERED_DOUDOU]);
       const logins = recordCalls(
         'post',
-        `/api/child-auth/remembered/${DUODUO_ID}/login`,
-        signedIn(DUODUO_SIGNED_IN),
+        `/api/child-auth/remembered/${DOUDOU_ID}/login`,
+        signedIn(DOUDOU_SIGNED_IN),
       );
 
-      await userEvent.click(avatarButton('朵朵'));
+      await userEvent.click(avatarButton('豆豆'));
 
-      await expectChildHome('朵朵');
+      await expectChildHome('豆豆');
       expect(logins).toEqual([null]);
     });
 
     it('asks for the password again when the device may no longer sign the child in', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING, REMEMBERED_DUODUO]);
-      recordCalls('post', `/api/child-auth/remembered/${XIAOMING_ID}/login`, () =>
+      await renderChildLogin([REMEMBERED_XIAOMI, REMEMBERED_DOUDOU]);
+      recordCalls('post', `/api/child-auth/remembered/${XIAOMI_ID}/login`, () =>
         HttpResponse.json(errorBody('remember_invalid'), { status: 401 }),
       );
 
-      await userEvent.click(avatarButton('小明'));
+      await userEvent.click(avatarButton('小米'));
 
       const notice = await screen.findByRole('status');
       expect(notice.textContent?.trim()).toContain('这台设备需要重新输入密码');
       expect(notice.querySelector('app-avatar')?.textContent).toBe('小');
       expect(boxValues().join('')).toBe(FAMILY_CODE);
-      expect(field('账号').value).toBe('xiaoming');
+      expect(field('账号').value).toBe('xiaomi');
       expect(field('密码').value).toBe('');
       await vi.waitFor(() => {
         expect(document.activeElement).toBe(field('密码'));
@@ -257,30 +257,30 @@ describe('ChildLogin', () => {
 
       await userEvent.click(screen.getByRole('button', { name: '返回' }));
 
-      expect(screen.queryByRole('button', { name: '小明' })).toBeNull();
-      expect(avatarButton('朵朵')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '小米' })).toBeNull();
+      expect(avatarButton('豆豆')).toBeTruthy();
     });
 
     it('has no 返回 once the last remembered child has gone', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING]);
-      recordCalls('post', `/api/child-auth/remembered/${XIAOMING_ID}/login`, () =>
+      await renderChildLogin([REMEMBERED_XIAOMI]);
+      recordCalls('post', `/api/child-auth/remembered/${XIAOMI_ID}/login`, () =>
         HttpResponse.json(errorBody('remember_invalid'), { status: 401 }),
       );
 
-      await userEvent.click(avatarButton('小明'));
+      await userEvent.click(avatarButton('小米'));
 
       expect(await screen.findByRole('status')).toBeTruthy();
       expect(screen.queryByRole('button', { name: '返回' })).toBeNull();
     });
 
     it('says a server failure in a toast and keeps the avatars', async () => {
-      await renderChildLogin([REMEMBERED_XIAOMING]);
-      stubError(`post /api/child-auth/remembered/${XIAOMING_ID}/login`, 500, 'internal');
+      await renderChildLogin([REMEMBERED_XIAOMI]);
+      stubError(`post /api/child-auth/remembered/${XIAOMI_ID}/login`, 500, 'internal');
 
-      await userEvent.click(avatarButton('小明'));
+      await userEvent.click(avatarButton('小米'));
 
       expect(await screen.findByText('出了点问题，请稍后再试')).toBeTruthy();
-      expect(avatarButton('小明')).toBeTruthy();
+      expect(avatarButton('小米')).toBeTruthy();
     });
   });
 
@@ -290,6 +290,6 @@ describe('ChildLogin', () => {
     const { router } = await renderApp('/child');
 
     expect(router.url).toBe('/child/home');
-    await expectChildHome('小明');
+    await expectChildHome('小米');
   });
 });

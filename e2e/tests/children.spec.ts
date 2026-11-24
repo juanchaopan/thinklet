@@ -8,7 +8,7 @@ import {
   childrenApi,
   childrenPage,
   expectError,
-  familyWithXiaoming,
+  familyWithXiaomi,
   sentFrom,
 } from '../support/children.ts';
 import { createFamily } from '../support/families.ts';
@@ -66,46 +66,46 @@ test.describe('children', () => {
     await expect(dialog.getByText('请填账号')).toBeVisible();
     await expect(dialog.getByText('请先同意')).toBeVisible();
 
-    await fillChild(page, '小明', 'xiaoming');
+    await fillChild(page, '小米', 'xiaomi');
     await dialog.getByRole('button', { name: '添加', exact: true }).click();
     await expect(dialog.getByText('请先同意')).toBeVisible();
     await dialog.getByText(CONSENT).click();
     await dialog.getByRole('button', { name: '添加', exact: true }).click();
-    await expect(page.getByText('已添加「小明」')).toBeVisible();
+    await expect(page.getByText('已添加「小米」')).toBeVisible();
     await expect(dialog).toHaveCount(0);
-    await expectChildren(page, [['小明', 'xiaoming']]);
+    await expectChildren(page, [['小米', 'xiaomi']]);
     await expectAccessiblePage(page);
 
     await page.getByRole('button', { name: '添加孩子' }).click();
-    await fillChild(page, '朵朵', 'xiaoming');
+    await fillChild(page, '豆豆', 'xiaomi');
     await dialog.getByText(CONSENT).click();
     await dialog.getByRole('button', { name: '添加', exact: true }).click();
     await expect(dialog.getByText(ACCOUNT_TAKEN)).toBeVisible();
-    await page.getByRole('textbox', { name: '账号' }).fill('duoduo');
+    await page.getByRole('textbox', { name: '账号' }).fill('doudou');
     await dialog.getByRole('button', { name: '添加', exact: true }).click();
-    await expect(page.getByText('已添加「朵朵」')).toBeVisible();
+    await expect(page.getByText('已添加「豆豆」')).toBeVisible();
 
     await page.reload();
     await expectChildren(page, [
-      ['小明', 'xiaoming'],
-      ['朵朵', 'duoduo'],
+      ['小米', 'xiaomi'],
+      ['豆豆', 'doudou'],
     ]);
   });
 
   test('a parent changes a child’s nickname and account, but not to the account of another child', async ({
     openParentPage,
   }) => {
-    const { admin, family } = await familyWithXiaoming(openParentPage);
-    await addChild(admin, family.id, '朵朵', 'duoduo');
+    const { admin, family } = await familyWithXiaomi(openParentPage);
+    await addChild(admin, family.id, '豆豆', 'doudou');
 
     await admin.goto(childrenPage(family.id));
-    await actOnChild(admin, '朵朵', '改昵称和账号');
-    const dialog = admin.getByRole('dialog', { name: '修改朵朵' });
-    await expect(dialog.getByRole('textbox', { name: '昵称' })).toHaveValue('朵朵');
-    await expect(dialog.getByRole('textbox', { name: '账号' })).toHaveValue('duoduo');
+    await actOnChild(admin, '豆豆', '改昵称和账号');
+    const dialog = admin.getByRole('dialog', { name: '修改豆豆' });
+    await expect(dialog.getByRole('textbox', { name: '昵称' })).toHaveValue('豆豆');
+    await expect(dialog.getByRole('textbox', { name: '账号' })).toHaveValue('doudou');
     await expectAccessiblePage(admin);
 
-    await dialog.getByRole('textbox', { name: '账号' }).fill('xiaoming');
+    await dialog.getByRole('textbox', { name: '账号' }).fill('xiaomi');
     await dialog.getByRole('button', { name: '保存' }).click();
     await expect(dialog.getByText(ACCOUNT_TAKEN)).toBeVisible();
 
@@ -114,24 +114,24 @@ test.describe('children', () => {
     await expect(admin.getByText('已保存')).toBeVisible();
     await expect(dialog).toHaveCount(0);
     await expectChildren(admin, [
-      ['小明', 'xiaoming'],
+      ['小米', 'xiaomi'],
       ['朵儿', 'duoer'],
     ]);
-    await expect(childRow(admin, '朵朵')).toHaveCount(0);
+    await expect(childRow(admin, '豆豆')).toHaveCount(0);
   });
 
   test('a parent of another family who puts its ids in the address or the request sees and changes none of its children', async ({
     page,
     openParentPage,
   }) => {
-    const { admin, family, child } = await familyWithXiaoming(openParentPage);
+    const { admin, family, child } = await familyWithXiaomi(openParentPage);
     await signIn(page, newUser('周子航'));
     const own = await createFamily(page, '周家');
     const origin = sentFrom(page);
 
     await page.goto(childrenPage(family.id));
     await expect(page.getByRole('heading', { level: 1, name: '找不到这个家庭' })).toBeVisible();
-    await expect(page.getByText('小明')).toHaveCount(0);
+    await expect(page.getByText('小米')).toHaveCount(0);
     await expectAccessiblePage(page);
 
     const theirs = childrenApi(family.id, child.id);

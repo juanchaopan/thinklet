@@ -1,6 +1,6 @@
 import type { ChildBook, ChildBooksResponse } from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
-import { XIAOMING_ID } from './children';
+import { XIAOMI_ID } from './children';
 import type { FakeLibrary } from './library';
 import { worker } from './network';
 
@@ -9,11 +9,11 @@ import { worker } from './network';
 // give a child, the child's home page shows.
 
 /**
- * 小明's books as the design draws them on his home page, latest assignment
- * first, with whether he has opened each: 胡萝卜数数大冒险 and 四季里的古诗
- * are new.
+ * 小米's books as the design draws them on the child's home page, latest
+ * assignment first, with whether the child has opened each: 胡萝卜数数大冒险
+ * and 四季里的古诗 are new.
  */
-const XIAOMING_SHELF: ReadonlyArray<readonly [string, boolean]> = [
+const XIAOMI_SHELF: ReadonlyArray<readonly [string, boolean]> = [
   ['carrot-counting', true],
   ['seasons-poems', true],
   ['write-a-diary', false],
@@ -26,8 +26,8 @@ export const NO_BOOKS: ChildBooksResponse = { books: [], newCount: 0 };
 
 /** The child's books as the api answers them, from the fake library. */
 export class FakeChildShelf {
-  /** The child signed in on the child's side; 小明 unless a test signs in another. */
-  childId = XIAOMING_ID;
+  /** The child signed in on the child's side; 小米 unless a test signs in another. */
+  childId = XIAOMI_ID;
 
   /** The books each child read when the fake started. */
   private readonly atStart: ReadonlyMap<string, readonly string[]>;
@@ -39,7 +39,7 @@ export class FakeChildShelf {
   /**
    * The signed-in child's books, latest assignment first. Books assigned
    * after the fake started come first and are new; the books the child had
-   * then follow, 小明's in the design's order and new where the design
+   * then follow, 小米's in the design's order and new where the design
    * draws them new, the other children's in the library's order.
    */
   answer(): ChildBooksResponse {
@@ -61,12 +61,12 @@ export class FakeChildShelf {
       .map(([bookId]) => bookId);
   }
 
-  /** The books in the order the child was given them; 小明's as the design draws them. */
+  /** The books in the order the child was given them; 小米's as the design draws them. */
   private ordered(bookIds: readonly string[]): readonly string[] {
-    if (this.childId !== XIAOMING_ID) {
+    if (this.childId !== XIAOMI_ID) {
       return bookIds;
     }
-    const drawn = XIAOMING_SHELF.map(([bookId]) => bookId);
+    const drawn = XIAOMI_SHELF.map(([bookId]) => bookId);
     const rank = (bookId: string) => {
       const index = drawn.indexOf(bookId);
       return index === -1 ? drawn.length : index;
@@ -76,8 +76,7 @@ export class FakeChildShelf {
 
   private drawnNew(bookId: string): boolean {
     return (
-      this.childId === XIAOMING_ID &&
-      XIAOMING_SHELF.some(([drawn, isNew]) => drawn === bookId && isNew)
+      this.childId === XIAOMI_ID && XIAOMI_SHELF.some(([drawn, isNew]) => drawn === bookId && isNew)
     );
   }
 
@@ -89,7 +88,7 @@ export class FakeChildShelf {
 
 /**
  * Serves `GET /api/child/books` from the fake library for the child signed
- * in, 小明 unless the test changes `childId`. Returns the shelf.
+ * in, 小米 unless the test changes `childId`. Returns the shelf.
  */
 export function stubChildShelf(library: FakeLibrary): FakeChildShelf {
   const shelf = new FakeChildShelf(library);

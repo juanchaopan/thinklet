@@ -22,8 +22,8 @@ import {
 import {
   PASSWORD,
   addChild,
-  familyWithXiaoming,
-  familyWithXiaomingWithPassword,
+  familyWithXiaomi,
+  familyWithXiaomiWithPassword,
   loginWithAccount,
   type FamilyWithChild,
 } from '../support/children.ts';
@@ -32,10 +32,10 @@ import { expect, test } from '../support/fixtures.ts';
 /** What a parent's library and book page say of a book nobody reads. */
 const NOBODY_READS = '还没有孩子在读';
 
-/** Signs 小明 in with his account on the child login of `page`, which opens his home page. */
-async function xiaomingSignsIn(page: Page, { family }: FamilyWithChild): Promise<void> {
+/** Signs 小米 in with his account on the child login of `page`, which opens his home page. */
+async function xiaomiSignsIn(page: Page, { family }: FamilyWithChild): Promise<void> {
   await page.goto('/child');
-  await loginWithAccount(page, { code: family.code, account: 'xiaoming', password: PASSWORD });
+  await loginWithAccount(page, { code: family.code, account: 'xiaomi', password: PASSWORD });
   await expect(page).toHaveURL('/child/home');
 }
 
@@ -79,7 +79,7 @@ test.describe('the family’s books', () => {
     openParentPage,
     request,
   }) => {
-    const linyue = await familyWithXiaomingWithPassword(openParentPage, request);
+    const linyue = await familyWithXiaomiWithPassword(openParentPage, request);
     const { admin } = linyue;
     await admin.goto('/');
     const card = bookCard(admin, CARROT.title);
@@ -98,16 +98,16 @@ test.describe('the family’s books', () => {
     await expectCoversLoaded(admin.locator('app-book-object img'));
     await admin.getByRole('button', { name: '选择谁能读' }).click();
     const dialog = readersDialog(admin, CARROT.title);
-    await expect(readerRow(dialog, '小明')).not.toBeChecked();
+    await expect(readerRow(dialog, '小米')).not.toBeChecked();
     await expect(dialog.getByRole('button', { name: '确定' })).toHaveCount(0);
     await expectAccessiblePage(admin);
-    await toggleReaders(admin, CARROT.title, ['小明']);
+    await toggleReaders(admin, CARROT.title, ['小米']);
 
-    await expect(admin.getByRole('button', { name: '小明可以读' })).toBeVisible();
+    await expect(admin.getByRole('button', { name: '小米可以读' })).toBeVisible();
     await expect(admin.getByRole('button', { name: '从我家的书里移除' })).toHaveCount(0);
     await expectAccessiblePage(admin);
 
-    await xiaomingSignsIn(page, linyue);
+    await xiaomiSignsIn(page, linyue);
     await expect(myBooks(page, 1)).toBeVisible();
     await expect(cardTitles(page)).toHaveText([CARROT.title]);
     await expect(bookCard(page, CARROT.title).getByText('新', { exact: true })).toBeVisible();
@@ -116,15 +116,15 @@ test.describe('the family’s books', () => {
 
     await admin.getByRole('link', { name: '返回' }).click();
     await expect(admin).toHaveURL('/');
-    await expect(readers).toHaveAccessibleDescription('小明可以读');
+    await expect(readers).toHaveAccessibleDescription('小米可以读');
     await expect(card.getByRole('button', { name: '更多操作' })).toHaveCount(0);
-    await pickScope(admin, '小明');
+    await pickScope(admin, '小米');
     await expect(cardTitles(admin)).toHaveText([CARROT.title]);
     await pickScope(admin, '我家的书');
     await expect(cardTitles(admin)).toHaveText([CARROT.title]);
 
     await readers.click();
-    await toggleReaders(admin, CARROT.title, ['小明']);
+    await toggleReaders(admin, CARROT.title, ['小米']);
     await expect(readers).toHaveAccessibleDescription(NOBODY_READS);
     await card.getByRole('link', { name: CARROT.title }).click();
     await expect(admin.getByRole('button', { name: '选择谁能读' })).toBeVisible();
@@ -136,16 +136,16 @@ test.describe('the family’s books', () => {
   test('a book a child reads cannot be removed; once nobody does, it leaves the family’s books from the card or the book page', async ({
     openParentPage,
   }) => {
-    const { admin, family, child } = await familyWithXiaoming(openParentPage);
+    const { admin, family, child } = await familyWithXiaomi(openParentPage);
     await acquireBook(admin, family.id, CARROT.id);
     await setReaders(admin, family.id, CARROT.id, [child.id]);
 
     await admin.goto('/');
     const card = bookCard(admin, CARROT.title);
-    await expect(readersOnCard(card, CARROT.title)).toHaveAccessibleDescription('小明可以读');
+    await expect(readersOnCard(card, CARROT.title)).toHaveAccessibleDescription('小米可以读');
     await expect(card.getByRole('button', { name: '更多操作' })).toHaveCount(0);
     await admin.goto(bookPage(CARROT.id));
-    await expect(admin.getByRole('button', { name: '小明可以读' })).toBeVisible();
+    await expect(admin.getByRole('button', { name: '小米可以读' })).toBeVisible();
     await expect(admin.getByRole('button', { name: '从我家的书里移除' })).toHaveCount(0);
 
     await setReaders(admin, family.id, CARROT.id, []);
@@ -181,16 +181,16 @@ test.describe('the family’s books', () => {
     openParentPage,
     request,
   }) => {
-    const linyue = await familyWithXiaomingWithPassword(openParentPage, request);
+    const linyue = await familyWithXiaomiWithPassword(openParentPage, request);
     const { admin, family, child } = linyue;
-    await addChild(admin, family.id, '朵朵', 'duoduo');
+    await addChild(admin, family.id, '豆豆', 'doudou');
     await acquiredBeforeItLeft(admin, family.id, BUNNY.id, [child.id]);
 
     await admin.goto('/');
     await pickFilter(admin, '年级', ['一年级']);
     await pickFilter(admin, '学科', ['数学']);
     await expect(cardTitles(admin)).toHaveText([CARROT.title]);
-    await pickScope(admin, '小明');
+    await pickScope(admin, '小米');
     await expect(cardTitles(admin)).toHaveText([BUNNY.title]);
     await pickScope(admin, '我家的书');
     await expect(cardTitles(admin)).toHaveText([BUNNY.title]);
@@ -198,9 +198,9 @@ test.describe('the family’s books', () => {
     await expect(card.getByText('已下架')).toBeVisible();
     await expect(card.getByRole('button', { name: '获取' })).toHaveCount(0);
     const readers = readersOnCard(card, BUNNY.title);
-    await expect(readers).toHaveAccessibleDescription('小明可以读');
+    await expect(readers).toHaveAccessibleDescription('小米可以读');
 
-    await xiaomingSignsIn(page, linyue);
+    await xiaomiSignsIn(page, linyue);
     await expect(myBooks(page, 1)).toBeVisible();
     const mine = bookCard(page, BUNNY.title);
     await expect(mine.getByText('已下架')).toBeVisible();
@@ -208,10 +208,10 @@ test.describe('the family’s books', () => {
 
     await readers.click();
     const dialog = readersDialog(admin, BUNNY.title);
-    await expect(readerRow(dialog, '朵朵')).toBeDisabled();
+    await expect(readerRow(dialog, '豆豆')).toBeDisabled();
     await expect(dialog.getByText('下架的书不能再分派')).toBeVisible();
     await expectAccessiblePage(admin);
-    await toggleReaders(admin, BUNNY.title, ['小明']);
+    await toggleReaders(admin, BUNNY.title, ['小米']);
     await expect(readers).toHaveAccessibleDescription(NOBODY_READS);
 
     await page.reload();
