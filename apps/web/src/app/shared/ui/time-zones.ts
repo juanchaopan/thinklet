@@ -1,34 +1,8 @@
 import { Injectable } from '@angular/core';
+import { canonicalTimeZone as resolveTimeZone } from '@thinklet/contracts';
 
 /** Offsets west of UTC are written with a true minus sign, as in "UTC−05:00". */
 const MINUS = '−';
-
-/**
- * Zones IANA has renamed whose old names browsers still report: their time
- * zone data comes from CLDR, which keeps the first name a zone had. Each old
- * name is an alias of the new one, so the zone is shown, saved and compared
- * by the new name everywhere.
- */
-const RENAMED: Readonly<Record<string, string>> = {
-  'Africa/Asmera': 'Africa/Asmara',
-  'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
-  'America/Catamarca': 'America/Argentina/Catamarca',
-  'America/Cordoba': 'America/Argentina/Cordoba',
-  'America/Godthab': 'America/Nuuk',
-  'America/Indianapolis': 'America/Indiana/Indianapolis',
-  'America/Jujuy': 'America/Argentina/Jujuy',
-  'America/Louisville': 'America/Kentucky/Louisville',
-  'America/Mendoza': 'America/Argentina/Mendoza',
-  'Asia/Calcutta': 'Asia/Kolkata',
-  'Asia/Katmandu': 'Asia/Kathmandu',
-  'Asia/Rangoon': 'Asia/Yangon',
-  'Asia/Saigon': 'Asia/Ho_Chi_Minh',
-  'Atlantic/Faeroe': 'Atlantic/Faroe',
-  'Europe/Kiev': 'Europe/Kyiv',
-  'Pacific/Enderbury': 'Pacific/Kanton',
-  'Pacific/Ponape': 'Pacific/Pohnpei',
-  'Pacific/Truk': 'Pacific/Chuuk',
-};
 
 /** A time zone as the pickers list it. */
 export interface TimeZoneOption {
@@ -62,21 +36,11 @@ function offsetName(id: string, moment: Date): string | undefined {
   return format.formatToParts(moment).find((part) => part.type === 'timeZoneName')?.value;
 }
 
-/** The name the browser resolves the zone to, by the new name when IANA renamed it. */
-function resolveTimeZone(name: string): string | null {
-  let resolved: string;
-  try {
-    resolved = new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-  return RENAMED[resolved] ?? resolved;
-}
-
 /**
- * The standard name of a time zone: aliases the browser knows become the
- * name it resolves them to, and the old names in RENAMED become the new
- * ones. Null when the browser does not know the zone at all.
+ * The standard name of a time zone, as the api saves it (rules.md, 家庭):
+ * aliases the browser knows become the name it resolves them to, and the
+ * old names IANA renamed become the new ones. Null when the browser does
+ * not know the zone at all.
  */
 export function canonicalTimeZone(name: string): string | null {
   let id = canonicalNames.get(name);

@@ -130,6 +130,24 @@ test.describe('signing in and out', () => {
     await expect(page).toHaveURL('/start');
   });
 
+  test('a parent still signed in whose new login does not succeed sees 登录没有成功 over the library, which closes to /', async ({
+    openParentPage,
+  }) => {
+    const { admin } = await familyOfLinyue(openParentPage);
+
+    // A login that comes back with an error, as one cancelled at the provider does.
+    await admin.goto('/api/auth/callback?error=access_denied');
+
+    await expect(admin).toHaveURL('/?login=failed');
+    const dialog = admin.getByRole('dialog', { name: '登录没有成功' });
+    await expect(dialog).toBeVisible();
+    await expectAccessiblePage(admin);
+    await dialog.getByRole('button', { name: '关闭' }).click();
+    await expect(admin).toHaveURL('/');
+    await expect(dialog).toBeHidden();
+    await expect(admin.getByRole('heading', { level: 1, name: '欢迎回来，林悦' })).toBeVisible();
+  });
+
   test('signing out ends the login here and at the identity provider, and parent pages need a new login', async ({
     page,
     context,

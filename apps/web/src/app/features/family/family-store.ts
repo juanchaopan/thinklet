@@ -86,8 +86,9 @@ export function familyAfterLeaving(
  * never drops the members an earlier approval read.
  *
  * A family the parent is not (or no longer) a member of is `not-found`; a
- * family or a request that changed meanwhile is explained in a toast and
- * read again (rules.md, 同时操作). The page provides its own instance.
+ * family or a request that changed meanwhile, or a change the rules do not
+ * allow, is explained in a toast and read again (rules.md, 同时操作 and
+ * 出错时的显示). The page provides its own instance.
  */
 @Injectable()
 export class FamilyStore {
@@ -126,6 +127,7 @@ export class FamilyStore {
       not_admin: '你已不是管理员',
       not_a_member: '这位家长已经不在家庭里了',
       admin_cannot_leave: '先把管理员设给别人才能离开',
+      already_admin: '你已经是管理员了',
       request_closed: '这个申请已经失效了',
       not_found: '这个申请已经不在了',
     },
