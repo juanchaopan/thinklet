@@ -66,25 +66,52 @@ export type MenuAlign = 'start' | 'end';
 
 /**
  * How wide a drop-down is: `wide` (288 px) for entries with more than a
- * label, such as the families with their tags; `medium` (208 px) for a few
- * actions with longer labels, such as a child's; `narrow` (176 px) for a few
- * short actions, such as a member's.
+ * label, such as the families with their tags; `roomy` (224 px) for an
+ * action with a long label, such as removing a book from the family's
+ * books; `medium` (208 px) for a few actions with longer labels, such as a
+ * child's; `narrow` (176 px) for a few short actions, such as a member's.
  */
-export type MenuWidth = 'wide' | 'medium' | 'narrow';
+export type MenuWidth = 'wide' | 'roomy' | 'medium' | 'narrow';
 
-const WIDTHS: Record<MenuWidth, string> = { wide: 'w-72', medium: 'w-52', narrow: 'w-44' };
+const WIDTHS: Record<MenuWidth, string> = {
+  wide: 'w-72',
+  roomy: 'w-56',
+  medium: 'w-52',
+  narrow: 'w-44',
+};
 
-/** Below the button at the chosen edge, 4 px down; the other edge when there is no room. */
-function dropDownPositions(align: MenuAlign): ConnectedPosition[] {
+/** Below the button at the chosen edge, `gap` px down; the other edge when there is no room. */
+function dropDownPositions(align: MenuAlign, gap: number): ConnectedPosition[] {
   const start: ConnectedPosition = {
     originX: 'start',
     originY: 'bottom',
     overlayX: 'start',
     overlayY: 'top',
-    offsetY: 4,
+    offsetY: gap,
   };
   const end: ConnectedPosition = { ...start, originX: 'end', overlayX: 'end' };
   return align === 'start' ? [start, end] : [end, start];
+}
+
+/**
+ * The layer of something that drops down from its button, `gap` px below
+ * it at the chosen edge, and follows the button as the page scrolls. A
+ * click anywhere else lands on the layer's clear backdrop.
+ */
+export function dropDownLayer(
+  injector: Injector,
+  origin: HTMLElement,
+  align: MenuAlign,
+  gap = 4,
+): OverlayConfig {
+  return {
+    positionStrategy: createFlexibleConnectedPositionStrategy(injector, origin).withPositions(
+      dropDownPositions(align, gap),
+    ),
+    scrollStrategy: createRepositionScrollStrategy(injector),
+    hasBackdrop: true,
+    backdropClass: 'cdk-overlay-transparent-backdrop',
+  };
 }
 
 /**
@@ -216,7 +243,10 @@ export class Menu {
 
   private show(portal: TemplatePortal, dropDown: boolean): void {
     this.shown = true;
-    this.layer.show(portal, this.config(dropDown), () => {
+    const config = dropDown
+      ? dropDownLayer(this.injector, this.origin(), this.align())
+      : fullScreenLayer(this.injector);
+    this.layer.show(portal, config, () => {
       this.dismissed.emit();
     });
     afterNextRender(() => this.items()[0]?.focus(), { injector: this.injector });
@@ -234,20 +264,5 @@ export class Menu {
     if (inside || focused === this.document.body) {
       this.origin().focus();
     }
-  }
-
-  private config(dropDown: boolean): OverlayConfig {
-    if (!dropDown) {
-      return fullScreenLayer(this.injector);
-    }
-    return {
-      positionStrategy: createFlexibleConnectedPositionStrategy(
-        this.injector,
-        this.origin(),
-      ).withPositions(dropDownPositions(this.align())),
-      scrollStrategy: createRepositionScrollStrategy(this.injector),
-      hasBackdrop: true,
-      backdropClass: 'cdk-overlay-transparent-backdrop',
-    };
   }
 }

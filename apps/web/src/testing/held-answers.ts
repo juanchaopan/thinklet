@@ -23,20 +23,24 @@ function gate(): { readonly passed: Promise<void>; open(): void } {
 
 /**
  * Holds back the answer to the next request of the method to the path,
- * which then answers with `answer`; later requests go to the stubs added
- * before. A test must release every answer it holds, since the app is not
- * settled while one is still on its way.
+ * which then answers with `answer`, given the request; later requests go to
+ * the stubs added before. A test must release every answer it holds, since
+ * the app is not settled while one is still on its way.
  */
-export function holdNext(method: 'get' | 'post', path: string, answer: () => Response): HeldAnswer {
+export function holdNext(
+  method: 'get' | 'post',
+  path: string,
+  answer: (request: Request) => Response | Promise<Response>,
+): HeldAnswer {
   const reached = gate();
   const released = gate();
   worker.use(
     http[method](
       path,
-      async () => {
+      async ({ request }) => {
         reached.open();
         await released.passed;
-        return answer();
+        return answer(request);
       },
       { once: true },
     ),
@@ -52,6 +56,9 @@ export function holdNext(method: 'get' | 'post', path: string, answer: () => Res
 }
 
 /** Holds back the answer to the next `GET` of the path (see holdNext). */
-export function holdNextGet(path: string, answer: () => Response): HeldAnswer {
+export function holdNextGet(
+  path: string,
+  answer: (request: Request) => Response | Promise<Response>,
+): HeldAnswer {
   return holdNext('get', path, answer);
 }

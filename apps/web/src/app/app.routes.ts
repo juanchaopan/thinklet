@@ -25,14 +25,16 @@ import {
  * Every other page needs a signed-in parent; a visitor is sent to `/`, and
  * an unknown address goes to `/`. The family pages need a family (a parent
  * without one goes to `/start`), and the start page is only for a parent
- * without one (a parent with one goes to `/`). An invitation link
- * `/join/<code>` opens the join dialog over the join page for a parent with
- * a family and over the start page for one without. A family's own pages,
- * `/families/<id>` and its children page, make that family the current one;
- * the old address of its new members page, `/families/<id>/new-members`,
- * opens its family page without a word (rules.md, 导航). Route titles become
- * the browser title "<title> - 好奇星球" (core/page-title); the library and
- * the child's home page carry the product name alone.
+ * without one (a parent with one goes to `/`). The library keeps its
+ * filters in the address's query (`/?grade=…&scope=family`). An invitation
+ * link `/join/<code>` opens the join dialog over the join page for a parent
+ * with a family and over the start page for one without. A family's own
+ * pages, `/families/<id>` and its children page, make that family the
+ * current one; the old address of its new members page,
+ * `/families/<id>/new-members`, opens its family page without a word
+ * (rules.md, 导航). Route titles become the browser title "<title> - 好奇星球"
+ * (core/page-title); the library and the child's home page carry the
+ * product name alone.
  *
  * Every page is loaded when it is first opened, and so is the signed-in
  * frame with its menus: a visitor's first page loads neither.
@@ -77,7 +79,8 @@ export const routes: Routes = [
         path: '',
         pathMatch: 'full',
         canActivate: [requireFamily],
-        loadComponent: () => import('./features/home/home').then((module) => module.Home),
+        loadComponent: () =>
+          import('./features/library/library-page').then((module) => module.LibraryPage),
       },
       {
         path: 'start',

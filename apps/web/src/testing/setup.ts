@@ -2,6 +2,7 @@ import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { page } from 'vitest/browser';
 import { useFixedClock } from './clock';
+import { stubLibrary } from './library';
 import { startWorker, takeUnhandledApiRequests, worker } from './network';
 import { emulateReducedMotion, emulateTouch, moveMouseOffPage } from './pointer';
 import { VIEWPORTS } from './viewports';
@@ -9,8 +10,13 @@ import { VIEWPORTS } from './viewports';
 // Runs before every component test file (angular.json `setupFiles`). Each
 // test starts from the same state: a fixed clock, the desktop viewport with
 // a mouse that rests off the page and full motion, empty local storage and
-// no api stubs. Test data is written as fixed values in the tests, never
-// generated randomly, so screenshots and assertions repeat exactly.
+// only the library's api stubbed. Test data is written as fixed values in
+// the tests, never generated randomly, so screenshots and assertions repeat
+// exactly.
+//
+// The library is a signed-in parent's `/`, which many tests pass through on
+// their way, so every test starts with the design's library and children
+// served (testing/library.ts); a test's own stubs come later and win.
 //
 // Test files are not isolated: several run one after another on the same
 // browser page, in an order that depends on how many workers share them out.
@@ -28,6 +34,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   useFixedClock();
   localStorage.clear();
+  stubLibrary();
   await page.viewport(VIEWPORTS.desktop.width, VIEWPORTS.desktop.height);
   await emulateTouch(false);
   await emulateReducedMotion(false);

@@ -25,7 +25,16 @@ export interface ScreenshotOptions {
    * with a mouse (a sheet or editing in place), or one held at a moment.
    */
   prepare?: (size: ViewportName) => Promise<void>;
+  /**
+   * The sizes to capture, in this order; every size, the phone first,
+   * unless a state needs another order, as a page whose touch version
+   * starts loading more once its whole length is on the screen.
+   */
+  sizes?: readonly ViewportName[];
 }
+
+/** Every size, the phone first. */
+const EVERY_SIZE = Object.keys(VIEWPORTS) as ViewportName[];
 
 /** Phones and tablets are drawn as touch screens, the desktop with a mouse (look.md). */
 const TOUCH: Record<ViewportName, boolean> = { phone: true, tablet: true, desktop: false };
@@ -70,24 +79,44 @@ async function screenAsTallAsPage(
 }
 
 /**
+ * Brings the page to the size with its input device and into the state,
+ * then makes it still: pictures decoded, fonts loaded, two frames for the
+ * new size to take effect, and every animation settled or held and turned
+ * into its still look. Returns what brings the animations back.
+ */
+async function stillAt(size: ViewportName, options: ScreenshotOptions): Promise<() => void> {
+  const { width, height } = VIEWPORTS[size];
+  await page.viewport(width, height);
+  await emulateTouch(TOUCH[size]);
+  await options.prepare?.(size);
+  await picturesReady();
+  await document.fonts.ready;
+  await nextFrames();
+  if (options.heldAt === undefined) {
+    settleAnimations({ keepHeld: true });
+  } else {
+    holdAnimationsAt(options.heldAt);
+  }
+  return freezeAnimations();
+}
+
+/**
  * Compares one state with its baselines at every size in VIEWPORTS, named
  * `<name>-phone`, `<name>-tablet` and `<name>-desktop`. Phone and tablet are
  * captured as touch screens and the desktop with a mouse, so a state that
  * differs between the finger and the mouse versions shows each where the
- * design does; the page is left on the desktop with a mouse.
+ * design does; the page is left at the last size captured, the desktop with
+ * a mouse unless `sizes` says otherwise.
  *
  * Without a target the page is captured as the design draws it (README of
  * the design): one screen high while a dialog, a sheet, a menu or a toast is
  * shown above the page, which covers exactly the screen, and the whole page
  * however tall otherwise.
  *
- * Every capture is of a still page. Pictures are decoded and fonts loaded;
- * the page is given two frames to apply the new size, so what appears at
- * that size and what the pointer now rests on have started their
- * animations; every animation is then settled or held and turned into its
- * still look (freezeAnimations), and the compositor is given two frames to
- * draw it. Nothing moves between the captures the comparison takes, so the
- * same state gives the same pixels on every run, however busy the machine.
+ * Every capture is of a still page (stillAt), and the compositor is given
+ * two frames to draw it. Nothing moves between the captures the comparison
+ * takes, so the same state gives the same pixels on every run, however busy
+ * the machine.
  *
  * Baselines live in `__screenshots__/<test file>/` and are made only inside
  * the pinned Playwright image (`task test-component-update`), so fonts and
@@ -107,20 +136,9 @@ export async function expectScreenshotsAtEverySize(
       mask: options.mask ?? [],
     },
   };
-  for (const size of Object.keys(VIEWPORTS) as ViewportName[]) {
+  for (const size of options.sizes ?? EVERY_SIZE) {
+    const thaw = await stillAt(size, options);
     const { width, height } = VIEWPORTS[size];
-    await page.viewport(width, height);
-    await emulateTouch(TOUCH[size]);
-    await options.prepare?.(size);
-    await picturesReady();
-    await document.fonts.ready;
-    await nextFrames();
-    if (options.heldAt === undefined) {
-      settleAnimations({ keepHeld: true });
-    } else {
-      holdAnimationsAt(options.heldAt);
-    }
-    const thaw = freezeAnimations();
     const restoreScreen =
       target || shownAbovePage() ? undefined : await screenAsTallAsPage(width, height);
     await nextFrames();

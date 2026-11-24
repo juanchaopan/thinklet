@@ -1,0 +1,934 @@
+import { ApplicationRef } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { screen, within } from '@testing-library/angular';
+import type { ErrorCode, MeResponse } from '@thinklet/contracts';
+import { http, HttpResponse } from 'msw';
+import { page, userEvent } from 'vitest/browser';
+import { expectNoAxeViolations } from '../../../testing/accessibility';
+import { renderApp } from '../../../testing/app';
+import { DUODUO, LELE, LELE_ID, XIAOMING_ID } from '../../../testing/children';
+import { useFixedClock } from '../../../testing/clock';
+import { holdOverlaysAt, noDialog } from '../../../testing/families';
+import { dialogGone, expectToast } from '../../../testing/family-page';
+import { holdNextGet } from '../../../testing/held-answers';
+import {
+  BOOKS_PATH,
+  LINYUE_AS_DRAWN,
+  bookPath,
+  stubLibrary,
+  type FakeLibrary,
+} from '../../../testing/library';
+import { closeMenu } from '../../../testing/menus';
+import { worker } from '../../../testing/network';
+import { emulateTouch, moveMouseOffPage, nextFrames } from '../../../testing/pointer';
+import { ERROR_NUMBER, errorBody, stubSignedIn } from '../../../testing/sample-data';
+import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
+import { frameName } from '../../../testing/toasts';
+import { VIEWPORTS, type ViewportName } from '../../../testing/viewports';
+
+/** Longer than any opening, so a menu or a dialog held there is fully open. */
+const OPEN = 1000;
+
+/**
+ * The sizes in the order the full-page states are captured: the desktop
+ * first, so the touch versions, which load the next batch once the whole
+ * page is on the screen, come after it.
+ */
+const DESKTOP_FIRST: readonly ViewportName[] = ['desktop', 'phone', 'tablet'];
+
+/** The family's children in the order they were added. */
+const NICKNAMES = ['小明', '朵朵', '乐乐'];
+
+/** Opens the library at the address as 林悦, with the counts the design draws. */
+async function renderLibrary(url = '/', me: MeResponse = LINYUE_AS_DRAWN) {
+  stubSignedIn(me);
+  return renderApp(url);
+}
+
+/** The titles of the cards shown, in their order. */
+function titles(): string[] {
+  return screen
+    .queryAllByRole('article')
+    .map((card) => within(card).getByRole('heading', { level: 3 }).textContent?.trim() ?? '');
+}
+
+/** The card of the book with the title. */
+function card(title: string): HTMLElement {
+  const article = screen.getByRole('link', { name: title }).closest('article');
+  if (!(article instanceof HTMLElement)) {
+    throw new Error(`No card for ${title}`);
+  }
+  return article;
+}
+
+/** The button of a filter, by what it says now. */
+function filter(name: RegExp): HTMLElement {
+  return screen.getByRole('button', { name });
+}
+
+/** Opens a filter's options and returns them. */
+async function openFilter(name: RegExp, label: string): Promise<HTMLElement> {
+  await userEvent.click(filter(name));
+  return screen.findByRole('dialog', { name: label });
+}
+
+/** Closes the filter options on screen, as Escape does, and waits until they have gone. */
+async function closeFilter(): Promise<void> {
+  const options = screen.queryByRole('dialog');
+  if (!options) {
+    return;
+  }
+  options.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await noDialog();
+}
+
+/** Opens the options of a filter afresh at the current size, held fully open. */
+function showFilter(name: RegExp, label: string): () => Promise<void> {
+  return async () => {
+    await closeFilter();
+    await openFilter(name, label);
+    await holdOverlaysAt(OPEN);
+  };
+}
+
+/**
+ * Shows the top of the page behind a dialog or a sheet, as the design draws
+ * it, whatever the browser scrolled into view to press a button or kept in
+ * view when the screen changed size.
+ */
+async function pageAtTop(): Promise<void> {
+  window.scrollTo(0, 0);
+  await nextFrames();
+}
+
+/** Whether each of the family's children is ticked in 谁能读 or the scopes. */
+function ticks(options: HTMLElement, role: 'checkbox' | 'radio'): Array<string | null> {
+  return NICKNAMES.map((name) =>
+    within(options).getByRole(role, { name }).getAttribute('aria-checked'),
+  );
+}
+
+/** Opens 谁能读 for the book with the title. */
+async function openReaders(title: string): Promise<HTMLElement> {
+  await userEvent.click(screen.getByRole('button', { name: `管理谁能读《${title}》` }));
+  return screen.findByRole('dialog', { name: `谁能读《${title}》` });
+}
+
+/** The row of a child in 谁能读. */
+function childRow(dialog: HTMLElement, nickname: string): HTMLElement {
+  return within(dialog).getByRole('checkbox', { name: nickname });
+}
+
+/** Opens 谁能读 for the book, presses the rows of the children and 确定; returns the dialog. */
+async function changeReaders(title: string, nicknames: readonly string[]): Promise<HTMLElement> {
+  const dialog = await openReaders(title);
+  for (const nickname of nicknames) {
+    await userEvent.click(childRow(dialog, nickname));
+  }
+  await userEvent.click(within(dialog).getByRole('button', { name: '确定' }));
+  return dialog;
+}
+
+/** Opens the actions of the book's card afresh, as the current input device does it. */
+async function openActions(title: string): Promise<HTMLElement> {
+  await closeMenu();
+  await userEvent.click(within(card(title)).getByRole('button', { name: '更多操作' }));
+  return screen.findByRole('menu', { name: `《${title}》的操作` });
+}
+
+/** Chooses 从我家的书里移除 on the book's card and returns the question it asks. */
+async function askToRemove(title: string): Promise<HTMLElement> {
+  const menu = await openActions(title);
+  await userEvent.click(within(menu).getByRole('menuitem', { name: '从我家的书里移除' }));
+  return screen.findByRole('dialog', { name: `从我家的书里移除《${title}》？` });
+}
+
+/** Removes the book from its card, once asked. */
+async function removeBook(title: string): Promise<void> {
+  const dialog = await askToRemove(title);
+  await userEvent.click(within(dialog).getByRole('button', { name: '移除' }));
+}
+
+/** Records the bodies of the calls to an address and lets the fake library answer them. */
+function spyOn(method: 'put' | 'delete', path: string): unknown[] {
+  const bodies: unknown[] = [];
+  worker.use(
+    http[method](path, async ({ request }) => {
+      const text = await request.clone().text();
+      bodies.push(text ? JSON.parse(text) : null);
+      return undefined;
+    }),
+  );
+  return bodies;
+}
+
+/** Answers the next call to an address once with the error. */
+function failNext(
+  method: 'get' | 'put',
+  path: string,
+  status: number,
+  code: ErrorCode = 'internal',
+): void {
+  worker.use(
+    http[method](path, () => HttpResponse.json(errorBody(code), { status }), { once: true }),
+  );
+}
+
+/** Holds back the next batch, which the fake then answers as the api does. */
+function holdNextBatch(fake: FakeLibrary) {
+  return holdNextGet(BOOKS_PATH, (request) => fake.list(new URL(request.url).searchParams));
+}
+
+/** Scrolls to the bottom of the page, as a finger does. */
+function scrollToEnd(): void {
+  window.scrollTo(0, document.documentElement.scrollHeight);
+}
+
+/** Lets the app finish what it started. */
+async function settled(): Promise<void> {
+  await TestBed.inject(ApplicationRef).whenStable();
+}
+
+/** Whether a toast is on screen. */
+function anyToast(): boolean {
+  return (document.querySelector('app-toast-outlet')?.childElementCount ?? 0) > 0;
+}
+
+describe('LibraryPage', () => {
+  let fake: FakeLibrary;
+
+  beforeEach(() => {
+    fake = stubLibrary();
+  });
+
+  describe('the first batch', () => {
+    it('welcomes the parent and shows 12 books, newest first, with what the family has done with them', async () => {
+      const { router } = await renderLibrary();
+
+      expect(document.title).toBe('好奇星球');
+      expect(screen.getByRole('heading', { level: 1, name: '欢迎回来，林悦' })).toBeTruthy();
+      expect(screen.getByText('挑几本书，分派给孩子吧。')).toBeTruthy();
+      expect(screen.getByRole('link', { name: '书库' }).getAttribute('aria-current')).toBe('page');
+      expect(titles()).toEqual([
+        '花园里的小儿歌',
+        '胡萝卜数数大冒险',
+        'Hello，动物朋友',
+        '月亮为什么会变脸',
+        '让小机器人走出迷宫',
+        '四季里的古诗',
+        '形状捉迷藏',
+        '分披萨学分数',
+        'My School Day 我的一天',
+        '拼音小火车',
+        '一颗种子的旅行',
+        '一次函数的故事',
+      ]);
+      const garden = within(card('花园里的小儿歌'));
+      expect(garden.getByText('学前 · 语文')).toBeTruthy();
+      expect(garden.getByRole('button', { name: '获取' })).toBeTruthy();
+      expect(garden.queryByRole('button', { name: '更多操作' })).toBeNull();
+      expect(garden.getByRole('link').getAttribute('href')).toBe('/books/garden-rhymes');
+      const carrots = within(card('胡萝卜数数大冒险'));
+      expect(carrots.getByText('已获取')).toBeTruthy();
+      expect(carrots.getByText('小明、朵朵可以读')).toBeTruthy();
+      expect(carrots.queryByRole('button', { name: '更多操作' })).toBeNull();
+      expect(within(card('形状捉迷藏')).getByText('+2')).toBeTruthy();
+      const moon = within(card('月亮为什么会变脸'));
+      expect(moon.getByText('还没有孩子在读')).toBeTruthy();
+      expect(moon.getByRole('button', { name: '更多操作' })).toBeTruthy();
+      const cover = card('胡萝卜数数大冒险').querySelector('img');
+      expect(cover?.getAttribute('src')).toBe('/api/books/carrot-counting/cover?v=ffcf5c');
+      expect(card('Hello，动物朋友').querySelector('img')).toBeNull();
+      expect(screen.getByRole('button', { name: '加载更多' })).toBeTruthy();
+      expect(router.url).toBe('/');
+      await expectNoAxeViolations();
+
+      const next = holdNextBatch(fake);
+      await expectScreenshotsAtEverySize('library', undefined, { sizes: DESKTOP_FIRST });
+      await next.reached;
+      await next.release();
+    });
+
+    it.each([0, 120, 300, 620])('rises into place, at %i ms', async (time) => {
+      await renderLibrary();
+
+      const next = holdNextBatch(fake);
+      await expectScreenshotsAtEverySize(`library-entering-${frameName(time)}`, undefined, {
+        heldAt: time,
+        sizes: DESKTOP_FIRST,
+      });
+      await next.reached;
+      await next.release();
+    });
+
+    it('shows the default cover when a cover cannot be read', async () => {
+      fake.coversMissing = true;
+      await renderLibrary();
+
+      await vi.waitFor(() => {
+        expect(card('胡萝卜数数大冒险').querySelector('img')).toBeNull();
+      });
+    });
+
+    it('says the page did not open when the books cannot be read, and opens on 重试', async () => {
+      failNext('get', BOOKS_PATH, 500);
+      await renderLibrary();
+
+      expect(screen.getByRole('heading', { name: '页面没能打开' })).toBeTruthy();
+      expect(screen.getByText(new RegExp(ERROR_NUMBER))).toBeTruthy();
+
+      await userEvent.click(screen.getByRole('button', { name: '重试' }));
+      await settled();
+
+      expect(titles()).toHaveLength(12);
+    });
+  });
+
+  describe('loading more', () => {
+    it('brings the next 12 with 加载更多, and says when every book is shown', async () => {
+      await renderLibrary();
+
+      await userEvent.click(screen.getByRole('button', { name: '加载更多' }));
+      await settled();
+      expect(titles()).toHaveLength(24);
+      expect(titles()[12]).toBe('ABC 唱唱书');
+
+      await userEvent.click(screen.getByRole('button', { name: '加载更多' }));
+      await settled();
+      expect(titles()).toHaveLength(30);
+      expect(titles()).not.toContain('小兔数萝卜');
+      expect(screen.getByText('全部的书都在这里了')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+      await moveMouseOffPage();
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-end');
+    });
+
+    it('loads the next batch on a touch screen as the end of the list scrolls into view', async () => {
+      await page.viewport(VIEWPORTS.phone.width, VIEWPORTS.phone.height);
+      await emulateTouch(true);
+      await renderLibrary();
+
+      expect(titles()).toHaveLength(12);
+      expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
+
+      scrollToEnd();
+      await vi.waitFor(() => {
+        expect(titles()).toHaveLength(24);
+      });
+      await settled();
+      scrollToEnd();
+      await vi.waitFor(() => {
+        expect(titles()).toHaveLength(30);
+      });
+      expect(screen.getByText('全部的书都在这里了')).toBeTruthy();
+    });
+
+    it('keeps the books and 加载更多 when a batch fails, and loads it when asked again', async () => {
+      await renderLibrary();
+      failNext('get', BOOKS_PATH, 500);
+
+      await userEvent.click(screen.getByRole('button', { name: '加载更多' }));
+
+      await expectToast('出了点问题，请稍后再试');
+      expect(titles()).toHaveLength(12);
+      await userEvent.click(screen.getByRole('button', { name: '加载更多' }));
+      await settled();
+      expect(titles()).toHaveLength(24);
+    });
+
+    it('tries again on a touch screen when the end scrolls into view again after a failure', async () => {
+      await page.viewport(VIEWPORTS.phone.width, VIEWPORTS.phone.height);
+      await emulateTouch(true);
+      await renderLibrary();
+      failNext('get', BOOKS_PATH, 500);
+
+      scrollToEnd();
+      await expectToast('出了点问题，请稍后再试');
+      expect(titles()).toHaveLength(12);
+
+      window.scrollTo(0, 0);
+      await nextFrames();
+      await nextFrames();
+      scrollToEnd();
+      await vi.waitFor(() => {
+        expect(titles()).toHaveLength(24);
+      });
+    });
+  });
+
+  describe('the filters', () => {
+    it('filters by several grades at once, keeps them in the address and says what they let through', async () => {
+      const { router } = await renderLibrary();
+
+      const grades = await openFilter(/^年级：全部/, '年级');
+      expect(within(grades).getAllByRole('checkbox')).toHaveLength(13);
+      await userEvent.click(within(grades).getByRole('checkbox', { name: '一年级' }));
+      await settled();
+
+      expect(router.url).toBe('/?grade=grade-1');
+      expect(filter(/^年级：一年级/)).toBeTruthy();
+      expect(
+        within(grades).getByRole('checkbox', { name: '一年级' }).getAttribute('aria-checked'),
+      ).toBe('true');
+      expect(titles()).toEqual(['胡萝卜数数大冒险', '拼音小火车', '箭头卡片编程']);
+
+      await userEvent.click(within(grades).getByRole('checkbox', { name: '二年级' }));
+      await settled();
+      expect(filter(/^年级：一年级、二年级/)).toBeTruthy();
+      expect(router.url).toBe('/?grade=grade-1&grade=grade-2');
+      await userEvent.click(within(grades).getByRole('checkbox', { name: '学前' }));
+      await settled();
+      expect(filter(/^年级：3 个/)).toBeTruthy();
+
+      await userEvent.click(within(grades).getByRole('button', { name: '清除' }));
+      await settled();
+      expect(router.url).toBe('/');
+      expect(filter(/^年级：全部/)).toBeTruthy();
+      expect(titles()).toHaveLength(12);
+
+      await userEvent.click(within(grades).getByRole('button', { name: '完成' }));
+      await noDialog();
+      expect(document.activeElement).toBe(filter(/^年级：全部/));
+    });
+
+    it('shows the grades chosen in the address, three to a row', async () => {
+      await renderLibrary('/?grade=grade-1&grade=grade-2');
+
+      expect(filter(/^年级：一年级、二年级/)).toBeTruthy();
+      expect(titles()).toEqual([
+        '胡萝卜数数大冒险',
+        'Hello，动物朋友',
+        '拼音小火车',
+        '一颗种子的旅行',
+        '箭头卡片编程',
+        '认识钟表和时间',
+        '成语小故事',
+      ]);
+      await openFilter(/^年级：一年级、二年级/, '年级');
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-filter-grade', undefined, {
+        prepare: showFilter(/^年级：一年级、二年级/, '年级'),
+      });
+    });
+
+    it('offers only the subjects with books under the other filters', async () => {
+      await renderLibrary('/?grade=grade-7');
+
+      const subjects = await openFilter(/^学科：全部/, '学科');
+
+      expect(
+        within(subjects)
+          .getAllByRole('checkbox')
+          .map((tile) => tile.textContent?.trim()),
+      ).toEqual(['数学', '英语', '科学']);
+    });
+
+    it('filters by subject, ticking the subject chosen', async () => {
+      const { router } = await renderLibrary();
+
+      const subjects = await openFilter(/^学科：全部/, '学科');
+      await userEvent.click(within(subjects).getByRole('checkbox', { name: '数学' }));
+      await settled();
+
+      expect(router.url).toBe('/?subject=math');
+      expect(filter(/^学科：数学/)).toBeTruthy();
+      expect(titles().slice(0, 4)).toEqual([
+        '胡萝卜数数大冒险',
+        '形状捉迷藏',
+        '分披萨学分数',
+        '一次函数的故事',
+      ]);
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-filter-subject', undefined, {
+        prepare: showFilter(/^学科：数学/, '学科'),
+      });
+    });
+
+    it('lists the scopes with the children, the chosen one ticked', async () => {
+      await renderLibrary();
+
+      const scopes = await openFilter(/^范围：书库/, '范围');
+
+      expect(within(scopes).getAllByRole('radio')).toHaveLength(5);
+      expect(within(scopes).getByRole('radio', { name: '书库' }).getAttribute('aria-checked')).toBe(
+        'true',
+      );
+      expect(
+        within(scopes).getByRole('radio', { name: '我家的书' }).getAttribute('aria-checked'),
+      ).toBe('false');
+      expect(ticks(scopes, 'radio')).toEqual(['false', 'false', 'false']);
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-scope', undefined, {
+        prepare: showFilter(/^范围：书库/, '范围'),
+      });
+    });
+
+    it('shows the family’s books, inactive ones included, with 已下架', async () => {
+      const { router } = await renderLibrary();
+
+      const scopes = await openFilter(/^范围：书库/, '范围');
+      await userEvent.click(within(scopes).getByRole('radio', { name: '我家的书' }));
+      await noDialog();
+      await settled();
+
+      expect(router.url).toBe('/?scope=family');
+      expect(filter(/^范围：我家的书/)).toBeTruthy();
+      expect(titles()).toEqual([
+        '胡萝卜数数大冒险',
+        '月亮为什么会变脸',
+        '让小机器人走出迷宫',
+        '四季里的古诗',
+        '形状捉迷藏',
+        '一颗种子的旅行',
+        '小兔数萝卜',
+        '一起来写日记',
+        '细胞：看不见的小世界',
+      ]);
+      expect(within(card('小兔数萝卜')).getByText('已下架')).toBeTruthy();
+      expect(screen.getByText('全部的书都在这里了')).toBeTruthy();
+      await moveMouseOffPage();
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-my-family');
+    });
+
+    it('shows the books a child reads', async () => {
+      const { router } = await renderLibrary();
+
+      const scopes = await openFilter(/^范围：书库/, '范围');
+      await userEvent.click(within(scopes).getByRole('radio', { name: '小明' }));
+      await settled();
+
+      expect(router.url).toBe(`/?scope=child&child=${XIAOMING_ID}`);
+      expect(filter(/^范围：小明/)).toBeTruthy();
+      expect(titles()).toEqual([
+        '胡萝卜数数大冒险',
+        '四季里的古诗',
+        '形状捉迷藏',
+        '小兔数萝卜',
+        '一起来写日记',
+      ]);
+    });
+
+    it('takes a child who is not the family’s in the address as the whole library', async () => {
+      await renderLibrary('/?scope=child&child=f0f0f0f0-0000-4000-8000-000000000000');
+
+      expect(filter(/^范围：书库/)).toBeTruthy();
+      expect(titles()).toHaveLength(12);
+    });
+
+    it('goes back to the library when the child of the scope is deleted meanwhile', async () => {
+      await renderLibrary(`/?scope=child&child=${XIAOMING_ID}`);
+      fake.children = [DUODUO, LELE];
+
+      const grades = await openFilter(/^年级：全部/, '年级');
+      await userEvent.click(within(grades).getByRole('checkbox', { name: '学前' }));
+      await settled();
+
+      expect(filter(/^范围：书库/)).toBeTruthy();
+      expect(titles()).toEqual(['花园里的小儿歌', '形状捉迷藏', 'ABC 唱唱书', '颜色变变变']);
+    });
+
+    it('says when no book fits, and 清除筛选 takes every filter back', async () => {
+      const { router } = await renderLibrary('/?grade=grade-10');
+
+      expect(screen.getByRole('heading', { level: 2, name: '没有符合条件的书' })).toBeTruthy();
+      expect(filter(/^年级：高一/)).toBeTruthy();
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-empty');
+
+      await userEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+      await settled();
+
+      expect(router.url).toBe('/');
+      expect(titles()).toHaveLength(12);
+    });
+
+    it('chooses grades with the keyboard alone', async () => {
+      const { router } = await renderLibrary();
+
+      filter(/^年级：全部/).focus();
+      await userEvent.keyboard('{Enter}');
+      const grades = await screen.findByRole('dialog', { name: '年级' });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(within(grades).getByRole('checkbox', { name: '学前' }));
+      });
+      await userEvent.tab();
+      await userEvent.keyboard(' ');
+      await settled();
+
+      expect(router.url).toBe('/?grade=grade-1');
+      await userEvent.keyboard('{Escape}');
+      await noDialog();
+      expect(document.activeElement).toBe(filter(/^年级：一年级/));
+    });
+  });
+
+  describe('acquiring', () => {
+    it('takes a book into the family’s books without a word', async () => {
+      await renderLibrary();
+      const calls = spyOn('put', bookPath('garden-rhymes', '/acquisition'));
+
+      await userEvent.click(within(card('花园里的小儿歌')).getByRole('button', { name: '获取' }));
+      await settled();
+
+      expect(calls).toHaveLength(1);
+      const garden = within(card('花园里的小儿歌'));
+      expect(garden.getByText('已获取')).toBeTruthy();
+      expect(garden.getByRole('button', { name: '管理谁能读《花园里的小儿歌》' })).toBeTruthy();
+      expect(garden.getByRole('button', { name: '更多操作' })).toBeTruthy();
+      expect(anyToast()).toBe(false);
+    });
+
+    it('acquires with the keyboard alone', async () => {
+      await renderLibrary();
+
+      within(card('花园里的小儿歌')).getByRole('link').focus();
+      await userEvent.tab();
+      expect(document.activeElement?.textContent?.trim()).toBe('获取');
+      await userEvent.keyboard('{Enter}');
+      await settled();
+
+      expect(within(card('花园里的小儿歌')).getByText('已获取')).toBeTruthy();
+    });
+
+    it('says 这本书已下架 for a book taken off the library meanwhile, and takes it away', async () => {
+      await renderLibrary();
+      failNext('put', bookPath('garden-rhymes', '/acquisition'), 409, 'book_inactive');
+      failNext('get', bookPath('garden-rhymes'), 404, 'book_not_found');
+
+      await userEvent.click(within(card('花园里的小儿歌')).getByRole('button', { name: '获取' }));
+
+      await expectToast('这本书已下架');
+      await vi.waitFor(() => {
+        expect(titles()).not.toContain('花园里的小儿歌');
+      });
+    });
+
+    it('says 出了点问题 and keeps 获取 when the server fails', async () => {
+      await renderLibrary();
+      failNext('put', bookPath('garden-rhymes', '/acquisition'), 500);
+
+      await userEvent.click(within(card('花园里的小儿歌')).getByRole('button', { name: '获取' }));
+
+      await expectToast('出了点问题，请稍后再试');
+      expect(within(card('花园里的小儿歌')).getByRole('button', { name: '获取' })).toBeTruthy();
+    });
+  });
+
+  describe('谁能读', () => {
+    it('ticks the children who read the book, and offers 确定 only once the choice changes', async () => {
+      await renderLibrary();
+
+      const dialog = await openReaders('胡萝卜数数大冒险');
+
+      expect(within(dialog).getAllByRole('checkbox')).toHaveLength(3);
+      expect(ticks(dialog, 'checkbox')).toEqual(['true', 'true', 'false']);
+      expect(within(dialog).queryByRole('button', { name: '确定' })).toBeNull();
+      expect(within(dialog).getByRole('button', { name: '取消' })).toBeTruthy();
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('dialog-assign', undefined, { prepare: pageAtTop });
+
+      await userEvent.click(childRow(dialog, '乐乐'));
+      expect(ticks(dialog, 'checkbox')).toEqual(['true', 'true', 'true']);
+      expect(within(dialog).getByRole('button', { name: '确定' })).toBeTruthy();
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('dialog-assign-changed', undefined, {
+        prepare: pageAtTop,
+      });
+
+      await userEvent.click(childRow(dialog, '乐乐'));
+      expect(within(dialog).queryByRole('button', { name: '确定' })).toBeNull();
+    });
+
+    it('assigns the book to the children added, without a word', async () => {
+      await renderLibrary();
+      const calls = spyOn('put', bookPath('carrot-counting', '/readers'));
+
+      await changeReaders('胡萝卜数数大冒险', ['乐乐']);
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+
+      expect(calls).toEqual([{ childIds: [XIAOMING_ID, DUODUO.id, LELE_ID] }]);
+      expect(within(card('胡萝卜数数大冒险')).getByText('小明、朵朵、乐乐可以读')).toBeTruthy();
+      expect(anyToast()).toBe(false);
+    });
+
+    it('takes the book from the children unticked, leaving the dashed plus and 更多操作', async () => {
+      await renderLibrary();
+
+      await changeReaders('胡萝卜数数大冒险', ['小明', '朵朵']);
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+
+      expect(fake.owned.get('carrot-counting')).toEqual([]);
+      const carrots = within(card('胡萝卜数数大冒险'));
+      expect(carrots.getByText('还没有孩子在读')).toBeTruthy();
+      expect(carrots.getByRole('button', { name: '更多操作' })).toBeTruthy();
+    });
+
+    it('changes nothing on 取消', async () => {
+      await renderLibrary();
+      const calls = spyOn('put', bookPath('carrot-counting', '/readers'));
+
+      const dialog = await openReaders('胡萝卜数数大冒险');
+      await userEvent.click(childRow(dialog, '乐乐'));
+      await userEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+
+      expect(calls).toEqual([]);
+      expect(within(card('胡萝卜数数大冒险')).getByText('小明、朵朵可以读')).toBeTruthy();
+    });
+
+    it('lets an inactive book be taken from its readers but given to nobody new', async () => {
+      await renderLibrary('/?scope=family');
+
+      const dialog = await openReaders('小兔数萝卜');
+
+      expect(within(dialog).getByText('下架的书不能再分派')).toBeTruthy();
+      expect(childRow(dialog, '小明').hasAttribute('disabled')).toBe(false);
+      expect(childRow(dialog, '朵朵').hasAttribute('disabled')).toBe(true);
+      expect(childRow(dialog, '乐乐').hasAttribute('disabled')).toBe(true);
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('dialog-assign-retired', undefined, {
+        prepare: pageAtTop,
+      });
+
+      await userEvent.click(childRow(dialog, '小明'));
+      await userEvent.click(within(dialog).getByRole('button', { name: '确定' }));
+      await dialogGone('谁能读《小兔数萝卜》');
+
+      expect(within(card('小兔数萝卜')).getByText('还没有孩子在读')).toBeTruthy();
+    });
+
+    it('says the family has no children yet, with nobody to choose', async () => {
+      stubLibrary([]);
+      await renderLibrary();
+
+      const dialog = await openReaders('月亮为什么会变脸');
+
+      expect(within(dialog).queryAllByRole('checkbox')).toHaveLength(0);
+      expect(
+        within(dialog).getByText('家里还没有孩子。在「孩子」里添加孩子后，就能选谁能读。'),
+      ).toBeTruthy();
+      expect(within(dialog).queryByRole('button', { name: '确定' })).toBeNull();
+    });
+
+    it('says 这个孩子已经被删除了 for a child deleted meanwhile, and reads the book again', async () => {
+      await renderLibrary();
+      fake.children = [DUODUO, LELE];
+
+      await changeReaders('胡萝卜数数大冒险', ['乐乐']);
+
+      await expectToast('这个孩子已经被删除了');
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+      await vi.waitFor(() => {
+        expect(within(card('胡萝卜数数大冒险')).getByText('朵朵可以读')).toBeTruthy();
+      });
+    });
+
+    it('says the book left the family’s books when another parent removed it meanwhile', async () => {
+      await renderLibrary();
+      fake.owned.delete('moon-phases');
+
+      await changeReaders('月亮为什么会变脸', ['小明']);
+
+      await expectToast('这本书已经不在我家的书里了');
+      await vi.waitFor(() => {
+        expect(within(card('月亮为什么会变脸')).getByRole('button', { name: '获取' })).toBeTruthy();
+      });
+    });
+
+    it('keeps the choice open when the server fails', async () => {
+      await renderLibrary();
+      failNext('put', bookPath('carrot-counting', '/readers'), 500);
+
+      const dialog = await changeReaders('胡萝卜数数大冒险', ['乐乐']);
+
+      await expectToast('出了点问题，请稍后再试');
+      expect(childRow(dialog, '乐乐').getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('assigns with the keyboard alone', async () => {
+      await renderLibrary();
+
+      screen.getByRole('button', { name: '管理谁能读《胡萝卜数数大冒险》' }).focus();
+      await userEvent.keyboard('{Enter}');
+      const dialog = await screen.findByRole('dialog', { name: '谁能读《胡萝卜数数大冒险》' });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(childRow(dialog, '小明'));
+      });
+      await userEvent.tab();
+      await userEvent.tab();
+      await userEvent.keyboard(' ');
+      await userEvent.tab();
+      await userEvent.tab();
+      expect(document.activeElement?.textContent?.trim()).toBe('确定');
+      await userEvent.keyboard('{Enter}');
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+
+      expect(fake.owned.get('carrot-counting')).toEqual([XIAOMING_ID, DUODUO.id, LELE_ID]);
+    });
+  });
+
+  describe('removing', () => {
+    it('offers 从我家的书里移除 for a book nobody reads', async () => {
+      await renderLibrary();
+
+      const menu = await openActions('月亮为什么会变脸');
+
+      expect(
+        within(menu)
+          .getAllByRole('menuitem')
+          .map((item) => item.textContent?.trim()),
+      ).toEqual(['从我家的书里移除']);
+      await holdOverlaysAt(OPEN);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('library-card-menu', undefined, {
+        prepare: async () => {
+          await openActions('月亮为什么会变脸');
+          await holdOverlaysAt(OPEN);
+          await moveMouseOffPage();
+          await pageAtTop();
+        },
+      });
+    });
+
+    it('asks first, removes the book and says so; the card goes back to 获取', async () => {
+      await renderLibrary();
+      const calls = spyOn('delete', bookPath('moon-phases', '/acquisition'));
+
+      const dialog = await askToRemove('月亮为什么会变脸');
+      expect(within(dialog).getByText('这本书还在书库里时，可以再获取。')).toBeTruthy();
+      await userEvent.click(within(dialog).getByRole('button', { name: '移除' }));
+
+      await expectToast('已移除《月亮为什么会变脸》');
+      expect(calls).toHaveLength(1);
+      await dialogGone(/从我家的书里移除/);
+      const moon = within(card('月亮为什么会变脸'));
+      expect(moon.getByRole('button', { name: '获取' })).toBeTruthy();
+      expect(moon.queryByRole('button', { name: '更多操作' })).toBeNull();
+    });
+
+    it('removes nothing on 取消', async () => {
+      await renderLibrary();
+      const calls = spyOn('delete', bookPath('moon-phases', '/acquisition'));
+
+      const dialog = await askToRemove('月亮为什么会变脸');
+      await userEvent.click(within(dialog).getByRole('button', { name: '取消' }));
+      await dialogGone(/从我家的书里移除/);
+
+      expect(calls).toEqual([]);
+      expect(within(card('月亮为什么会变脸')).getByText('已获取')).toBeTruthy();
+    });
+
+    it('takes an inactive book out of the family’s books once it is removed', async () => {
+      fake.owned.set('bunny-counts', []);
+      await renderLibrary('/?scope=family');
+
+      await removeBook('小兔数萝卜');
+
+      await expectToast('已移除《小兔数萝卜》');
+      expect(titles()).not.toContain('小兔数萝卜');
+    });
+
+    it('refuses a book a child was given meanwhile, and shows who reads it now', async () => {
+      await renderLibrary();
+      fake.owned.set('moon-phases', [XIAOMING_ID]);
+
+      await removeBook('月亮为什么会变脸');
+
+      await expectToast('还有孩子在读这本书，先在「谁能读」里取消');
+      await vi.waitFor(() => {
+        expect(within(card('月亮为什么会变脸')).getByText('小明可以读')).toBeTruthy();
+      });
+      expect(
+        within(card('月亮为什么会变脸')).queryByRole('button', { name: '更多操作' }),
+      ).toBeNull();
+    });
+
+    it('removes with the keyboard alone', async () => {
+      await renderLibrary();
+
+      within(card('月亮为什么会变脸')).getByRole('button', { name: '更多操作' }).focus();
+      await userEvent.keyboard('{Enter}');
+      const menu = await screen.findByRole('menu', { name: '《月亮为什么会变脸》的操作' });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(within(menu).getByRole('menuitem'));
+      });
+      await userEvent.keyboard('{Enter}');
+      const dialog = await screen.findByRole('dialog', {
+        name: '从我家的书里移除《月亮为什么会变脸》？',
+      });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: '取消' }));
+      });
+      await userEvent.tab();
+      await userEvent.keyboard('{Enter}');
+
+      await expectToast('已移除《月亮为什么会变脸》');
+      expect(fake.owned.has('moon-phases')).toBe(false);
+    });
+  });
+
+  describe('around the library', () => {
+    /**
+     * Opens 林悦's menu from the avatar on the phone and the tablet, held
+     * fully open; from 1024 px her entries stand in the sidebar instead, so
+     * the menu is closed there.
+     */
+    async function showParentMenu(size: ViewportName): Promise<void> {
+      if (size === 'desktop') {
+        await closeMenu();
+        return;
+      }
+      if (screen.queryAllByRole('menu').length === 0) {
+        await userEvent.click(screen.getByRole('button', { name: /^林悦\s*的菜单/ }));
+        await screen.findByRole('menu', { name: '林悦' });
+        await holdOverlaysAt(OPEN);
+      }
+    }
+
+    it("shows the parent's menu with the red dot over the library", async () => {
+      await renderLibrary('/', { ...LINYUE_AS_DRAWN, requestResults: 1 });
+
+      await expectScreenshotsAtEverySize('menu-user', undefined, { prepare: showParentMenu });
+      expect(
+        within(screen.getByRole('navigation', { name: '林悦' })).getByRole('link', {
+          name: /^加入家庭\s*，有新的申请结果$/,
+        }),
+      ).toBeTruthy();
+    });
+
+    it('says 网络断开了 when the network goes away', async () => {
+      await renderLibrary();
+
+      // The toast's timer is set on a fake clock that never moves, so the
+      // toast stays while it is captured.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      window.dispatchEvent(new Event('offline'));
+      vi.useRealTimers();
+      useFixedClock();
+
+      expect(await screen.findByText('网络断开了，请稍后再试')).toBeTruthy();
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('toast-offline-2500ms', undefined, { heldAt: 2500 });
+    });
+
+    it('reads the library again when the window comes back to the front', async () => {
+      await renderLibrary();
+      await userEvent.click(screen.getByRole('button', { name: '加载更多' }));
+      await settled();
+      fake.owned.set('garden-rhymes', []);
+
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.waitFor(() => {
+        expect(within(card('花园里的小儿歌')).getByText('已获取')).toBeTruthy();
+      });
+      expect(titles()).toHaveLength(24);
+    });
+  });
+});

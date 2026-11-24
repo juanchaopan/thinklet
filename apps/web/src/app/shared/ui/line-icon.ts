@@ -10,10 +10,13 @@ export type LineIconName =
   | 'pencil'
   | 'chevron'
   | 'check'
+  | 'tick'
+  | 'plus'
   | 'back'
   | 'forward'
   | 'search'
-  | 'more';
+  | 'more'
+  | 'book';
 
 /**
  * The project's line icons, drawn in the current text colour and hidden from
@@ -24,13 +27,19 @@ export type LineIconName =
  * standing upright with a short bar for its home button, for a remembered
  * device, and eye an almond outline around a round pupil, for the button
  * that shows a password. The chevron is 16 px and points down, for a button
- * that opens a menu or a list; back points left, for 返回; forward points
- * right, for a card that leads on; search is the magnifier of a search box;
- * more is three dots in a row, for the button that opens a row's actions.
+ * that opens a menu or a list; check is the 20 px selection mark; tick is
+ * the 16 px mark of 已获取 and plus the 16 px plus of an empty choice; back
+ * points left, for 返回; forward points right, for a card that leads on;
+ * search is the magnifier of a search box; more is three dots in a row, for
+ * the button that opens a row's actions. Book is an open book seen from the
+ * front, the middle of a default cover; it fills the box its owner sizes.
  */
 @Component({
   selector: 'app-line-icon',
-  host: { class: 'inline-flex shrink-0', '[class.size-4]': "name() === 'chevron'" },
+  host: {
+    class: 'inline-flex shrink-0',
+    '[class.size-4]': "name() === 'chevron' || name() === 'tick' || name() === 'plus'",
+  },
   template: `
     @switch (name()) {
       @case ('copy') {
@@ -162,6 +171,29 @@ export type LineIconName =
           />
         </svg>
       }
+      @case ('tick') {
+        <svg class="size-4" viewBox="0 0 20 20" aria-hidden="true">
+          <path
+            d="m4.5 10.5 3.6 3.4L15.5 6.5"
+            stroke="currentColor"
+            stroke-width="2.6"
+            fill="none"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      }
+      @case ('plus') {
+        <svg class="size-4" viewBox="0 0 20 20" aria-hidden="true">
+          <path
+            d="M10 4.5v11M4.5 10h11"
+            stroke="currentColor"
+            stroke-width="2"
+            fill="none"
+            stroke-linecap="round"
+          />
+        </svg>
+      }
       @case ('back') {
         <svg class="size-5" viewBox="0 0 20 20" aria-hidden="true">
           <path
@@ -202,6 +234,23 @@ export type LineIconName =
           <circle cx="4.5" cy="10" r="1.6" />
           <circle cx="10" cy="10" r="1.6" />
           <circle cx="15.5" cy="10" r="1.6" />
+        </svg>
+      }
+      @case ('book') {
+        <svg
+          class="size-full"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            d="M10 5.5C8.4 4.3 6.2 3.75 3 3.75v11.5c3.2 0 5.4.55 7 1.75 1.6-1.2 3.8-1.75 7-1.75V3.75c-3.2 0-5.4.55-7 1.75Z"
+          />
+          <path d="M10 5.5V17" />
         </svg>
       }
     }
