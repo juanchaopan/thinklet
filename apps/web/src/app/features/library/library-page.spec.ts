@@ -1,5 +1,6 @@
 import { screen, within } from '@testing-library/angular';
 import type { MeResponse } from '@thinklet/contracts';
+import { http, HttpResponse } from 'msw';
 import { page, userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import {
@@ -34,7 +35,9 @@ import {
   type FakeLibrary,
 } from '../../../testing/library';
 import { closeMenu } from '../../../testing/menus';
+import { worker } from '../../../testing/network';
 import { emulateTouch, moveMouseOffPage, nextFrames } from '../../../testing/pointer';
+import { LINYUE_FAMILY_ID, errorBody } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 import { frameName } from '../../../testing/toasts';
 import { VIEWPORTS, type ViewportName } from '../../../testing/viewports';
@@ -45,6 +48,9 @@ import { VIEWPORTS, type ViewportName } from '../../../testing/viewports';
  * page is on the screen, come after it.
  */
 const DESKTOP_FIRST: readonly ViewportName[] = ['desktop', 'phone', 'tablet'];
+
+/** The address of 林悦的家's filter options in the api. */
+const FILTERS_PATH = `/api/families/${LINYUE_FAMILY_ID}/book-filters`;
 
 /** Opens the library at the address as 林悦, with the counts the design draws. */
 function renderLibrary(url = '/', me: MeResponse = LINYUE_AS_DRAWN) {
@@ -135,6 +141,11 @@ async function removeBook(title: string): Promise<void> {
 /** Holds back the next batch, which the fake then answers as the api does. */
 function holdNextBatch(fake: FakeLibrary) {
   return holdNextGet(BOOKS_PATH, (request) => fake.list(new URL(request.url).searchParams));
+}
+
+/** The api's answer for a child who is not the family's. */
+function childNotFound(): Response {
+  return HttpResponse.json(errorBody('child_not_found'), { status: 404 });
 }
 
 /** Scrolls to the bottom of the page, as a finger does. */
@@ -509,6 +520,46 @@ describe('LibraryPage', () => {
       expect(titles()).toEqual(['花园里的小儿歌', '形状捉迷藏', 'ABC 唱唱书', '颜色变变变']);
     });
 
+    it('goes back to the library without a word when the child of the scope is deleted as the page opens', async () => {
+      worker.use(
+        http.get(
+          FILTERS_PATH,
+          () => {
+            fake.children = [DUODUO, LELE];
+            return childNotFound();
+          },
+          { once: true },
+        ),
+      );
+
+      await renderLibrary(`/?scope=child&child=${XIAOMING_ID}`);
+
+      await vi.waitFor(() => {
+        expect(filter(/^范围：书库/)).toBeTruthy();
+      });
+      expect(titles()).toHaveLength(12);
+      expect(screen.queryByRole('heading', { name: '页面没能打开' })).toBeNull();
+      expect(anyToast()).toBe(false);
+    });
+
+    it('reads the children again only once when the child of the scope keeps being refused', async () => {
+      let asked = 0;
+      worker.use(
+        http.get(FILTERS_PATH, () => {
+          asked += 1;
+          return childNotFound();
+        }),
+      );
+
+      await renderLibrary(`/?scope=child&child=${XIAOMING_ID}`);
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole('heading', { name: '页面没能打开' })).toBeTruthy();
+      });
+      await settled();
+      expect(asked).toBe(2);
+    });
+
     it('says when no book fits, and 清除筛选 takes every filter back', async () => {
       const { router } = await renderLibrary('/?grade=grade-10');
 
@@ -583,6 +634,20 @@ describe('LibraryPage', () => {
       await vi.waitFor(() => {
         expect(titles()).not.toContain('花园里的小儿歌');
       });
+    });
+
+    it('reads the library again without a word for a book that is gone', async () => {
+      await renderLibrary();
+      failNext('put', bookPath('garden-rhymes', '/acquisition'), 404, 'book_not_found');
+      fake.owned.set('hello-animals', []);
+
+      await userEvent.click(within(card('花园里的小儿歌')).getByRole('button', { name: '获取' }));
+
+      await vi.waitFor(() => {
+        expect(within(card('Hello，动物朋友')).getByText('已获取')).toBeTruthy();
+      });
+      expect(titles()).toHaveLength(12);
+      expect(anyToast()).toBe(false);
     });
 
     it('says 出了点问题 and keeps 获取 when the server fails', async () => {
@@ -712,6 +777,20 @@ describe('LibraryPage', () => {
       await vi.waitFor(() => {
         expect(within(card('月亮为什么会变脸')).getByRole('button', { name: '获取' })).toBeTruthy();
       });
+    });
+
+    it('closes the choice and reads the library again without a word for a book that is gone', async () => {
+      await renderLibrary();
+      failNext('put', bookPath('carrot-counting', '/readers'), 404, 'book_not_found');
+      fake.owned.set('carrot-counting', [XIAOMING_ID]);
+
+      await changeCardReaders('胡萝卜数数大冒险', ['乐乐']);
+
+      await dialogGone('谁能读《胡萝卜数数大冒险》');
+      await vi.waitFor(() => {
+        expect(within(card('胡萝卜数数大冒险')).getByText('小明可以读')).toBeTruthy();
+      });
+      expect(anyToast()).toBe(false);
     });
 
     it('keeps the choice open when the server fails', async () => {

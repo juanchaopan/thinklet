@@ -80,6 +80,21 @@ async function expectPageAtEverySize(name: string): Promise<void> {
   await expectScreenshotsAtEverySize(name);
 }
 
+/**
+ * Makes the next change to the book with the id find it gone, as the api
+ * answers for a book that no longer exists, and the read after it too.
+ */
+function goneMeanwhile(bookId: string, method: 'put' | 'delete', suffix: string): void {
+  failNext(method, bookPath(bookId, suffix), 404, 'book_not_found');
+  failNext('get', bookPath(bookId), 404, 'book_not_found');
+}
+
+/** Waits for 找不到这本书 in place of the book, said without a toast. */
+async function expectNotFoundWithoutAWord(): Promise<void> {
+  expect(await screen.findByRole('heading', { level: 1, name: '找不到这本书' })).toBeTruthy();
+  expect(anyToast()).toBe(false);
+}
+
 describe('BookPage', () => {
   let fake: FakeLibrary;
 
@@ -322,6 +337,15 @@ describe('BookPage', () => {
       expect(await screen.findByRole('heading', { level: 1, name: '找不到这本书' })).toBeTruthy();
     });
 
+    it('says 找不到这本书 without a word for a book that is gone', async () => {
+      await renderBook('garden-rhymes');
+      goneMeanwhile('garden-rhymes', 'put', '/acquisition');
+
+      await userEvent.click(screen.getByRole('button', { name: '获取' }));
+
+      await expectNotFoundWithoutAWord();
+    });
+
     it('says 出了点问题 and keeps 获取 when the server fails', async () => {
       await renderBook('garden-rhymes');
       failNext('put', bookPath('garden-rhymes', '/acquisition'), 500);
@@ -410,6 +434,16 @@ describe('BookPage', () => {
       });
     });
 
+    it('closes the choice and says 找不到这本书 without a word for a book that is gone', async () => {
+      await renderBook('carrot-counting');
+      goneMeanwhile('carrot-counting', 'put', '/readers');
+
+      await changeReaders('小明、朵朵可以读', CARROTS, ['乐乐']);
+
+      await dialogGone(CARROTS_READERS);
+      await expectNotFoundWithoutAWord();
+    });
+
     it('keeps the choice open when the server fails', async () => {
       await renderBook('carrot-counting');
       failNext('put', bookPath('carrot-counting', '/readers'), 500);
@@ -487,6 +521,17 @@ describe('BookPage', () => {
         expect(readersButton('小明可以读')).toBeTruthy();
       });
       expect(screen.queryByRole('button', { name: '从我家的书里移除' })).toBeNull();
+    });
+
+    it('closes the question and says 找不到这本书 without a word for a book that is gone', async () => {
+      await renderBook('moon-phases');
+      goneMeanwhile('moon-phases', 'delete', '/acquisition');
+
+      const dialog = await askToRemove('月亮为什么会变脸');
+      await userEvent.click(within(dialog).getByRole('button', { name: '移除' }));
+
+      await dialogGone(/从我家的书里移除/);
+      await expectNotFoundWithoutAWord();
     });
 
     it('says 出了点问题 and keeps the book when the server fails', async () => {

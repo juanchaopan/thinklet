@@ -30,9 +30,11 @@ export type BookTrouble = FamilyTrouble | 'book-not-found';
  * shown meanwhile, and a change shows its answer only while the page still
  * shows the same book of the same family. A change the book or the children
  * went through meanwhile is said in a toast and the page read again
- * (core/family-books); a family the parent is no longer in makes the
- * parent's families read again, so the page moves to another family's view
- * of the book, or to the start page without one. The page provides its own
+ * (core/family-books); a book that turns out to be gone during a change
+ * makes the page read again without a word, which shows 找不到这本书 for the
+ * family shown then; a family the parent is no longer in makes the parent's
+ * families read again, so the page moves to another family's view of the
+ * book, or to the start page without one. The page provides its own
  * instance.
  */
 @Injectable()
@@ -43,6 +45,7 @@ export class BookStore {
     familyLost: () => {
       this.familyLost();
     },
+    bookGone: () => void this.read(),
     readAgain: () => void this.read(),
   });
   private readonly reads = new FreshReads();

@@ -72,10 +72,11 @@ function batchPath(familyId: string, query: LibraryQuery, cursor: string | null)
  * read for a list that has been replaced meanwhile is dropped.
  *
  * A change the family's books or children went through meanwhile is said in
- * a toast and the book is read again (core/family-books); a family the
- * parent is no longer in makes the parent's families read again, so the
- * page moves to another family, or to the start page without one. The page
- * provides its own instance.
+ * a toast and the book is read again (core/family-books); a book that turns
+ * out to be gone during a change makes the library read again without a
+ * word; a family the parent is no longer in makes the parent's families
+ * read again, so the page moves to another family, or to the start page
+ * without one. The page provides its own instance.
  */
 @Injectable()
 export class LibraryStore {
@@ -90,6 +91,7 @@ export class LibraryStore {
     familyLost: () => {
       this.notFound();
     },
+    bookGone: () => void this.refresh(),
     readAgain: (bookId) => void this.readBook(bookId),
   });
   private familyId = '';
@@ -210,9 +212,10 @@ export class LibraryStore {
   /**
    * Reads the library for the query asked for last and shows it, unless
    * something newer was shown meanwhile. A list read again keeps as many
-   * books as are shown.
+   * books as are shown. With `retry`, a child of the scope deleted since
+   * the children were read makes the read run once more.
    */
-  private async read(mode: ReadMode, withChildren: boolean): Promise<void> {
+  private async read(mode: ReadMode, withChildren: boolean, retry = true): Promise<void> {
     const wanted = this.wanted;
     if (wanted === null) {
       return;
@@ -233,7 +236,7 @@ export class LibraryStore {
       }
     } catch (error) {
       if (fresh()) {
-        this.readFailed(error, mode, withChildren);
+        this.readFailed(error, mode, retry);
       }
     }
   }
@@ -293,20 +296,21 @@ export class LibraryStore {
   /**
    * A read of the list that failed. A family the parent is not in moves the
    * page on; a child of the scope deleted since the children were read
-   * makes them read again, which takes the scope back to the library.
-   * Nothing shown yet keeps the failure for the page to show; a new list
-   * asked for by the filters says it in a toast and keeps the books shown,
-   * and a list read again keeps them without a word.
+   * makes the children and the list read again, once, which takes the scope
+   * back to the library without a word, also as the page opens. Nothing
+   * shown yet keeps the failure for the page to show; a new list asked for
+   * by the filters says it in a toast and keeps the books shown, and a list
+   * read again keeps them without a word.
    */
-  private readFailed(error: unknown, mode: ReadMode, withChildren: boolean): void {
+  private readFailed(error: unknown, mode: ReadMode, retry: boolean): void {
     const trouble = readTrouble(error);
     if (trouble === null) {
       return;
     }
     if (trouble === 'not-found') {
       this.notFound();
-    } else if (trouble.code === 'child_not_found' && !withChildren) {
-      void this.read(mode, true);
+    } else if (trouble.code === 'child_not_found' && retry) {
+      void this.read(mode, true, false);
     } else if (this.shownListing() === null) {
       this.shownTrouble.set(trouble);
     } else if (mode === 'new') {

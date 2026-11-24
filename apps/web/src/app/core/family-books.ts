@@ -25,7 +25,8 @@ export interface RunningBookChange {
 /**
  * How a change ended: `done`; `failed`, said in a toast, with what is on the
  * screen left as it was; or `changed`, the book, a child or the family
- * changed meanwhile, which has been said and the book is read again.
+ * changed meanwhile, and the page is brought up to date with what is there
+ * now.
  */
 export type BookOutcome = 'done' | 'failed' | 'changed';
 
@@ -95,15 +96,21 @@ export class FamilyBooks {
 export interface BookChangeHandlers {
   /** The parent is no longer a member of the family. */
   familyLost(): void;
+  /**
+   * The book no longer exists, or the family can no longer see it: the page
+   * shows what is there now without a word (interfaces.md, book_not_found).
+   */
+  bookGone(bookId: string): void;
   /** The book, a child or the family changed meanwhile: the book and the children are read again. */
   readAgain(bookId: string): void;
 }
 
 /**
  * Runs the changes a page makes to the family's books, one at a time, and
- * explains those that fail: a family the parent is no longer in is the
- * page's to show, a change made meanwhile is said in a toast and the book
- * read again, and anything else is 出了点问题 with the screen left as it was.
+ * explains those that fail: a family the parent is no longer in and a book
+ * that is gone are the page's to show, a change made meanwhile is said in a
+ * toast and the book read again, and anything else is 出了点问题 with the
+ * screen left as it was.
  *
  * Create it where `inject` works, such as a field initializer.
  */
@@ -136,8 +143,13 @@ export class BookChanges {
   }
 
   private failed(error: unknown, bookId: string): BookOutcome {
-    if (error instanceof ApiError && error.code === 'family_not_found') {
+    const code = error instanceof ApiError ? error.code : null;
+    if (code === 'family_not_found') {
       this.handlers.familyLost();
+      return 'changed';
+    }
+    if (code === 'book_not_found') {
+      this.handlers.bookGone(bookId);
       return 'changed';
     }
     const changed = explainChange(error, this.toaster, CHANGED_MEANWHILE, () => {
