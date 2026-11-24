@@ -1,0 +1,159 @@
+@import 'tailwindcss';
+@source "../build";
+
+/* Interaction patterns follow the input type, not the screen width: a touch
+   screen gets bottom sheets for dialogs, menus and name editing; a mouse or
+   trackpad gets centred dialogs, drop-down menus, editing in place and
+   tooltips. The navigation layout still follows the width. */
+@custom-variant touch (@media (pointer: coarse));
+@custom-variant mouse (@media (pointer: fine));
+
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans CJK SC', 'Source Han Sans SC', 'WenQuanYi Micro Hei', sans-serif;
+
+  /* Text colours keep enough contrast on the cream and white backgrounds;
+     the badge red carries white numbers. */
+  --color-canvas: #f7f4ef;
+  --color-surface: #ffffff;
+  --color-tint: #f4f0fb;
+  --color-line: #ebe6dc;
+  --color-line-strong: #d9d3c7;
+  --color-ink: #161a2b;
+  --color-ink-soft: #4b5168;
+  --color-ink-muted: #6a6e7e;
+  --color-primary: #1d2238;
+  --color-primary-hover: #2c3352;
+  --color-violet: #6d3cf0;
+  --color-fuchsia: #d23be6;
+  --color-sky: #2f6bff;
+  --color-mint: #dff7ea;
+  --color-mint-ink: #16794a;
+  --color-sun: #fff1cc;
+  --color-sun-ink: #8a5a00;
+  --color-peach: #ffe3cc;
+  --color-rose: #ffe4e8;
+  --color-rose-ink: #c0213f;
+  --color-badge: #d92d42;
+  --color-spark: #ffb020;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(60 45 20 / 0.04), 0 6px 20px rgb(60 45 20 / 0.05);
+  --shadow-pop: 0 12px 40px rgb(22 26 43 / 0.16);
+
+  /* Motion follows the Fluent 2 tokens: things that arrive decelerate into
+     place, things that leave accelerate away, things that move between two
+     places ease in and out. Leaving is quicker than arriving. */
+  --ease-enter: cubic-bezier(0.1, 0.9, 0.2, 1);
+  --ease-exit: cubic-bezier(0.8, 0, 0.78, 1);
+  --ease-move: cubic-bezier(0.33, 0, 0.67, 1);
+
+  --animate-rise: rise 250ms var(--ease-enter) both;
+  --animate-pop: pop 250ms var(--ease-enter) both;
+  --animate-fade: fade 200ms var(--ease-move) both;
+  --animate-sheet: sheet 300ms var(--ease-enter) both;
+  --animate-float: float 300ms var(--ease-enter) both;
+  --animate-drop: drop 150ms var(--ease-enter) both;
+  --animate-rabbit: rabbit 500ms var(--ease-enter) both;
+  --animate-bubble: bubble 250ms var(--ease-enter) 350ms both;
+  --animate-bob: bob 2400ms var(--ease-move) 600ms infinite;
+  --animate-toast: toast 3400ms linear both;
+  --animate-toast-long: toast-long 5400ms linear both;
+  --animate-shake: shake 300ms var(--ease-move) both;
+  --animate-planet: planet 500ms var(--ease-enter) both;
+  --animate-twinkle: twinkle 400ms var(--ease-enter) 350ms both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(12px); }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(0.96); }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+  }
+  @keyframes sheet {
+    from { transform: translateY(100%); }
+  }
+  /* A floating sheet rises from below the screen, far enough that its gap
+     to the bottom edge and its shadow start out of sight too, and stops at
+     its floating place. */
+  @keyframes float {
+    from { transform: translateY(calc(100% + 4rem)); }
+  }
+  @keyframes drop {
+    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  }
+  @keyframes rabbit {
+    from { opacity: 0; transform: translateY(40px); }
+  }
+  @keyframes bubble {
+    from { opacity: 0; transform: scale(0.85); }
+  }
+  @keyframes bob {
+    50% { transform: translateY(-4px); }
+  }
+  /* The logo's planet and ring turn into their tilt from 60 degrees back. */
+  @keyframes planet {
+    from { opacity: 0; transform: rotate(-60deg) scale(0.8); }
+  }
+  /* The logo's spark grows past its size and settles. */
+  @keyframes twinkle {
+    0% { opacity: 0; transform: scale(0) rotate(-90deg); }
+    60% { opacity: 1; transform: scale(1.25) rotate(0deg); }
+  }
+  /* A toast slides down in 250 ms, stays, then slides up and fades out in 150 ms. */
+  @keyframes toast {
+    0% { opacity: 0; transform: translateY(-16px); animation-timing-function: var(--ease-enter); }
+    7.35% { opacity: 1; transform: none; }
+    95.6% { opacity: 1; transform: none; animation-timing-function: var(--ease-exit); }
+    100% { opacity: 0; transform: translateY(-8px); }
+  }
+  @keyframes toast-long {
+    0% { opacity: 0; transform: translateY(-16px); animation-timing-function: var(--ease-enter); }
+    4.63% { opacity: 1; transform: none; }
+    97.2% { opacity: 1; transform: none; animation-timing-function: var(--ease-exit); }
+    100% { opacity: 0; transform: translateY(-8px); }
+  }
+  @keyframes shake {
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+  }
+}
+
+/* The page background: warm cream with a peach glow at the top left and a
+   lavender glow at the top right, so white cards stand out from it. */
+@utility bg-app {
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(56rem 28rem at 0% 0%, rgb(255 214 176 / 0.55), transparent 65%),
+    radial-gradient(48rem 26rem at 100% 0%, rgb(214 200 255 / 0.55), transparent 65%);
+  background-attachment: fixed;
+}
+
+/* Cards of a page rise one after another, 40 ms apart. */
+@utility stagger {
+  & > * { animation: var(--animate-rise); }
+  & > *:nth-child(2) { animation-delay: 40ms; }
+  & > *:nth-child(3) { animation-delay: 80ms; }
+  & > *:nth-child(4) { animation-delay: 120ms; }
+  & > *:nth-child(5) { animation-delay: 160ms; }
+}
+
+/* SVG parts that animate turn and grow around their own centre. */
+@utility svg-centred {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* With reduced motion every animation and transition finishes within 100 ms
+   and nothing repeats. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 100ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 100ms !important;
+  }
+}
