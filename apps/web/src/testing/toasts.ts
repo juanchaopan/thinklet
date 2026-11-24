@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { screen } from '@testing-library/angular';
 import { Toaster, type ToastTone } from '../app/shared/ui/toast';
 import { holdAnimationsAt } from './animations';
+import { pageAtTop } from './books';
 import { useFixedClock } from './clock';
 import { nextFrames } from './pointer';
 import type { ScreenshotOptions } from './screenshots';
@@ -44,14 +45,20 @@ export async function raiseStillToast(trigger: () => Promise<void>, text: string
  * drawn. While the toast stays, every animation on the page is held at that
  * moment. After that the toast is slid out and its leaving held at the
  * moment, the page being settled by then; once it has left, it is gone.
+ *
+ * Every frame shows the top of the page under the toast, as the design
+ * draws it: pressing what raised the toast can scroll the page, as the
+ * browser brings the button fully into view, and a busy machine makes that
+ * happen on some runs only.
  */
 export function toastFrame(time: number, tone: ToastTone): ScreenshotOptions {
   const leaving = ENTER + STAY[tone];
   if (time <= leaving) {
-    return { heldAt: time };
+    return { heldAt: time, prepare: pageAtTop };
   }
   return {
     prepare: async () => {
+      await pageAtTop();
       const toaster = TestBed.inject(Toaster);
       await withStillTimers(() => {
         for (const toast of toaster.toasts()) {

@@ -67,6 +67,11 @@ const RISE_STEP = 40;
  * rise card by card (look.md, 动画). Everything is read again whenever the
  * window comes back to the front, and when the parent switches to another
  * family.
+ *
+ * The grid and the marker at the end of the list are each drawn in a
+ * one-item `@for` tracked by a key: a new key draws them anew, so the books
+ * of new filters rise from the start and a new marker says at once whether
+ * it is in view, while the same key keeps them as they are.
  */
 @Component({
   selector: 'app-library-page',
@@ -101,7 +106,7 @@ const RISE_STEP = 40;
         />
         @if (listing.books.length > 0) {
           <div class="relative">
-            @for (key of [listing.key]; track key) {
+            @for (grid of [{ key: listing.key }]; track grid.key) {
               <app-book-grid>
                 @for (book of listing.books; track book.id; let index = $index) {
                   <app-library-card
@@ -117,7 +122,7 @@ const RISE_STEP = 40;
               </app-book-grid>
             }
             @if (listing.nextCursor && inputMode.touch()) {
-              @for (end of [listing.nextCursor + '#' + endWatches()]; track end) {
+              @for (end of [{ key: listing.nextCursor + '#' + endWatches() }]; track end.key) {
                 <div
                   appInView
                   aria-hidden="true"

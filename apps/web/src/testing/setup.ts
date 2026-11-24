@@ -10,10 +10,10 @@ import { VIEWPORTS } from './viewports';
 
 // Runs before every component test file (angular.json `setupFiles`). Each
 // test starts from the same state: a fixed clock, the desktop viewport with
-// a mouse that rests off the page and full motion, empty local storage and
-// only the books' api stubbed. Test data is written as fixed values in the
-// tests, never generated randomly, so screenshots and assertions repeat
-// exactly.
+// a mouse that rests off the page and full motion, the window scrolled to
+// its top, empty local storage and only the books' api stubbed. Test data is
+// written as fixed values in the tests, never generated randomly, so
+// screenshots and assertions repeat exactly.
 //
 // The library is a signed-in parent's `/` and the child's books are on the
 // home page every child login ends at, which many tests pass through on
@@ -25,7 +25,10 @@ import { VIEWPORTS } from './viewports';
 // browser page, in an order that depends on how many workers share them out.
 // Nothing a test leaves behind may reach the next one, so each test ends by
 // waiting for the requests it started, then tearing down its app with every
-// listener the app holds, and only then checks what reached the api.
+// listener the app holds, and only then checks what reached the api. The
+// window's scroll position belongs to the browser page as well, so a test
+// that scrolls (to the end of the library, say) never leaves the next one's
+// page scrolled down.
 
 /** How long the app may stay busy after a test before the test fails. */
 const SETTLE_TIMEOUT = 5000;
@@ -39,6 +42,7 @@ beforeEach(async () => {
   localStorage.clear();
   stubChildShelf(stubLibrary());
   await page.viewport(VIEWPORTS.desktop.width, VIEWPORTS.desktop.height);
+  window.scrollTo(0, 0);
   await emulateTouch(false);
   await emulateReducedMotion(false);
   await moveMouseOffPage();
