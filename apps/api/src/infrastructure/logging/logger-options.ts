@@ -13,6 +13,8 @@ const SECRET_VARIABLES = [
   'OIDC_CLIENT_SECRET',
   'JWT_SIGNING_KEY',
   'CHILD_DATA_KEY',
+  'AUTHING_USER_POOL_SECRET',
+  'AUTHING_WEBHOOK_SECRET',
 ] as const;
 
 /**
@@ -66,12 +68,15 @@ const atAnyDepth = (name: string) => [name, `*.${name}`, `*.*.${name}`];
 /**
  * Log fields that are replaced wherever they appear. The request log keeps
  * only the headers of LOGGED_REQUEST_HEADERS; the request header paths here
- * still cover a request logged some other way.
+ * still cover a request logged some other way, Authing's webhook secret
+ * headers among them.
  */
 export const REDACTED_PATHS = [
   'req.headers.authorization',
   'req.headers["proxy-authorization"]',
   'req.headers.cookie',
+  'req.headers["x-authing-webhook-secret"]',
+  'req.headers["x-authing-token"]',
   'res.headers["set-cookie"]',
   // The login redirect carries the state, nonce and code challenge.
   'res.headers.location',
@@ -87,7 +92,8 @@ export const REDACTED_PATHS = [
  * other header is left out, so a header nobody thought of is never logged:
  * `referer` carries the address of the page the request came from, such as
  * a join page with its family code or a QR login page with its token,
- * cookies and authorization carry the login, and the forwarding headers
+ * cookies and authorization carry the login, the webhook's secret header
+ * proves a notification comes from Authing, and the forwarding headers
  * carry the client's IP address. These say which site and client sent the
  * request and what body it had, which is what tracing a failed request
  * needs.
@@ -121,6 +127,8 @@ export type SecretSettings = Pick<
   | 'REDIS_URL'
   | 'OIDC_CLIENT_SECRET'
   | 'CHILD_DATA_KEY'
+  | 'AUTHING_USER_POOL_SECRET'
+  | 'AUTHING_WEBHOOK_SECRET'
 > & { JWT_SIGNING_KEY: Pick<Environment['JWT_SIGNING_KEY'], 'd'> };
 
 /** The password of a connection URL as written in it and decoded; none when it has none. */
@@ -133,8 +141,9 @@ function passwordsIn(url: string): string[] {
  * The secret values of the configuration: the database URL and its
  * password (as written in the URL and decoded), the storage credentials,
  * the Redis URL and its password, the OIDC client secret, the private part
- * of the JWT signing key, and the child data key in base64, as the
- * environment holds it, and in hex, as bytes are most often printed.
+ * of the JWT signing key, the child data key in base64, as the environment
+ * holds it, and in hex, as bytes are most often printed, and Authing's user
+ * pool secret and webhook secret.
  */
 export function secretValues(settings: SecretSettings): string[] {
   return [
@@ -148,6 +157,8 @@ export function secretValues(settings: SecretSettings): string[] {
     settings.JWT_SIGNING_KEY.d,
     settings.CHILD_DATA_KEY.toString('base64'),
     settings.CHILD_DATA_KEY.toString('hex'),
+    settings.AUTHING_USER_POOL_SECRET,
+    settings.AUTHING_WEBHOOK_SECRET,
   ];
 }
 

@@ -9,6 +9,7 @@ import {
 } from '@thinklet/contracts';
 import request from 'supertest';
 import { startAppWithServices, type AppWithServices } from './app.js';
+import type { AuthingStub } from './authing-stub.js';
 import { TEST_APP_ORIGIN } from './containers.js';
 import { query } from './database.js';
 import { cookieHeader, newUser, signIn, type Target } from './login.js';
@@ -18,13 +19,15 @@ import { cookieHeader, newUser, signIn, type Target } from './login.js';
 // families and join requests set up for them and what the database holds
 // about them.
 
-/** The running application of a test file, its database and its Redis. */
+/** The running application of a test file, its database, its Redis and its Authing stand-in. */
 export interface RunningApp {
   readonly server: ReturnType<NestExpressApplication['getHttpServer']>;
   /** The connection URL of the migrated database the application uses. */
   readonly databaseUrl: string;
   /** The redis:// address of the Redis the application uses. */
   readonly redisUrl: string;
+  /** The stand-in the application deletes Authing accounts at. */
+  readonly authing: AuthingStub;
 }
 
 /**
@@ -55,6 +58,9 @@ export function useAppWithServices(): RunningApp {
     },
     get redisUrl() {
       return current().services.redis.url;
+    },
+    get authing() {
+      return current().authing;
     },
   };
 }

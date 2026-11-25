@@ -29,53 +29,54 @@ pnpm exec task dev
 
 这两把密钥只在本机用，不要提交，也不要用到别的环境。`.env.example` 里加了新的变量时，把它们照抄进自己的 `.env`。
 
-`task dev` 起 PostgreSQL、SeaweedFS（模拟 S3）、Valkey（代替 Redis，放限流计数和扫码登录链接）和 mock-oauth2-server（模拟 Authing 的 OIDC 登录服务）容器，执行数据库迁移（书本数据也在迁移脚本里）和代码写的数据迁移，再把 `content/books/` 里的封面导入对象存储，最后启动前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。登录时会跳到模拟登录服务的页面，填任意用户名都能登录；这个服务不保存任何数据，容器重启后所有登录都要重来。
+`task dev` 起 PostgreSQL、SeaweedFS（模拟 S3）、Valkey（代替 Redis，放限流计数和扫码登录链接）和 mock-oauth2-server（模拟 Authing 的 OIDC 登录服务）容器，执行数据库迁移（书本数据也在迁移脚本里）和代码写的数据迁移，再把 `content/books/` 里的封面导入对象存储，最后启动 Authing 管理 API 的替身服务和前后端：前端在 <http://localhost:4200>，`/api` 转发给本机的后端。登录时会跳到模拟登录服务的页面，填任意用户名都能登录；这个服务不保存任何数据，容器重启后所有登录都要重来。在个人设置页删除账号时，后端找的是替身服务（`apps/api/test/support/authing-stub.ts`）：它删掉这个用户，过一秒再像 Authing 那样调后端的 webhook；它也只把数据放在内存里。
 
 改了 `content/books/` 里的封面以后，运行 `pnpm exec task rebuild` 重新导入；内容没变的封面不重传。
 
 ### 停止
 
-- 在运行 `task dev` 的终端按 Ctrl+C，停掉前后端。四个容器还在后台运行，下次 `task dev` 直接用它们。
+- 在运行 `task dev` 的终端按 Ctrl+C，停掉前后端和替身服务。四个容器还在后台运行，下次 `task dev` 直接用它们。
 - `docker compose down`：停掉并删除这些容器。数据库和对象存储的数据留在 Docker 卷里，下次启动还在。
 - `docker compose down -v`：连 Docker 卷一起删除，本机数据库和对象存储里的数据全部清空。下次 `task dev` 从空库开始，重新执行迁移、导入封面。
 
 ### 端口
 
-| 服务                 | 默认端口 | 在哪里改                                                                              |
-| -------------------- | -------- | ------------------------------------------------------------------------------------- |
-| 前端（`ng serve`）   | 4200     | `Taskfile.yml` 里 `dev-web` 任务的 `PORT`（不在 `.env` 里），同时改 `APP_ORIGIN`      |
-| 后端                 | 3000     | `.env` 的 `PORT`，同时改 `API_ORIGIN` 里的端口                                        |
-| PostgreSQL           | 5432     | `.env` 的 `POSTGRES_PORT`，同时改 `DATABASE_URL` 和 `MIGRATION_DATABASE_URL` 里的端口 |
-| SeaweedFS（S3 接口） | 8333     | `.env` 的 `S3_PORT`，同时改 `S3_ENDPOINT` 里的端口                                    |
-| Valkey（Redis）      | 6379     | `.env` 的 `REDIS_PORT`，同时改 `REDIS_URL` 里的端口                                   |
-| 模拟登录服务         | 8080     | `.env` 的 `MOCK_OIDC_PORT`，同时改 `OIDC_ISSUER` 里的端口                             |
+| 服务                  | 默认端口 | 在哪里改                                                                              |
+| --------------------- | -------- | ------------------------------------------------------------------------------------- |
+| 前端（`ng serve`）    | 4200     | `Taskfile.yml` 里 `dev-web` 任务的 `PORT`（不在 `.env` 里），同时改 `APP_ORIGIN`      |
+| 后端                  | 3000     | `.env` 的 `PORT`，同时改 `API_ORIGIN` 里的端口                                        |
+| PostgreSQL            | 5432     | `.env` 的 `POSTGRES_PORT`，同时改 `DATABASE_URL` 和 `MIGRATION_DATABASE_URL` 里的端口 |
+| SeaweedFS（S3 接口）  | 8333     | `.env` 的 `S3_PORT`，同时改 `S3_ENDPOINT` 里的端口                                    |
+| Valkey（Redis）       | 6379     | `.env` 的 `REDIS_PORT`，同时改 `REDIS_URL` 里的端口                                   |
+| 模拟登录服务          | 8080     | `.env` 的 `MOCK_OIDC_PORT`，同时改 `OIDC_ISSUER` 里的端口                             |
+| Authing 管理 API 替身 | 8090     | `.env` 的 `AUTHING_STUB_PORT`；`AUTHING_MANAGEMENT_ORIGIN` 引用它，跟着变             |
 
 端口被别的程序占用时，在 `.env` 里换一个空闲端口。`docker-compose.yml` 从 `.env` 读 `POSTGRES_PORT`、`S3_PORT`、`REDIS_PORT` 和 `MOCK_OIDC_PORT`，后端从 `.env` 读连接地址，所以端口和地址要一起改。
 
 ### 同一台机器上的多个副本
 
-`docker-compose.yml` 把 Compose 项目名定为 `thinklet`（`name: thinklet`），所以同一台机器上这个仓库的所有副本（另一个克隆、git worktree）共用同一组容器和数据卷：一个副本执行的迁移和封面导入，另一个副本也看得到；在任何一个副本里执行 `docker compose down -v`，所有副本的本机数据都会被删掉。两个副本同时 `task dev` 时，前后端的端口也会冲突。测试不受影响：它们自己在随机端口上起临时容器，不用 Compose。
+`docker-compose.yml` 把 Compose 项目名定为 `thinklet`（`name: thinklet`），所以同一台机器上这个仓库的所有副本（另一个克隆、git worktree）共用同一组容器和数据卷：一个副本执行的迁移和封面导入，另一个副本也看得到；在任何一个副本里执行 `docker compose down -v`，所有副本的本机数据都会被删掉。两个副本同时 `task dev` 时，前后端和替身服务的端口也会冲突。测试不受影响：它们自己在随机端口上起临时容器和替身服务，不用 Compose。
 
 ### 常用命令
 
 所有命令都通过 Task 运行：`pnpm exec task <命令>`，`pnpm exec task --list` 列出全部命令和说明。
 
-| 命令                         | 做什么                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `dev`                        | 起容器、执行迁移、导入封面，启动前后端                                   |
-| `jwt-key`                    | 新生成一把本机用的登录签名私钥，打印成 `.env` 里的一行                   |
-| `child-data-key`             | 新生成一把本机用的孩子信息主密钥，打印成 `.env` 里的一行                 |
-| `check`                      | 依次跑全部静态检查                                                       |
-| `format-fix`                 | 用 Prettier 改好格式                                                     |
-| `test-unit`                  | 单元测试，带覆盖率下限                                                   |
-| `test-component`             | 前端组件测试（axe 和截图对比），在加了中文字体的 Playwright 镜像里跑     |
-| `test-component-update`      | 同上，并用新截图覆盖基准图                                               |
-| `test-integration`           | 后端集成测试，临时起 PostgreSQL、SeaweedFS、Valkey 和模拟登录服务的容器  |
-| `test-security`              | 后端安全测试用例                                                         |
-| `test-security-scan`         | 对临时环境跑 ZAP 基线扫描                                                |
-| `test-migration`             | 迁移测试                                                                 |
-| `test-e2e`                   | 端到端测试（Chromium），自己起临时环境，测完删除                         |
-| `test-e2e-all-browsers`      | 端到端测试，Chromium、Firefox、WebKit 和模拟手机都跑                     |
-| `test-smoke BASE_URL=<地址>` | 对已部署的地址跑冒烟测试；加 `PRODUCTION_SAFE=true` 只跑不改数据的那几条 |
-| `migrate`                    | 构建后端，对 `.env` 里的数据库执行迁移，再执行代码写的数据迁移           |
-| `rebuild`                    | 构建后端，把 `content/books/` 里的封面导入 `.env` 里的对象存储           |
+| 命令                         | 做什么                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `dev`                        | 起容器、执行迁移、导入封面，启动替身服务和前后端                                           |
+| `jwt-key`                    | 新生成一把本机用的登录签名私钥，打印成 `.env` 里的一行                                     |
+| `child-data-key`             | 新生成一把本机用的孩子信息主密钥，打印成 `.env` 里的一行                                   |
+| `check`                      | 依次跑全部静态检查                                                                         |
+| `format-fix`                 | 用 Prettier 改好格式                                                                       |
+| `test-unit`                  | 单元测试，带覆盖率下限                                                                     |
+| `test-component`             | 前端组件测试（axe 和截图对比），在加了中文字体的 Playwright 镜像里跑                       |
+| `test-component-update`      | 同上，并用新截图覆盖基准图                                                                 |
+| `test-integration`           | 后端集成测试，临时起 PostgreSQL、SeaweedFS、Valkey 和模拟登录服务的容器，以及 Authing 替身 |
+| `test-security`              | 后端安全测试用例                                                                           |
+| `test-security-scan`         | 对临时环境跑 ZAP 基线扫描                                                                  |
+| `test-migration`             | 迁移测试                                                                                   |
+| `test-e2e`                   | 端到端测试（Chromium），自己起临时环境，测完删除                                           |
+| `test-e2e-all-browsers`      | 端到端测试，Chromium、Firefox、WebKit 和模拟手机都跑                                       |
+| `test-smoke BASE_URL=<地址>` | 对已部署的地址跑冒烟测试；加 `PRODUCTION_SAFE=true` 只跑不改数据的那几条                   |
+| `migrate`                    | 构建后端，对 `.env` 里的数据库执行迁移，再执行代码写的数据迁移                             |
+| `rebuild`                    | 构建后端，把 `content/books/` 里的封面导入 `.env` 里的对象存储                             |

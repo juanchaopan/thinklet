@@ -28,6 +28,10 @@ const valid = {
   APP_ORIGIN: 'http://localhost:4200',
   JWT_SIGNING_KEY: JSON.stringify(signingKey),
   CHILD_DATA_KEY: childDataKeyText,
+  AUTHING_MANAGEMENT_ORIGIN: 'http://127.0.0.1:8090',
+  AUTHING_USER_POOL_ID: 'user-pool-id',
+  AUTHING_USER_POOL_SECRET: 'user-pool-secret',
+  AUTHING_WEBHOOK_SECRET: 'webhook-secret-of-the-tests',
 };
 
 function failingVariables(input: Record<string, unknown>): string[] {
@@ -88,6 +92,10 @@ describe('environmentSchema', () => {
     'APP_ORIGIN',
     'JWT_SIGNING_KEY',
     'CHILD_DATA_KEY',
+    'AUTHING_MANAGEMENT_ORIGIN',
+    'AUTHING_USER_POOL_ID',
+    'AUTHING_USER_POOL_SECRET',
+    'AUTHING_WEBHOOK_SECRET',
   ])('names %s when it is empty', (name) => {
     expect(failingVariables({ ...valid, [name]: '' })).toEqual([name]);
   });
@@ -171,6 +179,33 @@ describe('environmentSchema', () => {
     expect(failingVariables({ ...valid, APP_ORIGIN: appOrigin })).toEqual(['APP_ORIGIN']);
   });
 
+  it("accepts Authing's own origin as AUTHING_MANAGEMENT_ORIGIN", () => {
+    expect(
+      environmentSchema.parse({ ...valid, AUTHING_MANAGEMENT_ORIGIN: 'https://api.authing.cn' })
+        .AUTHING_MANAGEMENT_ORIGIN,
+    ).toBe('https://api.authing.cn');
+  });
+
+  it.each([
+    ['a path', 'https://api.authing.cn/api/v3'],
+    ['a trailing slash', 'https://api.authing.cn/'],
+    ['no URL', 'api.authing.cn'],
+  ])('names AUTHING_MANAGEMENT_ORIGIN when it has %s', (_case, value) => {
+    expect(failingVariables({ ...valid, AUTHING_MANAGEMENT_ORIGIN: value })).toEqual([
+      'AUTHING_MANAGEMENT_ORIGIN',
+    ]);
+  });
+
+  it('names AUTHING_WEBHOOK_SECRET when it is shorter than 16 characters', () => {
+    expect(failingVariables({ ...valid, AUTHING_WEBHOOK_SECRET: 'a'.repeat(15) })).toEqual([
+      'AUTHING_WEBHOOK_SECRET',
+    ]);
+    expect(
+      environmentSchema.parse({ ...valid, AUTHING_WEBHOOK_SECRET: 'a'.repeat(16) })
+        .AUTHING_WEBHOOK_SECRET,
+    ).toBe('a'.repeat(16));
+  });
+
   it('accepts a signing key that names its algorithm ES256', () => {
     const environment = environmentSchema.parse({
       ...valid,
@@ -242,6 +277,13 @@ describe('environmentSchema', () => {
 
     expect(result.success).toBe(false);
     expect(JSON.stringify(result.error?.issues)).not.toContain('redis-secret');
+  });
+
+  it('does not repeat a webhook secret that is too short in its messages', () => {
+    const result = environmentSchema.safeParse({ ...valid, AUTHING_WEBHOOK_SECRET: 'short-hook' });
+
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).not.toContain('short-hook');
   });
 
   it.each([

@@ -1,5 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { CoverImportSummary } from '../../src/modules/book/cover-import.service.js';
+import { startAuthingStub, type AuthingStub } from './authing-stub.js';
 import {
   accessTo,
   apiEnvironment,
@@ -9,11 +10,15 @@ import {
   migrate,
   spawnBuiltEntry,
   startServices,
+  TEST_AUTHING,
   type BuiltProcess,
   type StartedServices,
   type StorageAccess,
 } from './containers.js';
 import { freePort, waitForHttp, type WatchedProcess } from './process.js';
+
+/** The path of Authing's webhook on the api. */
+const WEBHOOK_PATH = '/api/webhooks/authing';
 
 /**
  * Starts the Nest application in this test process with the given
@@ -58,33 +63,52 @@ export async function importCovers(
   }
 }
 
+/**
+ * Starts the Authing stand-in with the tests' user pool and webhook secret.
+ * It holds its reports to the webhook until a test delivers them, so a test
+ * decides when Authing's notification arrives.
+ */
+export function startTestAuthingStub(): Promise<AuthingStub> {
+  return startAuthingStub({ ...TEST_AUTHING, delivery: 'manual' });
+}
+
 export interface AppWithServices {
   app: NestExpressApplication;
   services: StartedServices;
+  /** The Authing stand-in the application deletes accounts at, reporting to its webhook. */
+  authing: AuthingStub;
   /** The connection URL of the migrated database the application uses. */
   databaseUrl: string;
-  /** Closes the application and removes the containers. */
+  /** Closes the application, the stand-in and removes the containers. */
   stop: () => Promise<void>;
 }
 
 /**
- * Starts the throwaway database, storage, Redis and OIDC provider, migrates
- * the database, imports the repository's covers and starts the application
- * against them.
+ * Starts the throwaway database, storage, Redis and OIDC provider and the
+ * Authing stand-in, migrates the database, imports the repository's covers
+ * and starts the application against them. The application listens on the
+ * loopback, so the stand-in can call its webhook as Authing would.
  */
 export async function startAppWithServices(): Promise<AppWithServices> {
   const services = await startServices();
+  let authing: AuthingStub | undefined;
   try {
+    authing = await startTestAuthingStub();
     const databaseUrl = services.database.getConnectionUri();
     await migrate(databaseUrl);
     await importCovers(databaseUrl, services.storage);
-    const app = await startApp(apiEnvironment(accessTo(services)));
+    const app = await startApp(apiEnvironment(accessTo(services, authing.origin)));
+    await app.listen(0, '127.0.0.1');
+    authing.reportTo(`${await app.getUrl()}${WEBHOOK_PATH}`);
+    const started = authing;
     const stop = async () => {
       await app.close();
+      await started.close();
       await services.stop();
     };
-    return { app, services, databaseUrl, stop };
+    return { app, services, authing, databaseUrl, stop };
   } catch (error) {
+    await authing?.close();
     await services.stop();
     throw error;
   }
@@ -137,27 +161,31 @@ export function runBuiltApp(environment: Record<string, string>): RunningProcess
 
 export interface BuiltAppWithServices {
   services: StartedServices;
+  /** The Authing stand-in the built api deletes accounts at, reporting to its webhook. */
+  authing: AuthingStub;
   /** The address the built api listens on. */
   api: string;
   /** Stops the api, waits for it to exit and returns everything it wrote. */
   stopApp: () => Promise<string>;
-  /** Stops the api if it still runs and removes the containers. */
+  /** Stops the api if it still runs, closes the stand-in and removes the containers. */
   stop: () => Promise<void>;
 }
 
 /**
  * Migrates the services, imports the repository's covers with the built
- * import, runs the built api against them and waits until it answers.
+ * import, runs the built api against them and the stand-in and waits until
+ * it answers.
  */
 async function runMigratedBuiltApp(
   services: StartedServices,
+  authing: AuthingStub,
 ): Promise<{ running: RunningProcess; port: number }> {
   const databaseUrl = services.database.getConnectionUri();
   await migrate(databaseUrl);
   await importBuiltCovers(databaseUrl, services.storage);
   const port = await freePort();
   const running = runBuiltApp({
-    ...apiEnvironment(accessTo(services)),
+    ...apiEnvironment(accessTo(services, authing.origin)),
     PORT: String(port),
   });
   try {
@@ -170,23 +198,30 @@ async function runMigratedBuiltApp(
 }
 
 /**
- * Starts the throwaway services, migrates the database and runs the built
- * api against them, for tests that read what the api writes, as the
- * platform's log collector would.
+ * Starts the throwaway services and the Authing stand-in, migrates the
+ * database and runs the built api against them, for tests that read what
+ * the api writes, as the platform's log collector would.
  */
 export async function startBuiltAppWithServices(): Promise<BuiltAppWithServices> {
   const services = await startServices();
+  let authing: AuthingStub | undefined;
   let started: { running: RunningProcess; port: number };
   try {
-    started = await runMigratedBuiltApp(services);
+    authing = await startTestAuthingStub();
+    started = await runMigratedBuiltApp(services, authing);
   } catch (error) {
+    await authing?.close();
     await services.stop();
     throw error;
   }
   const { running, port } = started;
+  const api = `http://127.0.0.1:${port}`;
+  authing.reportTo(`${api}${WEBHOOK_PATH}`);
+  const stand = authing;
   return {
     services,
-    api: `http://127.0.0.1:${port}`,
+    authing: stand,
+    api,
     stopApp: async () => {
       running.child.kill();
       await running.exited;
@@ -194,6 +229,7 @@ export async function startBuiltAppWithServices(): Promise<BuiltAppWithServices>
     },
     stop: async () => {
       running.child.kill();
+      await stand.close();
       await services.stop();
     },
   };

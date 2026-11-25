@@ -31,6 +31,24 @@ export const TEST_APP_ORIGIN = 'http://localhost:4200';
  */
 export const TEST_CLIENT_IP_HEADER = 'x-forwarded-for';
 
+/**
+ * The Authing user pool of every api this test run starts, and the secret
+ * of its webhook, made once per process. The Authing stand-in a test starts
+ * (authing-stub.ts) takes the same values.
+ */
+export const TEST_AUTHING = {
+  userPoolId: `pool-${randomUUID()}`,
+  userPoolSecret: `pool-secret-${randomUUID()}`,
+  webhookSecret: `webhook-secret-${randomUUID()}`,
+} as const;
+
+/**
+ * Where the api reaches Authing's management API when a test has started no
+ * stand-in: a port nothing listens on, so deleting an account fails there
+ * as if Authing were down. Nothing else calls it.
+ */
+const UNREACHABLE_AUTHING_ORIGIN = 'http://127.0.0.1:9';
+
 /** The repository's book folders, which every test environment imports the covers from. */
 export const bookContentDirectory = join(repositoryRoot, 'content', 'books');
 
@@ -214,18 +232,24 @@ export interface ServiceAccess {
   storage: StorageAccess;
   oidc: OidcClient;
   redisUrl: string;
+  /**
+   * The origin of the Authing stand-in the test started; without one,
+   * deleting an account finds no Authing.
+   */
+  authingOrigin?: string;
 }
 
 /**
  * How the api reaches the started services. A test that points the api at
  * a broken or missing service overrides that one field.
  */
-export function accessTo(services: StartedServices): ServiceAccess {
+export function accessTo(services: StartedServices, authingOrigin?: string): ServiceAccess {
   return {
     databaseUrl: services.database.getConnectionUri(),
     storage: services.storage,
     oidc: services.oidc,
     redisUrl: services.redis.url,
+    ...(authingOrigin === undefined ? {} : { authingOrigin }),
   };
 }
 
@@ -281,6 +305,10 @@ export function apiEnvironment(
     APP_ORIGIN: appOrigin,
     JWT_SIGNING_KEY: testSigningKey,
     CHILD_DATA_KEY: testChildDataKey,
+    AUTHING_MANAGEMENT_ORIGIN: access.authingOrigin ?? UNREACHABLE_AUTHING_ORIGIN,
+    AUTHING_USER_POOL_ID: TEST_AUTHING.userPoolId,
+    AUTHING_USER_POOL_SECRET: TEST_AUTHING.userPoolSecret,
+    AUTHING_WEBHOOK_SECRET: TEST_AUTHING.webhookSecret,
   };
 }
 

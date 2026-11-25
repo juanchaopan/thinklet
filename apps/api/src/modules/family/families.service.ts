@@ -5,14 +5,15 @@ import type {
   FamilyRole,
   UpdateFamilyRequest,
 } from '@thinklet/contracts';
+import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { AuditService, byParent } from '../audit/audit.service.js';
+import { AuditService, byParent, type AuditActor } from '../audit/audit.service.js';
 import { generateFamilyCode } from './family-code.js';
 import {
   FamiliesRepository,
   FamilyCodeTakenError,
+  FamilyStore,
   type FamilyRecord,
-  type FamilyStore,
   type MemberRecord,
 } from './families.repository.js';
 
@@ -270,6 +271,31 @@ export class FamiliesService {
         familyId,
       });
     });
+  }
+
+  /**
+   * Deletes the family with everything in it inside the caller's
+   * transaction, which has locked the family and checked who may delete it:
+   * its children with their devices and books, its books, its join requests
+   * and its members' rows (`.docs/design/rules.md`, "删除家庭"). Records
+   * `family.deleted` by the actor with how many children and members went,
+   * and returns the children's ids, whose login links the caller removes
+   * from Redis once the transaction has committed.
+   */
+  async deleteWithin(
+    transaction: Executor,
+    familyId: string,
+    actor: AuditActor,
+  ): Promise<string[]> {
+    const { childIds, members } = await new FamilyStore(transaction).deleteFamily(familyId);
+    await this.audit.record(transaction, {
+      actor,
+      action: 'family.deleted',
+      targetId: familyId,
+      familyId,
+      details: { children: childIds.length, members },
+    });
+    return childIds;
   }
 
   /**

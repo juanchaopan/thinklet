@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { readCookie } from '../../infrastructure/authentication/cookies.js';
 import { setCurrentParentId } from '../../infrastructure/authentication/current-parent.js';
 import {
+  clearAllParentCookies,
   ID_TOKEN_COOKIE,
   PARENT_SESSION_COOKIE,
   setParentSessionCookies,
@@ -14,7 +15,8 @@ import { SessionTokensService } from './session-tokens.service.js';
  * The parent's login state on a request: a session JWT of kind `parent` in
  * the parent's cookie. The global login check uses it on every parent
  * route; other modules use it on routes that a signed-in child may use as
- * well, which the global check leaves to them.
+ * well, which the global check leaves to them, and to end the login of a
+ * parent whose account they deleted.
  */
 @Injectable()
 export class ParentSessionService {
@@ -47,5 +49,15 @@ export class ParentSessionService {
       );
     }
     return true;
+  }
+
+  /**
+   * Ends the parent's login on this browser for good, as deleting the
+   * account does: every cookie of the parent's is cleared, the renewal the
+   * login check may have set on this response included, since a cleared
+   * cookie set later on the response wins. A child's login stays.
+   */
+  end(response: Response): void {
+    clearAllParentCookies(response);
   }
 }

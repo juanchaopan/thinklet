@@ -16,17 +16,21 @@ import { JoinRequestsController } from './join-requests.controller.js';
 import { JoinRequestsRepository } from './join-requests.repository.js';
 import { JoinRequestsService } from './join-requests.service.js';
 import { MeController } from './me.controller.js';
+import { ParentDeletionService } from './parent-deletion.service.js';
 
 /**
  * Parents' accounts and their families. FamilyService keeps the parents;
  * FamiliesService keeps the families, their settings and their members;
  * JoinRequestsService keeps the requests to join a family, from the
  * applicant's and from the admin's side, and FamilyCodeLookups limits the
- * codes a source looks up without finding. Each records its changes with
- * the audit module. Other modules use FamilyService, and FamiliesService
- * for its membership check (`checkAccess`), which every route under
- * `/api/families/{familyId}` passes, those of other modules included, and
- * for the families' codes, which a child logs in with.
+ * codes a source looks up without finding. ParentDeletionService deletes a
+ * parent's account here, handing over or deleting the families they are
+ * the admin of. Each records its changes with the audit module. Other
+ * modules use FamilyService, FamiliesService for its membership check
+ * (`checkAccess`), which every route under `/api/families/{familyId}`
+ * passes, those of other modules included, and for the families' codes,
+ * which a child logs in with, and ParentDeletionService for the account
+ * module, which deletes the account at Authing and ends the login too.
  */
 @Module({
   imports: [DatabaseModule, RateLimitModule, AuditModule],
@@ -47,7 +51,8 @@ import { MeController } from './me.controller.js';
     JoinRequestsRepository,
     JoinRequestsService,
     FamilyCodeLookups,
+    ParentDeletionService,
   ],
-  exports: [FamilyService, FamiliesService],
+  exports: [FamilyService, FamiliesService, ParentDeletionService],
 })
 export class FamilyModule {}

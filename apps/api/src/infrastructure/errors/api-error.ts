@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import type { ErrorCode, FieldError } from '@thinklet/contracts';
+import type { AdminFamily, ErrorCode, FieldError } from '@thinklet/contracts';
 
 /**
  * An error the api answers with its own status and error code
@@ -24,5 +24,15 @@ export class ApiError extends HttpException {
 export class RateLimitedError extends ApiError {
   constructor(readonly retryAfterSeconds: number) {
     super('rate_limited', HttpStatus.TOO_MANY_REQUESTS);
+  }
+}
+
+/**
+ * 409 `still_admin`: the parent cannot delete their account while they are
+ * the admin of a family; the answer names those families.
+ */
+export class StillAdminError extends ApiError {
+  constructor(readonly families: AdminFamily[]) {
+    super('still_admin', HttpStatus.CONFLICT);
   }
 }

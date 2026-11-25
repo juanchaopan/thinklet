@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startAuthingStub } from '../../apps/api/test/support/authing-stub.ts';
 import {
   accessTo,
   apiDirectory,
@@ -9,6 +10,7 @@ import {
   importBuiltCovers,
   migrate,
   startServices,
+  TEST_AUTHING,
   TEST_CLIENT_IP_HEADER,
 } from '../../apps/api/test/support/containers.ts';
 import { freePort, waitForHttp } from '../../apps/api/test/support/process.ts';
@@ -28,6 +30,13 @@ const webRoot = join(repositoryRoot, 'apps', 'web', 'dist', 'web', 'browser');
  * `localhost` points.
  */
 const WEB_HOST_NAME = 'localhost';
+
+/**
+ * How long after deleting a user the Authing stand-in reports it to the
+ * api's webhook, as Authing does once it is done, so the api has finished
+ * its own deletion first.
+ */
+const AUTHING_REPORT_DELAY_MS = 1_000;
 
 export interface EnvironmentOptions {
   /**
@@ -90,9 +99,10 @@ function createCleanup(): Cleanup {
 /**
  * Starts a throwaway copy of the whole system on random ports: PostgreSQL,
  * SeaweedFS, Valkey (for Redis) and the mock OIDC provider in containers,
- * the migrations and the cover import of the repository's content/books/
- * (the built apps/api/dist/rebuild.js), the built web (apps/web/dist) behind
- * a server that forwards /api like the Vercel rewrite, writing the client's
+ * the Authing stand-in for the management API and its webhook, the
+ * migrations and the cover import of the repository's content/books/ (the
+ * built apps/api/dist/rebuild.js), the built web (apps/web/dist) behind a
+ * server that forwards /api like the Vercel rewrite, writing the client's
  * address into the header the api reads it from, and the built api
  * (apps/api/dist) with that server's origin as its own, so the login's
  * callback, the logout's return address and the allowed Origin all follow
@@ -110,9 +120,10 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     // The web server starts first, so the api gets the origin it is reached
     // at; nothing calls /api before the api answers below.
     const apiPort = await freePort();
+    const apiOrigin = `http://127.0.0.1:${apiPort}`;
     const web = await startWebServer({
       root: webRoot,
-      apiOrigin: `http://127.0.0.1:${apiPort}`,
+      apiOrigin,
       host: options.webHost,
       clientIpHeader: TEST_CLIENT_IP_HEADER,
       ...(options.https ? { tls: loopbackCertificate() } : {}),
@@ -120,13 +131,20 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
     cleanup.add(() => web.close());
     const baseUrl = `${options.https ? 'https' : 'http'}://${WEB_HOST_NAME}:${web.port}`;
 
+    const authing = await startAuthingStub({
+      ...TEST_AUTHING,
+      webhookUrl: `${apiOrigin}/api/webhooks/authing`,
+      delivery: AUTHING_REPORT_DELAY_MS,
+    });
+    cleanup.add(() => authing.close());
+
     // The api's errors go straight to this process's stderr, so its output
     // is not kept in memory for the length of the tests.
     const api = spawn(process.execPath, [join(apiDirectory, 'dist', 'main.js')], {
       cwd: apiDirectory,
       env: {
         ...process.env,
-        ...apiEnvironment(accessTo(services), baseUrl),
+        ...apiEnvironment(accessTo(services, authing.origin), baseUrl),
         PORT: String(apiPort),
       },
       stdio: ['ignore', 'ignore', 'inherit'],

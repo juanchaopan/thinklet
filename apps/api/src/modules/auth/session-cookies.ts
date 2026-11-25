@@ -43,6 +43,16 @@ export function clearParentSessionCookies(response: Response): void {
   response.clearCookie(ID_TOKEN_COOKIE, COOKIE_ATTRIBUTES);
 }
 
+/**
+ * Clears every cookie of the parent's: the session JWT, the ID token and a
+ * login under way, as a deleted account leaves none of them behind; a
+ * child's login stays.
+ */
+export function clearAllParentCookies(response: Response): void {
+  clearParentSessionCookies(response);
+  clearLoginTransactionCookie(response);
+}
+
 /** Sets the child's session JWT for the session's full lifetime. */
 export function setChildSessionCookie(response: Response, sessionToken: string): void {
   response.cookie(CHILD_SESSION_COOKIE, sessionToken, lasting(SESSION_LIFETIME_SECONDS));

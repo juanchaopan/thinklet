@@ -20,6 +20,8 @@ const settings: SecretSettings = {
   OIDC_CLIENT_SECRET: 'oidc-client-secret',
   JWT_SIGNING_KEY: { d: 'signing-key-d' },
   CHILD_DATA_KEY: Buffer.from('child-data-key-for-logger-tests!'),
+  AUTHING_USER_POOL_SECRET: 'user-pool-secret',
+  AUTHING_WEBHOOK_SECRET: 'webhook-secret-for-logger-tests',
 };
 
 /** The child data key of `settings` in base64, as the environment holds it, and in hex. */
@@ -77,7 +79,7 @@ const loggedJoinPageHeaders = {
 };
 
 describe('secretValues', () => {
-  it('lists the connection URLs and their passwords in both forms, the storage credentials, the client secret, the signing key and the child data key in both forms', () => {
+  it("lists the connection URLs and their passwords in both forms, the storage credentials, the client secret, the signing key, the child data key in both forms and Authing's secrets", () => {
     expect(secretValues(settings)).toEqual([
       settings.DATABASE_URL,
       'p%40ss-word',
@@ -91,6 +93,8 @@ describe('secretValues', () => {
       'signing-key-d',
       childDataKeyBase64,
       childDataKeyHex,
+      'user-pool-secret',
+      'webhook-secret-for-logger-tests',
     ]);
   });
 
@@ -109,11 +113,18 @@ describe('secretValues', () => {
 });
 
 describe('loggerOptions', () => {
-  it('redacts authorization headers, cookies, the login redirect and passwords', () => {
+  it("redacts authorization headers, cookies, Authing's webhook secret, the login redirect and passwords", () => {
     const { logger, output } = captureLogs([]);
 
     logger.info({
-      req: { headers: { authorization: 'Bearer token-1', cookie: 'session=cookie-1' } },
+      req: {
+        headers: {
+          authorization: 'Bearer token-1',
+          cookie: 'session=cookie-1',
+          'x-authing-webhook-secret': 'hook-1',
+          'x-authing-token': 'hook-2',
+        },
+      },
       res: {
         headers: { 'set-cookie': 'session=cookie-2', location: 'https://idp/?state=state-1' },
       },
@@ -121,7 +132,15 @@ describe('loggerOptions', () => {
     });
 
     expect(output()).toContain('[redacted]');
-    for (const value of ['token-1', 'cookie-1', 'cookie-2', 'state-1', 'password-1']) {
+    for (const value of [
+      'token-1',
+      'cookie-1',
+      'cookie-2',
+      'state-1',
+      'password-1',
+      'hook-1',
+      'hook-2',
+    ]) {
       expect(output()).not.toContain(value);
     }
   });
@@ -205,11 +224,23 @@ describe('loggerOptions', () => {
         OIDC_CLIENT_SECRET: 'secret-1',
         JWT_SIGNING_KEY: 'key-2',
         CHILD_DATA_KEY: 'key-3',
+        AUTHING_USER_POOL_SECRET: 'secret-2',
+        AUTHING_WEBHOOK_SECRET: 'secret-3',
       },
       CHILD_DATA_KEY: 'key-4',
     });
 
-    for (const value of ['url-1', 'url-2', 'key-1', 'secret-1', 'key-2', 'key-3', 'key-4']) {
+    for (const value of [
+      'url-1',
+      'url-2',
+      'key-1',
+      'secret-1',
+      'key-2',
+      'key-3',
+      'key-4',
+      'secret-2',
+      'secret-3',
+    ]) {
       expect(output()).not.toContain(value);
     }
   });
@@ -222,6 +253,7 @@ describe('loggerOptions', () => {
         detail: `password p@ss-word for ${settings.DATABASE_URL} and signing-key-d`,
         redis: `${settings.REDIS_URL} with redis!word`,
         key: `${childDataKeyBase64} or ${childDataKeyHex}`,
+        authing: 'user-pool-secret and webhook-secret-for-logger-tests',
       },
       'using secret-access-key with access-key-id and oidc-client-secret',
     );
@@ -339,11 +371,13 @@ describe('loggableHeaders', () => {
     expect(loggableHeaders({})).toEqual({});
   });
 
-  it('allows no header that carries a page address, a login or the client IP address', () => {
+  it('allows no header that carries a page address, a login, a webhook secret or the client IP address', () => {
     for (const name of [
       'referer',
       'cookie',
       'authorization',
+      'x-authing-webhook-secret',
+      'x-authing-token',
       'x-forwarded-for',
       'x-real-ip',
       'x-vercel-forwarded-for',

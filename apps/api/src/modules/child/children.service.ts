@@ -111,7 +111,9 @@ async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
  * of a child includes whether it has set a password and, while it has
  * not, until when it may set one with the account. Every change is
  * recorded as an audit event of the parent in its transaction; one that
- * changes nothing is not. The login links live in Redis, in LoginLinks.
+ * changes nothing is not. The login links live in Redis, in LoginLinks;
+ * other modules that delete children, with their family, remove the
+ * children's links through `removeLoginLinksOf`.
  */
 @Injectable()
 export class ChildrenService {
@@ -195,7 +197,17 @@ export class ChildrenService {
         action: 'child.deleted',
       });
     });
-    await this.links.removeOf([childId]);
+    await this.removeLoginLinksOf([childId]);
+  }
+
+  /**
+   * Removes the login links in Redis of children already deleted, such as
+   * those of a family deleted with them, once their deletion has
+   * committed. A failure of Redis is logged, not thrown: a link of a
+   * deleted child cannot be used, and its keys run out within minutes.
+   */
+  removeLoginLinksOf(childIds: readonly string[]): Promise<void> {
+    return this.links.removeOf(childIds);
   }
 
   /**

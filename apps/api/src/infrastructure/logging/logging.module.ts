@@ -18,6 +18,8 @@ import { httpLoggerOptions, secretValues } from './logger-options.js';
             OIDC_CLIENT_SECRET: config.get('OIDC_CLIENT_SECRET', { infer: true }),
             JWT_SIGNING_KEY: config.get('JWT_SIGNING_KEY', { infer: true }),
             CHILD_DATA_KEY: config.get('CHILD_DATA_KEY', { infer: true }),
+            AUTHING_USER_POOL_SECRET: config.get('AUTHING_USER_POOL_SECRET', { infer: true }),
+            AUTHING_WEBHOOK_SECRET: config.get('AUTHING_WEBHOOK_SECRET', { infer: true }),
           }),
         ),
       }),

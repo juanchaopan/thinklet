@@ -78,6 +78,12 @@ describe('errorCodeSchema', () => {
       expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
     }
   });
+
+  it('has the codes of deleting an account', () => {
+    for (const code of ['still_admin', 'identity_provider_failed']) {
+      expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
+    }
+  });
 });
 
 describe('errorResponseSchema', () => {
@@ -111,6 +117,30 @@ describe('errorResponseSchema', () => {
   it.each([0, -1, 1.5, '60'])('rejects %j as the seconds left in a window', (seconds) => {
     const body = {
       error: { code: 'rate_limited', requestId: 'req-6', retryAfterSeconds: seconds },
+    };
+
+    expect(errorResponseSchema.safeParse(body).success).toBe(false);
+  });
+
+  it('accepts a still_admin with the families the parent is the admin of', () => {
+    const body = {
+      error: {
+        code: 'still_admin',
+        requestId: 'req-7',
+        families: [{ id: '5d1e7f3a-9b2c-4d4e-a6f8-1a2b3c4d5e6f', name: '林悦的家' }],
+      },
+    };
+
+    expect(errorResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects a family named by anything but its id and name', () => {
+    const body = {
+      error: {
+        code: 'still_admin',
+        requestId: 'req-8',
+        families: [{ id: 'not-an-id', name: '林悦的家', code: '7KQ4MZ' }],
+      },
     };
 
     expect(errorResponseSchema.safeParse(body).success).toBe(false);

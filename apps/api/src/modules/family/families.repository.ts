@@ -9,7 +9,7 @@ import {
 import * as schema from '../../infrastructure/database/schema.js';
 import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
-const { families, familyMembers, joinRequests, parents } = schema;
+const { children, families, familyBooks, familyMembers, joinRequests, parents } = schema;
 
 /** The unique constraint that keeps family codes unique across the platform. */
 const FAMILY_CODE_UNIQUE = 'families_code_unique';
@@ -60,6 +60,12 @@ export interface FamilyChanges {
   timezone?: string;
 }
 
+/** What deleting a family took with it: its children's ids and how many parents were its members. */
+export interface DeletedFamily {
+  childIds: string[];
+  members: number;
+}
+
 /** The queries on families and their members, on the pool or inside one transaction. */
 export class FamilyStore {
   constructor(protected readonly executor: Executor) {}
@@ -75,6 +81,23 @@ export class FamilyStore {
       .select({ id: families.id })
       .from(families)
       .where(eq(families.id, familyId))
+      .for('update');
+  }
+
+  /**
+   * Locks the rows of several families until the transaction ends, in the
+   * order of their ids, so two transactions that lock some of the same
+   * families take them in the same order and cannot wait for each other.
+   */
+  async lockFamilies(familyIds: readonly string[]): Promise<void> {
+    if (familyIds.length === 0) {
+      return;
+    }
+    await this.executor
+      .select({ id: families.id })
+      .from(families)
+      .where(inArray(families.id, [...familyIds]))
+      .orderBy(asc(families.id))
       .for('update');
   }
 
@@ -182,6 +205,33 @@ export class FamilyStore {
     await this.executor
       .delete(familyMembers)
       .where(and(eq(familyMembers.familyId, familyId), eq(familyMembers.parentId, parentId)));
+  }
+
+  /**
+   * Deletes the family and everything in it (`.docs/design/data.md`,
+   * "families"): its children, whose remembered devices and assigned books
+   * go with them, the books it has, its join requests, its members' rows and
+   * the family itself, in that order, so no row is left referring to one
+   * already gone. The parents themselves stay. The children's login links
+   * live in Redis; the caller removes them by the ids returned, once the
+   * transaction has committed.
+   */
+  async deleteFamily(familyId: string): Promise<DeletedFamily> {
+    const deletedChildren = await this.executor
+      .delete(children)
+      .where(eq(children.familyId, familyId))
+      .returning({ id: children.id });
+    await this.executor.delete(familyBooks).where(eq(familyBooks.familyId, familyId));
+    await this.executor.delete(joinRequests).where(eq(joinRequests.familyId, familyId));
+    const deletedMembers = await this.executor
+      .delete(familyMembers)
+      .where(eq(familyMembers.familyId, familyId))
+      .returning({ parentId: familyMembers.parentId });
+    await this.executor.delete(families).where(eq(families.id, familyId));
+    return {
+      childIds: deletedChildren.map(({ id }) => id),
+      members: deletedMembers.length,
+    };
   }
 }
 

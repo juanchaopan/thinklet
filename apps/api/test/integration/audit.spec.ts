@@ -1,3 +1,4 @@
+import { ACCOUNT_DELETION_AUDIT_CASES } from '../support/account-deletion.js';
 import {
   AUDIT_CASES,
   businessSnapshot,
@@ -21,6 +22,9 @@ import { newUser, signIn } from '../support/login.js';
 /** What the database answers any update, delete or truncate of the audit events with. */
 const APPEND_ONLY = 'audit_events rows are never changed or deleted';
 
+/** Every data-changing request of the api, the deletions of accounts included. */
+const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES];
+
 // Acceptance criterion covered (#14, 30): every request that changes data
 // writes one audit row, with the event name, the actor, the target, the
 // family and the details of the design, in the same transaction as the
@@ -37,7 +41,7 @@ describe('audit events', () => {
   });
   const snapshot = () => businessSnapshot(running.databaseUrl, running.redisUrl);
 
-  describe.each(AUDIT_CASES.map((auditCase) => [auditCase.action, auditCase] as const))(
+  describe.each(CASES.map((auditCase) => [auditCase.action, auditCase] as const))(
     '%s',
     (_action, auditCase) => {
       it('writes the one audit row of the change, at the time of the change', async () => {
@@ -75,10 +79,11 @@ describe('audit events', () => {
   );
 
   it('covers every action of the design that the api makes today', () => {
-    expect(new Set(AUDIT_CASES.map(({ action }) => action))).toEqual(
+    expect(new Set(CASES.map(({ action }) => action))).toEqual(
       new Set([
         'parent.created',
         'parent.renamed',
+        'parent.deleted',
         'family.created',
         'family.updated',
         'family.code_changed',

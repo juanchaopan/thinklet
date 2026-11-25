@@ -1,3 +1,4 @@
+import { ACCOUNT_DELETION_AUDIT_CASES } from '../support/account-deletion.js';
 import { AUDIT_CASES, auditRows, PersonalData, type AuditRow } from '../support/audit.js';
 import { useAppWithServices } from '../support/families.js';
 
@@ -6,6 +7,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** The values the details of an audit row may hold besides ids: field names, versions and channels. */
 const DETAIL_WORDS = new Set(['name', 'timezone', 'nickname', 'account', 'self', 'webhook', 'qr']);
 const VERSION = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Every data-changing request of the api, the deletions of accounts included. */
+const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES];
 
 /** Whether a value of an audit row's details is an id, a count or one of the allowed words. */
 function isIdentifier(value: unknown): boolean {
@@ -32,7 +36,7 @@ describe('Personal data in the audit events', () => {
   let rows: AuditRow[];
 
   beforeAll(async () => {
-    for (const auditCase of AUDIT_CASES) {
+    for (const auditCase of CASES) {
       const arranged = await auditCase.arrange({
         target: running.server,
         databaseUrl: running.databaseUrl,
@@ -46,12 +50,12 @@ describe('Personal data in the audit events', () => {
 
   it('records the changes the requests made', () => {
     expect(new Set(rows.map(({ action }) => action))).toEqual(
-      new Set(AUDIT_CASES.map(({ action }) => action)),
+      new Set(CASES.map(({ action }) => action)),
     );
   });
 
   it('holds no name, email, family name, nickname, account or device name', () => {
-    expect(personal.given.length).toBeGreaterThan(AUDIT_CASES.length);
+    expect(personal.given.length).toBeGreaterThan(CASES.length);
     const stored = rows.map((row) => JSON.stringify(row));
     for (const value of personal.given) {
       expect(

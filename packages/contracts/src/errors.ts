@@ -6,7 +6,8 @@ import { fieldErrorCodeSchema, type FieldErrorCode } from './fields.js';
 export const errorCodeSchema = z.enum([
   // 400: the request body, query or path did not pass its schema; `fields` says which.
   'invalid_request',
-  // 401: not signed in, or the JWT has expired, its signature is wrong or it is of the other kind.
+  // 401: not signed in, or the JWT has expired, its signature is wrong or it is of the other kind;
+  // for Authing's webhook, the webhook secret is missing or wrong.
   'unauthenticated',
   // 401: the family code, the account or the password of a child login is wrong, a password is
   // missing, or a child without one may no longer set it with the account.
@@ -41,6 +42,8 @@ export const errorCodeSchema = z.enum([
   'admin_cannot_leave',
   // 409: the parent named as the family's new admin is its admin already.
   'already_admin',
+  // 409: the parent is still the admin of a family, so they cannot delete their account; `families` names those families.
+  'still_admin',
   // 409: the parent is no longer a member of the family.
   'not_a_member',
   // 409: another child of the family has this account.
@@ -59,6 +62,8 @@ export const errorCodeSchema = z.enum([
   'rate_limited',
   // 500: anything unexpected; the response carries only the request id.
   'internal',
+  // 502: the identity provider failed or did not answer, so the parent's account was not deleted.
+  'identity_provider_failed',
 ]);
 
 /** One rejected field of an `invalid_request`; `path` joins the field's keys with dots. */
@@ -67,10 +72,17 @@ export const fieldErrorSchema = z.strictObject({
   code: fieldErrorCodeSchema,
 });
 
+/** A family a `still_admin` names: one the parent is still the admin of. */
+export const adminFamilySchema = z.strictObject({
+  id: z.uuid(),
+  name: z.string(),
+});
+
 /**
  * The body of every error response; `requestId` is the error id shown on
  * screen. A `rate_limited` carries `retryAfterSeconds`, the seconds left in
- * the window that refused it, as its `Retry-After` header does.
+ * the window that refused it, as its `Retry-After` header does; a
+ * `still_admin` carries `families`, the families the parent is the admin of.
  */
 export const errorResponseSchema = z.strictObject({
   error: z.strictObject({
@@ -78,11 +90,13 @@ export const errorResponseSchema = z.strictObject({
     requestId: z.string().min(1),
     fields: z.array(fieldErrorSchema).optional(),
     retryAfterSeconds: z.int().positive().optional(),
+    families: z.array(adminFamilySchema).optional(),
   }),
 });
 
 export type ErrorCode = z.infer<typeof errorCodeSchema>;
 export type FieldError = z.infer<typeof fieldErrorSchema>;
+export type AdminFamily = z.infer<typeof adminFamilySchema>;
 export type ErrorResponse = z.infer<typeof errorResponseSchema>;
 
 const fieldErrorCodes: ReadonlySet<string> = new Set(fieldErrorCodeSchema.options);

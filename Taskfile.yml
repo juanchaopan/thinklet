@@ -31,7 +31,7 @@ vars:
 
 tasks:
   dev:
-    desc: Start PostgreSQL, SeaweedFS, Valkey and the mock OIDC provider with Docker Compose, apply the migrations, import the book covers, then run the contracts watcher and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
+    desc: Start PostgreSQL, SeaweedFS, Valkey and the mock OIDC provider with Docker Compose, apply the migrations, import the book covers, then run the contracts watcher, the Authing stand-in (on AUTHING_STUB_PORT) and the api and web dev servers (web on http://localhost:4200, /api forwarded to the api)
     preconditions:
       - sh: test -f .env
         msg: Copy .env.example to .env first
@@ -213,13 +213,13 @@ tasks:
   # as `task migrate` does, the data migrations from the api's build, so
   # they build the api first.
   test-integration:
-    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS, Valkey and mock OIDC provider containers, migrated with the built data migrations
+    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS, Valkey and mock OIDC provider containers and the Authing stand-in, migrated with the built data migrations
     deps: [build-api]
     cmds:
       - pnpm --filter api run test:integration
 
   test-security:
-    desc: Run the api security test cases against the built api and throwaway containers
+    desc: Run the api security test cases against the built api, throwaway containers and the Authing stand-in
     deps: [build-api]
     cmds:
       - pnpm --filter api run test:security
@@ -231,7 +231,7 @@ tasks:
       - pnpm --filter api run test:migration
 
   test-e2e:
-    desc: Run the end-to-end tests in Chromium against a throwaway environment (containers, migrations, the built api and web on random ports) that is removed afterwards
+    desc: Run the end-to-end tests in Chromium against a throwaway environment (containers, the Authing stand-in, migrations, the built api and web on random ports) that is removed afterwards
     deps:
       - build
       - task: install-browsers
@@ -365,12 +365,19 @@ tasks:
 
   dev-servers:
     internal: true
-    deps: [dev-contracts, dev-api, dev-web]
+    deps: [dev-contracts, dev-authing-stub, dev-api, dev-web]
 
   dev-contracts:
     internal: true
     cmds:
       - pnpm --filter @thinklet/contracts exec tsc -p tsconfig.build.json --watch --preserveWatchOutput
+
+  # The stand-in plays Authing's management API and webhook: deleting an
+  # account on the development machine reaches it instead of Authing.
+  dev-authing-stub:
+    internal: true
+    cmds:
+      - node tools/bin/authing-stub.ts
 
   dev-api:
     internal: true

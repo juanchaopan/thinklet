@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { FamilyRole } from '@thinklet/contracts';
+import type { AdminFamily, FamilyRole } from '@thinklet/contracts';
 import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   DATABASE,
@@ -90,6 +90,39 @@ export class ParentStore {
     return rows.at(0);
   }
 
+  /** The parent's subject at the identity provider, the id Authing knows them by, if they exist. */
+  async findSubject(parentId: string): Promise<string | undefined> {
+    const rows = await this.executor
+      .select({ subject: parents.oidcSubject })
+      .from(parents)
+      .where(eq(parents.id, parentId));
+    return rows.at(0)?.subject;
+  }
+
+  /** The id of the parent with the identity provider's issuer and subject, if there is one. */
+  async findParentId(issuer: string, subject: string): Promise<string | undefined> {
+    const rows = await this.executor
+      .select({ id: parents.id })
+      .from(parents)
+      .where(and(eq(parents.oidcIssuer, issuer), eq(parents.oidcSubject, subject)));
+    return rows.at(0)?.id;
+  }
+
+  /**
+   * Locks the parent's row until the transaction ends and says whether the
+   * parent exists. A family cannot take the parent in while it is held,
+   * since adding a member checks the parent's row, and a second deletion of
+   * the same parent waits for the first and then finds no one.
+   */
+  async lockParent(parentId: string): Promise<boolean> {
+    const rows = await this.executor
+      .select({ id: parents.id })
+      .from(parents)
+      .where(eq(parents.id, parentId))
+      .for('update');
+    return rows.length > 0;
+  }
+
   /** Whether the parent exists and now has the name. */
   async updateParentName(parentId: string, name: string): Promise<boolean> {
     const rows = await this.executor
@@ -118,6 +151,25 @@ export class ParentStore {
       .orderBy(asc(familyMembers.joinedAt), asc(families.id));
   }
 
+  /** The ids of the families the parent is a member of. */
+  async familyIdsOf(parentId: string): Promise<string[]> {
+    const rows = await this.executor
+      .select({ id: familyMembers.familyId })
+      .from(familyMembers)
+      .where(eq(familyMembers.parentId, parentId));
+    return rows.map(({ id }) => id);
+  }
+
+  /** The families the parent is the admin of, in the order they joined them. */
+  async adminFamiliesOf(parentId: string): Promise<AdminFamily[]> {
+    return this.executor
+      .select({ id: families.id, name: families.name })
+      .from(familyMembers)
+      .innerJoin(families, eq(families.id, familyMembers.familyId))
+      .where(and(eq(familyMembers.parentId, parentId), eq(familyMembers.role, 'admin')))
+      .orderBy(asc(familyMembers.joinedAt), asc(families.id));
+  }
+
   /**
    * How many of the parent's own requests were approved, rejected or expired
    * and are not yet dismissed by them: the results they have still to see.
@@ -134,6 +186,17 @@ export class ParentStore {
         ),
       );
     return rows.at(0)?.results ?? 0;
+  }
+
+  /**
+   * Deletes the parent (`.docs/design/data.md`, "parents"): the join
+   * requests they made, their rows as a member of any family and their own
+   * row, in that order, so no row is left referring to them.
+   */
+  async deleteParent(parentId: string): Promise<void> {
+    await this.executor.delete(joinRequests).where(eq(joinRequests.parentId, parentId));
+    await this.executor.delete(familyMembers).where(eq(familyMembers.parentId, parentId));
+    await this.executor.delete(parents).where(eq(parents.id, parentId));
   }
 }
 
