@@ -16,6 +16,7 @@ const settings: SecretSettings = {
   DATABASE_URL: 'postgresql://app:p%40ss-word@db.internal:5432/app',
   S3_ACCESS_KEY_ID: 'access-key-id',
   S3_SECRET_ACCESS_KEY: 'secret-access-key',
+  REDIS_URL: 'rediss://default:redis%21word@cache.internal:6379',
   OIDC_CLIENT_SECRET: 'oidc-client-secret',
   JWT_SIGNING_KEY: { d: 'signing-key-d' },
   CHILD_DATA_KEY: Buffer.from('child-data-key-for-logger-tests!'),
@@ -46,9 +47,11 @@ interface LoggedRequest {
   query?: unknown;
   params?: unknown;
   method?: string;
+  remoteAddress?: string;
+  remotePort?: number;
 }
 
-/** The headers a browser sends with a request made from a join page. */
+/** The headers a browser sends with a request made from a join page, through the proxy. */
 const joinPageHeaders = {
   host: 'site.example',
   origin: 'https://site.example',
@@ -59,6 +62,8 @@ const joinPageHeaders = {
   cookie: 'thinklet_session=cookie-1',
   authorization: 'Bearer token-1',
   referer: 'https://site.example/join/ABC234',
+  'x-forwarded-for': '203.0.113.7',
+  'x-real-ip': '203.0.113.7',
   'x-unknown': 'unknown-1',
 };
 
@@ -72,13 +77,16 @@ const loggedJoinPageHeaders = {
 };
 
 describe('secretValues', () => {
-  it('lists the database URL, its password in both forms, the storage credentials, the client secret, the signing key and the child data key in both forms', () => {
+  it('lists the connection URLs and their passwords in both forms, the storage credentials, the client secret, the signing key and the child data key in both forms', () => {
     expect(secretValues(settings)).toEqual([
       settings.DATABASE_URL,
       'p%40ss-word',
       'p@ss-word',
       'access-key-id',
       'secret-access-key',
+      settings.REDIS_URL,
+      'redis%21word',
+      'redis!word',
       'oidc-client-secret',
       'signing-key-d',
       childDataKeyBase64,
@@ -90,6 +98,13 @@ describe('secretValues', () => {
     const malformed = { ...settings, DATABASE_URL: 'postgresql://app:p%zz@db.internal:5432/app' };
 
     expect(secretValues(malformed).slice(0, 3)).toEqual([malformed.DATABASE_URL, 'p%zz', 'p%zz']);
+  });
+
+  it('lists no password of a Redis URL that has none', () => {
+    const withoutPassword = { ...settings, REDIS_URL: 'redis://127.0.0.1:6379' };
+
+    expect(secretValues(withoutPassword)).toContain('redis://127.0.0.1:6379');
+    expect(secretValues(withoutPassword)).not.toContain('');
   });
 });
 
@@ -186,6 +201,7 @@ describe('loggerOptions', () => {
       config: {
         DATABASE_URL: 'url-1',
         S3_SECRET_ACCESS_KEY: 'key-1',
+        REDIS_URL: 'url-2',
         OIDC_CLIENT_SECRET: 'secret-1',
         JWT_SIGNING_KEY: 'key-2',
         CHILD_DATA_KEY: 'key-3',
@@ -193,7 +209,7 @@ describe('loggerOptions', () => {
       CHILD_DATA_KEY: 'key-4',
     });
 
-    for (const value of ['url-1', 'key-1', 'secret-1', 'key-2', 'key-3', 'key-4']) {
+    for (const value of ['url-1', 'url-2', 'key-1', 'secret-1', 'key-2', 'key-3', 'key-4']) {
       expect(output()).not.toContain(value);
     }
   });
@@ -204,6 +220,7 @@ describe('loggerOptions', () => {
     logger.warn(
       {
         detail: `password p@ss-word for ${settings.DATABASE_URL} and signing-key-d`,
+        redis: `${settings.REDIS_URL} with redis!word`,
         key: `${childDataKeyBase64} or ${childDataKeyHex}`,
       },
       'using secret-access-key with access-key-id and oidc-client-secret',
@@ -322,8 +339,16 @@ describe('loggableHeaders', () => {
     expect(loggableHeaders({})).toEqual({});
   });
 
-  it('allows no header that carries a page address, a login or a forwarded client', () => {
-    for (const name of ['referer', 'cookie', 'authorization', 'x-forwarded-for', 'forwarded']) {
+  it('allows no header that carries a page address, a login or the client IP address', () => {
+    for (const name of [
+      'referer',
+      'cookie',
+      'authorization',
+      'x-forwarded-for',
+      'x-real-ip',
+      'x-vercel-forwarded-for',
+      'forwarded',
+    ]) {
       expect(LOGGED_REQUEST_HEADERS).not.toContain(name);
     }
   });
@@ -349,7 +374,7 @@ describe('loggableRequest', () => {
     expect(logged).toEqual({ url: '/api/family-codes/[redacted]', method: 'GET' });
   });
 
-  it('logs only the allowed headers, without the referer and unknown headers', () => {
+  it('logs only the allowed headers, without the referer, the client IP and unknown headers', () => {
     const logged = loggableRequest<LoggedRequest>({
       url: '/api/me',
       headers: { ...joinPageHeaders },
@@ -357,6 +382,17 @@ describe('loggableRequest', () => {
     });
 
     expect(logged).toEqual({ url: '/api/me', headers: loggedJoinPageHeaders, method: 'GET' });
+  });
+
+  it("leaves out the connection's address and port", () => {
+    const logged = loggableRequest<LoggedRequest>({
+      url: '/api/child-auth/login',
+      method: 'POST',
+      remoteAddress: '203.0.113.7',
+      remotePort: 51234,
+    });
+
+    expect(logged).toEqual({ url: '/api/child-auth/login', method: 'POST' });
   });
 
   it('leaves a request without a URL or headers alone', () => {

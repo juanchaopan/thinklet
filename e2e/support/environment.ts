@@ -9,6 +9,7 @@ import {
   importBuiltCovers,
   migrate,
   startServices,
+  TEST_CLIENT_IP_HEADER,
 } from '../../apps/api/test/support/containers.ts';
 import { freePort, waitForHttp } from '../../apps/api/test/support/process.ts';
 import { loopbackCertificate } from './certificate.ts';
@@ -91,7 +92,8 @@ function createCleanup(): Cleanup {
  * SeaweedFS, Valkey (for Redis) and the mock OIDC provider in containers,
  * the migrations and the cover import of the repository's content/books/
  * (the built apps/api/dist/rebuild.js), the built web (apps/web/dist) behind
- * a server that forwards /api like the Vercel rewrite, and the built api
+ * a server that forwards /api like the Vercel rewrite, writing the client's
+ * address into the header the api reads it from, and the built api
  * (apps/api/dist) with that server's origin as its own, so the login's
  * callback, the logout's return address and the allowed Origin all follow
  * the web origin. Both apps must be built first.
@@ -112,6 +114,7 @@ export async function startEnvironment(options: EnvironmentOptions): Promise<Env
       root: webRoot,
       apiOrigin: `http://127.0.0.1:${apiPort}`,
       host: options.webHost,
+      clientIpHeader: TEST_CLIENT_IP_HEADER,
       ...(options.https ? { tls: loopbackCertificate() } : {}),
     });
     cleanup.add(() => web.close());

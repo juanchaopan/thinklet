@@ -20,6 +20,8 @@ const valid = {
   S3_BUCKET: 'bucket',
   S3_ACCESS_KEY_ID: 'access-key',
   S3_SECRET_ACCESS_KEY: 'secret-key',
+  REDIS_URL: 'redis://127.0.0.1:6379',
+  CLIENT_IP_HEADER: 'x-forwarded-for',
   OIDC_ISSUER: 'http://localhost:8080/default',
   OIDC_CLIENT_ID: 'client-id',
   OIDC_CLIENT_SECRET: 'client-secret',
@@ -78,6 +80,8 @@ describe('environmentSchema', () => {
     'S3_BUCKET',
     'S3_ACCESS_KEY_ID',
     'S3_SECRET_ACCESS_KEY',
+    'REDIS_URL',
+    'CLIENT_IP_HEADER',
     'OIDC_ISSUER',
     'OIDC_CLIENT_ID',
     'OIDC_CLIENT_SECRET',
@@ -97,6 +101,34 @@ describe('environmentSchema', () => {
 
   it('names S3_ENDPOINT when it is not an HTTP URL', () => {
     expect(failingVariables({ ...valid, S3_ENDPOINT: 'ftp://localhost' })).toEqual(['S3_ENDPOINT']);
+  });
+
+  it('accepts a TLS Redis address with a password as REDIS_URL', () => {
+    const url = 'rediss://default:secret@example.upstash.io:6379';
+
+    expect(environmentSchema.parse({ ...valid, REDIS_URL: url }).REDIS_URL).toBe(url);
+  });
+
+  it.each(['http://127.0.0.1:6379', 'not a url'])('names REDIS_URL when it is %s', (url) => {
+    expect(failingVariables({ ...valid, REDIS_URL: url })).toEqual(['REDIS_URL']);
+  });
+
+  it.each(['x-real-ip', 'x-vercel-forwarded-for', 'cf-connecting-ip'])(
+    'accepts %s as CLIENT_IP_HEADER',
+    (header) => {
+      expect(environmentSchema.parse({ ...valid, CLIENT_IP_HEADER: header }).CLIENT_IP_HEADER).toBe(
+        header,
+      );
+    },
+  );
+
+  it.each([
+    ['upper case', 'X-Real-IP'],
+    ['a colon', 'x-real-ip:'],
+    ['a space', 'x real ip'],
+    ['a leading dash', '-x-real-ip'],
+  ])('names CLIENT_IP_HEADER when it has %s', (_case, header) => {
+    expect(failingVariables({ ...valid, CLIENT_IP_HEADER: header })).toEqual(['CLIENT_IP_HEADER']);
   });
 
   it.each(['0', '65536', 'abc', '80.5'])('names PORT when it is %s', (port) => {
@@ -202,6 +234,14 @@ describe('environmentSchema', () => {
 
     expect(result.success).toBe(false);
     expect(JSON.stringify(result.error?.issues)).not.toContain('secret-value');
+  });
+
+  it('does not repeat a rejected Redis address in its messages', () => {
+    const url = 'https://default:redis-secret@example.upstash.io:6379';
+    const result = environmentSchema.safeParse({ ...valid, REDIS_URL: url });
+
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.error?.issues)).not.toContain('redis-secret');
   });
 
   it.each([

@@ -10,13 +10,14 @@ import type { ErrorCode, ErrorResponse, FieldError } from '@thinklet/contracts';
 import type { Request, Response } from 'express';
 import { describeError } from '../logging/describe-error.js';
 import { requestIdOf } from '../logging/request-id.js';
-import { ApiError } from './api-error.js';
+import { ApiError, RateLimitedError } from './api-error.js';
 
-/** The status, error code and rejected fields an error is answered with. */
+/** The status, error code, rejected fields and waiting time an error is answered with. */
 export interface ErrorOutcome {
   status: number;
   code: ErrorCode;
   fields?: FieldError[];
+  retryAfterSeconds?: number;
 }
 
 const INTERNAL: ErrorOutcome = { status: HttpStatus.INTERNAL_SERVER_ERROR, code: 'internal' };
@@ -40,12 +41,20 @@ function statusOf(error: unknown): number | undefined {
 }
 
 /**
- * How an error is answered. The api's own errors keep their code; a missing
- * route is `not_found`; any other client error (a body that is not JSON, one
- * that is too large) is `invalid_request` with its status; everything else
- * is a 500 `internal`.
+ * How an error is answered. The api's own errors keep their code, with the
+ * rejected fields of an `invalid_request` and the seconds left of a
+ * `rate_limited`; a missing route is `not_found`; any other client error (a
+ * body that is not JSON, one that is too large) is `invalid_request` with
+ * its status; everything else is a 500 `internal`.
  */
 export function errorOutcome(error: unknown): ErrorOutcome {
+  if (error instanceof RateLimitedError) {
+    return {
+      status: error.getStatus(),
+      code: error.code,
+      retryAfterSeconds: error.retryAfterSeconds,
+    };
+  }
   if (error instanceof ApiError) {
     const outcome: ErrorOutcome = { status: error.getStatus(), code: error.code };
     return error.fields ? { ...outcome, fields: error.fields } : outcome;
@@ -59,8 +68,9 @@ export function errorOutcome(error: unknown): ErrorOutcome {
 
 /**
  * Global filter that answers every error with the common error body,
- * `{ error: { code, requestId, fields? } }`. Unexpected errors are logged
- * with their safe description and answered without any detail.
+ * `{ error: { code, requestId, fields?, retryAfterSeconds? } }`, and a
+ * `rate_limited` with a `Retry-After` header as well. Unexpected errors are
+ * logged with their safe description and answered without any detail.
  */
 @Catch()
 export class ErrorResponseFilter implements ExceptionFilter {
@@ -70,7 +80,7 @@ export class ErrorResponseFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
-    const { status, code, fields } = errorOutcome(exception);
+    const { status, code, fields, retryAfterSeconds } = errorOutcome(exception);
     if (code === 'internal') {
       this.logger.error({ error: describeError(exception) }, 'Unexpected error');
     }
@@ -78,8 +88,16 @@ export class ErrorResponseFilter implements ExceptionFilter {
       response.end();
       return;
     }
+    if (retryAfterSeconds !== undefined) {
+      response.setHeader('Retry-After', String(retryAfterSeconds));
+    }
     const body: ErrorResponse = {
-      error: { code, requestId: requestIdOf(request, response), ...(fields && { fields }) },
+      error: {
+        code,
+        requestId: requestIdOf(request, response),
+        ...(fields && { fields }),
+        ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
+      },
     };
     response.status(status).json(body);
   }

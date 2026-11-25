@@ -1,7 +1,7 @@
 import { childLoginLinkSchema, type Child } from '@thinklet/contracts';
 import request from 'supertest';
 import { addChild, childPath } from './children.js';
-import { TEST_APP_ORIGIN } from './containers.js';
+import { TEST_APP_ORIGIN, TEST_CLIENT_IP_HEADER } from './containers.js';
 import { as, type Parent } from './families.js';
 import { cookieHeader, setCookiesOf, type Target } from './login.js';
 
@@ -29,7 +29,8 @@ export interface ChildLoginBody {
  * A browser for the child routes. It keeps the cookies the api sets and
  * drops those it clears, the way a browser does; supertest's own agent
  * would not send Secure cookies over plain HTTP. Every request carries this
- * site's Origin and the browser's User-Agent.
+ * site's Origin and the browser's User-Agent, and, given a client IP
+ * address, the header the proxy in front of the api writes it into.
  */
 export class ChildBrowser {
   /** The browser's cookies by name; a test may change them as a user could. */
@@ -38,6 +39,7 @@ export class ChildBrowser {
   constructor(
     private readonly target: Target,
     private readonly userAgent = IPAD_SAFARI,
+    private readonly clientIp?: string,
   ) {}
 
   async get(path: string): Promise<request.Response> {
@@ -71,7 +73,11 @@ export class ChildBrowser {
   }
 
   private sent(call: request.Test): request.Test {
-    const sent = call.set('Origin', TEST_APP_ORIGIN).set('User-Agent', this.userAgent);
+    const identified = call.set('Origin', TEST_APP_ORIGIN).set('User-Agent', this.userAgent);
+    const sent =
+      this.clientIp === undefined
+        ? identified
+        : identified.set(TEST_CLIENT_IP_HEADER, this.clientIp);
     return this.cookies.size === 0
       ? sent
       : sent.set('Cookie', cookieHeader(Object.fromEntries(this.cookies)));

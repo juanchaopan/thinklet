@@ -1,5 +1,5 @@
 import type { ErrorCode } from '@thinklet/contracts';
-import type { PasswordHasher } from '../../infrastructure/passwords/password-hasher.js';
+import { RateLimitedError } from '../../infrastructure/errors/api-error.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { FamiliesService } from '../family/families.service.js';
 import type {
@@ -9,6 +9,7 @@ import type {
   LoginCandidate,
 } from './child-login.repository.js';
 import { ChildLoginService, type Browser } from './child-login.service.js';
+import type { ChildPasswords } from './child-passwords.js';
 import { DEVICE_LIFETIME_MS } from './device-cookie.js';
 import { hashToken, isWellFormedToken, newToken } from './tokens.js';
 
@@ -26,6 +27,8 @@ const HASH =
 const OTHER_HASH = '$argon2id$v=19$m=19456,t=2,p=1$b3RoZXJzYWx0$b3RoZXItaGFzaA';
 const IPAD =
   'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+/** The address of the client the logins come from, a documentation address (RFC 5737). */
+const CLIENT_IP = '203.0.113.7';
 const LOGIN = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret1', remember: false };
 const XIAOMI: LoginCandidate = {
   id: CHILD_ID,
@@ -34,7 +37,7 @@ const XIAOMI: LoginCandidate = {
   passwordHash: HASH,
 };
 const XIAOMI_WITHOUT_PASSWORD: LoginCandidate = { ...XIAOMI, passwordHash: null };
-const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD };
+const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD, clientIp: CLIENT_IP };
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
 const TRANSACTION = { transaction: 'child-login' };
@@ -91,12 +94,28 @@ describe('ChildLoginService', () => {
     findIdByCode: vi.fn<FamiliesService['findIdByCode']>(),
     codesOf: vi.fn<FamiliesService['codesOf']>(),
   };
+  /** The hashing and verifying of the children's passwords. */
   const hasher = {
-    hash: vi.fn<PasswordHasher['hash']>(),
-    verify: vi.fn<PasswordHasher['verify']>(),
+    hash: vi.fn<ChildPasswords['hash']>(),
+    verify: vi.fn<ChildPasswords['verify']>(),
+  };
+  /** The limits on the logins that check a password, letting every attempt through unless a test says otherwise. */
+  const limits = {
+    attempt: vi.fn(
+      (_clientIp: string | undefined, _subject: unknown, login: () => Promise<unknown>) => login(),
+    ),
   };
   const audit = { record: vi.fn<AuditService['record']>() };
   let service: ChildLoginService;
+
+  /** The logins whose family code and account match no child, each arranged on the doubles. */
+  const noSuchChild: Array<[string, () => void]> = [
+    ['a code no family has', () => families.findIdByCode.mockResolvedValue(undefined)],
+    [
+      'an account the family does not have',
+      () => store.findLoginCandidate.mockResolvedValue(undefined),
+    ],
+  ];
 
   beforeEach(() => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
@@ -109,6 +128,7 @@ describe('ChildLoginService', () => {
     });
     hasher.hash.mockReset();
     hasher.verify.mockReset().mockResolvedValue(false);
+    limits.attempt.mockClear();
     audit.record.mockReset().mockResolvedValue();
     families.findIdByCode.mockResolvedValue(FAMILY_ID);
     store.findLoginCandidate.mockResolvedValue(XIAOMI);
@@ -116,7 +136,7 @@ describe('ChildLoginService', () => {
     service = new ChildLoginService(
       repository,
       families as unknown as FamiliesService,
-      hasher as unknown as PasswordHasher,
+      { ...hasher, ...limits } as unknown as ChildPasswords,
       audit as unknown as AuditService,
     );
   });
@@ -159,11 +179,7 @@ describe('ChildLoginService', () => {
     });
 
     it.each<[string, () => void]>([
-      ['a code no family has', () => families.findIdByCode.mockResolvedValue(undefined)],
-      [
-        'an account the family does not have',
-        () => store.findLoginCandidate.mockResolvedValue(undefined),
-      ],
+      ...noSuchChild,
       [
         'a child without a password yet',
         () => store.findLoginCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD),
@@ -206,6 +222,129 @@ describe('ChildLoginService', () => {
     );
   });
 
+  describe('the limits of a login', () => {
+    it('counts a login for the child found from where the browser is, with the password checked within the limits', async () => {
+      await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
+
+      expect(limits.attempt).toHaveBeenCalledExactlyOnceWith(
+        CLIENT_IP,
+        { childId: CHILD_ID },
+        expect.any(Function),
+      );
+      expectCalledInOrder(store.findLoginCandidate, limits.attempt, hasher.verify);
+    });
+
+    it.each(noSuchChild)(
+      'counts a login with %s for the code and account typed',
+      async (_case, arrange) => {
+        arrange();
+
+        await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
+
+        expect(limits.attempt).toHaveBeenCalledWith(
+          CLIENT_IP,
+          { code: '7KQ4MZ', account: 'xiaomi' },
+          expect.any(Function),
+        );
+      },
+    );
+
+    it('passes on a browser without a client address for the limits to decide', async () => {
+      hasher.verify.mockResolvedValue(true);
+
+      await service.login(LOGIN, { ...FRESH_BROWSER, clientIp: undefined });
+
+      expect(limits.attempt).toHaveBeenCalledWith(
+        undefined,
+        { childId: CHILD_ID },
+        expect.any(Function),
+      );
+    });
+
+    it('refuses a source at its limit with rate_limited before the password is checked', async () => {
+      limits.attempt.mockRejectedValueOnce(new RateLimitedError(412));
+
+      await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'rate_limited');
+      expect(hasher.verify).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('counts a login on a link for the link’s child, after the link is found', async () => {
+      store.findLinkByToken.mockResolvedValue(linkOf());
+      store.lockLink.mockResolvedValue(linkOf());
+      hasher.verify.mockResolvedValue(true);
+
+      await service.loginWithLink(
+        newToken().token,
+        { password: 'secret1', remember: false },
+        FRESH_BROWSER,
+      );
+
+      expect(limits.attempt).toHaveBeenCalledExactlyOnceWith(
+        CLIENT_IP,
+        { childId: CHILD_ID },
+        expect.any(Function),
+      );
+      expectCalledInOrder(store.findLinkByToken, limits.attempt, hasher.verify);
+    });
+
+    it('refuses a source at its limit on a link with rate_limited, leaving the link unused', async () => {
+      store.findLinkByToken.mockResolvedValue(linkOf());
+      limits.attempt.mockRejectedValueOnce(new RateLimitedError(60));
+
+      await expectRefusal(
+        service.loginWithLink(
+          newToken().token,
+          { password: 'secret1', remember: true },
+          FRESH_BROWSER,
+        ),
+        'rate_limited',
+      );
+      expect(hasher.verify).not.toHaveBeenCalled();
+      expect(store.markLinkUsed).not.toHaveBeenCalled();
+    });
+
+    it('does not limit a link that cannot be used, or one whose child still has to set a password', async () => {
+      store.findLinkByToken.mockResolvedValueOnce(undefined);
+      await expectRefusal(
+        service.loginWithLink(
+          newToken().token,
+          { password: 'secret1', remember: true },
+          FRESH_BROWSER,
+        ),
+        'link_invalid',
+      );
+      store.findLinkByToken.mockResolvedValueOnce(linkOf({ passwordHash: null }));
+      await expectRefusal(
+        service.loginWithLink(
+          newToken().token,
+          { password: 'secret1', remember: true },
+          FRESH_BROWSER,
+        ),
+        'password_not_set',
+      );
+
+      expect(limits.attempt).not.toHaveBeenCalled();
+    });
+
+    it('does not limit setting a first password on a link or a remembered login', async () => {
+      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.lockLink.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.lockChild.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
+      store.renewDevice.mockResolvedValue(true);
+      hasher.hash.mockResolvedValue(HASH);
+
+      await service.setPasswordWithLink(
+        newToken().token,
+        { password: 'new secret', remember: false },
+        FRESH_BROWSER,
+      );
+      await service.loginRemembered(CHILD_ID, newToken().token);
+
+      expect(limits.attempt).not.toHaveBeenCalled();
+    });
+  });
+
   describe('remembering the browser on a login', () => {
     beforeEach(() => {
       hasher.verify.mockResolvedValue(true);
@@ -229,7 +368,7 @@ describe('ChildLoginService', () => {
 
       const login = await service.login(
         { ...LOGIN, remember: true },
-        { deviceToken: token, userAgent: undefined },
+        { deviceToken: token, userAgent: undefined, clientIp: CLIENT_IP },
       );
 
       expect(login.deviceToken).toBe(token);
@@ -241,7 +380,7 @@ describe('ChildLoginService', () => {
     it('forgets the child on the browser when not remembered, and leaves its cookie', async () => {
       const { token, hash } = newToken();
 
-      const login = await service.login(LOGIN, { deviceToken: token, userAgent: IPAD });
+      const login = await service.login(LOGIN, { ...FRESH_BROWSER, deviceToken: token });
 
       expect(login.deviceToken).toBeUndefined();
       expect(store.forgetDevice).toHaveBeenCalledWith(CHILD_ID, hash);

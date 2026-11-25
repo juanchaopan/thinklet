@@ -54,6 +54,8 @@ export const errorCodeSchema = z.enum([
   'book_not_acquired',
   // 409: the book has left the library, so it cannot be acquired or assigned to another child.
   'book_inactive',
+  // 429: the request's source failed too often in the window; `retryAfterSeconds` says when it ends.
+  'rate_limited',
   // 500: anything unexpected; the response carries only the request id.
   'internal',
 ]);
@@ -64,12 +66,17 @@ export const fieldErrorSchema = z.strictObject({
   code: fieldErrorCodeSchema,
 });
 
-/** The body of every error response; `requestId` is the error id shown on screen. */
+/**
+ * The body of every error response; `requestId` is the error id shown on
+ * screen. A `rate_limited` carries `retryAfterSeconds`, the seconds left in
+ * the window that refused it, as its `Retry-After` header does.
+ */
 export const errorResponseSchema = z.strictObject({
   error: z.strictObject({
     code: errorCodeSchema,
     requestId: z.string().min(1),
     fields: z.array(fieldErrorSchema).optional(),
+    retryAfterSeconds: z.int().positive().optional(),
   }),
 });
 

@@ -107,6 +107,21 @@ export const environmentSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
   S3_FORCE_PATH_STYLE: booleanString.default(false),
+  /**
+   * The Redis the api keeps short-lived data in, such as the rate limits'
+   * counters: `redis://` on a development machine and in tests, `rediss://`
+   * (TLS) with a password in staging.
+   */
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  /**
+   * The request header, in lower case, that the proxy in front of the api
+   * writes the client's IP address into. The api takes the source of a
+   * request from this header alone, never from the connection, which comes
+   * from the proxy.
+   */
+  CLIENT_IP_HEADER: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'Must be a header name in lower case, such as x-real-ip'),
   /** The identity provider's issuer; every other endpoint comes from its discovery document. */
   OIDC_ISSUER: httpUrl,
   OIDC_CLIENT_ID: z.string().min(1),

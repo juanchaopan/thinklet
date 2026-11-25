@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { errorResponseSchema } from '@thinklet/contracts';
-import { ApiError } from './api-error.js';
+import { ApiError, RateLimitedError } from './api-error.js';
 import { ErrorResponseFilter, errorOutcome } from './error-response.filter.js';
 
 /** An Express response double that records what the filter answers. */
@@ -31,7 +31,7 @@ function fakeHttp(request: object = { id: 'request-1' }, headersSent = false) {
   const host = {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
   } as unknown as ArgumentsHost;
-  return { host, sent };
+  return { host, sent, response };
 }
 
 describe('errorOutcome', () => {
@@ -46,6 +46,14 @@ describe('errorOutcome', () => {
     expect(errorOutcome(new ApiError('bad_origin', HttpStatus.FORBIDDEN))).toEqual({
       status: 403,
       code: 'bad_origin',
+    });
+  });
+
+  it('keeps the seconds left of a rate limit', () => {
+    expect(errorOutcome(new RateLimitedError(412))).toEqual({
+      status: 429,
+      code: 'rate_limited',
+      retryAfterSeconds: 412,
     });
   });
 
@@ -95,7 +103,7 @@ describe('ErrorResponseFilter', () => {
   });
 
   it('answers with the common error body and the request id', () => {
-    const { host, sent } = fakeHttp();
+    const { host, sent, response } = fakeHttp();
 
     new ErrorResponseFilter().catch(
       new ApiError('invalid_request', HttpStatus.BAD_REQUEST, [{ path: 'name', code: 'required' }]),
@@ -110,6 +118,20 @@ describe('ErrorResponseFilter', () => {
         fields: [{ path: 'name', code: 'required' }],
       },
     });
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('answers a rate limit with the seconds left in the body and in Retry-After', () => {
+    const { host, sent, response } = fakeHttp();
+
+    new ErrorResponseFilter().catch(new RateLimitedError(412), host);
+
+    expect(sent.status).toBe(429);
+    expect(errorResponseSchema.parse(sent.body)).toEqual({
+      error: { code: 'rate_limited', requestId: 'request-1', retryAfterSeconds: 412 },
+    });
+    expect(response.setHeader).toHaveBeenCalledWith('Retry-After', '412');
     expect(logged).not.toHaveBeenCalled();
   });
 

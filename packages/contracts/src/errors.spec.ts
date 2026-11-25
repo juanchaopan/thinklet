@@ -67,6 +67,7 @@ describe('errorCodeSchema', () => {
       'wrong_password',
       'password_already_set',
       'password_not_set',
+      'rate_limited',
     ]) {
       expect(errorCodeSchema.safeParse(code).success, code).toBe(true);
     }
@@ -99,6 +100,20 @@ describe('errorResponseSchema', () => {
     };
 
     expect(errorResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('accepts a rate limit with the seconds left in its window', () => {
+    const body = { error: { code: 'rate_limited', requestId: 'req-5', retryAfterSeconds: 412 } };
+
+    expect(errorResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it.each([0, -1, 1.5, '60'])('rejects %j as the seconds left in a window', (seconds) => {
+    const body = {
+      error: { code: 'rate_limited', requestId: 'req-6', retryAfterSeconds: seconds },
+    };
+
+    expect(errorResponseSchema.safeParse(body).success).toBe(false);
   });
 
   it('rejects unknown error codes', () => {

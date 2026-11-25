@@ -14,6 +14,7 @@ import { httpLoggerOptions, secretValues } from './logger-options.js';
             DATABASE_URL: config.get('DATABASE_URL', { infer: true }),
             S3_ACCESS_KEY_ID: config.get('S3_ACCESS_KEY_ID', { infer: true }),
             S3_SECRET_ACCESS_KEY: config.get('S3_SECRET_ACCESS_KEY', { infer: true }),
+            REDIS_URL: config.get('REDIS_URL', { infer: true }),
             OIDC_CLIENT_SECRET: config.get('OIDC_CLIENT_SECRET', { infer: true }),
             JWT_SIGNING_KEY: config.get('JWT_SIGNING_KEY', { infer: true }),
             CHILD_DATA_KEY: config.get('CHILD_DATA_KEY', { infer: true }),

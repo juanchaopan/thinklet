@@ -9,6 +9,7 @@ const SECRET_VARIABLES = [
   'MIGRATION_DATABASE_URL',
   'S3_ACCESS_KEY_ID',
   'S3_SECRET_ACCESS_KEY',
+  'REDIS_URL',
   'OIDC_CLIENT_SECRET',
   'JWT_SIGNING_KEY',
   'CHILD_DATA_KEY',
@@ -85,10 +86,11 @@ export const REDACTED_PATHS = [
  * The request headers the request log writes, in Node's lower case. Any
  * other header is left out, so a header nobody thought of is never logged:
  * `referer` carries the address of the page the request came from, such as
- * a join page with its family code or a QR login page with its token, and
- * cookies and authorization carry the login. These say which site and
- * client sent the request and what body it had, which is what tracing a
- * failed request needs.
+ * a join page with its family code or a QR login page with its token,
+ * cookies and authorization carry the login, and the forwarding headers
+ * carry the client's IP address. These say which site and client sent the
+ * request and what body it had, which is what tracing a failed request
+ * needs.
  */
 export const LOGGED_REQUEST_HEADERS: readonly string[] = [
   'host',
@@ -116,25 +118,32 @@ export type SecretSettings = Pick<
   | 'DATABASE_URL'
   | 'S3_ACCESS_KEY_ID'
   | 'S3_SECRET_ACCESS_KEY'
+  | 'REDIS_URL'
   | 'OIDC_CLIENT_SECRET'
   | 'CHILD_DATA_KEY'
 > & { JWT_SIGNING_KEY: Pick<Environment['JWT_SIGNING_KEY'], 'd'> };
 
+/** The password of a connection URL as written in it and decoded; none when it has none. */
+function passwordsIn(url: string): string[] {
+  const { password } = new URL(url);
+  return password === '' ? [] : [password, decodePassword(password)];
+}
+
 /**
- * The secret values of the configuration: the database URL, its password
- * (as written in the URL and decoded), the storage credentials, the OIDC
- * client secret, the private part of the JWT signing key, and the child
- * data key in base64, as the environment holds it, and in hex, as bytes
- * are most often printed.
+ * The secret values of the configuration: the database URL and its
+ * password (as written in the URL and decoded), the storage credentials,
+ * the Redis URL and its password, the OIDC client secret, the private part
+ * of the JWT signing key, and the child data key in base64, as the
+ * environment holds it, and in hex, as bytes are most often printed.
  */
 export function secretValues(settings: SecretSettings): string[] {
-  const { password } = new URL(settings.DATABASE_URL);
   return [
     settings.DATABASE_URL,
-    password,
-    decodePassword(password),
+    ...passwordsIn(settings.DATABASE_URL),
     settings.S3_ACCESS_KEY_ID,
     settings.S3_SECRET_ACCESS_KEY,
+    settings.REDIS_URL,
+    ...passwordsIn(settings.REDIS_URL),
     settings.OIDC_CLIENT_SECRET,
     settings.JWT_SIGNING_KEY.d,
     settings.CHILD_DATA_KEY.toString('base64'),
@@ -145,7 +154,7 @@ export function secretValues(settings: SecretSettings): string[] {
 /**
  * The password with its percent escapes decoded. A `%` that starts no valid
  * escape cannot be decoded; the password is then kept as written, so the
- * logger still starts and the database driver reports the URL itself.
+ * logger still starts and the driver reports the URL itself.
  */
 function decodePassword(password: string): string {
   try {
@@ -210,17 +219,22 @@ interface SerializedRequest {
   headers?: Record<string, unknown>;
   query?: unknown;
   params?: unknown;
+  remoteAddress?: unknown;
+  remotePort?: unknown;
 }
 
 /**
- * The logged request with its URL made loggable, only the allowed headers
- * and without the parsed query and route parameters. The parameters are
- * those of the logging middleware's catch-all route, which repeat every
- * segment of the path, a sensitive one included.
+ * The logged request with its URL made loggable, only the allowed headers,
+ * and without the parsed query and route parameters or the address of the
+ * connection. The parameters are those of the logging middleware's
+ * catch-all route, which repeat every segment of the path, a sensitive one
+ * included; the connection's address can be the client's IP address.
  */
 export function loggableRequest<T extends SerializedRequest>(request: T): T {
   delete request.query;
   delete request.params;
+  delete request.remoteAddress;
+  delete request.remotePort;
   if (request.url !== undefined) {
     request.url = loggableUrl(request.url);
   }

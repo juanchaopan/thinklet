@@ -5,6 +5,7 @@ import { LoggingModule } from './infrastructure/logging/logging.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BookModule } from './modules/book/book.module.js';
 import { ChildModule } from './modules/child/child.module.js';
+import { ClientIpModule } from './modules/client-ip/client-ip.module.js';
 import { FamilyModule } from './modules/family/family.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 
@@ -19,6 +20,7 @@ import { HealthModule } from './modules/health/health.module.js';
     }),
     LoggingModule,
     HealthModule,
+    ClientIpModule,
     AuthModule,
     FamilyModule,
     ChildModule,

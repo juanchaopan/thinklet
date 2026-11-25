@@ -9,7 +9,6 @@ import type {
 } from '@thinklet/contracts';
 import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { PasswordHasher } from '../../infrastructure/passwords/password-hasher.js';
 import { AuditService, byChild } from '../audit/audit.service.js';
 import { FamiliesService } from '../family/families.service.js';
 import {
@@ -19,6 +18,7 @@ import {
   type LinkState,
   type LoginCandidate,
 } from './child-login.repository.js';
+import { ChildPasswords, type LoginSubject } from './child-passwords.js';
 import { loginLinkStatus } from './children.service.js';
 import { rememberedUntil } from './device-cookie.js';
 import { deviceNameOf } from './device-name.js';
@@ -41,6 +41,11 @@ export interface Browser {
   deviceToken: string | undefined;
   /** The browser's User-Agent, which only the device name is taken from. */
   userAgent: string | undefined;
+  /**
+   * The client's IP address as the proxy in front of the api wrote it, the
+   * source the rate limits count failed logins by; undefined without one.
+   */
+  clientIp: string | undefined;
 }
 
 /** A child's login that succeeded, for the controller to sign the child in with. */
@@ -95,6 +100,11 @@ function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
  * cookies of the completed login. A login itself is not an audit event;
  * the password a child sets is, by the child, in the login's transaction.
  *
+ * The logins that check a password, with the account and on a link, are
+ * made within ChildPasswords' limits: once it is known whom the login is
+ * for, a source at its limit is refused before the password is verified,
+ * and a wrong one counts against the source.
+ *
  * Each login ends in one transaction that locks the child's row and then
  * re-checks what was checked before it, writes the browser's row and takes
  * the session's issue time. A password reset locks the same row first, so
@@ -109,7 +119,7 @@ export class ChildLoginService {
   constructor(
     private readonly repository: ChildLoginRepository,
     private readonly families: FamiliesService,
-    private readonly hasher: PasswordHasher,
+    private readonly passwords: ChildPasswords,
     private readonly audit: AuditService,
   ) {}
 
@@ -117,8 +127,10 @@ export class ChildLoginService {
    * Logs the child in with the family code, the account and the password.
    * A wrong code, account or password, and a child without a password yet,
    * are all 401 `login_failed`. The password is checked every time, against
-   * the hasher's stand-in hash when there is no child or no password, so
-   * the time taken does not tell which was wrong either.
+   * a stand-in hash when there is no child or no password, so the time
+   * taken does not tell which was wrong either. The login counts against
+   * the child found, or against the code and account typed when they match
+   * no child.
    */
   async login(request: ChildLoginRequest, browser: Browser): Promise<CompletedLogin> {
     const familyId = await this.families.findIdByCode(request.code);
@@ -126,16 +138,22 @@ export class ChildLoginService {
       familyId === undefined
         ? undefined
         : await this.repository.findLoginCandidate(familyId, request.account);
-    const passwordHash = candidate?.passwordHash ?? null;
-    const matches = await this.hasher.verify(request.password, passwordHash);
-    if (candidate === undefined || passwordHash === null || !matches) {
-      throw loginFailed();
-    }
-    return this.locked(candidate.id, loginFailed, ({ store, child }) => {
-      if (child.passwordHash !== passwordHash) {
+    const subject: LoginSubject =
+      candidate === undefined
+        ? { code: request.code, account: request.account }
+        : { childId: candidate.id };
+    return this.passwords.attempt(browser.clientIp, subject, async () => {
+      const passwordHash = candidate?.passwordHash ?? null;
+      const matches = await this.passwords.verify(request.password, passwordHash);
+      if (candidate === undefined || passwordHash === null || !matches) {
         throw loginFailed();
       }
-      return this.applyRemember(store, child.id, request.remember, browser);
+      return this.locked(candidate.id, loginFailed, ({ store, child }) => {
+        if (child.passwordHash !== passwordHash) {
+          throw loginFailed();
+        }
+        return this.applyRemember(store, child.id, request.remember, browser);
+      });
     });
   }
 
@@ -206,7 +224,7 @@ export class ChildLoginService {
     if (link.passwordHash !== null) {
       throw passwordAlreadySet();
     }
-    const passwordHash = await this.hasher.hash(request.password);
+    const passwordHash = await this.passwords.hash(request.password);
     return this.loginOnLink(
       link,
       request.remember,
@@ -231,7 +249,8 @@ export class ChildLoginService {
    * Logs the link's child in with the password the child has, using the
    * link. A wrong password is 401 `wrong_password` and leaves the link as
    * it was; a child without a password is 409 `password_not_set`. A
-   * password changed while it was verified is wrong as well.
+   * password changed while it was verified is wrong as well. The login
+   * counts against the link's child.
    */
   async loginWithLink(
     token: string,
@@ -243,16 +262,18 @@ export class ChildLoginService {
     if (verified === null) {
       throw passwordNotSet();
     }
-    if (!(await this.hasher.verify(request.password, verified))) {
-      throw wrongPassword();
-    }
-    return this.loginOnLink(link, request.remember, browser, ({ child }) => {
-      if (child.passwordHash === null) {
-        throw passwordNotSet();
-      }
-      if (child.passwordHash !== verified) {
+    return this.passwords.attempt(browser.clientIp, { childId: link.childId }, async () => {
+      if (!(await this.passwords.verify(request.password, verified))) {
         throw wrongPassword();
       }
+      return this.loginOnLink(link, request.remember, browser, ({ child }) => {
+        if (child.passwordHash === null) {
+          throw passwordNotSet();
+        }
+        if (child.passwordHash !== verified) {
+          throw wrongPassword();
+        }
+      });
     });
   }
 

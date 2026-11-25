@@ -30,7 +30,7 @@ describe('HTTP responses', () => {
     expect(response.status).toBe(503);
     expect(response.body).toStrictEqual({
       status: 'error',
-      checks: { database: 'error', storage: 'error' },
+      checks: { database: 'error', storage: 'error', redis: 'error' },
     });
     for (const marker of LEAK_MARKERS) {
       expect(response.text).not.toMatch(marker);
