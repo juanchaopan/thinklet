@@ -14,14 +14,12 @@ import { FamiliesService } from '../family/families.service.js';
 import {
   ChildLoginRepository,
   type ChildLoginStore,
-  type LinkRecord,
-  type LinkState,
   type LoginCandidate,
 } from './child-login.repository.js';
 import { ChildPasswords, type LoginSubject } from './child-passwords.js';
-import { loginLinkStatus } from './children.service.js';
 import { rememberedUntil } from './device-cookie.js';
 import { deviceNameOf } from './device-name.js';
+import type { ActiveLoginLink } from './login-links.js';
 import { hashToken, newToken } from './tokens.js';
 
 const loginFailed = () => new ApiError('login_failed', HttpStatus.UNAUTHORIZED);
@@ -61,9 +59,10 @@ export interface CompletedLogin {
   issuedAt: Date;
 }
 
-/** An active login link read by its token before any lock, with the token's hash to lock it by. */
-interface FoundLink extends LinkRecord {
-  tokenHash: string;
+/** A login link that could be used when read, before any lock, with its child as it was then. */
+interface FoundLink {
+  link: ActiveLoginLink;
+  child: LoginCandidate;
 }
 
 /** The locked child of a login, with the store and the transaction the login's writes are made in. */
@@ -82,14 +81,6 @@ type LockedStep = (login: LockedLogin) => Promise<string | undefined>;
 
 /** What a login on a link checks, and changes, of the link's locked child before the link is used. */
 type LinkStep = (login: LockedLogin) => Promise<void> | void;
-
-/** The link, when it can be used at `now`; else 404 `link_invalid`. */
-function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
-  if (link === undefined || loginLinkStatus(link, now) !== 'active') {
-    throw linkInvalid();
-  }
-  return link;
-}
 
 /**
  * A child's logins (`.docs/design/interfaces.md`, "孩子登录"): with the
@@ -113,6 +104,9 @@ function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
  * slow work of a password, hashing or verifying it, is done before the
  * transaction, so no lock is held during it: the re-check compares the
  * child's password hash with the one verified.
+ *
+ * The login links are in Redis; while Redis cannot be reached, a link can
+ * be neither read nor used, and the other logins go on.
  */
 @Injectable()
 export class ChildLoginService {
@@ -202,11 +196,11 @@ export class ChildLoginService {
 
   /** Whose login link it is and whether the child still has to set a password; reading it does not use it. */
   async linkInfo(token: string): Promise<ChildLoginLinkInfo> {
-    const link = await this.findActiveLink(token);
+    const { child } = await this.findActiveLink(token);
     return {
-      childId: link.childId,
-      nickname: link.nickname,
-      needsPassword: link.passwordHash === null,
+      childId: child.id,
+      nickname: child.nickname,
+      needsPassword: child.passwordHash === null,
     };
   }
 
@@ -220,13 +214,13 @@ export class ChildLoginService {
     request: SetChildPasswordRequest,
     browser: Browser,
   ): Promise<CompletedLogin> {
-    const link = await this.findActiveLink(token);
-    if (link.passwordHash !== null) {
+    const found = await this.findActiveLink(token);
+    if (found.child.passwordHash !== null) {
       throw passwordAlreadySet();
     }
     const passwordHash = await this.passwords.hash(request.password);
     return this.loginOnLink(
-      link,
+      found.link,
       request.remember,
       browser,
       async ({ store, child, transaction }) => {
@@ -257,52 +251,68 @@ export class ChildLoginService {
     request: ChildLinkLoginRequest,
     browser: Browser,
   ): Promise<CompletedLogin> {
-    const link = await this.findActiveLink(token);
-    const verified = link.passwordHash;
+    const { link, child } = await this.findActiveLink(token);
+    const verified = child.passwordHash;
     if (verified === null) {
       throw passwordNotSet();
     }
-    return this.passwords.attempt(browser.clientIp, { childId: link.childId }, async () => {
+    return this.passwords.attempt(browser.clientIp, { childId: child.id }, async () => {
       if (!(await this.passwords.verify(request.password, verified))) {
         throw wrongPassword();
       }
-      return this.loginOnLink(link, request.remember, browser, ({ child }) => {
-        if (child.passwordHash === null) {
+      return this.loginOnLink(link, request.remember, browser, ({ child: locked }) => {
+        if (locked.passwordHash === null) {
           throw passwordNotSet();
         }
-        if (child.passwordHash !== verified) {
+        if (locked.passwordHash !== verified) {
           throw wrongPassword();
         }
       });
     });
   }
 
-  /** The login link of the token, read without a lock, when it can be used now; else 404 `link_invalid`. */
+  /**
+   * The login link of the token, with its child read without a lock, when
+   * the link can be used now and its child is still there; else 404
+   * `link_invalid`.
+   */
   private async findActiveLink(token: string): Promise<FoundLink> {
-    const tokenHash = hashToken(token);
-    const link = requireActive(await this.repository.findLinkByToken(tokenHash), new Date());
-    return { ...link, tokenHash };
+    const link = await this.repository.findLink(hashToken(token));
+    const child =
+      link === undefined ? undefined : await this.repository.findCandidate(link.childId);
+    if (link === undefined || child === undefined) {
+      throw linkInvalid();
+    }
+    return { link, child };
   }
 
   /**
-   * Logs the child of a link found before the transaction in: under the
-   * child's lock the link is locked and checked again, the step checks the
-   * child and may set its password, then the link is used. Of two logins on
-   * one link at once only the first uses it and the other finds it used. A
-   * step that refuses leaves the link as it was.
+   * Logs the child of a link found before the transaction in. Under the
+   * child's lock the link is read again, so a link used meanwhile is
+   * `link_invalid` before anything else; the step checks the child and may
+   * set its password, the browser is remembered or forgotten, and then the
+   * link is used, in one Redis script, as the last step of the transaction.
+   * Of two logins on one link at once only the first uses it: the other
+   * finds it used, and should both come to use it, Redis lets one only,
+   * and the other's writes are rolled back. A step that refuses leaves the
+   * link as it was.
    */
   private loginOnLink(
-    link: FoundLink,
+    link: ActiveLoginLink,
     remember: boolean,
     browser: Browser,
     step: LinkStep,
   ): Promise<CompletedLogin> {
     return this.locked(link.childId, linkInvalid, async (login) => {
-      const { store, child } = login;
-      const locked = requireActive(await store.lockLink(child.id, link.tokenHash), new Date());
+      if ((await this.repository.findLink(link.tokenHash)) === undefined) {
+        throw linkInvalid();
+      }
       await step(login);
-      await store.markLinkUsed(locked.linkId, new Date());
-      return this.applyRemember(store, child.id, remember, browser);
+      const deviceToken = await this.applyRemember(login.store, login.child.id, remember, browser);
+      if (!(await this.repository.takeLink(link))) {
+        throw linkInvalid();
+      }
+      return deviceToken;
     });
   }
 

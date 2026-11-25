@@ -5,12 +5,12 @@ import type { FamiliesService } from '../family/families.service.js';
 import type {
   ChildLoginRepository,
   ChildLoginStore,
-  LinkRecord,
   LoginCandidate,
 } from './child-login.repository.js';
 import { ChildLoginService, type Browser } from './child-login.service.js';
 import type { ChildPasswords } from './child-passwords.js';
 import { DEVICE_LIFETIME_MS } from './device-cookie.js';
+import type { ActiveLoginLink } from './login-links.js';
 import { hashToken, isWellFormedToken, newToken } from './tokens.js';
 
 const NOW = new Date('2026-11-22T09:00:00.000Z');
@@ -42,18 +42,12 @@ const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD, client
 /** The transaction the repository double hands its work, which the audit events are written with. */
 const TRANSACTION = { transaction: 'child-login' };
 
-const minutesFromNow = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
-
-/** A login link of Xiaomi, active unless the changes say otherwise. */
-const linkOf = (changes: Partial<LinkRecord> = {}): LinkRecord => ({
+/** Xiaomi's login link that the token's hash opens, as Redis holds it while it can be used. */
+const activeLink = (tokenHash: string): ActiveLoginLink => ({
   linkId: LINK_ID,
   childId: CHILD_ID,
-  nickname: '小米',
-  passwordHash: HASH,
-  expiresAt: minutesFromNow(5),
-  usedAt: null,
-  revokedAt: null,
-  ...changes,
+  tokenHash,
+  expiresAt: '2026-11-22T09:05:00.000Z',
 });
 
 /** Asserts that the call is refused with the api error of the code. */
@@ -70,15 +64,18 @@ function expectCalledInOrder(...mocks: Array<{ mock: { invocationCallOrder: numb
 describe('ChildLoginService', () => {
   const store = {
     findLoginCandidate: vi.fn<ChildLoginStore['findLoginCandidate']>(),
+    findCandidate: vi.fn<ChildLoginStore['findCandidate']>(),
     lockChild: vi.fn<ChildLoginStore['lockChild']>(),
-    findLinkByToken: vi.fn<ChildLoginStore['findLinkByToken']>(),
-    lockLink: vi.fn<ChildLoginStore['lockLink']>(),
     setPassword: vi.fn<ChildLoginStore['setPassword']>(),
-    markLinkUsed: vi.fn<ChildLoginStore['markLinkUsed']>(),
     rememberDevice: vi.fn<ChildLoginStore['rememberDevice']>(),
     renewDevice: vi.fn<ChildLoginStore['renewDevice']>(),
     forgetDevice: vi.fn<ChildLoginStore['forgetDevice']>(),
     listRemembered: vi.fn<ChildLoginStore['listRemembered']>(),
+  };
+  /** The login links in Redis, as the repository reads and uses them: an active link for every token unless a test says otherwise. */
+  const links = {
+    find: vi.fn<ChildLoginRepository['findLink']>(),
+    take: vi.fn<ChildLoginRepository['takeLink']>(),
   };
   /** Called once a transaction's work has resolved; it moves the clock on, as time passes after a commit. */
   const committed = vi.fn<() => void>();
@@ -89,7 +86,12 @@ describe('ChildLoginService', () => {
       return result;
     },
   );
-  const repository = { ...store, transaction } as unknown as ChildLoginRepository;
+  const repository = {
+    ...store,
+    findLink: links.find,
+    takeLink: links.take,
+    transaction,
+  } as unknown as ChildLoginRepository;
   const families = {
     findIdByCode: vi.fn<FamiliesService['findIdByCode']>(),
     codesOf: vi.fn<FamiliesService['codesOf']>(),
@@ -119,7 +121,11 @@ describe('ChildLoginService', () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
-    for (const mock of [...Object.values(store), ...Object.values(families)]) {
+    for (const mock of [
+      ...Object.values(store),
+      ...Object.values(links),
+      ...Object.values(families),
+    ]) {
       mock.mockReset();
     }
     transaction.mockClear();
@@ -132,7 +138,10 @@ describe('ChildLoginService', () => {
     audit.record.mockReset().mockResolvedValue();
     families.findIdByCode.mockResolvedValue(FAMILY_ID);
     store.findLoginCandidate.mockResolvedValue(XIAOMI);
+    store.findCandidate.mockResolvedValue(XIAOMI);
     store.lockChild.mockResolvedValue(XIAOMI);
+    links.find.mockImplementation((tokenHash) => Promise.resolve(activeLink(tokenHash)));
+    links.take.mockResolvedValue(true);
     service = new ChildLoginService(
       repository,
       families as unknown as FamiliesService,
@@ -161,6 +170,7 @@ describe('ChildLoginService', () => {
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
       expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
       expect(audit.record).not.toHaveBeenCalled();
+      expect(links.find).not.toHaveBeenCalled();
     });
 
     it("verifies the password before the transaction, then writes the device and takes the session's issue time under the child's lock", async () => {
@@ -270,8 +280,6 @@ describe('ChildLoginService', () => {
     });
 
     it('counts a login on a link for the link’s child, after the link is found', async () => {
-      store.findLinkByToken.mockResolvedValue(linkOf());
-      store.lockLink.mockResolvedValue(linkOf());
       hasher.verify.mockResolvedValue(true);
 
       await service.loginWithLink(
@@ -285,11 +293,10 @@ describe('ChildLoginService', () => {
         { childId: CHILD_ID },
         expect.any(Function),
       );
-      expectCalledInOrder(store.findLinkByToken, limits.attempt, hasher.verify);
+      expectCalledInOrder(links.find, store.findCandidate, limits.attempt, hasher.verify);
     });
 
     it('refuses a source at its limit on a link with rate_limited, leaving the link unused', async () => {
-      store.findLinkByToken.mockResolvedValue(linkOf());
       limits.attempt.mockRejectedValueOnce(new RateLimitedError(60));
 
       await expectRefusal(
@@ -301,11 +308,11 @@ describe('ChildLoginService', () => {
         'rate_limited',
       );
       expect(hasher.verify).not.toHaveBeenCalled();
-      expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(links.take).not.toHaveBeenCalled();
     });
 
     it('does not limit a link that cannot be used, or one whose child still has to set a password', async () => {
-      store.findLinkByToken.mockResolvedValueOnce(undefined);
+      links.find.mockResolvedValueOnce(undefined);
       await expectRefusal(
         service.loginWithLink(
           newToken().token,
@@ -314,7 +321,7 @@ describe('ChildLoginService', () => {
         ),
         'link_invalid',
       );
-      store.findLinkByToken.mockResolvedValueOnce(linkOf({ passwordHash: null }));
+      store.findCandidate.mockResolvedValueOnce(XIAOMI_WITHOUT_PASSWORD);
       await expectRefusal(
         service.loginWithLink(
           newToken().token,
@@ -328,8 +335,7 @@ describe('ChildLoginService', () => {
     });
 
     it('does not limit setting a first password on a link or a remembered login', async () => {
-      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
-      store.lockLink.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.findCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
       store.lockChild.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
       store.renewDevice.mockResolvedValue(true);
       hasher.hash.mockResolvedValue(HASH);
@@ -469,34 +475,53 @@ describe('ChildLoginService', () => {
     });
   });
 
-  /** The ways a link cannot be used, each answered as link_invalid. */
-  const unusableLinks: Array<[string, LinkRecord | undefined]> = [
-    ['an unknown link, or one of a deleted child', undefined],
-    ['a used link', linkOf({ usedAt: minutesFromNow(-1) })],
-    ['a revoked link', linkOf({ revokedAt: minutesFromNow(-1) })],
-    ['an expired link', linkOf({ expiresAt: NOW })],
+  /** The ways a link cannot be used when it is read, each arranged on the doubles and answered as link_invalid. */
+  const unusableLinks: Array<[string, () => void]> = [
+    [
+      'a link that is gone: never made, used, revoked or expired',
+      () => links.find.mockResolvedValue(undefined),
+    ],
+    ['the link of a deleted child', () => store.findCandidate.mockResolvedValue(undefined)],
+  ];
+
+  /** The ways a link stops working between its reading and its use, each answered as link_invalid. */
+  const linksLostUnderLock: Array<[string, () => void]> = [
+    [
+      'gone by the time the child is locked',
+      () => links.find.mockResolvedValueOnce(activeLink('')).mockResolvedValueOnce(undefined),
+    ],
+    ['used by another login just before Redis takes it', () => links.take.mockResolvedValue(false)],
   ];
 
   describe('linkInfo', () => {
-    it('tells whose link it is and whether the child still has to set a password', async () => {
+    it('tells whose link it is and whether the child still has to set a password, using nothing', async () => {
       const { token, hash } = newToken();
-      store.findLinkByToken
-        .mockResolvedValueOnce(linkOf())
-        .mockResolvedValueOnce(linkOf({ passwordHash: null }));
+      store.findCandidate
+        .mockResolvedValueOnce(XIAOMI)
+        .mockResolvedValueOnce(XIAOMI_WITHOUT_PASSWORD);
 
       const withPassword = await service.linkInfo(token);
       const withoutPassword = await service.linkInfo(token);
 
-      expect(store.findLinkByToken).toHaveBeenCalledWith(hash);
+      expect(links.find).toHaveBeenCalledWith(hash);
+      expect(store.findCandidate).toHaveBeenCalledWith(CHILD_ID);
       expect(withPassword).toEqual({ childId: CHILD_ID, nickname: '小米', needsPassword: false });
       expect(withoutPassword).toEqual({ childId: CHILD_ID, nickname: '小米', needsPassword: true });
-      expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(links.take).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
     });
 
-    it.each(unusableLinks)('answers %s with link_invalid', async (_case, link) => {
-      store.findLinkByToken.mockResolvedValue(link);
+    it.each(unusableLinks)('answers %s with link_invalid', async (_case, arrange) => {
+      arrange();
 
       await expectRefusal(service.linkInfo(newToken().token), 'link_invalid');
+    });
+
+    it('passes a failure of Redis on as it is', async () => {
+      const failure = new Error('Redis is not reachable');
+      links.find.mockRejectedValue(failure);
+
+      await expect(service.linkInfo(newToken().token)).rejects.toBe(failure);
     });
   });
 
@@ -504,8 +529,7 @@ describe('ChildLoginService', () => {
     const request = { password: 'new secret', remember: true };
 
     beforeEach(() => {
-      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
-      store.lockLink.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.findCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
       store.lockChild.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
       hasher.hash.mockResolvedValue(HASH);
     });
@@ -516,12 +540,11 @@ describe('ChildLoginService', () => {
       const login = await service.setPasswordWithLink(token, request, FRESH_BROWSER);
 
       expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
-      expect(store.findLinkByToken).toHaveBeenCalledWith(hash);
+      expect(links.find).toHaveBeenCalledWith(hash);
       expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
-      expect(store.lockLink).toHaveBeenCalledWith(CHILD_ID, hash);
       expect(hasher.hash).toHaveBeenCalledWith('new secret');
       expect(store.setPassword).toHaveBeenCalledWith(CHILD_ID, HASH);
-      expect(store.markLinkUsed).toHaveBeenCalledWith(LINK_ID, NOW);
+      expect(links.take).toHaveBeenCalledExactlyOnceWith(activeLink(hash));
     });
 
     it('records the password the child set on a link, by the child, in the transaction', async () => {
@@ -534,27 +557,27 @@ describe('ChildLoginService', () => {
         familyId: FAMILY_ID,
         details: { via: 'qr' },
       });
-      expectCalledInOrder(store.setPassword, audit.record, store.markLinkUsed, committed);
+      expectCalledInOrder(store.setPassword, audit.record, links.take, committed);
     });
 
-    it('hashes the password before the transaction, and locks the child before the link', async () => {
+    it('hashes the password before the transaction, and uses the link last under the lock', async () => {
       const login = await service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER);
 
       expectCalledInOrder(
         hasher.hash,
         transaction,
         store.lockChild,
-        store.lockLink,
         store.setPassword,
-        store.markLinkUsed,
         store.rememberDevice,
+        links.take,
         committed,
       );
+      expect(links.find).toHaveBeenCalledTimes(2);
       expect(login.issuedAt).toEqual(NOW);
     });
 
     it('refuses a child who has a password with password_already_set, hashing nothing', async () => {
-      store.findLinkByToken.mockResolvedValue(linkOf());
+      store.findCandidate.mockResolvedValue(XIAOMI);
 
       await expectRefusal(
         service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
@@ -565,7 +588,7 @@ describe('ChildLoginService', () => {
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('refuses with password_already_set a password set under the lock first, changing nothing', async () => {
+    it('refuses with password_already_set a password set under the lock first, leaving the link unused', async () => {
       store.lockChild.mockResolvedValue(XIAOMI);
 
       await expectRefusal(
@@ -573,38 +596,49 @@ describe('ChildLoginService', () => {
         'password_already_set',
       );
       expect(store.setPassword).not.toHaveBeenCalled();
-      expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(links.take).not.toHaveBeenCalled();
       expect(store.rememberDevice).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it.each(unusableLinks)('answers %s with link_invalid, hashing nothing', async (_case, link) => {
-      store.findLinkByToken.mockResolvedValue(
-        link === undefined ? undefined : { ...link, passwordHash: null },
-      );
-
-      await expectRefusal(
-        service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
-        'link_invalid',
-      );
-      expect(hasher.hash).not.toHaveBeenCalled();
-      expect(transaction).not.toHaveBeenCalled();
-    });
-
     it.each(unusableLinks)(
-      'answers %s by the time it is locked with link_invalid, setting nothing',
-      async (_case, link) => {
-        store.lockLink.mockResolvedValue(link);
+      'answers %s with link_invalid, hashing nothing',
+      async (_case, arrange) => {
+        arrange();
 
         await expectRefusal(
           service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
           'link_invalid',
         );
-        expect(store.setPassword).not.toHaveBeenCalled();
-        expect(store.markLinkUsed).not.toHaveBeenCalled();
-        expect(audit.record).not.toHaveBeenCalled();
+        expect(hasher.hash).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
       },
     );
+
+    it.each(linksLostUnderLock)(
+      'answers a link %s with link_invalid, its writes not committed',
+      async (_case, arrange) => {
+        arrange();
+
+        await expectRefusal(
+          service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
+          'link_invalid',
+        );
+        expect(committed).not.toHaveBeenCalled();
+      },
+    );
+
+    it('answers a link gone by the time the child is locked before setting anything', async () => {
+      links.find.mockResolvedValueOnce(activeLink('')).mockResolvedValueOnce(undefined);
+
+      await expectRefusal(
+        service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
+        'link_invalid',
+      );
+      expect(store.setPassword).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(links.take).not.toHaveBeenCalled();
+    });
 
     it('answers a child deleted by then with link_invalid', async () => {
       store.lockChild.mockResolvedValue(undefined);
@@ -613,7 +647,8 @@ describe('ChildLoginService', () => {
         service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER),
         'link_invalid',
       );
-      expect(store.lockLink).not.toHaveBeenCalled();
+      expect(links.find).toHaveBeenCalledTimes(1);
+      expect(links.take).not.toHaveBeenCalled();
     });
   });
 
@@ -621,31 +656,30 @@ describe('ChildLoginService', () => {
     const request = { password: 'secret1', remember: true };
 
     beforeEach(() => {
-      store.findLinkByToken.mockResolvedValue(linkOf());
-      store.lockLink.mockResolvedValue(linkOf());
       hasher.verify.mockResolvedValue(true);
     });
 
     it('logs the child in with the right password and uses the link, recording no audit event', async () => {
-      const login = await service.loginWithLink(newToken().token, request, FRESH_BROWSER);
+      const { token, hash } = newToken();
+
+      const login = await service.loginWithLink(token, request, FRESH_BROWSER);
 
       expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
-      expect(store.markLinkUsed).toHaveBeenCalledWith(LINK_ID, NOW);
+      expect(links.take).toHaveBeenCalledExactlyOnceWith(activeLink(hash));
       expect(store.rememberDevice).toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
-    it('verifies the password before the transaction, and locks the child before the link', async () => {
+    it('verifies the password before the transaction, and uses the link last under the lock', async () => {
       const login = await service.loginWithLink(newToken().token, request, FRESH_BROWSER);
 
       expectCalledInOrder(
         hasher.verify,
         transaction,
         store.lockChild,
-        store.lockLink,
-        store.markLinkUsed,
         store.rememberDevice,
+        links.take,
         committed,
       );
       expect(login.issuedAt).toEqual(NOW);
@@ -659,11 +693,11 @@ describe('ChildLoginService', () => {
         'wrong_password',
       );
       expect(transaction).not.toHaveBeenCalled();
-      expect(store.markLinkUsed).not.toHaveBeenCalled();
+      expect(links.take).not.toHaveBeenCalled();
     });
 
     it('refuses a child without a password with password_not_set', async () => {
-      store.findLinkByToken.mockResolvedValue(linkOf({ passwordHash: null }));
+      store.findCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD);
 
       await expectRefusal(
         service.loginWithLink(newToken().token, request, FRESH_BROWSER),
@@ -681,13 +715,13 @@ describe('ChildLoginService', () => {
         store.lockChild.mockResolvedValue(locked);
 
         await expectRefusal(service.loginWithLink(newToken().token, request, FRESH_BROWSER), code);
-        expect(store.markLinkUsed).not.toHaveBeenCalled();
+        expect(links.take).not.toHaveBeenCalled();
         expect(store.rememberDevice).not.toHaveBeenCalled();
       },
     );
 
-    it.each(unusableLinks)('answers %s with link_invalid', async (_case, link) => {
-      store.findLinkByToken.mockResolvedValue(link);
+    it.each(unusableLinks)('answers %s with link_invalid', async (_case, arrange) => {
+      arrange();
 
       await expectRefusal(
         service.loginWithLink(newToken().token, request, FRESH_BROWSER),
@@ -697,17 +731,27 @@ describe('ChildLoginService', () => {
       expect(transaction).not.toHaveBeenCalled();
     });
 
-    it.each(unusableLinks)(
-      'answers %s by the time it is locked with link_invalid',
-      async (_case, link) => {
-        store.lockLink.mockResolvedValue(link);
+    it.each(linksLostUnderLock)(
+      'answers a link %s with link_invalid, its writes not committed',
+      async (_case, arrange) => {
+        arrange();
 
         await expectRefusal(
           service.loginWithLink(newToken().token, request, FRESH_BROWSER),
           'link_invalid',
         );
-        expect(store.markLinkUsed).not.toHaveBeenCalled();
+        expect(committed).not.toHaveBeenCalled();
       },
     );
+
+    it('fails without committing when Redis fails as it takes the link', async () => {
+      const failure = new Error('Redis is not reachable');
+      links.take.mockRejectedValue(failure);
+
+      await expect(service.loginWithLink(newToken().token, request, FRESH_BROWSER)).rejects.toBe(
+        failure,
+      );
+      expect(committed).not.toHaveBeenCalled();
+    });
   });
 });

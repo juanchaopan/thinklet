@@ -25,8 +25,9 @@ const APPEND_ONLY = 'audit_events rows are never changed or deleted';
 // writes one audit row, with the event name, the actor, the target, the
 // family and the details of the design, in the same transaction as the
 // change: when the row cannot be written the change is not made either,
-// and a change that is refused or changes nothing writes no row. Logins
-// write none, and the rows are never changed or deleted.
+// neither in the database nor in the login links in Redis, and a change
+// that is refused or changes nothing writes no row. Logins write none, and
+// the rows are never changed or deleted.
 describe('audit events', () => {
   const running = useAppWithServices();
   const context = (): AuditContext => ({
@@ -34,6 +35,7 @@ describe('audit events', () => {
     databaseUrl: running.databaseUrl,
     personal: new PersonalData(),
   });
+  const snapshot = () => businessSnapshot(running.databaseUrl, running.redisUrl);
 
   describe.each(AUDIT_CASES.map((auditCase) => [auditCase.action, auditCase] as const))(
     '%s',
@@ -59,7 +61,7 @@ describe('audit events', () => {
 
       it('makes no change when its audit row cannot be written', async () => {
         const arranged = await auditCase.arrange(context());
-        const snapshot = await businessSnapshot(running.databaseUrl);
+        const before = await snapshot();
 
         const { result: response, added } = await rowsAddedBy(running.databaseUrl, () =>
           refusingAuditOf(running.databaseUrl, auditCase.action, arranged.act),
@@ -67,7 +69,7 @@ describe('audit events', () => {
 
         expect(response.status).toBe(arranged.failedStatus ?? 500);
         expect(added).toEqual([]);
-        expect(await businessSnapshot(running.databaseUrl)).toEqual(snapshot);
+        expect(await snapshot()).toEqual(before);
       });
     },
   );

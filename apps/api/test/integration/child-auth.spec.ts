@@ -33,6 +33,7 @@ import {
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
+import { expireLoginLink } from '../support/login-links.js';
 import { expectCleared, expectLoginCookieAttributes, setCookiesOf } from '../support/login.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -81,11 +82,12 @@ const lifetimeOf = (row: DeviceRow) => row.expires_at.getTime() - row.last_used_
 // remembering a browser shows the child's avatar there for 30 days from the
 // last avatar login, and not remembering forgets it; a revoked or expired
 // device needs the password again; a login link works for 10 minutes and
-// once, and a newer one revokes it; a child without a password sets one on
-// the link and is signed in, a child with one enters it, and a wrong one
-// keeps the link usable; a password reset or the child's deletion ends the
-// child's login at the next request; logging out keeps the avatar; a
-// device's name is stored encrypted for its own row.
+// once, two uses at the same time included, and a newer one revokes it
+// (#14, 24); a child without a password sets one on the link and is signed
+// in, a child with one enters it, and a wrong one keeps the link usable; a
+// password reset or the child's deletion ends the child's login at the next
+// request; logging out keeps the avatar; a device's name is stored
+// encrypted for its own row.
 describe('child login', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -551,18 +553,42 @@ describe('child login', () => {
       }
     });
 
-    it('is used by only one of two logins at the same time', async () => {
-      const child = await withPassword();
-      const link = await linkOf(child);
-      const body = { password: child.password, remember: false };
+    it.each<[string, () => Promise<LinkUse>]>([
+      [
+        'logins',
+        async () => {
+          const child = await withPassword();
+          return { child, route: 'login', body: { password: child.password, remember: false } };
+        },
+      ],
+      [
+        'first passwords',
+        async () => ({
+          child: await newChild(),
+          route: 'password',
+          body: { password: 'my secret', remember: false },
+        }),
+      ],
+    ])(
+      'is used by only one of two %s at the same time; the other is link_invalid',
+      async (_case, prepare) => {
+        for (let round = 0; round < RACE_ROUNDS; round += 1) {
+          const { child, route, body } = await prepare();
+          const link = await linkOf(child);
 
-      const responses = await Promise.all([
-        browser().post(`${linkPath(link.token)}/login`, body),
-        browser().post(`${linkPath(link.token)}/login`, body),
-      ]);
+          const responses = await Promise.all([
+            browser().post(`${linkPath(link.token)}/${route}`, body),
+            browser().post(`${linkPath(link.token)}/${route}`, body),
+          ]);
 
-      expect(responses.map((response) => response.status).sort()).toEqual([200, 404]);
-    });
+          const outcomes = responses.map((response) =>
+            response.status === 200 ? 'signed in' : errorCodeOf(response),
+          );
+          expect(outcomes.sort()).toEqual(['link_invalid', 'signed in']);
+          expect(await linkStatus(child, link.id)).toBe('used');
+        }
+      },
+    );
 
     it.each<[string, () => Promise<LinkUse>]>([
       [
@@ -594,23 +620,17 @@ describe('child login', () => {
 
           expect(newer.status).toBe(201);
           expect([200, 404]).toContain(use.status);
+          expect(await linkStatus(child, link.id)).toBe(use.status === 200 ? 'used' : 'revoked');
         }
       },
     );
 
-    it('works within its 10 minutes and is link_invalid from then on', async () => {
+    it('works until its time is up and is link_invalid from then on, setting nothing', async () => {
       const child = await newChild();
       const link = await linkOf(child);
-      const expireAt = (sql: string) =>
-        query(
-          running.databaseUrl,
-          `update child_login_links set expires_at = ${sql} where id = $1`,
-          [link.id],
-        );
 
-      await expireAt("now() + interval '1 minute'");
       const before = await browser().get(linkPath(link.token));
-      await expireAt('now()');
+      await expireLoginLink(running.redisUrl, { ...link, childId: child.id });
       const after = await browser().get(linkPath(link.token));
       const setting = await browser().post(`${linkPath(link.token)}/password`, {
         password: 'my secret',
@@ -621,6 +641,7 @@ describe('child login', () => {
       expect([after.status, errorCodeOf(after)]).toEqual([404, 'link_invalid']);
       expect([setting.status, errorCodeOf(setting)]).toEqual([404, 'link_invalid']);
       expect((await childRow(running.databaseUrl, child.id))?.password_hash).toBeNull();
+      expect(await linkStatus(child, link.id)).toBe('expired');
     });
 
     it('stops working once a newer link is made', async () => {
@@ -642,6 +663,10 @@ describe('child login', () => {
 
       const responses = [
         await browser().get(linkPath(link.token)),
+        await browser().post(`${linkPath(link.token)}/password`, {
+          password: 'my secret',
+          remember: false,
+        }),
         await browser().get(linkPath(Buffer.alloc(32, 7).toString('base64url'))),
         await browser().get(linkPath('not-a-token')),
       ];

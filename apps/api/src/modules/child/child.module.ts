@@ -3,6 +3,7 @@ import { ChildDataModule } from '../../infrastructure/child-data/child-data.modu
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { PasswordsModule } from '../../infrastructure/passwords/passwords.module.js';
 import { RateLimitModule } from '../../infrastructure/rate-limit/rate-limit.module.js';
+import { RedisModule } from '../../infrastructure/redis/redis.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { FamilyModule } from '../family/family.module.js';
@@ -17,6 +18,7 @@ import { ChildrenFamilyGuard } from './children-family.guard.js';
 import { ChildrenController } from './children.controller.js';
 import { ChildrenRepository } from './children.repository.js';
 import { ChildrenService } from './children.service.js';
+import { LoginLinks } from './login-links.js';
 
 /**
  * Children's accounts. ChildrenService keeps the children of a family, their
@@ -28,10 +30,11 @@ import { ChildrenService } from './children.service.js';
  * the logins that check one per source. ChildService serves the signed-in
  * child, whose routes pass ChildGuard. The changes are recorded with the
  * audit module. The children's personal data is encrypted in the
- * repositories with the child data cipher. Other modules use
- * ChildrenService to look up the children of a family, and ChildService for
- * its half of the child's login check (`isCurrent`) on their own routes for
- * a signed-in child.
+ * repositories with the child data cipher; the login links live in Redis,
+ * in LoginLinks. Other modules use ChildrenService to look up the children
+ * of a family, ChildService for its half of the child's login check
+ * (`isCurrent`) on their own routes for a signed-in child, and LoginLinks
+ * to remove the links of the children they delete.
  */
 @Module({
   imports: [
@@ -39,6 +42,7 @@ import { ChildrenService } from './children.service.js';
     ChildDataModule,
     PasswordsModule,
     RateLimitModule,
+    RedisModule,
     AuditModule,
     AuthModule,
     FamilyModule,
@@ -53,7 +57,8 @@ import { ChildrenService } from './children.service.js';
     ChildLoginService,
     ChildService,
     ChildGuard,
+    LoginLinks,
   ],
-  exports: [ChildrenService, ChildService],
+  exports: [ChildrenService, ChildService, LoginLinks],
 })
 export class ChildModule {}

@@ -136,6 +136,14 @@ export function migrationRows(client: () => Client) {
     }
   }
 
+  /** Whether the public schema has a relation of the name: a table, an index or a view. */
+  async function relationExists(relation: string): Promise<boolean> {
+    const [row] = await rows<{ name: string | null }>('select to_regclass($1)::text as name', [
+      `public.${relation}`,
+    ]);
+    return typeof row?.name === 'string';
+  }
+
   /** A parent with a new Authing subject. */
   function newParent(): Promise<string> {
     return insertedId(
@@ -153,5 +161,5 @@ export function migrationRows(client: () => Client) {
     );
   }
 
-  return { rows, insertedId, failureOf, newParent, newFamily };
+  return { rows, insertedId, failureOf, relationExists, newParent, newFamily };
 }

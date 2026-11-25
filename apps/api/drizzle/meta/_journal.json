@@ -43,6 +43,13 @@
       "when": 1795562850682,
       "tag": "0005_data_migrations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795578352019,
+      "tag": "0006_login_links_in_redis",
+      "breakpoints": true
     }
   ]
 }

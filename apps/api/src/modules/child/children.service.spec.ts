@@ -9,18 +9,21 @@ import {
   type ChildRecord,
   type ChildrenRepository,
   type DeviceRecord,
-  type LoginLinkRecord,
   type NewChild,
-  type NewLoginLink,
 } from './children.repository.js';
 import {
   CHILD_CONSENT_VERSION,
   changedChildFields,
   ChildrenService,
-  LOGIN_LINK_LIFETIME_MS,
   loginLinkStatus,
   toDevice,
 } from './children.service.js';
+import {
+  LOGIN_LINK_LIFETIME_MS,
+  type LoginLinks,
+  type LoginLinkState,
+  type NewLoginLink,
+} from './login-links.js';
 import { hashToken } from './tokens.js';
 
 const APP_ORIGIN = 'https://thinklet.example';
@@ -31,6 +34,7 @@ const LINK_ID = 'link-1';
 const DEVICE_ID = 'device-1';
 const NOW = new Date('2026-11-22T09:00:00.000Z');
 const XIAOMI: ChildRecord = { id: CHILD_ID, nickname: '小米', account: 'xiaomi' };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
 const TRANSACTION = { transaction: 'children' };
@@ -42,13 +46,12 @@ const ON_XIAOMI = {
   familyId: FAMILY_ID,
 } as const;
 
-const minutesFromNow = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000);
-
-/** A login link that is neither used nor revoked, expiring at the given time. */
-const linkExpiringAt = (expiresAt: Date): LoginLinkRecord => ({
-  expiresAt,
-  usedAt: null,
-  revokedAt: null,
+/** The stored state of one of Xiaomi's links, active unless the changes say otherwise. */
+const stateOf = (changes: Partial<LoginLinkState> = {}): LoginLinkState => ({
+  childId: CHILD_ID,
+  status: 'active',
+  expiresAt: '2026-11-22T09:04:00.000Z',
+  ...changes,
 });
 
 /**
@@ -70,24 +73,21 @@ function refusalOf(call: Promise<unknown>): Promise<ErrorCode> {
 }
 
 describe('loginLinkStatus', () => {
-  const used = minutesFromNow(-5);
-  const revoked = minutesFromNow(-3);
+  it.each<LoginLinkState['status']>(['active', 'used', 'revoked'])(
+    'reads a stored %s state as it is, with its expiry time',
+    (status) => {
+      expect(loginLinkStatus(stateOf({ status }), NOW)).toEqual({
+        status,
+        expiresAt: '2026-11-22T09:04:00.000Z',
+      });
+    },
+  );
 
-  it.each<[string, LoginLinkRecord, string]>([
-    ['an unused link before its expiry', linkExpiringAt(minutesFromNow(1)), 'active'],
-    ['a link at its expiry time', linkExpiringAt(NOW), 'expired'],
-    ['a link past its expiry time', linkExpiringAt(minutesFromNow(-1)), 'expired'],
-    ['a used link', { ...linkExpiringAt(minutesFromNow(5)), usedAt: used }, 'used'],
-    ['a revoked link', { ...linkExpiringAt(minutesFromNow(5)), revokedAt: revoked }, 'revoked'],
-    ['a used link expired since', { ...linkExpiringAt(minutesFromNow(-1)), usedAt: used }, 'used'],
-    [
-      'a revoked link expired since',
-      { ...linkExpiringAt(minutesFromNow(-1)), revokedAt: revoked },
-      'revoked',
-    ],
-    ['a link both used and revoked', { expiresAt: NOW, usedAt: used, revokedAt: revoked }, 'used'],
-  ])('reads %s as %s', (_case, link, expected) => {
-    expect(loginLinkStatus(link, NOW)).toBe(expected);
+  it('reads a state that is gone as expired by now', () => {
+    expect(loginLinkStatus(undefined, NOW)).toEqual({
+      status: 'expired',
+      expiresAt: NOW.toISOString(),
+    });
   });
 });
 
@@ -122,12 +122,14 @@ describe('changedChildFields', () => {
 
 /**
  * A repository double over one family with at most one child, held in
- * memory, the child remembered on one device unless told otherwise. A
- * transaction runs its work on the same store; `calls` lists the
- * transactions, the locks, the writes and the audit events in order.
+ * memory, the child remembered on one device unless told otherwise, and a
+ * double of the login links in Redis that holds the given state of link
+ * LINK_ID. A transaction runs its work on the same store; `calls` lists
+ * the transactions, the locks, the writes, the audit events and the
+ * commands to the links in order.
  */
 function createService(
-  options: { child?: boolean; devices?: boolean; link?: LoginLinkRecord } = {},
+  options: { child?: boolean; devices?: boolean; state?: LoginLinkState } = {},
 ) {
   let exists = options.child ?? true;
   let remembered = options.devices ?? true;
@@ -150,6 +152,7 @@ function createService(
       Promise.resolve(inFamily(familyId, childId) ? { ...XIAOMI, ...changes } : undefined),
     ),
     deleteChild: vi.fn((familyId: string, childId: string) => {
+      calls.push(`deleteChild ${childId}`);
       const deleted = inFamily(familyId, childId);
       exists = exists && !deleted;
       return Promise.resolve(deleted);
@@ -158,17 +161,6 @@ function createService(
       calls.push(`clearPassword ${childId} ${at.toISOString()}`);
       return Promise.resolve(inFamily(familyId, childId));
     }),
-    revokeActiveLinks: vi.fn((childId: string, at: Date) => {
-      calls.push(`revokeActiveLinks ${childId} ${at.toISOString()}`);
-      return Promise.resolve();
-    }),
-    insertLoginLink: vi.fn((link: NewLoginLink) => {
-      calls.push(`insertLoginLink ${link.childId}`);
-      return Promise.resolve(LINK_ID);
-    }),
-    findLoginLink: vi.fn((childId: string, linkId: string) =>
-      Promise.resolve(childId === CHILD_ID && linkId === LINK_ID ? options.link : undefined),
-    ),
     listDevices: vi.fn((): Promise<DeviceRecord[]> => Promise.resolve([])),
     deleteDevice: vi.fn((childId: string, deviceId: string) => {
       calls.push(`deleteDevice ${childId} ${deviceId}`);
@@ -186,9 +178,11 @@ function createService(
   const repository = {
     ...store,
     transaction: vi.fn(
-      <T>(work: (transactionStore: typeof store, transaction: unknown) => Promise<T>) => {
+      async <T>(work: (transactionStore: typeof store, transaction: unknown) => Promise<T>) => {
         calls.push('transaction');
-        return work(store, TRANSACTION);
+        const result = await work(store, TRANSACTION);
+        calls.push('commit');
+        return result;
       },
     ),
   };
@@ -198,15 +192,30 @@ function createService(
       return Promise.resolve();
     }),
   };
+  const links = {
+    create: vi.fn((link: NewLoginLink) => {
+      calls.push(`links.create ${link.childId}`);
+      return Promise.resolve();
+    }),
+    state: vi.fn((linkId: string) =>
+      Promise.resolve(linkId === LINK_ID ? options.state : undefined),
+    ),
+    removeOf: vi.fn((childIds: readonly string[]) => {
+      calls.push(`links.removeOf ${childIds.join(' ')}`);
+      return Promise.resolve();
+    }),
+  };
   const config = { get: () => APP_ORIGIN } as unknown as ConfigService<Environment, true>;
   return {
     service: new ChildrenService(
       repository as unknown as ChildrenRepository,
       audit as unknown as AuditService,
+      links as unknown as LoginLinks,
       config,
     ),
     store,
     audit,
+    links,
     calls,
   };
 }
@@ -242,7 +251,7 @@ describe('ChildrenService', () => {
         account: 'xiaomi',
         addedAt: NOW,
       });
-      expect(calls).toEqual(['transaction', 'audit child.created']);
+      expect(calls).toEqual(['transaction', 'audit child.created', 'commit']);
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
         ...ON_XIAOMI,
         action: 'child.created',
@@ -310,23 +319,38 @@ describe('ChildrenService', () => {
   });
 
   describe('remove', () => {
-    it('deletes the child once and records it, then answers it as not found', async () => {
-      const { service, audit } = createService();
+    it('deletes the child and records it, then removes its login link once committed', async () => {
+      const { service, audit, calls } = createService();
 
       await expect(service.remove(PARENT_ID, FAMILY_ID, CHILD_ID)).resolves.toBeUndefined();
-      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, CHILD_ID))).toBe(
-        'child_not_found',
-      );
+
+      expect(calls).toEqual([
+        'transaction',
+        `deleteChild ${CHILD_ID}`,
+        'audit child.deleted',
+        'commit',
+        `links.removeOf ${CHILD_ID}`,
+      ]);
       expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
         ...ON_XIAOMI,
         action: 'child.deleted',
       });
     });
+
+    it('answers a child that is gone with child_not_found and removes no link', async () => {
+      const { service, audit, links } = createService({ child: false });
+
+      expect(await refusalOf(service.remove(PARENT_ID, FAMILY_ID, CHILD_ID))).toBe(
+        'child_not_found',
+      );
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(links.removeOf).not.toHaveBeenCalled();
+    });
   });
 
   describe('resetPassword', () => {
     it('locks the child, then clears the password as of now, forgets every device and records it, in one transaction', async () => {
-      const { service, store, audit, calls } = createService();
+      const { service, audit, links, calls } = createService();
 
       await service.resetPassword(PARENT_ID, FAMILY_ID, CHILD_ID);
 
@@ -336,8 +360,10 @@ describe('ChildrenService', () => {
         `clearPassword ${CHILD_ID} ${NOW.toISOString()}`,
         `deleteDevices ${CHILD_ID}`,
         'audit child.password_reset',
+        'commit',
       ]);
-      expect(store.revokeActiveLinks).not.toHaveBeenCalled();
+      expect(links.create).not.toHaveBeenCalled();
+      expect(links.removeOf).not.toHaveBeenCalled();
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
         ...ON_XIAOMI,
         action: 'child.password_reset',
@@ -370,7 +396,7 @@ describe('ChildrenService', () => {
   });
 
   describe('createLoginLink', () => {
-    it("locks the child, revokes the child's active links, then records the new one and its audit event", async () => {
+    it('locks the child and records the audit event, then stores the link last in the transaction', async () => {
       const { service, audit, calls } = createService();
 
       await service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID);
@@ -378,9 +404,9 @@ describe('ChildrenService', () => {
       expect(calls).toEqual([
         'transaction',
         `lockChild ${CHILD_ID}`,
-        `revokeActiveLinks ${CHILD_ID} ${NOW.toISOString()}`,
-        `insertLoginLink ${CHILD_ID}`,
         'audit child.login_link_created',
+        `links.create ${CHILD_ID}`,
+        'commit',
       ]);
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
         ...ON_XIAOMI,
@@ -388,76 +414,91 @@ describe('ChildrenService', () => {
       });
     });
 
-    it('answers with a link to the QR login page that expires in 10 minutes', async () => {
-      const { service, store } = createService();
+    it('answers with a link to the QR login page that expires in 10 minutes, storing only its hash', async () => {
+      const { service, links } = createService();
 
       const link = await service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID);
 
       const token = link.url.slice(`${APP_ORIGIN}/child/qr/`.length);
       expect(link).toEqual({
-        id: LINK_ID,
+        id: expect.stringMatching(UUID) as unknown,
         url: `${APP_ORIGIN}/child/qr/${token}`,
         expiresAt: '2026-11-22T09:10:00.000Z',
       });
       expect(Buffer.from(token, 'base64url')).toHaveLength(32);
-      expect(store.insertLoginLink).toHaveBeenCalledWith({
+      expect(links.create).toHaveBeenCalledExactlyOnceWith({
+        linkId: link.id,
         childId: CHILD_ID,
         tokenHash: hashToken(token),
-        createdBy: PARENT_ID,
-        createdAt: NOW,
         expiresAt: new Date(NOW.getTime() + LOGIN_LINK_LIFETIME_MS),
       });
     });
 
-    it('gives every link a token of its own', async () => {
+    it('gives every link an id and a token of its own', async () => {
       const { service } = createService();
 
       const first = await service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID);
       const second = await service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID);
 
+      expect(first.id).not.toBe(second.id);
       expect(first.url).not.toBe(second.url);
     });
 
-    it('answers a child of another family with child_not_found and revokes nothing', async () => {
-      const { service, store, audit } = createService();
+    it('answers a child of another family with child_not_found and stores nothing', async () => {
+      const { service, audit, links } = createService();
 
       expect(await refusalOf(service.createLoginLink(PARENT_ID, 'family-2', CHILD_ID))).toBe(
         'child_not_found',
       );
-      expect(store.revokeActiveLinks).not.toHaveBeenCalled();
-      expect(store.insertLoginLink).not.toHaveBeenCalled();
+      expect(links.create).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('fails, so its transaction and audit event roll back, when Redis does not take the link', async () => {
+      const { service, links, calls } = createService();
+      const failure = new Error('Redis is not reachable');
+      links.create.mockRejectedValueOnce(failure);
+
+      await expect(service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID)).rejects.toBe(failure);
+      expect(calls).not.toContain('commit');
     });
   });
 
   describe('getLoginLinkStatus', () => {
-    it('reads the state of the link now, with its expiry time', async () => {
-      const { service } = createService({ link: linkExpiringAt(minutesFromNow(4)) });
-      const status = () => service.getLoginLinkStatus(FAMILY_ID, CHILD_ID, LINK_ID);
+    it('reads the stored state of the link with its expiry time', async () => {
+      const { service, links } = createService({ state: stateOf({ status: 'used' }) });
 
-      const before = await status();
-      vi.setSystemTime(minutesFromNow(4));
-      const after = await status();
-
-      expect(before).toEqual({ status: 'active', expiresAt: '2026-11-22T09:04:00.000Z' });
-      expect(after).toEqual({ status: 'expired', expiresAt: '2026-11-22T09:04:00.000Z' });
+      await expect(service.getLoginLinkStatus(FAMILY_ID, CHILD_ID, LINK_ID)).resolves.toEqual({
+        status: 'used',
+        expiresAt: '2026-11-22T09:04:00.000Z',
+      });
+      expect(links.state).toHaveBeenCalledWith(LINK_ID);
     });
 
-    it('answers a link the child does not have with not_found', async () => {
-      const { service } = createService({ link: linkExpiringAt(minutesFromNow(4)) });
+    it('reads a link whose state is gone as expired', async () => {
+      const { service } = createService();
 
-      expect(await refusalOf(service.getLoginLinkStatus(FAMILY_ID, CHILD_ID, 'link-2'))).toBe(
+      await expect(service.getLoginLinkStatus(FAMILY_ID, CHILD_ID, LINK_ID)).resolves.toEqual({
+        status: 'expired',
+        expiresAt: NOW.toISOString(),
+      });
+    });
+
+    it("answers another child's link with not_found", async () => {
+      const { service } = createService({ state: stateOf({ childId: 'child-2' }) });
+
+      expect(await refusalOf(service.getLoginLinkStatus(FAMILY_ID, CHILD_ID, LINK_ID))).toBe(
         'not_found',
       );
     });
 
-    it('answers a child the family does not have with child_not_found', async () => {
-      const { service, store } = createService({ link: linkExpiringAt(minutesFromNow(4)) });
+    it('answers a child the family does not have with child_not_found, reading no state', async () => {
+      const { service, links } = createService({ state: stateOf() });
 
       expect(await refusalOf(service.getLoginLinkStatus('family-2', CHILD_ID, LINK_ID))).toBe(
         'child_not_found',
       );
-      expect(store.findLoginLink).not.toHaveBeenCalled();
+      expect(links.state).not.toHaveBeenCalled();
     });
   });
 
@@ -488,7 +529,9 @@ describe('ChildrenService', () => {
         'transaction',
         `deleteDevice ${CHILD_ID} ${DEVICE_ID}`,
         'audit child.devices_revoked',
+        'commit',
         'transaction',
+        'commit',
       ]);
       expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
         ...ON_XIAOMI,
@@ -514,6 +557,7 @@ describe('ChildrenService', () => {
         'transaction',
         `deleteDevices ${CHILD_ID}`,
         'audit child.devices_revoked',
+        'commit',
       ]);
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
         ...ON_XIAOMI,

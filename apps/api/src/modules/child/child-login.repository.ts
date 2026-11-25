@@ -8,30 +8,16 @@ import {
   type Executor,
 } from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
+import { LoginLinks, type ActiveLoginLink } from './login-links.js';
 
-const { children, childLoginLinks, childDevices } = schema;
+const { children, childDevices } = schema;
 
-/** A child as a login checks it: found by the family and the account, or locked by its id. */
+/** A child as a login checks it: found by the family and the account, or by its id. */
 export interface LoginCandidate {
   id: string;
   familyId: string;
   nickname: string;
   /** The argon2id hash of the child's password, or null when the child has none yet. */
-  passwordHash: string | null;
-}
-
-/** The state of a login link, as a login reads it under the link's lock. */
-export interface LinkState {
-  linkId: string;
-  childId: string;
-  expiresAt: Date;
-  usedAt: Date | null;
-  revokedAt: Date | null;
-}
-
-/** A login link found by its token, with what the login needs of its child. */
-export interface LinkRecord extends LinkState {
-  nickname: string;
   passwordHash: string | null;
 }
 
@@ -60,25 +46,13 @@ const candidateColumns = {
   passwordHash: children.passwordHash,
 };
 
-const linkStateColumns = {
-  linkId: childLoginLinks.id,
-  childId: childLoginLinks.childId,
-  expiresAt: childLoginLinks.expiresAt,
-  usedAt: childLoginLinks.usedAt,
-  revokedAt: childLoginLinks.revokedAt,
-};
-
 /**
  * The queries of a child's login, on the pool or inside one transaction:
- * finding the child by account or login link, the child's password and the
+ * finding the child by account or by id, the child's password and the
  * check of a signed-in child, and the browsers the child is remembered on.
  * The nickname, the account and the device names are encrypted on the way
  * in and decrypted on the way out, each bound to its column and its row's
  * id.
- *
- * A transaction that locks both a child's row and one of the child's login
- * links locks the child's row first, as making a login link and resetting
- * a password do, so no two of them wait for each other.
  */
 export class ChildLoginStore {
   constructor(
@@ -100,10 +74,20 @@ export class ChildLoginStore {
     return this.readCandidate(rows.at(0));
   }
 
+  /** The child with the id, unlocked, or undefined when the child is gone. */
+  async findCandidate(childId: string): Promise<LoginCandidate | undefined> {
+    const rows = await this.executor
+      .select(candidateColumns)
+      .from(children)
+      .where(eq(children.id, childId));
+    return this.readCandidate(rows.at(0));
+  }
+
   /**
    * The child with its password hash as it is now, its row locked until the
    * transaction ends, or undefined when the child is gone. A password reset
-   * locks the same row, so it runs wholly before or after the transaction.
+   * and the making of a login link lock the same row, so each runs wholly
+   * before or after the transaction.
    */
   async lockChild(childId: string): Promise<LoginCandidate | undefined> {
     const rows = await this.executor
@@ -133,47 +117,8 @@ export class ChildLoginStore {
     return row === undefined ? undefined : this.nicknameOf(childId, row.nickname);
   }
 
-  /** The login link with the token's hash and its child, unlocked, or undefined when there is none. */
-  async findLinkByToken(tokenHash: string): Promise<LinkRecord | undefined> {
-    const rows = await this.executor
-      .select({
-        ...linkStateColumns,
-        nickname: children.nickname,
-        passwordHash: children.passwordHash,
-      })
-      .from(childLoginLinks)
-      .innerJoin(children, eq(children.id, childLoginLinks.childId))
-      .where(eq(childLoginLinks.tokenHash, tokenHash));
-    const row = rows.at(0);
-    return row === undefined
-      ? undefined
-      : { ...row, nickname: this.nicknameOf(row.childId, row.nickname) };
-  }
-
-  /**
-   * The child's login link with the token's hash, its row locked until the
-   * transaction ends, or undefined when the child has none such. The caller
-   * holds the child's lock already, so of two logins on one link the second
-   * waits for the first and finds the link used.
-   */
-  async lockLink(childId: string, tokenHash: string): Promise<LinkState | undefined> {
-    const rows = await this.executor
-      .select(linkStateColumns)
-      .from(childLoginLinks)
-      .where(and(eq(childLoginLinks.tokenHash, tokenHash), eq(childLoginLinks.childId, childId)))
-      .for('update');
-    return rows.at(0);
-  }
-
   async setPassword(childId: string, passwordHash: string): Promise<void> {
     await this.executor.update(children).set({ passwordHash }).where(eq(children.id, childId));
-  }
-
-  async markLinkUsed(linkId: string, at: Date): Promise<void> {
-    await this.executor
-      .update(childLoginLinks)
-      .set({ usedAt: at })
-      .where(eq(childLoginLinks.id, linkId));
   }
 
   /**
@@ -278,13 +223,15 @@ export class ChildLoginStore {
  * The data of children's logins. Its own queries run on the pool;
  * `transaction` runs a unit of work with the same queries inside one
  * transaction, and hands the work the transaction too, for the audit event
- * of a change the login makes.
+ * of a change the login makes. The login links a login reads and uses are
+ * in Redis, outside any transaction, through LoginLinks.
  */
 @Injectable()
 export class ChildLoginRepository extends ChildLoginStore {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     cipher: ChildDataCipher,
+    private readonly links: LoginLinks,
   ) {
     super(database, cipher);
   }
@@ -294,5 +241,15 @@ export class ChildLoginRepository extends ChildLoginStore {
     return this.database.transaction((transaction) =>
       work(new ChildLoginStore(transaction, this.cipher), transaction),
     );
+  }
+
+  /** The login link the token's hash opens while it can be used, or undefined. */
+  findLink(tokenHash: string): Promise<ActiveLoginLink | undefined> {
+    return this.links.find(tokenHash);
+  }
+
+  /** Uses the login link; false when it was used, revoked or expired before. */
+  takeLink(link: ActiveLoginLink): Promise<boolean> {
+    return this.links.take(link);
   }
 }

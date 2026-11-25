@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
@@ -5,7 +6,6 @@ import type {
   Child,
   ChildDevice,
   ChildLoginLink,
-  ChildLoginLinkStatus,
   ChildLoginLinkStatusResponse,
   UpdateChildRequest,
 } from '@thinklet/contracts';
@@ -18,8 +18,8 @@ import {
   ChildrenRepository,
   type ChildStore,
   type DeviceRecord,
-  type LoginLinkRecord,
 } from './children.repository.js';
+import { LOGIN_LINK_LIFETIME_MS, LoginLinks, type LoginLinkState } from './login-links.js';
 import { newToken } from './tokens.js';
 
 /**
@@ -28,33 +28,31 @@ import { newToken } from './tokens.js';
  */
 export const CHILD_CONSENT_VERSION = '2026-11-22';
 
-/** How long a login link works after it is made (`.docs/design/rules.md`, "登录二维码"). */
-export const LOGIN_LINK_LIFETIME_MS = 10 * 60 * 1000;
-
 /** The page a login link opens, under the site's origin; the token follows it. */
 const LOGIN_LINK_PATH = '/child/qr/';
 
 /** A child of another family and a deleted child are answered the same, so ids reveal nothing. */
 export const childNotFound = () => new ApiError('child_not_found', HttpStatus.NOT_FOUND);
 
-/** A login link that does not exist or is another child's. */
+/** A login link of another child. */
 export const linkNotFound = () => new ApiError('not_found', HttpStatus.NOT_FOUND);
 
 const accountTaken = () => new ApiError('account_taken', HttpStatus.CONFLICT);
 
 /**
- * The state of a login link at `now` (`.docs/design/data.md`,
- * "child_login_links"), checked in this order: used, revoked, expired,
- * else active. A link is expired from its expiry time on.
+ * What a parent is told of a login link whose state was read at `now`
+ * (`.docs/design/data.md`, "Redis 里的"): its stored state, or `expired`
+ * once the state is gone. The state's key lives exactly as long as the
+ * link, so a link without one expired by now; when exactly is gone with
+ * the key, and `now` is the latest it can have been.
  */
-export function loginLinkStatus(link: LoginLinkRecord, now: Date): ChildLoginLinkStatus {
-  if (link.usedAt !== null) {
-    return 'used';
-  }
-  if (link.revokedAt !== null) {
-    return 'revoked';
-  }
-  return link.expiresAt.getTime() <= now.getTime() ? 'expired' : 'active';
+export function loginLinkStatus(
+  state: LoginLinkState | undefined,
+  now: Date,
+): ChildLoginLinkStatusResponse {
+  return state === undefined
+    ? { status: 'expired', expiresAt: now.toISOString() }
+    : { status: state.status, expiresAt: state.expiresAt };
 }
 
 /** A remembered browser with its times as ISO date-times. */
@@ -101,7 +99,7 @@ async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
  * family, so a child of another family is not found. The repository's
  * child records are what the parents see of a child. Every change is
  * recorded as an audit event of the parent in its transaction; one that
- * changes nothing is not.
+ * changes nothing is not. The login links live in Redis, in LoginLinks.
  */
 @Injectable()
 export class ChildrenService {
@@ -110,6 +108,7 @@ export class ChildrenService {
   constructor(
     private readonly repository: ChildrenRepository,
     private readonly audit: AuditService,
+    private readonly links: LoginLinks,
     config: ConfigService<Environment, true>,
   ) {
     this.appOrigin = config.get('APP_ORIGIN', { infer: true });
@@ -170,9 +169,12 @@ export class ChildrenService {
     );
   }
 
-  /** Deletes the child with its login links and its devices; its audit events stay. */
-  remove(parentId: string, familyId: string, childId: string): Promise<void> {
-    return this.repository.transaction(async (store, transaction) => {
+  /**
+   * Deletes the child with its devices in one transaction, then the
+   * child's login link in Redis; the child's audit events stay.
+   */
+  async remove(parentId: string, familyId: string, childId: string): Promise<void> {
+    await this.repository.transaction(async (store, transaction) => {
       if (!(await store.deleteChild(familyId, childId))) {
         throw childNotFound();
       }
@@ -181,15 +183,16 @@ export class ChildrenService {
         action: 'child.deleted',
       });
     });
+    await this.links.removeOf([childId]);
   }
 
   /**
    * Resets the child's password in one transaction: the password is
    * cleared, every login issued so far is refused and every remembered
-   * browser forgotten. Login links not used yet keep working, so the child
-   * sets a new password with the next one. The child's row is locked
-   * before the time of the reset is taken, so a login holding the lock
-   * finishes first and its session, issued before that time, is refused.
+   * browser forgotten. A login link not used yet keeps working, so the
+   * child sets a new password with it. The child's row is locked before
+   * the time of the reset is taken, so a login holding the lock finishes
+   * first and its session, issued before that time, is refused.
    */
   resetPassword(parentId: string, familyId: string, childId: string): Promise<void> {
     return this.repository.transaction(async (store, transaction) => {
@@ -206,36 +209,30 @@ export class ChildrenService {
   }
 
   /**
-   * Makes a login link for the child, valid for 10 minutes and once. The
-   * child's links still active are revoked in the same transaction, under
-   * the child's lock, so only the newest link ever works. The token is in
-   * the answer's URL only; the database keeps its hash.
+   * Makes a login link for the child, valid for 10 minutes and once; the
+   * child's older link stops working. The link is stored in Redis last in
+   * the transaction of its audit event, holding the child's row lock, so
+   * one child's links are made one after another, and a link Redis does
+   * not take leaves no audit event. The token is in the answer's URL only;
+   * Redis keeps its hash.
    */
   async createLoginLink(
     parentId: string,
     familyId: string,
     childId: string,
   ): Promise<ChildLoginLink> {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + LOGIN_LINK_LIFETIME_MS);
+    const id = randomUUID();
+    const expiresAt = new Date(Date.now() + LOGIN_LINK_LIFETIME_MS);
     const { token, hash } = newToken();
-    const id = await this.repository.transaction(async (store, transaction) => {
+    await this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockChild(familyId, childId))) {
         throw childNotFound();
       }
-      await store.revokeActiveLinks(childId, now);
-      const linkId = await store.insertLoginLink({
-        childId,
-        tokenHash: hash,
-        createdBy: parentId,
-        createdAt: now,
-        expiresAt,
-      });
       await this.audit.record(transaction, {
         ...onChild(parentId, familyId, childId),
         action: 'child.login_link_created',
       });
-      return linkId;
+      await this.links.create({ linkId: id, childId, tokenHash: hash, expiresAt });
     });
     return {
       id,
@@ -251,11 +248,11 @@ export class ChildrenService {
     linkId: string,
   ): Promise<ChildLoginLinkStatusResponse> {
     await requireChild(this.repository, familyId, childId);
-    const link = await this.repository.findLoginLink(childId, linkId);
-    if (link === undefined) {
+    const state = await this.links.state(linkId);
+    if (state !== undefined && state.childId !== childId) {
       throw linkNotFound();
     }
-    return { status: loginLinkStatus(link, new Date()), expiresAt: link.expiresAt.toISOString() };
+    return loginLinkStatus(state, new Date());
   }
 
   /** The browsers the child is remembered on, the latest login first. */

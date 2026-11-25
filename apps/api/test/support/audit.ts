@@ -12,13 +12,14 @@ import {
   signInParent,
   type Parent,
 } from './families.js';
+import { redisContents } from './login-links.js';
 import { authorize, callback, newUser, startLogin, type Target } from './login.js';
 
 // Helpers for tests of the audit events: the rows a request adds, a
-// snapshot of the business tables, a way to make writing an action's row
-// fail, the personal data the tests hand out, and every data-changing
-// request of the api as a case that sets it up, makes it and names the
-// row it should leave.
+// snapshot of the business tables and of the login links in Redis, a way
+// to make writing an action's row fail, the personal data the tests hand
+// out, and every data-changing request of the api as a case that sets it
+// up, makes it and names the row it should leave.
 
 /** A row of the audit_events table. */
 export interface AuditRow {
@@ -61,14 +62,22 @@ const BUSINESS_TABLES = [
   'family_members',
   'join_requests',
   'children',
-  'child_login_links',
   'child_devices',
   'family_books',
   'book_assignments',
 ];
 
-/** Every row of the business tables, each table's rows in a fixed order. */
-export async function businessSnapshot(databaseUrl: string): Promise<Record<string, unknown>> {
+/** The prefixes of the keys of business data in Redis: the login links, not the rate limits' counts. */
+const BUSINESS_KEY_PREFIXES = ['login-link:', 'login-link-status:', 'child-login-link:'];
+
+/**
+ * Every row of the business tables, each table's rows in a fixed order,
+ * and every key of business data in Redis with its value, in key order.
+ */
+export async function businessSnapshot(
+  databaseUrl: string,
+  redisUrl: string,
+): Promise<Record<string, unknown>> {
   const entries = await Promise.all(
     BUSINESS_TABLES.map(async (table) => {
       const [row] = await query<{ rows: unknown }>(
@@ -78,7 +87,11 @@ export async function businessSnapshot(databaseUrl: string): Promise<Record<stri
       return [table, row?.rows] as const;
     }),
   );
-  return Object.fromEntries(entries);
+  const keys = (await redisContents(redisUrl))
+    .filter(({ key }) => BUSINESS_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)))
+    .map(({ key, value }) => [key, value] as const)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return { ...Object.fromEntries(entries), redis: keys };
 }
 
 /**

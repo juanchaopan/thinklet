@@ -18,11 +18,13 @@ import { cookieHeader, newUser, signIn, type Target } from './login.js';
 // families and join requests set up for them and what the database holds
 // about them.
 
-/** The running application of a test file and its database. */
+/** The running application of a test file, its database and its Redis. */
 export interface RunningApp {
   readonly server: ReturnType<NestExpressApplication['getHttpServer']>;
   /** The connection URL of the migrated database the application uses. */
   readonly databaseUrl: string;
+  /** The redis:// address of the Redis the application uses. */
+  readonly redisUrl: string;
 }
 
 /**
@@ -50,6 +52,9 @@ export function useAppWithServices(): RunningApp {
     },
     get databaseUrl() {
       return current().databaseUrl;
+    },
+    get redisUrl() {
+      return current().services.redis.url;
     },
   };
 }

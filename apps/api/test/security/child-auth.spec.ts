@@ -9,7 +9,7 @@ import {
   newLoginLink,
   type ChildWithPassword,
 } from '../support/child-login.js';
-import { addChild, childrenPath, deviceRows, loginLinkRows } from '../support/children.js';
+import { addChild, childrenPath, deviceRows } from '../support/children.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
 import {
   createFamily,
@@ -63,6 +63,9 @@ describe('child login security', () => {
     password: who.password,
     remember,
   });
+  /** Whether the link of the token can still be used: opening it answers who it is for. */
+  const stillUsable = async (token: string) =>
+    (await browser().get(linkPath(token))).status === 200;
 
   beforeAll(async () => {
     parent = await signInParent(running.server, { name: '林悦' });
@@ -153,8 +156,7 @@ describe('child login security', () => {
           cookies: undefined,
         })),
       );
-      const [link] = await loginLinkRows(running.databaseUrl, fresh.id);
-      expect(link?.used_at).toBeNull();
+      expect(await stillUsable(token)).toBe(true);
     });
   });
 
@@ -265,8 +267,7 @@ describe('child login security', () => {
           expect(errorResponseSchema.parse(response.body).error.code).toBe('bad_origin');
           expect(response.headers['set-cookie']).toBeUndefined();
         }
-        const [link] = await loginLinkRows(running.databaseUrl, fresh.id);
-        expect(link?.used_at).toBeNull();
+        expect(await stillUsable(token)).toBe(true);
       },
     );
 

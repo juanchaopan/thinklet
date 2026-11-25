@@ -10,8 +10,8 @@ import { as, type Parent } from './families.js';
 import type { Target } from './login.js';
 
 // Helpers for tests of the children routes: children added through the api,
-// login links and remembered devices set up directly in the database, and
-// what the database holds about them.
+// remembered devices set up directly in the database, and what the database
+// holds about them. What Redis holds of the login links is in login-links.ts.
 
 /** The api's child data cipher with the key of every api the tests start. */
 export function testChildDataCipher(): ChildDataCipher {
@@ -91,51 +91,6 @@ export async function setPasswordHash(databaseUrl: string, childId: string): Pro
     childId,
     '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA',
   ]);
-}
-
-/** A row of the child_login_links table. */
-export interface LoginLinkRow {
-  id: string;
-  child_id: string;
-  token_hash: string;
-  created_by: string;
-  created_at: Date;
-  expires_at: Date;
-  used_at: Date | null;
-  revoked_at: Date | null;
-}
-
-/** The child's login links as the database holds them, oldest first. */
-export async function loginLinkRows(databaseUrl: string, childId: string): Promise<LoginLinkRow[]> {
-  return query<LoginLinkRow>(
-    databaseUrl,
-    'select * from child_login_links where child_id = $1 order by created_at, id',
-    [childId],
-  );
-}
-
-/**
- * Records a login link of the child directly in the database: by default
- * one made a minute ago that expires in nine, with the given SQL
- * expressions for its times.
- */
-export async function insertLoginLink(
-  databaseUrl: string,
-  child: { id: string; createdBy: string },
-  times: { expiresAt?: string; usedAt?: string; revokedAt?: string } = {},
-): Promise<string> {
-  const [row] = await query<{ id: string }>(
-    databaseUrl,
-    `insert into child_login_links (child_id, token_hash, created_by, created_at, expires_at, used_at, revoked_at)
-     values ($1, $2, $3, now() - interval '1 minute', ${times.expiresAt ?? "now() + interval '9 minutes'"},
-             ${times.usedAt ?? 'null'}, ${times.revokedAt ?? 'null'})
-     returning id`,
-    [child.id, randomBytes(32).toString('hex'), child.createdBy],
-  );
-  if (row === undefined) {
-    throw new Error('No login link recorded');
-  }
-  return row.id;
 }
 
 /** A row of the child_devices table. */

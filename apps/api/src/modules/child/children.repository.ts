@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -10,7 +10,7 @@ import {
 import * as schema from '../../infrastructure/database/schema.js';
 import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
-const { children, childLoginLinks, childDevices } = schema;
+const { children, childDevices } = schema;
 
 /** The unique constraint that keeps a child's account unique within the family. */
 const ACCOUNT_UNIQUE = 'children_family_account_unique';
@@ -44,21 +44,6 @@ export interface ChildChanges {
   account?: string;
 }
 
-export interface NewLoginLink {
-  childId: string;
-  tokenHash: string;
-  createdBy: string;
-  createdAt: Date;
-  expiresAt: Date;
-}
-
-/** The times a login link's state is read from. */
-export interface LoginLinkRecord {
-  expiresAt: Date;
-  usedAt: Date | null;
-  revokedAt: Date | null;
-}
-
 /** A browser the child is remembered on, its name in plain text. */
 export interface DeviceRecord {
   id: string;
@@ -88,14 +73,14 @@ function settingAccount<T>(write: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The queries on children, their login links and their devices, on the
- * pool or inside one transaction. The nickname, the account and the device
- * names are encrypted on the way in and decrypted on the way out, each
- * bound to its column and its row's id, so the callers see plain text only
- * and the database ciphertext only. A new child gets its id here rather
- * than from the database, as its ciphertexts are bound to it before the
- * row exists. Every query of a child names its family as well, so a child
- * of another family is not found.
+ * The queries on children and their devices, on the pool or inside one
+ * transaction. The nickname, the account and the device names are
+ * encrypted on the way in and decrypted on the way out, each bound to its
+ * column and its row's id, so the callers see plain text only and the
+ * database ciphertext only. A new child gets its id here rather than from
+ * the database, as its ciphertexts are bound to it before the row exists.
+ * Every query of a child names its family as well, so a child of another
+ * family is not found.
  */
 export class ChildStore {
   constructor(
@@ -113,8 +98,8 @@ export class ChildStore {
 
   /**
    * Locks the child's row until the transaction ends, so the changes to one
-   * child's login links run one after another. Returns whether the family
-   * has the child.
+   * child, its password and its login links, run one after another.
+   * Returns whether the family has the child.
    */
   async lockChild(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
@@ -201,7 +186,7 @@ export class ChildStore {
     return this.readChildren(rows).at(0);
   }
 
-  /** Deletes the child, whose login links and devices go with it; returns whether there was one. */
+  /** Deletes the child, whose devices go with it; returns whether there was one. */
   async deleteChild(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
       .delete(children)
@@ -221,47 +206,6 @@ export class ChildStore {
       .where(childInFamily(familyId, childId))
       .returning({ id: children.id });
     return rows.length > 0;
-  }
-
-  /** Revokes the child's links that are still active at the given time: unused, unrevoked, unexpired. */
-  async revokeActiveLinks(childId: string, at: Date): Promise<void> {
-    await this.executor
-      .update(childLoginLinks)
-      .set({ revokedAt: at })
-      .where(
-        and(
-          eq(childLoginLinks.childId, childId),
-          isNull(childLoginLinks.usedAt),
-          isNull(childLoginLinks.revokedAt),
-          gt(childLoginLinks.expiresAt, at),
-        ),
-      );
-  }
-
-  /** Records a login link and returns its id. */
-  async insertLoginLink(link: NewLoginLink): Promise<string> {
-    const rows = await this.executor
-      .insert(childLoginLinks)
-      .values(link)
-      .returning({ id: childLoginLinks.id });
-    const row = rows.at(0);
-    if (row === undefined) {
-      throw new Error('Recording the login link returned no row');
-    }
-    return row.id;
-  }
-
-  /** The child's login link with the id, or undefined when the child has none such. */
-  async findLoginLink(childId: string, linkId: string): Promise<LoginLinkRecord | undefined> {
-    const rows = await this.executor
-      .select({
-        expiresAt: childLoginLinks.expiresAt,
-        usedAt: childLoginLinks.usedAt,
-        revokedAt: childLoginLinks.revokedAt,
-      })
-      .from(childLoginLinks)
-      .where(and(eq(childLoginLinks.id, linkId), eq(childLoginLinks.childId, childId)));
-    return rows.at(0);
   }
 
   /** The browsers the child is remembered on, the latest login first. */
@@ -313,8 +257,8 @@ export class ChildStore {
 }
 
 /**
- * Children, their login links and their devices. Its own queries run on the
- * pool; `transaction` runs a unit of work with the same queries inside one
+ * Children and their devices. Its own queries run on the pool;
+ * `transaction` runs a unit of work with the same queries inside one
  * transaction, and hands the work the transaction too, for the audit event
  * of its change.
  */

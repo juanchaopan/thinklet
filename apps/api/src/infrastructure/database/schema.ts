@@ -1,5 +1,7 @@
 // Drizzle table definitions. drizzle-kit reads this file to generate the
 // migrations in apps/api/drizzle/, and the Drizzle client is typed from it.
+// Data that should vanish once its time is up, such as the children's login
+// links, lives in Redis instead (`.docs/design/data.md`, "Redis 里的").
 import type { BookStatus, FamilyRole, JoinRequestStatus } from '@thinklet/contracts';
 import { sql } from 'drizzle-orm';
 import {
@@ -188,28 +190,6 @@ function childReference() {
     .notNull()
     .references(() => children.id, { onDelete: 'cascade' });
 }
-
-/**
- * The one-time login links a parent shows as a QR code. Only the SHA-256
- * of the token is stored; the token itself lives in the link. A link is
- * used, revoked or expired by its time columns.
- */
-export const childLoginLinks = pgTable(
-  'child_login_links',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    childId: childReference(),
-    tokenHash: text('token_hash').notNull().unique('child_login_links_token_hash_unique'),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => parents.id),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
-    expiresAt: timestamptz('expires_at').notNull(),
-    usedAt: timestamptz('used_at'),
-    revokedAt: timestamptz('revoked_at'),
-  },
-  (table) => [index('child_login_links_child_id_idx').on(table.childId)],
-);
 
 /**
  * The browsers a child is remembered on. A browser has one device token
