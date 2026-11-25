@@ -12,6 +12,7 @@ import { EditableField } from '../../shared/ui/editable-field';
 import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Toaster } from '../../shared/ui/toast';
+import { DeleteAccount } from './delete-account';
 
 /**
  * The hints for a name that cannot be saved (rules.md, 个人设置). A name is
@@ -34,12 +35,13 @@ export function nameHint(value: string): string | null {
  * The parent's own settings at `/profile`: the name, changed with the pencil
  * (in place with a mouse, in a sheet on a touch screen) and saved with the
  * 已保存 toast, the email as the identity provider reports it (— when there
- * is none), and signing out. A parent without a family reaches it from the
- * start page, in the frame without menus, and goes back there with 返回.
+ * is none), signing out and, under a thin line at the foot, deleting the
+ * account. A parent without a family reaches it from the start page, in the
+ * frame without menus, and goes back there with 返回.
  */
 @Component({
   selector: 'app-profile',
-  imports: [Art, Button, Card, EditableField, LineIcon, RouterLink],
+  imports: [Art, Button, Card, DeleteAccount, EditableField, LineIcon, RouterLink],
   template: `
     @if (session.me(); as me) {
       <div class="mx-auto flex w-full max-w-3xl stagger flex-col gap-5">
@@ -91,6 +93,7 @@ export function nameHint(value: string): string | null {
             <img alt="" appArt="door" class="size-6" />退出登录
           </button>
         </div>
+        <app-delete-account />
       </div>
     }
   `,

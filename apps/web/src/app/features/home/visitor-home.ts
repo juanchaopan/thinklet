@@ -6,6 +6,7 @@ import { LoginFailedDialog } from '../../core/login-failed-dialog';
 import { Art } from '../../shared/ui/art';
 import { Button } from '../../shared/ui/button';
 import { Chip } from '../../shared/ui/card';
+import { AccountDeletedDialog } from './account-deleted-dialog';
 
 /**
  * The product home at `/` for visitors: what the product is, the parents'
@@ -14,11 +15,12 @@ import { Chip } from '../../shared/ui/card';
  * pops up after it, and then it floats gently while the page is open.
  *
  * `?login=failed` is where a failed sign-in lands: 登录没有成功 covers the
- * page and offers another try.
+ * page and offers another try. `?account=deleted` is where a parent lands
+ * once they deleted their account: 你的账号已删除 covers the page.
  */
 @Component({
   selector: 'app-visitor-home',
-  imports: [Art, Button, Chip, LoginFailedDialog, PublicLayout, RouterLink],
+  imports: [Art, AccountDeletedDialog, Button, Chip, LoginFailedDialog, PublicLayout, RouterLink],
   template: `
     <app-public-layout>
       <section
@@ -59,6 +61,7 @@ import { Chip } from '../../shared/ui/card';
     </app-public-layout>
 
     <app-login-failed-dialog />
+    <app-account-deleted-dialog />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
