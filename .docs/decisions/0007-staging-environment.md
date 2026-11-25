@@ -11,7 +11,7 @@
 - Neon 资源：新建项目放新加坡；新建项目放美国东部；用已有的 Neon 项目。
 - Vercel 套餐：Hobby（免费）；Pro（每人每月 20 美元）。
 - 部署方式：只由 GitHub Actions 部署；连接 Vercel 的 Git 集成。
-- Authing 用户池：新建国内版 authing.cn 的免费用户池；新建国际版 authing.co 的免费用户池。
+- Authing 用户池：新建国内版 authing.cn 的免费用户池；新建国际版 authing.co 的免费用户池；新建美国区 us.authing.co 的免费用户池。
 
 ## 决定
 
@@ -22,14 +22,14 @@
 - 新建 Neon 项目 `thinklet-staging`，放在 `aws-ap-southeast-1`（新加坡），里面有一个 PostgreSQL 数据库和一个对象存储桶，用免费套餐。
 - Vercel 用 Hobby 套餐。
 - 只由 GitHub Actions 部署：先执行数据库迁移，再发布两个项目，最后跑冒烟测试。不连接 Vercel 的 Git 集成。
-- 新建 authing.cn 的一个免费用户池，里面一个 OIDC 应用，连上 Google 登录；Google 登录用的 OAuth 客户端建在 Google Cloud 上。都由用户在网站上建。
+- 新建 Authing 美国区（us.authing.co）的一个免费用户池，里面一个 OIDC 应用，连上 Google 登录；Google 登录用的 OAuth 客户端建在 Google Cloud 上。都由用户在网站上建。
 - 测试环境只放测试数据，不放真实用户的个人信息。
 
 ## 理由
 
 - 两个项目可以用上 Vercel 对 NestJS 的零配置支持。浏览器只看到一个地址，不用处理跨域，登录的 cookie 也只属于这一个地址。
 - 新加坡离中国大陆最近，函数和数据库放在同一个区域，延迟也低。
-- Authing 用 authing.cn：在国际版控制台 console.authing.co 登录，进的也是 authing.cn 的控制台，没有单独的国际版用户池可选；生产环境本来就在中国大陆，同样用 authing.cn。
+- Authing 用美国区：新加坡的 Vercel 函数连 authing.cn 北京的服务器会随机丢连接（从新加坡抽样约四分之一超时），登录时好时坏；美国区的服务器在腾讯云弗吉尼亚，从新加坡连接稳定。美国区和 authing.cn 是同一个产品、同样的接口，代码不变，只换配置。国际版控制台 console.authing.co 进的是 authing.cn 的控制台，美国区要用 console.us.authing.co。
 - 测试环境每月 0 元，符合每月 200 元的预算。
 - 只由 CI 部署，迁移和冒烟测试才能卡在发布的前后；预览环境也不会和测试环境共用一个数据库。
 - 测试环境不放真实的个人信息，服务器在境外也不违反简介里的合规要求。
@@ -42,7 +42,8 @@
 - PR 没有预览环境。
 - 测试环境里后端以无服务器函数运行，和生产环境的常驻进程不一样。
 - Authing 和 Google Cloud 没有可用的命令行工具，用户池、应用和 OAuth 客户端要手动建，配置也只能在网站上看。
-- Authing 的用户池在北京：家长的名字、邮箱和密码存在北京；新加坡的 Vercel 函数要跨境访问 Authing，登录会慢一点。
+- Authing 的测试用户池在美国：家长的名字、邮箱和密码存在美国。
+- 测试环境和生产环境的 Authing 在不同区域，测试环境测不到生产环境连 authing.cn 的网络。
 - Authing 免费用户池每月最多 10 个活跃用户，只能连一个社交账号；每天最多发 50 封邮件，而且账号主人完成 Authing 的实名认证或企业认证后才能发。生产环境要在 authing.cn 另建用户池。
 
 ## 何时重新考虑
@@ -52,4 +53,4 @@
 - 免费额度不够用。
 - 选定生产环境的云之后，想让测试环境和生产环境更接近。
 
-Last changed: #7 (2026-11-21)
+Last changed: #14 (2026-11-25)

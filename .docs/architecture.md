@@ -23,7 +23,7 @@ flowchart LR
     npg[("Neon PostgreSQL<br/>新加坡")]
     ns3[("Neon 对象存储<br/>S3 接口")]
     redis[("Upstash Redis<br/>新加坡")]
-    authing["Authing 用户池（authing.cn）<br/>托管登录页（OIDC）"]
+    authing["Authing 用户池（美国区 us.authing.co）<br/>托管登录页（OIDC）"]
   end
 
   subgraph production["生产环境 production（待建）"]
@@ -112,7 +112,7 @@ flowchart LR
 | 分批加载                 | 列表接口用游标分批：每批按固定的顺序取，响应带一个游标，也就是这批最后一项的排序位置，编码成一个不透明的字符串；下一批从它之后取，没有更多时不带游标。加载中途加了新书，也不会重复或漏掉                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 包管理                   | pnpm workspaces；前端用 Angular CLI 构建，后端用 Nest CLI 构建                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 任务入口                 | Task（`Taskfile.yml`）。它作为仓库根目录的开发依赖由 pnpm 安装，开发机上只要先装好 Node.js、pnpm 和 Docker                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| 云                       | 测试环境用 Vercel（Hobby 套餐）、Neon（免费套餐）、Upstash（免费档）和 Authing 中国版 authing.cn（免费用户池）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 云                       | 测试环境用 Vercel（Hobby 套餐）、Neon（免费套餐）、Upstash（免费档）和 Authing 美国区 us.authing.co（免费用户池）；生产环境用中国大陆的云，服务商待定                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## 各组件的库
 
@@ -272,9 +272,9 @@ tools/                 仓库自己的检查脚本（步骤检查、PR 标题检
 - 两个 Vercel 项目的根目录分别是 `apps/web` 和 `apps/api`，并允许构建读取根目录以外的文件，这样才能用到 `packages/contracts`。
 - 两个 Vercel 项目用标准保护：预览部署和各次部署自己的地址要登录 Vercel 才能打开，正式地址 `thinklet-web.vercel.app`、`thinklet-api.vercel.app` 公开访问，冒烟测试和 `/api/*` 转发才能用。
 - 登录的回调地址和退出后的返回地址都在前端的地址 `https://thinklet-web.vercel.app` 下，经过 `/api/*` 转发到后端，cookie 只属于前端的域名。
-- Authing 的用户池在 authing.cn 上，服务器在腾讯云北京：家长的名字、邮箱和密码存在北京；新加坡的 Vercel 函数跨境访问 Authing，登录会慢一点；Google 登录要经过 Authing 北京的服务器连 Google，能不能稳定用要在测试环境上试。
+- 测试环境的 Authing 用户池在美国区（控制台 `console.us.authing.co`，服务器在腾讯云美国弗吉尼亚）：家长的名字、邮箱和密码存在美国，Google 登录经过 Authing 美国区的服务器连 Google。新加坡的 Vercel 函数连 authing.cn 北京的服务器会随机丢连接，登录时好时坏；连美国区稳定。
 - Authing 免费用户池每月最多 10 个活跃用户，只能连一个社交账号；每天最多发 50 封邮件（注册验证、找回密码），而且账号主人完成 Authing 的实名认证或企业认证后才能发。
-- 生产环境在同一个 authing.cn 上另建用户池，测试环境的家长账号不带过去。
+- 生产环境在 authing.cn 上另建用户池，测试环境的家长账号不带过去。代码不分区域，区域只在配置里：`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`AUTHING_MANAGEMENT_ORIGIN`、`AUTHING_USER_POOL_ID` 和三个密钥。
 
 基础设施直接用 `vercel` 和 `neonctl` 命令行创建，不用基础设施即代码工具。scaffold 步骤执行前先用 `--help` 核对参数：
 
@@ -302,7 +302,7 @@ Upstash 的官方命令行已经不维护，所以用它的开发者 API；scaff
 Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上建。重建时按这几步：
 
 1. 在 Google Cloud 建项目 `thinklet-staging`。在 Google Auth Platform 里配 OAuth 同意屏幕：应用名 好奇星球，受众选 External，保持 Testing 状态，只有加进 Test users 的账号能用 Google 登录。
-2. 在 Authing 控制台 `https://console.authing.cn` 建用户池 好奇星球，子域名 `thinklet-staging`。账号主人完成个人实名认证，用户池才能发注册验证和找回密码的邮件。
+2. 在 Authing 美国区的控制台 `https://console.us.authing.co` 建用户池 好奇星球，子域名 `thinklet-staging`。
 3. 在用户池里建一个 Regular Web APP 类型的应用，名字 好奇星球，子域名同上。登录回调地址填 `<APP_ORIGIN>/api/auth/callback`，退出回调地址填 `<APP_ORIGIN>/`。
 4. 应用的 Protocol Configuration：授权模式只勾 `authorization_code`，返回类型 `code`，ID 令牌签名 `RS256`，换令牌时的客户端验证用 `client_secret_post`，关掉 User informed consent page；ID 令牌 14 天过期。Authing 没有“必须用 PKCE”的开关：请求带了 PKCE 它就校验，本站后端每次都带。
 5. 应用的 Login Control：Single Page Login，只开邮箱加密码登录，关掉邮箱验证码登录。
@@ -314,6 +314,8 @@ Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上�
 11. 删除用户的管理 API：用户池的编号写入 GitHub 变量 `AUTHING_USER_POOL_ID`；用户把用户池密钥存成不提交的文件，代理从文件读入 GitHub 密钥 `AUTHING_USER_POOL_SECRET`，不显示。
 12. webhook：代理生成一个随机的 webhook 密钥写进不提交的文件，并从文件读入 GitHub 密钥 `AUTHING_WEBHOOK_SECRET`；用户在 Authing 控制台的 自动化 → Webhooks 里加一个 webhook，回调链接 `<APP_ORIGIN>/api/webhooks/authing`，请求密钥从这个文件复制，数据格式 `application/json`，触发事件只勾 `user:deleted`，然后删掉文件。
 13. 代理读 issuer 的发现文档，确认有授权、换令牌、公钥、退出（`end_session_endpoint`）和用户信息五个地址，支持 S256 的 PKCE 和 `client_secret_post`，ID 令牌能用 RS256 签名。
+
+应用、安全设置、Google 身份源和 webhook 也能用管理 API 从另一个用户池复制：`get-application`/`create-application`、`get-security-settings`/`update-security-settings`（`allowedOrigins` 不复制）、`get-ext-idp`/`create-ext-idp`/`create-ext-idp-conn`/`change-ext-idp-conn-state`、`list-webhooks`/`create-webhook`。用户池本身、通用登录页的协议和语言、用户池图标，以及 Google Cloud 里 Authing 的回调地址只能在网站上设。
 
 ## 数据迁移
 
@@ -558,7 +560,7 @@ LICENSE
 | `JWT_SIGNING_KEY`                          | 签发登录状态 JWT 的 ES256 私钥（JWK 格式），公钥由它算出                                                                        | 密钥 | 后端运行时                         | 代理随机生成，直接写进 GitHub，不显示                                                        |
 | `CHILD_DATA_KEY`                           | 加密孩子个人信息、算账号查找值和限流键的主密钥（32 字节随机数），三把子密钥由它推出                                             | 密钥 | 后端运行时、CD（代码写的数据迁移） | 代理随机生成，直接写进 GitHub，不显示                                                        |
 | `REDIS_URL`                                | 后端连 Redis 的 `rediss://` 地址，带密码：限流计数和扫码登录链接                                                                | 密钥 | 后端运行时                         | 建 Upstash 库时产生                                                                          |
-| `AUTHING_MANAGEMENT_ORIGIN`                | Authing 管理 API 的地址                                                                                                         | 变量 | 后端运行时                         | 测试环境是 `https://api.authing.cn`；开发机和测试指向替身服务                                |
+| `AUTHING_MANAGEMENT_ORIGIN`                | Authing 管理 API 的地址                                                                                                         | 变量 | 后端运行时                         | 测试环境是 `https://api.us.authing.co`；开发机和测试指向替身服务                             |
 | `AUTHING_USER_POOL_ID`                     | 调 Authing 管理 API 时的用户池编号                                                                                              | 变量 | 后端运行时                         | 建 Authing 用户池时产生                                                                      |
 | `AUTHING_USER_POOL_SECRET`                 | 换 Authing 管理令牌的用户池密钥，能管整个用户池                                                                                 | 密钥 | 后端运行时                         | 用户从 Authing 控制台存成不提交的文件，由代理从文件读入 GitHub                               |
 | `AUTHING_WEBHOOK_SECRET`                   | 核对 Authing 发来的 webhook                                                                                                     | 密钥 | 后端运行时                         | 代理随机生成写进不提交的文件并读入 GitHub，用户从文件复制进 Authing                          |
