@@ -150,6 +150,13 @@ describe('child login', () => {
     account: child.account,
     remember: false,
   });
+  /** The signed-in child as GET /api/child/me answers it. */
+  const signedInAs = (child: Child) => ({
+    id: child.id,
+    nickname: child.nickname,
+    account: child.account,
+    familyName: family.name,
+  });
   const linkOf = (child: Child) => newLoginLink(running.server, parent, family.id, child.id);
   const newerLink = (child: Child) =>
     as(running.server, parent).post(`${childPath(family.id, child.id)}/login-links`);
@@ -290,7 +297,7 @@ describe('child login', () => {
 
       expectSignedIn(response, child);
       expect(setCookiesOf(response)['thinklet_session']).toBeUndefined();
-      expect((await kid.me()).body).toEqual({ id: child.id, nickname: child.nickname });
+      expect((await kid.me()).body).toEqual(signedInAs(child));
     });
 
     it('takes the family code in any case', async () => {
@@ -760,7 +767,7 @@ describe('child login', () => {
       });
 
       expectSignedIn(response, child);
-      expect((await kid.me()).body).toEqual({ id: child.id, nickname: '阿乐' });
+      expect((await kid.me()).body).toEqual(signedInAs(child));
       expect((await childRow(running.databaseUrl, child.id))?.password_hash).toMatch(
         /^\$argon2id\$v=19\$/,
       );

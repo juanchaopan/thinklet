@@ -1,6 +1,6 @@
 import * as z from 'zod';
 import './runtime.js';
-import { childMeResponseSchema } from './child.js';
+import { signedInChildSchema } from './child.js';
 import {
   booleanFieldSchema,
   childAccountSchema,
@@ -25,10 +25,10 @@ export const childLoginRequestSchema = z.strictObject({
 /**
  * Response body of every child login that signs the child in: with the
  * family code, the account and the password, by a remembered avatar, and
- * by a login link. It is the child now signed in, as `GET /api/child/me`
- * answers.
+ * by a login link. It is the child now signed in, its id and nickname;
+ * `GET /api/child/me` answers more of the child.
  */
-export const childLoginResponseSchema = childMeResponseSchema;
+export const childLoginResponseSchema = signedInChildSchema;
 
 /**
  * The answer of `POST /api/child-auth/login` for a child who has no

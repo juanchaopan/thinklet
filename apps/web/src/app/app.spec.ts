@@ -111,7 +111,7 @@ describe('App', () => {
       await renderApp('/');
 
       expect(screen.getByText('欢迎回来，林悦')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: '退出' })).toBeNull();
+      expect(screen.queryByText('你好，小米！')).toBeNull();
     });
 
     it('shows the child login as it is, without the menus', async () => {

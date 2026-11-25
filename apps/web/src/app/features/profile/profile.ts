@@ -1,15 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { meResponseSchema, parentNameSchema } from '@thinklet/contracts';
 import { Api } from '../../core/api';
-import { isSignedOut, rejectedFields, showSomethingWentWrong } from '../../core/failures';
+import { isSignedOut, showSomethingWentWrong } from '../../core/failures';
+import { FieldEditing } from '../../core/field-editing';
 import { Session } from '../../core/session';
 import { Art } from '../../shared/ui/art';
-import { Button, IconButton } from '../../shared/ui/button';
+import { Button } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
-import { EditRow, EditSheet } from '../../shared/ui/edit-field';
+import { EditableField } from '../../shared/ui/editable-field';
 import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
-import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Toaster } from '../../shared/ui/toast';
 
@@ -39,7 +39,7 @@ export function nameHint(value: string): string | null {
  */
 @Component({
   selector: 'app-profile',
-  imports: [Art, Button, Card, EditRow, EditSheet, IconButton, LineIcon, RouterLink],
+  imports: [Art, Button, Card, EditableField, LineIcon, RouterLink],
   template: `
     @if (session.me(); as me) {
       <div class="mx-auto flex w-full max-w-3xl stagger flex-col gap-5">
@@ -58,29 +58,18 @@ export function nameHint(value: string): string | null {
             <div class="py-5 first:pt-0 last:pb-0">
               <dt class="text-sm font-bold text-ink-muted">名字</dt>
               <dd class="mt-1">
-                @if (editingInPlace()) {
-                  <app-edit-row
-                    [value]="me.name"
-                    label="名字"
-                    [validate]="nameHint"
-                    [error]="serverError()"
-                    [saving]="saving()"
-                    (save)="save($event)"
-                    (cancelled)="stopEditing()"
-                  />
-                } @else {
-                  <div class="flex items-center gap-1">
-                    <p class="text-base font-bold">{{ me.name }}</p>
-                    <button
-                      type="button"
-                      appIconButton
-                      aria-label="改名字"
-                      (click)="startEditing()"
-                    >
-                      <app-line-icon name="pencil" />
-                    </button>
-                  </div>
-                }
+                <app-editable-field
+                  [value]="me.name"
+                  label="名字"
+                  action="改名字"
+                  [validate]="nameHint"
+                  [editing]="name.editing()"
+                  [saving]="name.saving()"
+                  [error]="name.serverError()"
+                  (started)="name.start()"
+                  (cancelled)="name.stop()"
+                  (save)="save($event)"
+                />
               </dd>
             </div>
             <div class="py-5 first:pt-0 last:pb-0">
@@ -103,84 +92,38 @@ export function nameHint(value: string): string | null {
           </button>
         </div>
       </div>
-
-      <app-edit-sheet
-        [open]="editing() && inputMode.touch()"
-        title="改名字"
-        [value]="me.name"
-        label="名字"
-        [validate]="nameHint"
-        [error]="serverError()"
-        [saving]="saving()"
-        (save)="save($event)"
-        (cancelled)="stopEditing()"
-      />
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Profile {
   protected readonly session = inject(Session);
-  protected readonly inputMode = inject(InputMode);
   private readonly api = inject(Api);
   private readonly toaster = inject(Toaster);
 
   protected readonly nameHint = nameHint;
-  protected readonly editing = signal(false);
-  protected readonly saving = signal(false);
+  protected readonly name = new FieldEditing('name', NAME_HINTS);
   protected readonly signingOut = signal(false);
-  protected readonly serverError = signal<string | null>(null);
 
-  protected readonly editingInPlace = computed(() => this.editing() && !this.inputMode.touch());
-
-  protected startEditing(): void {
-    this.serverError.set(null);
-    this.editing.set(true);
+  protected save(name: string): Promise<void> {
+    return this.name.save(
+      () => this.api.send('PATCH', '/api/me', { name: name.trim() }, meResponseSchema),
+      (me) => {
+        this.session.replace(me);
+      },
+    );
   }
 
-  protected stopEditing(): void {
-    this.editing.set(false);
-  }
-
-  protected async save(name: string): Promise<void> {
-    this.saving.set(true);
-    this.serverError.set(null);
-    try {
-      const me = await this.api.send('PATCH', '/api/me', { name: name.trim() }, meResponseSchema);
-      this.session.replace(me);
-      this.editing.set(false);
-      this.toaster.show('已保存', 'success', 'party');
-    } catch (error) {
-      this.showFailure(error);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
+  /** Signs out here and at the identity provider; a failure other than a 401 says 出了点问题. */
   protected async logout(): Promise<void> {
     this.signingOut.set(true);
     try {
       await this.session.logout();
     } catch (error) {
-      this.showFailure(error);
+      if (!isSignedOut(error)) {
+        showSomethingWentWrong(this.toaster);
+      }
       this.signingOut.set(false);
     }
-  }
-
-  /**
-   * A rejected name shows its hint under the box; any other failure (the
-   * server failing or not answering, a request from another site) shows the
-   * 出了点问题 toast.
-   */
-  private showFailure(error: unknown): void {
-    if (isSignedOut(error)) {
-      return;
-    }
-    const field = rejectedFields(error).find((rejected) => rejected.path === 'name');
-    if (field) {
-      this.serverError.set(NAME_HINTS[field.code]);
-      return;
-    }
-    showSomethingWentWrong(this.toaster);
   }
 }

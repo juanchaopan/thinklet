@@ -1,7 +1,7 @@
 import { applicantJoinRequestSchema, familyDetailSchema } from '@thinklet/contracts';
 import type request from 'supertest';
 import { acquire, acquisitionPath, ACTIVE_BOOK, readersPath, setReaders } from './books.js';
-import { ChildBrowser, linkPath, newLoginLink } from './child-login.js';
+import { ChildBrowser, linkPath, newLoginLink, signInWithNewPassword } from './child-login.js';
 import { addChild, childPath, childrenPath, insertDevice } from './children.js';
 import { query } from './database.js';
 import {
@@ -38,6 +38,12 @@ export interface AuditRow {
 
 /** An audit row without the two columns the database fills in. */
 export type ExpectedAudit = Omit<AuditRow, 'id' | 'occurred_at'>;
+
+/** An expected audit row without its actor's columns. */
+type ExpectedAction = Omit<
+  ExpectedAudit,
+  'actor_kind' | 'actor_id' | 'actor_issuer' | 'actor_subject'
+>;
 
 /** Every audit row, oldest first. */
 export function auditRows(databaseUrl: string): Promise<AuditRow[]> {
@@ -218,9 +224,20 @@ async function parentActor(
 async function byParent(
   databaseUrl: string,
   parentId: string,
-  row: Omit<ExpectedAudit, 'actor_kind' | 'actor_id' | 'actor_issuer' | 'actor_subject'>,
+  row: ExpectedAction,
 ): Promise<ExpectedAudit> {
   return { ...(await parentActor(databaseUrl, parentId)), ...row };
+}
+
+/** The audit row of the child's own action: a child has an id and no Authing identity. */
+function byChild(childId: string, row: ExpectedAction): Promise<ExpectedAudit> {
+  return Promise.resolve({
+    actor_kind: 'child',
+    actor_id: childId,
+    actor_issuer: null,
+    actor_subject: null,
+    ...row,
+  });
 }
 
 /** A parent signed in with personal data of their own. */
@@ -580,6 +597,25 @@ export const AUDIT_CASES: AuditCase[] = [
     status: 200,
     details: { fields: ['nickname', 'account'] },
   })),
+  {
+    action: 'child.updated',
+    arrange: async (context) => {
+      const { admin, family, child } = await familyWithChild(context);
+      const { browser } = await signInWithNewPassword(context.target, admin, family.id, child.id);
+      return {
+        act: () => browser.rename({ nickname: context.personal.nickname() }),
+        status: 200,
+        expected: () =>
+          byChild(child.id, {
+            action: 'child.updated',
+            target_kind: 'child',
+            target_id: child.id,
+            family_id: family.id,
+            details: { fields: ['nickname'] },
+          }),
+      };
+    },
+  },
   childCase('child.deleted', (context, parent, path) => ({
     act: () => as(context.target, parent).delete(path),
     status: 204,
@@ -605,11 +641,7 @@ export const AUDIT_CASES: AuditCase[] = [
           }),
         status: 200,
         expected: () =>
-          Promise.resolve({
-            actor_kind: 'child',
-            actor_id: child.id,
-            actor_issuer: null,
-            actor_subject: null,
+          byChild(child.id, {
             action: 'child.password_set',
             target_kind: 'child',
             target_id: child.id,

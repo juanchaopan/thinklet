@@ -156,7 +156,12 @@ describe('a child setting the first password', () => {
       expect(response.body).toEqual({ id: child.id, nickname: '小米' });
       const session = setCookiesOf(response)[CHILD_SESSION_COOKIE];
       expectLoginCookieAttributes(session);
-      expect((await kid.me()).body).toEqual({ id: child.id, nickname: '小米' });
+      expect((await kid.me()).body).toEqual({
+        id: child.id,
+        nickname: '小米',
+        account: child.account,
+        familyName: family.name,
+      });
       const row = await childRow(running.databaseUrl, child.id);
       expect(row?.password_hash).toMatch(/^\$argon2id\$v=19\$/);
       expect(row?.password_setup_until).toBeNull();

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { z } from 'zod';
-import { childMeResponseSchema } from './child.js';
 import {
   childLinkLoginRequestSchema,
   childLoginAnswerSchema,
@@ -61,12 +60,11 @@ describe('childLoginRequestSchema', () => {
 });
 
 describe('childLoginResponseSchema', () => {
-  it('is the signed-in child, as GET /api/child/me answers', () => {
+  it('is the signed-in child’s id and nickname, and nothing more', () => {
     const body = { id: childId, nickname: '小米' };
 
     expect(childLoginResponseSchema.parse(body)).toEqual(body);
-    expect(childMeResponseSchema.parse(body)).toEqual(body);
-    expect(childMeResponseSchema.safeParse({ ...body, account: 'xiaomi' }).success).toBe(false);
+    expect(childLoginResponseSchema.safeParse({ ...body, account: 'xiaomi' }).success).toBe(false);
   });
 });
 

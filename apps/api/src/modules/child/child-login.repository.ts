@@ -10,7 +10,7 @@ import {
 import * as schema from '../../infrastructure/database/schema.js';
 import { LoginLinks, type ActiveLoginLink } from './login-links.js';
 
-const { children, childDevices } = schema;
+const { children, childDevices, families } = schema;
 
 /** A child as a login checks it: found by the family and the account, or by its id. */
 export interface LoginCandidate {
@@ -43,6 +43,14 @@ export function canSetPasswordWithAccount(child: LoginCandidate, at: Date): bool
 export interface RememberedRecord {
   childId: string;
   familyId: string;
+  nickname: string;
+  account: string;
+}
+
+/** What a signed-in child sees of itself, in plain text, with its family. */
+export interface ChildProfile {
+  familyId: string;
+  familyName: string;
   nickname: string;
   account: string;
 }
@@ -85,11 +93,12 @@ const databaseClockMs = () => sql<number>`(extract(epoch from clock_timestamp())
 /**
  * The queries of a child's login, on the pool or inside one transaction:
  * finding the child by account or by id, the child's password and the
- * check of a signed-in child, and the browsers the child is remembered on.
- * The nickname, the account and the device names are encrypted on the way
- * in and decrypted on the way out, each bound to its column and its row's
- * id. Every time a login compares or writes is the database's, so api
- * instances whose clocks differ agree on it.
+ * check of a signed-in child, what a signed-in child sees of itself, and
+ * the browsers the child is remembered on. The nickname, the account and
+ * the device names are encrypted on the way in and decrypted on the way
+ * out, each bound to its column and its row's id. Every time a login
+ * compares or writes is the database's, so api instances whose clocks
+ * differ agree on it.
  */
 export class ChildLoginStore {
   constructor(
@@ -165,14 +174,29 @@ export class ChildLoginStore {
       : { sessionsValidAfter: row.sessionsValidAfter, checkedAt: new Date(row.checkedAtMs) };
   }
 
-  /** The child's nickname, or undefined when the child is gone. */
-  async findNickname(childId: string): Promise<string | undefined> {
+  /**
+   * The child's nickname and account with the family it belongs to and that
+   * family's name, or undefined when the child is gone.
+   */
+  async findProfile(childId: string): Promise<ChildProfile | undefined> {
     const rows = await this.executor
-      .select({ nickname: children.nickname })
+      .select({
+        familyId: children.familyId,
+        familyName: families.name,
+        nickname: children.nickname,
+        account: children.account,
+      })
       .from(children)
+      .innerJoin(families, eq(families.id, children.familyId))
       .where(eq(children.id, childId));
     const row = rows.at(0);
-    return row === undefined ? undefined : this.nicknameOf(childId, row.nickname);
+    return row === undefined
+      ? undefined
+      : {
+          ...row,
+          nickname: this.nicknameOf(childId, row.nickname),
+          account: this.cipher.decrypt(row.account, { column: children.account, rowId: childId }),
+        };
   }
 
   /** Stores the child's first password; the time for setting one with the account ends with it. */

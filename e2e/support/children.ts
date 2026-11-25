@@ -186,16 +186,36 @@ export async function setFirstPassword(page: Page, password: string = PASSWORD):
   await page.getByRole('button', { name: '设好了，进入' }).click();
 }
 
-/** Checks that the page is the home page of the signed-in child with this nickname. */
+/**
+ * The child's avatar in the top bar of the child's pages, which opens the
+ * child's own settings. Screen readers hear it as "<nickname>的个人设置";
+ * from 1024 px, where the nickname is shown apart, the browser may put a
+ * space before 的. Without a nickname, the avatar of whoever is signed in.
+ */
+export function childSettingsLink(page: Page, nickname = '.+'): Locator {
+  return page
+    .getByRole('banner')
+    .getByRole('link', { name: new RegExp(`^${nickname}\\s*的个人设置$`) });
+}
+
+/**
+ * Checks that the page is the home page of the signed-in child with this
+ * nickname: the greeting, the child's avatar in the top bar, and no books.
+ */
 export async function expectChildHome(page: Page, nickname: string): Promise<void> {
   await expect(page.getByText(`你好，${nickname}！`)).toBeVisible();
-  await expect(page.getByRole('button', { name: '退出' })).toBeVisible();
+  await expect(childSettingsLink(page, nickname)).toBeVisible();
   await expect(page.getByRole('heading', { name: '还没有书' })).toBeVisible();
 }
 
-/** Signs the child out on the child's home page, which opens the child login. */
+/**
+ * Signs the signed-in child out from the child's own settings, opened with
+ * the avatar in the top bar, which opens the child login.
+ */
 export async function logoutChild(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '退出' }).click();
+  await childSettingsLink(page).click();
+  await expect(page).toHaveURL('/child/profile');
+  await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page).toHaveURL('/child');
 }
 
