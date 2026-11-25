@@ -43,7 +43,7 @@
 
 ## 通用约定
 
-- **登录状态**：`/api/health`、`/api/auth/*`、`/api/child-auth/*`、`/api/child-login-links/{token}` 和 `/api/webhooks/authing` 下的接口不用登录。孩子的接口（`/api/child/*`）只认孩子 cookie 里身份种类是 `child` 的 JWT；取封面图（`/api/books/{bookId}/cover`）家长或孩子登录都行；其余接口只认家长 cookie 里身份种类是 `parent` 的 JWT。没登录、JWT 过期、签名不对或身份种类不对时返回 `401`，错误码 `unauthenticated`。
+- **登录状态**：`/api/health`、`/api/auth/*`、`/api/child-auth/*`、`/api/child-login-links/{token}` 和 `/api/webhooks/authing` 下的接口不用登录。孩子的接口（`/api/child/*`）只认孩子 cookie 里身份种类是 `child` 的 JWT；取封面图（`/api/books/{bookId}/cover`）家长或孩子登录都行；其余接口只认家长 cookie 里身份种类是 `parent` 的 JWT。没登录、JWT 过期、签名不对或身份种类不对时返回 `401`，错误码 `unauthenticated`。家长的 JWT 对应的家长已经删除（在别的浏览器删了账号，或者在 Authing 控制台被删）时，也返回 `401 unauthenticated`，并清掉家长的 cookie。
 - **防跨站请求伪造**：非 GET、HEAD、OPTIONS 的请求，`Origin` 头不是本站地址或者没有时返回 `403`，错误码 `bad_origin`。不用登录的接口也一样，只有 Authing 的 webhook `POST /api/webhooks/authing` 不查 `Origin`，它由 webhook 密钥证明来源。
 - **家庭内的接口**在 `/api/families/{familyId}/...` 下，先查当前家长是不是这个家庭的成员：不是成员或家庭不存在都返回 `404`，错误码 `family_not_found`。要管理员的接口，不是管理员时返回 `403`，错误码 `not_admin`。
 - **找不到**：接口地址不存在，或者加入申请不存在（包括不是自己的申请），或者家长查的登录链接不存在（包括不是这个孩子的链接），或者封面不存在时返回 `404`，错误码 `not_found`。
@@ -455,7 +455,7 @@
 Authing 在用户被删除后发来的 webhook。不用登录，不查 `Origin`。
 
 - 请求头里的 webhook 密钥和 `AUTHING_WEBHOOK_SECRET` 用定长比较核对，不对或者没有时返回 `401`，错误码 `unauthenticated`，什么都不做。Authing 文档里请求头的名字有两种写法（`x-authing-webhook-secret`、`X-Authing-Token`），scaffold 步骤在测试环境上用真的通知核对后写在这里。
-- 请求体是 JSON：`eventName` 和 `data`。只处理 `eventName` 是 `user:deleted` 的，被删的用户在 `data.users` 里，用每个用户的编号作为 `sub`、配置的 issuer 找家长；别的事件返回 `200`，什么都不做。
+- 请求体是 JSON：`eventName` 和 `data`。只处理 `eventName` 是 `user:deleted` 的，被删的用户在 `data.users` 里，用每个用户的编号作为 `sub`、身份服务发现文档里的 issuer（和登录时存下的一样）找家长，读不到发现文档时返回 `500`，由 Authing 重试；别的事件返回 `200`，什么都不做。
 - 找到的家长在一个事务里删掉：他是管理员、家里还有别的家长的家庭，管理员交给其余家长里最早加入的一位（审计记录 `member.admin_transferred`，做事的是 `system`）；只剩他一位家长的家庭整个删掉（`family.deleted`）；再删掉他的成员关系、加入申请和他自己（`parent.deleted`，`via` 是 `webhook`）。之后删掉 Redis 里被删的孩子的登录链接。
 - 找不到的家长（比如他自己删的、已经删过了）不处理。同一个通知来几次结果都一样，都返回 `200`。
 
