@@ -305,7 +305,7 @@ Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上�
 2. 在 Authing 美国区的控制台 `https://console.us.authing.co` 建用户池 好奇星球，子域名 `thinklet-staging`。
 3. 在用户池里建一个 Regular Web APP 类型的应用，名字 好奇星球，子域名同上。登录回调地址填 `<APP_ORIGIN>/api/auth/callback`，退出回调地址填 `<APP_ORIGIN>/`。
 4. 应用的 Protocol Configuration：授权模式只勾 `authorization_code`，返回类型 `code`，ID 令牌签名 `RS256`，换令牌时的客户端验证用 `client_secret_post`，关掉 User informed consent page；ID 令牌 14 天过期。Authing 没有“必须用 PKCE”的开关：请求带了 PKCE 它就校验，本站后端每次都带。
-5. 应用的 Login Control：Single Page Login，只开邮箱加密码登录，关掉邮箱验证码登录。
+5. 应用的 Login Control：Single Page Login，只开邮箱加密码登录，关掉邮箱验证码登录。应用的 Access Authorization 里默认访问策略选 Allow all users：策略是拒绝所有用户时，登录页显示「No permission to log in to this application」。
 6. 允许注册：Security → General → Registration Security 里关掉 Prohibit Sign up。
 7. 注册和登录协议：Branding → Universal Login → Functional configuration 里加一条协议，文字是「我已阅读并同意《用户协议》和《隐私政策》」，注册和登录时都显示，必须勾选，语言选中文。默认语言设成简体中文，关掉语言切换，因为协议的勾选框只在中文页面上出现。
 8. Google 登录：在 Google Cloud 项目里建一个 Web application 类型的 OAuth 客户端，授权回调地址填 Authing 的 Google 连接页上给出的 Google 回调地址。在 Authing 里加社交连接 Google Web，填上这个客户端，Login Mode 选 Sign in & sign up，关掉 Bind to Existing Account：开着的话，有人先用别人的邮箱注册一个没验证过的密码账号，就能截下邮箱主人的 Google 登录。再把这个连接加进应用的社交登录。
@@ -315,7 +315,7 @@ Authing 和 Google Cloud 没有可用的命令行工具，由用户在网站上�
 12. webhook：代理生成一个随机的 webhook 密钥写进不提交的文件，并从文件读入 GitHub 密钥 `AUTHING_WEBHOOK_SECRET`；用户在 Authing 控制台的 自动化 → Webhooks 里加一个 webhook，回调链接 `<APP_ORIGIN>/api/webhooks/authing`，请求密钥从这个文件复制，数据格式 `application/json`，触发事件只勾 `user:deleted`，然后删掉文件。
 13. 代理读 issuer 的发现文档，确认有授权、换令牌、公钥、退出（`end_session_endpoint`）和用户信息五个地址，支持 S256 的 PKCE 和 `client_secret_post`，ID 令牌能用 RS256 签名。
 
-应用、安全设置、Google 身份源和 webhook 也能用管理 API 从另一个用户池复制：`get-application`/`create-application`、`get-security-settings`/`update-security-settings`（`allowedOrigins` 不复制）、`get-ext-idp`/`create-ext-idp`/`create-ext-idp-conn`/`change-ext-idp-conn-state`、`list-webhooks`/`create-webhook`。用户池本身、通用登录页的协议和语言、用户池图标，以及 Google Cloud 里 Authing 的回调地址只能在网站上设。
+应用、应用的访问授权、安全设置、Google 身份源和 webhook 也能用管理 API 从另一个用户池复制：`get-application`/`create-application`、`get-application-permission-strategy`/`update-application-permission-strategy`、`get-security-settings`/`update-security-settings`（`allowedOrigins` 不复制）、`get-ext-idp`/`create-ext-idp`/`create-ext-idp-conn`/`change-ext-idp-conn-state`、`list-webhooks`/`create-webhook`。用户池本身、通用登录页的协议和语言、用户池图标，以及 Google Cloud 里 Authing 的回调地址只能在网站上设。
 
 ## 数据迁移
 
