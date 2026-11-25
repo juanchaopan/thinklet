@@ -33,13 +33,13 @@ export const childLoginResponseSchema = signedInChildSchema;
 /**
  * The answer of `POST /api/child-auth/login` for a child who has no
  * password yet and may still set one with the account: nobody is signed in,
- * and the login turns into setting the password. The id gives the child's
- * avatar its colour.
+ * and the login turns into setting the password. The child's id and
+ * nickname are those a signed-in child is answered with; the id gives the
+ * child's avatar its colour.
  */
 export const childNeedsPasswordSchema = z.strictObject({
   needsPassword: z.literal(true),
-  id: z.uuid(),
-  nickname: z.string(),
+  ...signedInChildSchema.shape,
 });
 
 /** Response body of `POST /api/child-auth/login`: the child signed in, or the child who has to set a password first. */

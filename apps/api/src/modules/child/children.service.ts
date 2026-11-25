@@ -11,7 +11,7 @@ import type {
 } from '@thinklet/contracts';
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { AuditService, byParent, type AuditActor } from '../audit/audit.service.js';
+import { AuditService, byParent, changedFields, type AuditActor } from '../audit/audit.service.js';
 import {
   AccountTakenError,
   ChildrenRepository,
@@ -78,7 +78,7 @@ export function toDevice(record: DeviceRecord): ChildDevice {
 
 /** The fields a change of a child names, in a fixed order, for its audit event. */
 export function changedChildFields(changes: UpdateChildRequest): Array<'nickname' | 'account'> {
-  return (['nickname', 'account'] as const).filter((field) => changes[field] !== undefined);
+  return changedFields(changes, ['nickname', 'account']);
 }
 
 /** Who acted on which child of which family, the part every child's audit event shares. */
@@ -267,7 +267,10 @@ export class ChildrenService {
     };
   }
 
-  /** The state of one of the child's login links, for the QR code dialog to follow. */
+  /**
+   * The state of one of the child's login links, for the QR code dialog to
+   * follow. Redis is read only once the family is known to have the child.
+   */
   async getLoginLinkStatus(
     familyId: string,
     childId: string,

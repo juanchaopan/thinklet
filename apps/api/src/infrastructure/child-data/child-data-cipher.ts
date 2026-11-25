@@ -41,8 +41,11 @@ export interface CiphertextPlace {
   rowId: string;
 }
 
-/** The subkey of a use, derived from the master key with HKDF-SHA256. */
-function subkey(masterKey: Buffer, info: string): Buffer {
+/**
+ * The 32-byte subkey of one use of CHILD_DATA_KEY, derived with
+ * HKDF-SHA256 under the use's own label, so no two uses share a key.
+ */
+export function subkey(masterKey: Buffer, info: string): Buffer {
   return Buffer.from(hkdfSync('sha256', masterKey, '', info, KEY_BYTES));
 }
 

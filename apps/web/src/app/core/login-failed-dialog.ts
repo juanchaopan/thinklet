@@ -1,9 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed } from '@angular/core';
 import { Button } from '../shared/ui/button';
 import { Dialog } from '../shared/ui/dialog';
 import { loginUrl } from './login';
+import { queryFlag } from './query-flag';
 
 /**
  * 登录没有成功, over the page `/?login=failed` lands on when coming back
@@ -16,7 +15,7 @@ import { loginUrl } from './login';
   selector: 'app-login-failed-dialog',
   imports: [Button, Dialog],
   template: `
-    <app-dialog [open]="failed()" title="登录没有成功" icon="wrench" (dismissed)="close()">
+    <app-dialog [open]="failed.on()" title="登录没有成功" icon="wrench" (dismissed)="close()">
       <p class="mt-3 text-base text-ink-soft">请再试一次。</p>
       <button type="button" appButton="secondary" appDialogAction (click)="close()">关闭</button>
       <a appButton appDialogAction [href]="loginHref()">再试一次</a>
@@ -25,19 +24,10 @@ import { loginUrl } from './login';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LoginFailedDialog {
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly query = toSignal(this.route.queryParamMap, { requireSync: true });
-
-  protected readonly failed = computed(() => this.query().get('login') === 'failed');
-  protected readonly loginHref = computed(() => loginUrl(this.query().get('returnTo')));
+  protected readonly failed = queryFlag('login', 'failed');
+  protected readonly loginHref = computed(() => loginUrl(this.failed.query().get('returnTo')));
 
   protected close(): void {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { login: null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.failed.clear();
   }
 }

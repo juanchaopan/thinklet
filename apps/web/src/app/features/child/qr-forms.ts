@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, viewChild } from '@angular/core';
 import { childPasswordSchema, type ErrorCode } from '@thinklet/contracts';
-import { asApiError, rejectedFields, tooManyTries } from '../../core/failures';
+import { asApiError, tooManyTries } from '../../core/failures';
 import { TextField } from '../../shared/ui/edit-field';
 import { fieldHint } from '../../shared/ui/field-hint';
 import { LOGIN_PASSWORD_HINTS, QrForm } from './child-form';
@@ -55,12 +55,7 @@ export class SetPasswordForm extends QrForm {
   }
 
   protected explain(error: unknown): boolean {
-    const field = rejectedFields(error).find((rejected) => rejected.path === 'password');
-    if (!field) {
-      return this.leftToPage(error);
-    }
-    this.fields().refuse(field.code);
-    return true;
+    return this.fields().refuseRejected(error) || this.leftToPage(error);
   }
 }
 

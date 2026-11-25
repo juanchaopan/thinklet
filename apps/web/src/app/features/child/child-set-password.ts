@@ -8,7 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import type { ChildNeedsPassword } from '@thinklet/contracts';
-import { asApiError, rejectedFields, tooManyTries } from '../../core/failures';
+import { asApiError, tooManyTries } from '../../core/failures';
 import { ChildForm } from './child-form';
 import { GreetingCard } from './greeting-card';
 import { NewPasswordFields } from './new-password-fields';
@@ -85,9 +85,7 @@ export class ChildSetPassword extends ChildForm {
   }
 
   protected explain(error: unknown): boolean {
-    const field = rejectedFields(error).find((rejected) => rejected.path === 'password');
-    if (field) {
-      this.fields().refuse(field.code);
+    if (this.fields().refuseRejected(error)) {
       return true;
     }
     if (asApiError(error).code === 'login_failed') {

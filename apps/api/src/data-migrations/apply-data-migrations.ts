@@ -6,11 +6,14 @@ import type { Database } from '../infrastructure/database/database.module.js';
 import { dataMigrations } from '../infrastructure/database/schema.js';
 import type { DataMigration } from './data-migration.js';
 
-/** A data migration's name: four digits of version, a hyphen and lower-case words joined by hyphens. */
-const NAME = /^\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** The form of a data migration's name: four digits of version, a hyphen and lower-case words joined by hyphens. */
+const NAME_PATTERN = String.raw`\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*`;
+
+/** A data migration's name. */
+const NAME = new RegExp(`^${NAME_PATTERN}$`);
 
 /** A data migration's file: its name and `.ts`. Tests, `*.spec.ts`, do not match. */
-const FILE = /^(\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*)\.ts$/;
+const FILE = new RegExp(`^(${NAME_PATTERN})\\.ts$`);
 
 /**
  * The data migrations cannot run as they are: a file and the registry

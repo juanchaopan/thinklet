@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { newChildPasswordSchema, type FieldErrorCode } from '@thinklet/contracts';
+import { rejectedFields } from '../../core/failures';
 import { TextField } from '../../shared/ui/edit-field';
 import { fieldHint, type FieldHints } from '../../shared/ui/field-hint';
 
@@ -21,7 +22,8 @@ const MISMATCH = '两次输的密码不一样';
  * password before sending it: a password that cannot be set says why
  * under the first box, and a second one that differs is said under the
  * second box and emptied for typing again; either shakes the boxes. A
- * password the api turns down is said with `refuse`.
+ * password the api turns down is said with `refuse`, or with
+ * `refuseRejected` from the api's error.
  */
 @Component({
   selector: 'app-new-password-fields',
@@ -94,6 +96,18 @@ export class NewPasswordFields {
   refuse(code: FieldErrorCode): void {
     this.passwordError.set(NEW_PASSWORD_HINTS[code]);
     this.shake();
+  }
+
+  /**
+   * Says under the first box why the api turned the password down when the
+   * error rejects the `password` field; returns whether it did.
+   */
+  refuseRejected(error: unknown): boolean {
+    const field = rejectedFields(error).find((rejected) => rejected.path === 'password');
+    if (field) {
+      this.refuse(field.code);
+    }
+    return field !== undefined;
   }
 
   protected editPassword(password: string): void {

@@ -6,13 +6,13 @@ import { RedisService } from '../../infrastructure/redis/redis.service.js';
 /** How long a login link works after it is made (`.docs/design/rules.md`, "登录二维码"). */
 export const LOGIN_LINK_LIFETIME_MS = 10 * 60 * 1000;
 
-/** The states of a link its state key holds; once the key is gone the link is `expired`. */
-export type StoredLinkStatus = 'active' | 'used' | 'revoked';
-
 /** The value of `login-link:<token hash>`: the link a token opens (`.docs/design/data.md`, "Redis 里的"). */
 const linkValueSchema = z.strictObject({ linkId: z.string(), childId: z.string() });
 
-/** The value of `login-link-status:<link id>`: what a parent reads of a link. */
+/**
+ * The value of `login-link-status:<link id>`: what a parent reads of a
+ * link. Once the key is gone the link is `expired`.
+ */
 const stateValueSchema = z.strictObject({
   childId: z.string(),
   status: z.enum(['active', 'used', 'revoked']),

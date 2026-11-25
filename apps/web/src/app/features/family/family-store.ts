@@ -26,7 +26,10 @@ import { Session } from '../../core/session';
 import type { IconArt } from '../../shared/ui/art';
 import { Toaster } from '../../shared/ui/toast';
 
-/** One of the changes the family page makes; only one runs at a time. */
+/**
+ * One of the actions the family page runs, the changes and the read of the
+ * children before deleting it; only one runs at a time.
+ */
 export type FamilyAction =
   'name' | 'timezone' | 'code' | 'admin' | 'remove' | 'leave' | 'count' | 'delete';
 
@@ -118,7 +121,7 @@ export class FamilyStore {
   readonly requests = this.waiting.asReadonly();
   /** Why no family is shown, if it is not. */
   readonly problem = this.trouble.asReadonly();
-  /** The change running now. */
+  /** The action running now. */
   readonly busy = this.running.asReadonly();
   /** The requests being approved or rejected right now. */
   readonly decidingRequests = this.deciding.asReadonly();
@@ -258,12 +261,12 @@ export class FamilyStore {
    * that asks before deleting it; undefined when the read failed, which is
    * explained as a failed change is.
    */
-  async countChildren(): Promise<number | undefined> {
-    let count: number | undefined;
-    await this.run('count', async (familyId) => {
-      count = (await this.api.get(familyPath(familyId, '/children'), childListSchema)).length;
-    });
-    return count;
+  countChildren(): Promise<number | undefined> {
+    return this.run(
+      'count',
+      async (familyId) =>
+        (await this.api.get(familyPath(familyId, '/children'), childListSchema)).length,
+    );
   }
 
   /**
@@ -392,21 +395,24 @@ export class FamilyStore {
   }
 
   /**
-   * Runs one change to the family shown, which `work` is given the id of,
-   * while it is marked busy; a failure is explained.
+   * Runs one action on the family shown, which `work` is given the id of,
+   * while it is marked busy, and answers what `work` answers. Undefined when
+   * another action is running, so this one does not run, or when `work`
+   * fails; a failure is explained.
    */
-  private async run(
+  private async run<T>(
     action: FamilyAction,
-    work: (familyId: string) => Promise<void>,
-  ): Promise<void> {
+    work: (familyId: string) => Promise<T>,
+  ): Promise<T | undefined> {
     if (this.running()) {
-      return;
+      return undefined;
     }
     this.running.set(action);
     try {
-      await work(this.familyId);
+      return await work(this.familyId);
     } catch (error) {
       explainFailure(error, this.toaster, this.failures);
+      return undefined;
     } finally {
       this.running.set(null);
     }

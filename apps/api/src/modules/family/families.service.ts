@@ -7,7 +7,7 @@ import type {
 } from '@thinklet/contracts';
 import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { AuditService, byParent, type AuditActor } from '../audit/audit.service.js';
+import { AuditService, byParent, changedFields, type AuditActor } from '../audit/audit.service.js';
 import { generateFamilyCode } from './family-code.js';
 import {
   FamiliesRepository,
@@ -74,7 +74,15 @@ export function requireRemoval({ by, of, self }: Removal): void {
 
 /** The fields a change of a family names, in a fixed order, for its audit event. */
 export function changedFamilyFields(changes: UpdateFamilyRequest): Array<'name' | 'timezone'> {
-  return (['name', 'timezone'] as const).filter((field) => changes[field] !== undefined);
+  return changedFields(changes, ['name', 'timezone']);
+}
+
+/** Who acted on which family, the part every audit event of the family itself shares. */
+function onFamily(
+  parentId: string,
+  familyId: string,
+): { actor: AuditActor; targetId: string; familyId: string } {
+  return { actor: byParent(parentId), targetId: familyId, familyId };
 }
 
 /**
@@ -169,10 +177,8 @@ export class FamiliesService {
         const familyId = await store.insertFamily({ ...request, code });
         await store.insertMember(familyId, parentId, 'admin');
         await this.audit.record(transaction, {
-          actor: byParent(parentId),
+          ...onFamily(parentId, familyId),
           action: 'family.created',
-          targetId: familyId,
-          familyId,
         });
         return readDetail(store, familyId, parentId);
       }),
@@ -195,10 +201,8 @@ export class FamiliesService {
       if (fields.length > 0) {
         await store.updateFamily(familyId, changes);
         await this.audit.record(transaction, {
-          actor: byParent(parentId),
+          ...onFamily(parentId, familyId),
           action: 'family.updated',
-          targetId: familyId,
-          familyId,
           details: { fields },
         });
       }
@@ -217,10 +221,8 @@ export class FamiliesService {
         await store.updateCode(familyId, code);
         await store.expirePendingRequests(familyId, new Date());
         await this.audit.record(transaction, {
-          actor: byParent(parentId),
+          ...onFamily(parentId, familyId),
           action: 'family.code_changed',
-          targetId: familyId,
-          familyId,
         });
         return readDetail(store, familyId, parentId);
       }),

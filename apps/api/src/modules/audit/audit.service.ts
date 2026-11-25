@@ -73,6 +73,17 @@ export interface AuditDetails {
   'book.readers_changed': { added: string[]; removed: string[] };
 }
 
+/**
+ * The fields a change names, in the order of `fields`, for the `fields`
+ * detail of its audit event: the names only, never the values.
+ */
+export function changedFields<Field extends string>(
+  changes: Partial<Record<Field, unknown>>,
+  fields: readonly Field[],
+): Field[] {
+  return fields.filter((field) => changes[field] !== undefined);
+}
+
 /** What an action is, whom it was done to and in which family; null for an action outside any family. */
 interface AuditEventOf<A extends AuditAction> {
   actor: AuditActor;

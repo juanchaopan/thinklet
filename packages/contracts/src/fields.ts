@@ -39,6 +39,15 @@ export function utf8Length(value: string): number {
 }
 
 /**
+ * Whether the value has at most `maxCharacters` characters and takes at
+ * most `maxBytes` bytes of UTF-8. The bytes are counted first, which bounds
+ * the work of counting the characters of a huge value.
+ */
+function withinLimits(value: string, maxCharacters: number, maxBytes: number): boolean {
+  return utf8Length(value) <= maxBytes && characterCount(value) <= maxCharacters;
+}
+
+/**
  * The first `max` characters of the value, never splitting a character.
  * With `maxBytes`, it also stops before the character that would take the
  * result past that many bytes of UTF-8.
@@ -83,17 +92,14 @@ export const NICKNAME_MAX_BYTES = NICKNAME_MAX_LENGTH * BYTES_PER_CHARACTER;
 /**
  * A display name: trimmed, then 1 to `max` characters of any kind and at
  * most `maxBytes` bytes. Too many bytes is reported as too long, like too
- * many characters, so the hint is the same; the bytes are counted first,
- * which bounds the work of counting the characters of a huge value.
+ * many characters, so the hint is the same.
  */
 function nameSchema(max: number, maxBytes: number) {
   return z
     .string({ error: requiredOrInvalid })
     .trim()
     .refine((value) => value.length > 0, { error: 'required' })
-    .refine((value) => utf8Length(value) <= maxBytes && characterCount(value) <= max, {
-      error: 'too_long',
-    });
+    .refine((value) => withinLimits(value, max, maxBytes), { error: 'too_long' });
 }
 
 /** The name of a family. */
@@ -150,14 +156,10 @@ export const CHILD_PASSWORD_MAX_BYTES = 128;
 /**
  * Whether a password is no longer than a child's password may be: at most
  * 32 characters and 128 bytes. A longer one is never hashed, so the cost of
- * hashing does not grow with what a request sends. The bytes are counted
- * first, which bounds the work of counting the characters.
+ * hashing does not grow with what a request sends.
  */
 export function withinChildPasswordLimits(value: string): boolean {
-  return (
-    utf8Length(value) <= CHILD_PASSWORD_MAX_BYTES &&
-    characterCount(value) <= CHILD_PASSWORD_MAX_LENGTH
-  );
+  return withinLimits(value, CHILD_PASSWORD_MAX_LENGTH, CHILD_PASSWORD_MAX_BYTES);
 }
 
 /**
@@ -231,6 +233,15 @@ const RENAMED_TIME_ZONES: ReadonlyMap<string, string> = new Map([
   ['Pacific/Truk', 'Pacific/Chuuk'],
 ]);
 
+/** The name Intl resolves a time zone to, or null when Intl does not know the zone. */
+function resolvedTimeZone(name: string): string | null {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The standard name of a time zone (`.docs/design/rules.md`, "家庭"):
  * aliases Intl knows become the name it resolves them to ("US/Pacific" is
@@ -239,13 +250,8 @@ const RENAMED_TIME_ZONES: ReadonlyMap<string, string> = new Map([
  * the zone at all.
  */
 export function canonicalTimeZone(name: string): string | null {
-  let resolved: string;
-  try {
-    resolved = new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-  return RENAMED_TIME_ZONES.get(resolved) ?? resolved;
+  const resolved = resolvedTimeZone(name);
+  return resolved === null ? null : (RENAMED_TIME_ZONES.get(resolved) ?? resolved);
 }
 
 /**
@@ -259,13 +265,10 @@ export function isTimeZone(value: string): boolean {
   if (!timeZoneNamePattern.test(value)) {
     return false;
   }
-  let resolved: string;
-  try {
-    resolved = new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone;
-  } catch {
-    return false;
-  }
-  return resolved === value || resolved.toLowerCase() !== value.toLowerCase();
+  const resolved = resolvedTimeZone(value);
+  return (
+    resolved !== null && (resolved === value || resolved.toLowerCase() !== value.toLowerCase())
+  );
 }
 
 /** An IANA time zone name; an alias comes out as the standard name it stands for. */

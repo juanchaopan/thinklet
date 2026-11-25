@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** The event Authing sends once users are deleted. */
-export const USER_DELETED_EVENT = 'user:deleted';
+const USER_DELETED_EVENT = 'user:deleted';
 
 /**
  * A notification of Authing's webhook (`.docs/design/interfaces.md`,

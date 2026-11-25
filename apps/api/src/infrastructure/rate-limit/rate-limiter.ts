@@ -1,6 +1,7 @@
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { subkey } from '../child-data/child-data-cipher.js';
 import type { Environment } from '../config/environment.js';
 import { RateLimitedError } from '../errors/api-error.js';
 import { describeError } from '../logging/describe-error.js';
@@ -11,7 +12,6 @@ import { RedisService } from '../redis/redis.service.js';
  * never doubles as the child data's encryption or lookup key.
  */
 const KEY_INFO = 'thinklet rate limit keys v1';
-const KEY_BYTES = 32;
 
 /**
  * One count of failures by a request's source in a window: its key in
@@ -64,8 +64,7 @@ export class RateLimiter {
     config: ConfigService<Environment, true>,
     private readonly redis: RedisService,
   ) {
-    const masterKey = config.get('CHILD_DATA_KEY', { infer: true });
-    this.key = Buffer.from(hkdfSync('sha256', masterKey, '', KEY_INFO, KEY_BYTES));
+    this.key = subkey(config.get('CHILD_DATA_KEY', { infer: true }), KEY_INFO);
   }
 
   /**

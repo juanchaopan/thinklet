@@ -224,27 +224,24 @@ export class ChildStore {
    * Clears the child's password, leaves the child 48 hours to set a new one
    * with the account, and refuses every login issued until now, all by the
    * database's clock, which the statement reads as it runs, after the lock
-   * the caller took on the child. The time logins are refused before is
-   * the next whole second: a JWT carries its issue time in whole seconds,
-   * so a login issued earlier in the reset's own second carries that
-   * second, and only the next one refuses it. A login made after the reset
-   * within the rest of that second is refused as well, which loses nothing
-   * in practice: the reset clears the password and forgets every
-   * remembered browser, so the child logs in again only by setting a new
-   * password, which takes far longer. Returns whether the family has the
-   * child.
+   * the caller took on the child, which also found the child. The time
+   * logins are refused before is the next whole second: a JWT carries its
+   * issue time in whole seconds, so a login issued earlier in the reset's
+   * own second carries that second, and only the next one refuses it. A
+   * login made after the reset within the rest of that second is refused
+   * as well, which loses nothing in practice: the reset clears the
+   * password and forgets every remembered browser, so the child logs in
+   * again only by setting a new password, which takes far longer.
    */
-  async clearPassword(familyId: string, childId: string): Promise<boolean> {
-    const rows = await this.executor
+  async clearPassword(familyId: string, childId: string): Promise<void> {
+    await this.executor
       .update(children)
       .set({
         passwordHash: null,
         passwordSetupUntil: sql`clock_timestamp() + ${PASSWORD_SETUP_TIME}`,
         sessionsValidAfter: sql`date_trunc('second', clock_timestamp()) + interval '1 second'`,
       })
-      .where(childInFamily(familyId, childId))
-      .returning({ id: children.id });
-    return rows.length > 0;
+      .where(childInFamily(familyId, childId));
   }
 
   /** The browsers the child is remembered on, the latest login first. */

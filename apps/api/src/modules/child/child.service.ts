@@ -26,6 +26,15 @@ export function issuedSinceLastReset(issuedAt: Date, sessionsValidAfter: Date): 
   return seconds(issuedAt) >= seconds(sessionsValidAfter);
 }
 
+/** The signed-in child as it sees itself: its nickname and account, and its family's name. */
+function toChildMe(
+  childId: string,
+  child: { nickname: string; account: string },
+  familyName: string,
+): ChildMeResponse {
+  return { id: childId, nickname: child.nickname, account: child.account, familyName };
+}
+
 /**
  * The signed-in child (`.docs/design/interfaces.md`, "孩子（孩子登录后）"),
  * and the check every child route makes of a child's login: the child
@@ -63,12 +72,7 @@ export class ChildService {
     if (profile === undefined) {
       throw unauthenticated();
     }
-    return {
-      id: childId,
-      nickname: profile.nickname,
-      account: profile.account,
-      familyName: profile.familyName,
-    };
+    return toChildMe(childId, profile, profile.familyName);
   }
 
   /**
@@ -99,11 +103,6 @@ export class ChildService {
     if (record === undefined) {
       throw unauthenticated();
     }
-    return {
-      id: childId,
-      nickname: record.nickname,
-      account: record.account,
-      familyName: profile.familyName,
-    };
+    return toChildMe(childId, record, profile.familyName);
   }
 }
