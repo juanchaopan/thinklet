@@ -23,7 +23,7 @@ import { ChildPasswords, type LoginSubject } from './child-passwords.js';
 import { rememberedUntil } from './device-cookie.js';
 import { deviceNameOf } from './device-name.js';
 import type { ActiveLoginLink } from './login-links.js';
-import { hashToken, newToken, type NewToken } from './tokens.js';
+import { hashToken, newToken } from './tokens.js';
 
 const loginFailed = () => new ApiError('login_failed', HttpStatus.UNAUTHORIZED);
 const wrongPassword = () => new ApiError('wrong_password', HttpStatus.UNAUTHORIZED);
@@ -113,9 +113,8 @@ type LinkStep = (login: LockedLogin) => Promise<void> | void;
  * deletes the child's expired devices and leaves the browser remembering
  * the child or not, as the child chose. Signing the child in is the
  * controller's: it sets the cookies of the completed login. A login itself
- * is not an audit event, nor is the deleting of expired devices that comes
- * with it; the password a child sets is, by the child, in the login's
- * transaction.
+ * is not an audit event, nor are the device changes that come with it; the
+ * password a child sets is, by the child, in the login's transaction.
  *
  * The logins that take a password, with the account (setting the first
  * one included) and on a link, are made within ChildPasswords' limits:
@@ -221,9 +220,9 @@ export class ChildLoginService {
 
   /**
    * Logs in a child the browser remembers, without a password, and renews
-   * the browser's remembering for 30 days. A browser that does not remember
-   * the child (revoked, expired, another child's, no device token) is 401
-   * `remember_invalid`.
+   * the browser's remembering for 30 days under the token it has. A browser
+   * that does not remember the child (revoked, expired, another child's, no
+   * device token) is 401 `remember_invalid`.
    */
   async loginRemembered(childId: string, deviceToken: string | undefined): Promise<CompletedLogin> {
     if (deviceToken === undefined) {
@@ -444,15 +443,19 @@ export class ChildLoginService {
   }
 
   /**
-   * Remembers the child on the browser for 30 days from the login, and
-   * returns the device token for the cookie. The browser's own token is
-   * kept only when a device still valid has it, the child's or another
-   * child's the browser remembers: a token the api never issued, or one no
-   * browser is remembered by any more, is replaced by a new one, so a token
-   * written into the browser by someone else never becomes the child's
-   * credential. When the child is not to be remembered, it forgets the
-   * child on this browser and leaves the cookie, which other children may
-   * share.
+   * Remembers the child on the browser for 30 days from a login with a
+   * password or on a link, under a new device token, and returns it for the
+   * cookie (`.docs/design/rules.md`, "在这台设备上记住我"). The browser's
+   * devices of the child's family that are still valid move from its old
+   * token to the new one, so the siblings it remembers keep their avatars;
+   * then the child's own row is renewed, or made, under the new token. The
+   * old token is not kept even when a valid device has it: a token written
+   * into the browser by someone else, one another family's child is
+   * remembered by included, never becomes this child's credential, and the
+   * devices of other families stay under it, which the browser no longer
+   * has, until they expire. When the child is not to be remembered, it
+   * forgets the child on this browser and leaves the cookie, which other
+   * children may share.
    */
   private async applyRemember(
     { store, child, now }: LockedLogin,
@@ -465,7 +468,15 @@ export class ChildLoginService {
       }
       return undefined;
     }
-    const { token, hash } = await this.deviceTokenOf(store, browser, now);
+    const { token, hash } = newToken();
+    if (browser.deviceToken !== undefined) {
+      await store.moveFamilyDevices({
+        familyId: child.familyId,
+        fromTokenHash: hashToken(browser.deviceToken),
+        toTokenHash: hash,
+        now,
+      });
+    }
     await store.rememberDevice({
       childId: child.id,
       tokenHash: hash,
@@ -474,20 +485,5 @@ export class ChildLoginService {
       expiresAt: rememberedUntil(now),
     });
     return token;
-  }
-
-  /** The browser's device token when a device valid at `now` has it, else a new one. */
-  private async deviceTokenOf(
-    store: ChildLoginStore,
-    browser: Browser,
-    now: Date,
-  ): Promise<NewToken> {
-    if (browser.deviceToken !== undefined) {
-      const hash = hashToken(browser.deviceToken);
-      if (await store.isRememberedBy(hash, now)) {
-        return { token: browser.deviceToken, hash };
-      }
-    }
-    return newToken();
   }
 }

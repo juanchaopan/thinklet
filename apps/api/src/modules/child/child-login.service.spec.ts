@@ -129,7 +129,7 @@ describe('ChildLoginService', () => {
     lockChild: vi.fn<ChildLoginStore['lockChild']>(),
     databaseNow: vi.fn<ChildLoginStore['databaseNow']>(),
     deleteExpiredDevices: vi.fn<ChildLoginStore['deleteExpiredDevices']>(),
-    isRememberedBy: vi.fn<ChildLoginStore['isRememberedBy']>(),
+    moveFamilyDevices: vi.fn<ChildLoginStore['moveFamilyDevices']>(),
     setPassword: vi.fn<ChildLoginStore['setPassword']>(),
     rememberDevice: vi.fn<ChildLoginStore['rememberDevice']>(),
     renewDevice: vi.fn<ChildLoginStore['renewDevice']>(),
@@ -247,6 +247,9 @@ describe('ChildLoginService', () => {
     ],
   ];
 
+  /** The logins that take a password or a link, each of which gives the browser a new device token. */
+  const loginsWithAPasswordOrALink = everyLogin.filter(([name]) => name !== 'by the avatar');
+
   beforeEach(() => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
     for (const mock of [
@@ -268,7 +271,7 @@ describe('ChildLoginService', () => {
     store.lockChild.mockResolvedValue(XIAOMI);
     store.databaseNow.mockResolvedValue(DATABASE_NOW);
     store.deleteExpiredDevices.mockResolvedValue();
-    store.isRememberedBy.mockResolvedValue(true);
+    store.moveFamilyDevices.mockResolvedValue();
     links.find.mockImplementation((tokenHash) => Promise.resolve(activeLink(tokenHash)));
     links.take.mockResolvedValue(true);
     service = new ChildLoginService(
@@ -390,9 +393,13 @@ describe('ChildLoginService', () => {
         store.lockChild.mockResolvedValue(locked);
 
         await expectRefusal(
-          service.login({ ...LOGIN, remember: true }, FRESH_BROWSER),
+          service.login(
+            { ...LOGIN, remember: true },
+            { ...FRESH_BROWSER, deviceToken: newToken().token },
+          ),
           'login_failed',
         );
+        expect(store.moveFamilyDevices).not.toHaveBeenCalled();
         expect(store.rememberDevice).not.toHaveBeenCalled();
         expect(committed).not.toHaveBeenCalled();
       },
@@ -721,66 +728,83 @@ describe('ChildLoginService', () => {
         now: DATABASE_NOW,
         expiresAt: REMEMBERED_UNTIL,
       });
-      expect(store.isRememberedBy).not.toHaveBeenCalled();
+      expect(store.moveFamilyDevices).not.toHaveBeenCalled();
     });
 
-    it("keeps the browser's own device token when a valid device has it, shared with the other children it remembers", async () => {
-      const { token, hash } = newToken();
+    it("gives a browser with a device token a new one, moving the family's valid devices to it before the child's own row", async () => {
+      const old = newToken();
 
       const login = await signedIn(
         service.login(
           { ...LOGIN, remember: true },
-          { deviceToken: token, userAgent: undefined, clientIp: CLIENT_IP },
+          { deviceToken: old.token, userAgent: undefined, clientIp: CLIENT_IP },
         ),
       );
 
-      expect(store.isRememberedBy).toHaveBeenCalledExactlyOnceWith(hash, DATABASE_NOW);
-      expect(login.deviceToken).toBe(token);
-      expect(store.rememberDevice).toHaveBeenCalledWith(
-        expect.objectContaining({ tokenHash: hash, name: '未知设备' }),
-      );
-    });
-
-    it('replaces a device token no valid device has with a new one, remembering the child by the new one only', async () => {
-      const planted = newToken();
-      store.isRememberedBy.mockResolvedValue(false);
-
-      const login = await signedIn(
-        service.login(
-          { ...LOGIN, remember: true },
-          { ...FRESH_BROWSER, deviceToken: planted.token },
-        ),
-      );
-
-      expect(store.isRememberedBy).toHaveBeenCalledWith(planted.hash, DATABASE_NOW);
       expect(isWellFormedToken(login.deviceToken)).toBe(true);
-      expect(login.deviceToken).not.toBe(planted.token);
+      expect(login.deviceToken).not.toBe(old.token);
+      const hash = hashToken(login.deviceToken ?? '');
+      expect(store.moveFamilyDevices).toHaveBeenCalledExactlyOnceWith({
+        familyId: FAMILY_ID,
+        fromTokenHash: old.hash,
+        toTokenHash: hash,
+        now: DATABASE_NOW,
+      });
       expect(store.rememberDevice).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ tokenHash: hashToken(login.deviceToken ?? '') }),
+        expect.objectContaining({ childId: CHILD_ID, tokenHash: hash, name: '未知设备' }),
+      );
+      expectCalledInOrder(
+        store.deleteExpiredDevices,
+        store.moveFamilyDevices,
+        store.rememberDevice,
+        committed,
       );
     });
 
-    it('checks the token only after the expired devices are deleted, so an expired one is replaced', async () => {
+    it("moves the devices of the locked child's family, whatever family the browser's other children are in", async () => {
+      store.lockChild.mockResolvedValue({ ...XIAOMI, familyId: OTHER_FAMILY_ID });
+
       await service.login(
         { ...LOGIN, remember: true },
         { ...FRESH_BROWSER, deviceToken: newToken().token },
       );
 
-      expectCalledInOrder(store.deleteExpiredDevices, store.isRememberedBy, store.rememberDevice);
+      expect(store.moveFamilyDevices).toHaveBeenCalledWith(
+        expect.objectContaining({ familyId: OTHER_FAMILY_ID }),
+      );
     });
 
-    it.each(everyLogin.filter(([name]) => name !== 'by the avatar'))(
-      'replaces a device token no valid device has on a login %s',
+    it.each(loginsWithAPasswordOrALink)(
+      'gives the browser a new device token on a login %s, never the one it had',
       async (_case, logIn) => {
-        const planted = newToken().token;
-        store.isRememberedBy.mockResolvedValue(false);
+        const planted = newToken();
 
-        const login = await logIn(planted);
+        const login = await logIn(planted.token);
 
-        expect(login.deviceToken).not.toBe(planted);
         expect(isWellFormedToken(login.deviceToken)).toBe(true);
+        expect(login.deviceToken).not.toBe(planted.token);
+        expect(store.moveFamilyDevices).toHaveBeenCalledExactlyOnceWith({
+          familyId: FAMILY_ID,
+          fromTokenHash: planted.hash,
+          toTokenHash: hashToken(login.deviceToken ?? ''),
+          now: DATABASE_NOW,
+        });
+        expect(store.rememberDevice).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ tokenHash: hashToken(login.deviceToken ?? '') }),
+        );
       },
     );
+
+    it("keeps the browser's device token on a login by the avatar, moving nothing", async () => {
+      const { token } = newToken();
+      store.renewDevice.mockResolvedValue(true);
+
+      const login = await service.loginRemembered(CHILD_ID, token);
+
+      expect(login.deviceToken).toBe(token);
+      expect(store.moveFamilyDevices).not.toHaveBeenCalled();
+      expect(store.rememberDevice).not.toHaveBeenCalled();
+    });
 
     it('forgets the child on the browser when not remembered, and leaves its cookie', async () => {
       const { token, hash } = newToken();
@@ -790,7 +814,7 @@ describe('ChildLoginService', () => {
       expect(login.deviceToken).toBeUndefined();
       expect(store.forgetDevice).toHaveBeenCalledWith(CHILD_ID, hash);
       expect(store.rememberDevice).not.toHaveBeenCalled();
-      expect(store.isRememberedBy).not.toHaveBeenCalled();
+      expect(store.moveFamilyDevices).not.toHaveBeenCalled();
       expectCalledInOrder(store.lockChild, store.forgetDevice, committed);
     });
 

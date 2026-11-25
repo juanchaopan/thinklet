@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -63,6 +63,16 @@ export interface RememberedDevice {
   name: string;
   now: Date;
   expiresAt: Date;
+}
+
+/** The browser whose device token a login replaces, the family whose devices go with it, and when. */
+export interface DeviceTokenChange {
+  familyId: string;
+  /** The hash of the token the browser had. */
+  fromTokenHash: string;
+  /** The hash of the token the login gives it. */
+  toTokenHash: string;
+  now: Date;
 }
 
 /** What the check of a signed-in child reads of the child's row, with the database's time of the read. */
@@ -215,16 +225,28 @@ export class ChildLoginStore {
   }
 
   /**
-   * Whether any child's device still valid at `now` has the token's hash:
-   * the token is one this api issued and a browser still remembers by.
+   * Moves the browser's devices of the family's children that are still
+   * valid at `now` from the browser's old token to its new one, each keeping
+   * its row: its id, its name and its times. The rows of other families'
+   * children, and expired ones, stay under the old token. The new token is
+   * one just made, which no row has yet, so no move meets a row it would
+   * duplicate.
    */
-  async isRememberedBy(tokenHash: string, now: Date): Promise<boolean> {
-    const rows = await this.executor
-      .select({ id: childDevices.id })
-      .from(childDevices)
-      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, now)))
-      .limit(1);
-    return rows.length > 0;
+  async moveFamilyDevices(change: DeviceTokenChange): Promise<void> {
+    const familyChildren = this.executor
+      .select({ id: children.id })
+      .from(children)
+      .where(eq(children.familyId, change.familyId));
+    await this.executor
+      .update(childDevices)
+      .set({ tokenHash: change.toTokenHash })
+      .where(
+        and(
+          eq(childDevices.tokenHash, change.fromTokenHash),
+          gt(childDevices.expiresAt, change.now),
+          inArray(childDevices.childId, familyChildren),
+        ),
+      );
   }
 
   /**

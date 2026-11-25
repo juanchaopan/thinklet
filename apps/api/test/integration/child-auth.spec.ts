@@ -86,6 +86,10 @@ function expectSignedIn(response: request.Response, child: Child): void {
   expect(session?.attributes['max-age']).toBe(SESSION_MAX_AGE);
 }
 
+/** The device token a response sets in the browser's cookie, or an empty string when it sets none. */
+const deviceTokenSetBy = (response: request.Response) =>
+  setCookiesOf(response)[DEVICE_COOKIE]?.value ?? '';
+
 /** How long a device row lasts from its last login. */
 const lifetimeOf = (row: DeviceRow) => row.expires_at.getTime() - row.last_used_at.getTime();
 
@@ -111,19 +115,28 @@ function issuedAtOf(kid: ChildBrowser): number {
   return (decodeJwt(kid.cookies.get(CHILD_SESSION_COOKIE) ?? '').iat ?? Number.NaN) * 1000;
 }
 
+/** The ids of the children the browser shows avatars of, in their order. */
+async function avatarsOn(kid: ChildBrowser): Promise<string[]> {
+  const response = await kid.get('/api/child-auth/remembered');
+  return rememberedChildListSchema.parse(response.body).map((remembered) => remembered.childId);
+}
+
 // Acceptance criteria covered: a child logs in with the family code, the
 // account and the password, and any wrong item, or a child without a
 // password whose time to set one with the account has run out, is
 // "家庭码、账号或密码不对" (#14, 25); remembering a browser shows the
 // child's avatar there for 30 days from the last avatar login, and not
 // remembering forgets it; a revoked or expired device needs the password
-// again; a device token is kept only when the database has a valid device
-// with it (#14, 18); a child's login and a password reset take their times
-// from the database, so api instances whose clocks are off by seconds
-// neither end a fresh login nor keep one issued before a reset (#14, 20);
-// every login deletes the child's expired devices and no other child's
-// (#14, 23); a login link works for 10 minutes and once, two uses at the
-// same time included, and a newer one revokes it (#14, 24); a child
+// again; a password or link login that remembers the browser gives it a
+// new device token and moves the browser's valid devices of the child's
+// family to it, the siblings keeping their avatars, while other families'
+// devices and expired ones stay under the old token, and an avatar login
+// keeps the token (#14, 18); a child's login and a password reset take
+// their times from the database, so api instances whose clocks are off by
+// seconds neither end a fresh login nor keep one issued before a reset
+// (#14, 20); every login deletes the child's expired devices and no other
+// child's (#14, 23); a login link works for 10 minutes and once, two uses
+// at the same time included, and a newer one revokes it (#14, 24); a child
 // without a password sets one on the link and is signed in, a child with
 // one enters it, and a wrong one keeps the link usable; a password reset
 // or the child's deletion ends the child's login at the next request;
@@ -231,6 +244,22 @@ describe('child login', () => {
     return { children, kid };
   }
 
+  /** Two new siblings remembered on one browser, which is signed in as the second. */
+  async function siblingsOnOneBrowser(): Promise<{
+    first: ChildWithPassword;
+    second: ChildWithPassword;
+    kid: ChildBrowser;
+  }> {
+    const {
+      children: [first, second],
+      kid,
+    } = await rememberedOnOneBrowser(2);
+    if (first === undefined || second === undefined) {
+      throw new Error('The children were not remembered');
+    }
+    return { first, second, kid };
+  }
+
   /** A new child remembered on a browser, which is signed in as the child. */
   async function rememberedChild(): Promise<{ child: ChildWithPassword; kid: ChildBrowser }> {
     const {
@@ -241,6 +270,23 @@ describe('child login', () => {
       throw new Error('No child was remembered');
     }
     return { child, kid };
+  }
+
+  /**
+   * Logs the child in on the browser with the password, remembering it, and
+   * returns the device token the login sets: a new one of 32 bytes, not the
+   * one the browser had.
+   */
+  async function loginRemembering(kid: ChildBrowser, child: ChildWithPassword): Promise<string> {
+    const oldToken = kid.cookies.get(DEVICE_COOKIE);
+
+    const response = await kid.login(loginOf(child, true));
+
+    expect(response.status).toBe(200);
+    const newToken = deviceTokenSetBy(response);
+    expect(Buffer.from(newToken, 'base64url')).toHaveLength(32);
+    expect(newToken).not.toBe(oldToken);
+    return newToken;
   }
 
   /** Gives the child two devices that expired days ago and one still valid, on browsers of their own. */
@@ -381,19 +427,19 @@ describe('child login', () => {
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
     });
 
-    it('renews the same row and token on a later remembered login, keeping when it was remembered and its name', async () => {
+    it("renews the child's row under a new device token on a later password login, keeping its id, when it was remembered and its name", async () => {
       const { child, kid } = await rememberedChild();
       const first = await onlyDevice(child.id);
-      const token = kid.cookies.get(DEVICE_COOKIE);
 
-      const response = await kid.login(loginOf(child, true));
+      const newToken = await loginRemembering(kid, child);
 
-      expect(setCookiesOf(response)[DEVICE_COOKIE]?.value).toBe(token);
       const renewed = await onlyDevice(child.id);
       expect(renewed.id).toBe(first.id);
+      expect(renewed.token_hash).toBe(sha256(newToken));
       expect(renewed.name).toBe(first.name);
       expect(renewed.remembered_at).toEqual(first.remembered_at);
       expect(renewed.last_used_at.getTime()).toBeGreaterThan(first.last_used_at.getTime());
+      expect(lifetimeOf(renewed)).toBe(30 * DAY_MS);
     });
 
     it('remembers the browser anew under a new token once its only device has expired, as a new row whose name is encrypted for it', async () => {
@@ -403,13 +449,9 @@ describe('child login', () => {
         "remembered_at = now() - interval '40 days', expires_at = now() - interval '1 day'",
       );
       const expired = await onlyDevice(child.id);
-      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
 
-      const response = await kid.login(loginOf(child, true));
+      const newToken = await loginRemembering(kid, child);
 
-      const newToken = setCookiesOf(response)[DEVICE_COOKIE]?.value ?? '';
-      expect(Buffer.from(newToken, 'base64url')).toHaveLength(32);
-      expect(newToken).not.toBe(oldToken);
       const row = await onlyDevice(child.id);
       expect(row.id).not.toBe(expired.id);
       expect(row.token_hash).toBe(sha256(newToken));
@@ -418,25 +460,81 @@ describe('child login', () => {
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
     });
 
-    it("keeps the device token another child's valid device has, though this child's has expired", async () => {
-      const {
-        children: [first, second],
-        kid,
-      } = await rememberedOnOneBrowser(2);
-      if (first === undefined || second === undefined) {
-        throw new Error('The children were not remembered');
+    it("moves the family's valid devices on the browser to the new token, so the siblings keep their avatars", async () => {
+      const { children, kid } = await rememberedOnOneBrowser(3);
+      const [first] = children;
+      if (first === undefined) {
+        throw new Error('No child was remembered');
       }
-      const token = kid.cookies.get(DEVICE_COOKIE) ?? '';
+      const before = await Promise.all(children.map((child) => onlyDevice(child.id)));
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+
+      const newToken = await loginRemembering(kid, first);
+
+      const after = await Promise.all(children.map((child) => onlyDevice(child.id)));
+      expect(after.map(({ id, name, token_hash }) => ({ id, name, token_hash }))).toEqual(
+        before.map(({ id, name }) => ({ id, name, token_hash: sha256(newToken) })),
+      );
+      expect(after.slice(1).map((row) => row.expires_at)).toEqual(
+        before.slice(1).map((row) => row.expires_at),
+      );
+      expect(await avatarsOn(kid)).toEqual(children.map((child) => child.id));
+      const stale = browser();
+      stale.cookies.set(DEVICE_COOKIE, oldToken);
+      expect(await avatarsOn(stale)).toEqual([]);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+      for (const sibling of children.slice(1)) {
+        expectSignedIn(await kid.loginRemembered(sibling.id), sibling);
+      }
+    });
+
+    it("gives a child whose own device has expired a new token, moving a sibling's valid device with it", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
       const expired = await onlyDevice(first.id);
+      const siblingDevice = await onlyDevice(second.id);
       await expireDevices(first.id);
 
-      const response = await kid.login(loginOf(first, true));
+      const newToken = await loginRemembering(kid, first);
 
-      expect(setCookiesOf(response)[DEVICE_COOKIE]?.value).toBe(token);
       const row = await onlyDevice(first.id);
       expect(row.id).not.toBe(expired.id);
-      expect(row.token_hash).toBe(sha256(token));
-      expect((await onlyDevice(second.id)).token_hash).toBe(sha256(token));
+      expect(row.token_hash).toBe(sha256(newToken));
+      const moved = await onlyDevice(second.id);
+      expect([moved.id, moved.token_hash]).toEqual([siblingDevice.id, sha256(newToken)]);
+    });
+
+    it("leaves a sibling's expired device under the old token, not moving it", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
+      await expireDevices(second.id);
+      const expired = await onlyDevice(second.id);
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+
+      const newToken = await loginRemembering(kid, first);
+
+      expect(expired.token_hash).toBe(sha256(oldToken));
+      expect(await onlyDevice(second.id)).toEqual(expired);
+      expect((await onlyDevice(first.id)).token_hash).toBe(sha256(newToken));
+      expect(await avatarsOn(kid)).toEqual([first.id]);
+    });
+
+    it("leaves another family's child under the old token, whose avatar leaves the browser", async () => {
+      const otherFamily = await createFamily(running.server, parent);
+      const cousin = await addChildWithPassword(running.server, parent, otherFamily.id);
+      const kid = browser();
+      const cousinLogin = await kid.login({ ...loginOf(cousin, true), code: otherFamily.code });
+      expect(cousinLogin.status).toBe(200);
+      const cousinDevice = await onlyDevice(cousin.id);
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+      const child = await withPassword();
+
+      await loginRemembering(kid, child);
+
+      expect(cousinDevice.token_hash).toBe(sha256(oldToken));
+      expect(await onlyDevice(cousin.id)).toEqual(cousinDevice);
+      expect(await avatarsOn(kid)).toEqual([child.id]);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+      const avatar = await kid.loginRemembered(cousin.id);
+      expect([avatar.status, errorCodeOf(avatar)]).toEqual([401, 'remember_invalid']);
     });
 
     it('shares one device token among the children the browser remembers', async () => {
@@ -675,7 +773,7 @@ describe('child login', () => {
   });
 
   describe('POST /api/child-auth/remembered/{childId}/login', () => {
-    it('signs the remembered child in without a password and renews the device for 30 days', async () => {
+    it('signs the remembered child in without a password and renews the device for 30 days under the same token', async () => {
       const { child, kid } = await rememberedChild();
       await updateDevices(
         child.id,
@@ -683,6 +781,7 @@ describe('child login', () => {
       );
       kid.cookies.delete(CHILD_SESSION_COOKIE);
       const before = await onlyDevice(child.id);
+      const token = kid.cookies.get(DEVICE_COOKIE) ?? '';
       const started = Date.now();
 
       const response = await kid.loginRemembered(child.id);
@@ -690,13 +789,26 @@ describe('child login', () => {
       expectSignedIn(response, child);
       const device = setCookiesOf(response)[DEVICE_COOKIE];
       expectLoginCookieAttributes(device);
-      expect(device?.value).toBe(kid.cookies.get(DEVICE_COOKIE));
+      expect(device?.value).toBe(token);
       expect(device?.attributes['max-age']).toBe(DEVICE_MAX_AGE);
       const after = await onlyDevice(child.id);
+      expect([after.id, after.token_hash]).toEqual([before.id, sha256(token)]);
       expect(after.remembered_at).toEqual(before.remembered_at);
       expect(after.last_used_at.getTime()).toBeGreaterThanOrEqual(started - 1000);
       expect(lifetimeOf(after)).toBe(30 * DAY_MS);
       expect((await kid.me()).status).toBe(200);
+    });
+
+    it("keeps the siblings' devices under the browser's token as they were", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
+      const siblingDevice = await onlyDevice(second.id);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+
+      const response = await kid.loginRemembered(first.id);
+
+      expectSignedIn(response, first);
+      expect(await onlyDevice(second.id)).toEqual(siblingDevice);
+      expect(await avatarsOn(kid)).toEqual([first.id, second.id]);
     });
 
     it.each<[string, (child: Child) => Promise<unknown>]>([
@@ -775,6 +887,24 @@ describe('child login', () => {
       expect(await devicesOf(child.id)).toHaveLength(1);
       const login = await browser().login(loginOf({ ...child, password: 'my secret' }));
       expect(login.status).toBe(200);
+    });
+
+    it("moves a sibling's valid device to the new token when the link remembers the browser", async () => {
+      const { child: sibling, kid } = await rememberedChild();
+      const siblingDevice = await onlyDevice(sibling.id);
+      const child = await withPassword();
+      const link = await linkOf(child);
+
+      const response = await kid.post(`${linkPath(link.token)}/login`, {
+        password: child.password,
+        remember: true,
+      });
+
+      const newToken = deviceTokenSetBy(response);
+      expect(sha256(newToken)).not.toBe(siblingDevice.token_hash);
+      const moved = await onlyDevice(sibling.id);
+      expect([moved.id, moved.token_hash]).toEqual([siblingDevice.id, sha256(newToken)]);
+      expect(await avatarsOn(kid)).toEqual([sibling.id, child.id]);
     });
 
     it('refuses a password of the wrong length with the field, keeping the link', async () => {

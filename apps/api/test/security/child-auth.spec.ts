@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
-import { errorResponseSchema, type Child, type FamilyDetail } from '@thinklet/contracts';
+import {
+  errorResponseSchema,
+  rememberedChildListSchema,
+  type Child,
+  type FamilyDetail,
+} from '@thinklet/contracts';
 import request from 'supertest';
 import {
   CHILD_SESSION_COOKIE,
@@ -87,10 +92,24 @@ async function expectPastTheLimitsRefused(
   );
 }
 
+/** The ids of the children a browser's list of remembered children names, in its order. */
+const rememberedIds = (response: request.Response) =>
+  rememberedChildListSchema.parse(response.body).map((remembered) => remembered.childId);
+
 /** A login that remembers a child on the browser, and the child it logged in. */
 interface RememberingLogin {
   childId: string;
   response: request.Response;
+}
+
+/**
+ * A device token someone writes into a child's browser before the child
+ * logs in there, with the ids of the children the token is a valid device
+ * credential of: the ones of the family that got it.
+ */
+interface PlantedToken {
+  token: string;
+  ownChildIds: string[];
 }
 
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for a
@@ -102,9 +121,11 @@ interface RememberingLogin {
 // is refused like a wrong one, and cannot be set; a child's login opens no
 // parent route and a parent's login no child route; one child's remembered
 // browser does not log in another child; a device token written into the
-// browser that the api never issued does not become a device credential
-// (#14, 18); the routes that change data need this site's Origin, though
-// they need no login.
+// browser beforehand, one the api never issued or one another family's
+// child is validly remembered by, is replaced at the login and does not
+// become the child's device credential, while the other family's device
+// keeps working where it was (#14, 18); the routes that change data need
+// this site's Origin, though they need no login.
 describe('child login security', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -132,15 +153,15 @@ describe('child login security', () => {
   /** Whether the link of the token can still be used: opening it answers who it is for. */
   const stillUsable = async (token: string) =>
     (await browser().get(linkPath(token))).status === 200;
-  /** How many devices of any child the database has with the token's hash. */
-  const devicesWithToken = async (token: string) =>
+  /** The ids of the children whose devices the database has with the token's hash, sorted. */
+  const childrenWithToken = async (token: string) =>
     (
-      await query<{ id: string }>(
+      await query<{ child_id: string }>(
         running.databaseUrl,
-        'select id from child_devices where token_hash = $1',
+        'select child_id from child_devices where token_hash = $1 order by child_id',
         [sha256(token)],
       )
-    ).length;
+    ).map((row) => row.child_id);
   /** The child's password hash as the database holds it. */
   const passwordHashOf = async (who: Child) =>
     (await childRow(running.databaseUrl, who.id))?.password_hash;
@@ -356,76 +377,118 @@ describe('child login security', () => {
     expect(response.body).toEqual([]);
   });
 
-  describe('a device token the api never issued, written into the browser beforehand', () => {
-    it.each<[string, (kid: ChildBrowser) => Promise<RememberingLogin>]>([
-      [
-        'logging in with the account',
-        async (kid) => {
-          const victim = await addChildWithPassword(running.server, parent, family.id);
-          return { childId: victim.id, response: await kid.login(loginOf(victim, true)) };
-        },
-      ],
-      [
-        'setting the first password with the account',
-        async (kid) => {
-          const victim = await addChild(running.server, parent, family.id);
-          return {
-            childId: victim.id,
-            response: await kid.setFirstPassword(firstPasswordOf(victim)),
-          };
-        },
-      ],
-      [
-        'logging in with the password on a link',
-        async (kid) => {
-          const victim = await addChildWithPassword(running.server, parent, family.id);
-          const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
-          const response = await kid.post(`${linkPath(token)}/login`, {
-            password: victim.password,
-            remember: true,
-          });
-          return { childId: victim.id, response };
-        },
-      ],
-      [
-        'setting the first password on a link',
-        async (kid) => {
-          const victim = await addChild(running.server, parent, family.id);
-          const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
-          const response = await kid.post(`${linkPath(token)}/password`, {
-            password: 'my secret',
-            remember: true,
-          });
-          return { childId: victim.id, response };
-        },
-      ],
-    ])(
-      'does not become the device credential when %s remembers the child; the response sets another token',
-      async (_case, logIn) => {
-        const planted = Buffer.alloc(32, 5).toString('base64url');
-        const kid = browser();
-        kid.cookies.set(DEVICE_COOKIE, planted);
-
-        const { childId, response } = await logIn(kid);
-
-        expect(response.status).toBe(200);
-        const issued = setCookiesOf(response)[DEVICE_COOKIE]?.value;
-        expect(issued).toBeDefined();
-        expect(issued).not.toBe(planted);
-        expect(await devicesWithToken(planted)).toBe(0);
-        const rows = await deviceRows(running.databaseUrl, childId);
-        expect(rows.map((row) => row.token_hash)).toEqual([sha256(issued ?? '')]);
-
-        const attacker = browser();
-        attacker.cookies.set(DEVICE_COOKIE, planted);
-        expect((await attacker.get('/api/child-auth/remembered')).body).toEqual([]);
-        const remembered = await attacker.loginRemembered(childId);
-        expect(remembered.status).toBe(401);
-        expect(errorResponseSchema.parse(remembered.body).error.code).toBe('remember_invalid');
-        expect((await attacker.me()).status).toBe(401);
+  /** Where a device token written into the browser beforehand comes from, each made ready. */
+  const plantedTokens: Array<[string, () => Promise<PlantedToken>]> = [
+    [
+      'one the api never issued',
+      () => Promise.resolve({ token: Buffer.alloc(32, 5).toString('base64url'), ownChildIds: [] }),
+    ],
+    [
+      "one another family's child is validly remembered by",
+      async () => {
+        const attacker = await signInParent(running.server);
+        const attackerFamily = await createFamily(running.server, attacker);
+        const own = await addChildWithPassword(running.server, attacker, attackerFamily.id);
+        const attackerBrowser = browser();
+        const login = await attackerBrowser.login({
+          code: attackerFamily.code,
+          account: own.account,
+          password: own.password,
+          remember: true,
+        });
+        expect(login.status).toBe(200);
+        return { token: attackerBrowser.cookies.get(DEVICE_COOKIE) ?? '', ownChildIds: [own.id] };
       },
-    );
-  });
+    ],
+  ];
+
+  /** Every password or link login that remembers a new child of the family on the given browser. */
+  const rememberingLogins: Array<[string, (kid: ChildBrowser) => Promise<RememberingLogin>]> = [
+    [
+      'logging in with the account',
+      async (kid) => {
+        const victim = await addChildWithPassword(running.server, parent, family.id);
+        return { childId: victim.id, response: await kid.login(loginOf(victim, true)) };
+      },
+    ],
+    [
+      'setting the first password with the account',
+      async (kid) => {
+        const victim = await addChild(running.server, parent, family.id);
+        return {
+          childId: victim.id,
+          response: await kid.setFirstPassword(firstPasswordOf(victim)),
+        };
+      },
+    ],
+    [
+      'logging in with the password on a link',
+      async (kid) => {
+        const victim = await addChildWithPassword(running.server, parent, family.id);
+        const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+        const response = await kid.post(`${linkPath(token)}/login`, {
+          password: victim.password,
+          remember: true,
+        });
+        return { childId: victim.id, response };
+      },
+    ],
+    [
+      'setting the first password on a link',
+      async (kid) => {
+        const victim = await addChild(running.server, parent, family.id);
+        const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+        const response = await kid.post(`${linkPath(token)}/password`, {
+          password: 'my secret',
+          remember: true,
+        });
+        return { childId: victim.id, response };
+      },
+    ],
+  ];
+
+  describe.each(plantedTokens)(
+    'a device token written into the browser beforehand, %s',
+    (_source, plant) => {
+      it.each(rememberingLogins)(
+        'does not become the device credential when %s remembers the child; the response sets another token',
+        async (_case, logIn) => {
+          const planted = await plant();
+          const kid = browser();
+          kid.cookies.set(DEVICE_COOKIE, planted.token);
+
+          const { childId, response } = await logIn(kid);
+
+          expect(response.status).toBe(200);
+          const issued = setCookiesOf(response)[DEVICE_COOKIE]?.value;
+          expect(issued).toBeDefined();
+          expect(issued).not.toBe(planted.token);
+          const rows = await deviceRows(running.databaseUrl, childId);
+          expect(rows.map((row) => row.token_hash)).toEqual([sha256(issued ?? '')]);
+          expect(await childrenWithToken(planted.token)).toEqual(planted.ownChildIds);
+          expect(rememberedIds(await kid.get('/api/child-auth/remembered'))).toEqual([childId]);
+          const ownFromVictim = await Promise.all(
+            planted.ownChildIds.map(async (id) => (await kid.loginRemembered(id)).status),
+          );
+          expect(ownFromVictim).toEqual(planted.ownChildIds.map(() => 401));
+
+          const attacker = browser();
+          attacker.cookies.set(DEVICE_COOKIE, planted.token);
+          expect(rememberedIds(await attacker.get('/api/child-auth/remembered'))).toEqual(
+            planted.ownChildIds,
+          );
+          const remembered = await attacker.loginRemembered(childId);
+          expect(remembered.status).toBe(401);
+          expect(errorResponseSchema.parse(remembered.body).error.code).toBe('remember_invalid');
+          expect((await attacker.me()).status).toBe(401);
+          const ownFromAttacker = await Promise.all(
+            planted.ownChildIds.map(async (id) => (await attacker.loginRemembered(id)).status),
+          );
+          expect(ownFromAttacker).toEqual(planted.ownChildIds.map(() => 200));
+        },
+      );
+    },
+  );
 
   describe('the Origin of requests that change data', () => {
     const badOrigins: Array<[string, string | undefined]> = [
