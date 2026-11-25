@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import {
+  childListSchema,
   familyDetailSchema,
   familyJoinRequestsResponseSchema,
   handledJoinRequestSchema,
@@ -12,7 +13,7 @@ import {
   type UpdateFamilyRequest,
 } from '@thinklet/contracts';
 import { Api, ApiError } from '../../core/api';
-import { CurrentFamily, pageAfterSwitch } from '../../core/current-family';
+import { CurrentFamily } from '../../core/current-family';
 import { asApiError, isSignedOut, rejectedFields } from '../../core/failures';
 import {
   explainFailure,
@@ -26,7 +27,8 @@ import type { IconArt } from '../../shared/ui/art';
 import { Toaster } from '../../shared/ui/toast';
 
 /** One of the changes the family page makes; only one runs at a time. */
-export type FamilyAction = 'name' | 'timezone' | 'code' | 'admin' | 'remove' | 'leave';
+export type FamilyAction =
+  'name' | 'timezone' | 'code' | 'admin' | 'remove' | 'leave' | 'count' | 'delete';
 
 /** The admin's two answers to a waiting join request, as the api names them. */
 export type Decision = 'approve' | 'reject';
@@ -46,10 +48,10 @@ function rejectedField(error: unknown): FieldErrorCode | undefined {
 }
 
 /**
- * The family to go on to after leaving `left` (rules.md, 当前家庭): the next
- * of the parent's families in joining order, or the first after leaving the
- * last; the families come from `remaining`, as they are once the parent has
- * left. Undefined when no family is left.
+ * The family to go on to after leaving or deleting `left` (rules.md, 当前
+ * 家庭): the next of the parent's families in joining order, or the first
+ * after leaving the last; the families come from `remaining`, as they are
+ * once the parent has left. Undefined when no family is left.
  */
 export function familyAfterLeaving(
   before: readonly MeFamily[],
@@ -65,11 +67,13 @@ export function familyAfterLeaving(
 
 /**
  * The family of the family page (`/families/:familyId`) and the changes made
- * there (rules.md, 家庭; interfaces.md, 家庭): renaming it and changing its
- * time zone, changing its code, handing the admin role to another member,
- * taking a member out, and leaving. Each change shows the family as the api
- * answers it, says so in a toast and reads the parent again, so the
- * navigation follows.
+ * there (rules.md, 家庭 and 删除家庭; interfaces.md, 家庭): renaming it and
+ * changing its time zone, changing its code, handing the admin role to
+ * another member, taking a member out, leaving and deleting it. Each change
+ * shows the family as the api answers it, says so in a toast and reads the
+ * parent again, so the navigation follows. After leaving or deleting the
+ * family, the parent goes on to the library of their next family, or to
+ * the start page without one.
  *
  * For the family's admin it also holds the join requests waiting (rules.md,
  * 等你处理（管理员）), read with the family, and approves or rejects them.
@@ -236,7 +240,7 @@ export class FamilyStore {
     });
   }
 
-  /** The parent leaves the family, and goes on to the next of their families. */
+  /** The parent leaves the family, and goes on to the library of the next of their families. */
   leave(): Promise<void> {
     return this.run('leave', async () => {
       const family = this.detail();
@@ -245,7 +249,37 @@ export class FamilyStore {
         return;
       }
       await this.api.sendWithoutContent('DELETE', this.memberPath(me.id));
-      await this.goOnFrom(family, me.families);
+      await this.goOnFrom(family, me.families, `你已离开 ${family.name}`);
+    });
+  }
+
+  /**
+   * How many children the family has now, read afresh for the question
+   * that asks before deleting it; undefined when the read failed, which is
+   * explained as a failed change is.
+   */
+  async countChildren(): Promise<number | undefined> {
+    let count: number | undefined;
+    await this.run('count', async (familyId) => {
+      count = (await this.api.get(familyPath(familyId, '/children'), childListSchema)).length;
+    });
+    return count;
+  }
+
+  /**
+   * The admin deletes the family with its children, books, requests and
+   * every parent's membership, and goes on to the library of the next of
+   * their families.
+   */
+  deleteFamily(): Promise<void> {
+    return this.run('delete', async (familyId) => {
+      const family = this.detail();
+      const me = this.session.me();
+      if (!family || !me) {
+        return;
+      }
+      await this.api.sendWithoutContent('DELETE', familyPath(familyId));
+      await this.goOnFrom(family, me.families, `已删除「${family.name}」`);
     });
   }
 
@@ -337,12 +371,16 @@ export class FamilyStore {
   }
 
   /**
-   * After leaving `left`, the family to go on to becomes the current one and
-   * the page the rules give for switching to it opens (rules.md, 导航);
+   * After leaving or deleting `left`, says so (`text`); the family to go on
+   * to becomes the current one and its library opens (rules.md, 当前家庭);
    * without a family left, the start page.
    */
-  private async goOnFrom(left: FamilyDetail, before: readonly MeFamily[]): Promise<void> {
-    this.toaster.show(`你已离开 ${left.name}`, 'success', 'door');
+  private async goOnFrom(
+    left: FamilyDetail,
+    before: readonly MeFamily[],
+    text: string,
+  ): Promise<void> {
+    this.toaster.show(text, 'success', 'door');
     await this.session.refresh();
     const next = familyAfterLeaving(before, this.session.me()?.families ?? [], left.id);
     if (!next) {
@@ -350,7 +388,7 @@ export class FamilyStore {
       return;
     }
     this.currentFamily.select(next.id);
-    await this.router.navigateByUrl(pageAfterSwitch(this.router.url, next) ?? '/');
+    await this.router.navigateByUrl('/');
   }
 
   /**

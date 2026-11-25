@@ -17,32 +17,32 @@
 
 所有日常命令都通过 Task（`Taskfile.yml`）运行：`pnpm exec task <命令>`。`pnpm exec task --list` 列出全部命令和说明。
 
-| 命令                                                                                 | 运行什么                                                        |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
-| `dev`                                                                                | 本机起容器、执行迁移、导入封面，启动前后端                      |
-| `jwt-key`                                                                            | 生成本机开发用的 JWT 签名密钥，贴进 `.env` 的 `JWT_SIGNING_KEY` |
-| `child-data-key`                                                                     | 生成本机开发用的孩子数据密钥，贴进 `.env` 的 `CHILD_DATA_KEY`   |
-| `check`                                                                              | 全部静态检查                                                    |
-| `format`、`format-fix`                                                               | 检查格式、改好格式（Prettier）                                  |
-| `lint`                                                                               | ESLint                                                          |
-| `typecheck`                                                                          | 各包的 `tsc --noEmit`                                           |
-| `build`                                                                              | 编译和构建全部包                                                |
-| `architecture`                                                                       | 架构规则（dependency-cruiser）                                  |
-| `duplicates`                                                                         | 重复代码（jscpd）                                               |
-| `migrations-lint`                                                                    | 新增迁移脚本的检查（Squawk）                                    |
-| `secrets`                                                                            | 密钥泄漏（gitleaks）                                            |
-| `workflows`                                                                          | GitHub Actions 工作流（actionlint、zizmor）                     |
-| `licenses`                                                                           | 产品运行时依赖的许可证                                          |
-| `vulnerabilities`                                                                    | 依赖漏洞（OSV-Scanner）                                         |
-| `docs`                                                                               | Markdown 格式，以及 `.docs/` 文档结尾的 `Last changed:` 一行    |
-| `commits`、`step-check`、`pr-title`、`risk`                                          | 提交信息、步骤检查、PR 标题、风险分级                           |
-| `test-unit`、`test-component`、`test-integration`、`test-security`、`test-migration` | 各测试对象，测试自己起临时环境，测完删除                        |
-| `test-e2e`、`test-e2e-all-browsers`                                                  | 端到端测试：只用 Chromium；三种浏览器加模拟手机                 |
-| `test-security-scan`                                                                 | ZAP 基线扫描                                                    |
-| `test-smoke BASE_URL=<地址>`                                                         | 对已部署的目标跑冒烟测试；`PRODUCTION_SAFE=true` 只跑不改数据的 |
-| `test-component-update`                                                              | 重新生成截图基准图（只在 Linux 的 Playwright 镜像里生成）       |
-| `migrate`                                                                            | 执行数据库迁移（`drizzle-kit migrate`）和代码写的数据迁移       |
-| `rebuild`                                                                            | 把 `content/books/` 里的封面导入对象存储，在书本表里记下散列    |
+| 命令                                                                                 | 运行什么                                                                   |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `dev`                                                                                | 本机起容器（含 Valkey）、执行迁移、导入封面，启动 Authing 替身服务和前后端 |
+| `jwt-key`                                                                            | 生成本机开发用的 JWT 签名密钥，贴进 `.env` 的 `JWT_SIGNING_KEY`            |
+| `child-data-key`                                                                     | 生成本机开发用的孩子数据密钥，贴进 `.env` 的 `CHILD_DATA_KEY`              |
+| `check`                                                                              | 全部静态检查                                                               |
+| `format`、`format-fix`                                                               | 检查格式、改好格式（Prettier）                                             |
+| `lint`                                                                               | ESLint                                                                     |
+| `typecheck`                                                                          | 各包的 `tsc --noEmit`                                                      |
+| `build`                                                                              | 编译和构建全部包                                                           |
+| `architecture`                                                                       | 架构规则（dependency-cruiser）                                             |
+| `duplicates`                                                                         | 重复代码（jscpd）                                                          |
+| `migrations-lint`                                                                    | 新增迁移脚本的检查（Squawk）                                               |
+| `secrets`                                                                            | 密钥泄漏（gitleaks）                                                       |
+| `workflows`                                                                          | GitHub Actions 工作流（actionlint、zizmor）                                |
+| `licenses`                                                                           | 产品运行时依赖的许可证                                                     |
+| `vulnerabilities`                                                                    | 依赖漏洞（OSV-Scanner）                                                    |
+| `docs`                                                                               | Markdown 格式，以及 `.docs/` 文档结尾的 `Last changed:` 一行               |
+| `commits`、`step-check`、`pr-title`、`risk`                                          | 提交信息、步骤检查、PR 标题、风险分级                                      |
+| `test-unit`、`test-component`、`test-integration`、`test-security`、`test-migration` | 各测试对象，测试自己起临时环境，测完删除                                   |
+| `test-e2e`、`test-e2e-all-browsers`                                                  | 端到端测试：只用 Chromium；三种浏览器加模拟手机                            |
+| `test-security-scan`                                                                 | ZAP 基线扫描                                                               |
+| `test-smoke BASE_URL=<地址>`                                                         | 对已部署的目标跑冒烟测试；`PRODUCTION_SAFE=true` 只跑不改数据的            |
+| `test-component-update`                                                              | 重新生成截图基准图（只在 Linux 的 Playwright 镜像里生成）                  |
+| `migrate`                                                                            | 执行数据库迁移（`drizzle-kit migrate`）和代码写的数据迁移                  |
+| `rebuild`                                                                            | 把 `content/books/` 里的封面导入对象存储，在书本表里记下散列               |
 
 ## 改动怎么检查
 
