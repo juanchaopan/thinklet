@@ -476,6 +476,7 @@ apps/api/src/modules/family/**
 apps/api/src/modules/child/**
 apps/api/src/modules/book/**
 apps/api/src/modules/audit/**
+apps/api/src/modules/account/**
 apps/api/drizzle/**
 **/*.sql
 **/.env*
@@ -495,7 +496,7 @@ apps/api/src/migrate-data.ts
 LICENSE
 ```
 
-存家长和孩子数据的后端模块都算高风险：`auth` 由 `**/auth/**` 覆盖，`family`、`child`、`book`、`audit` 单独列出。以后新加这类模块的 issue，要把它的路径加进高风险。书本数据写在迁移脚本里，所以改书本的 PR 也是高风险；代码写的数据迁移会改孩子的密文，也是高风险。Dockerfile 决定截图的渲染环境，改了它基准图就可能全部变，所以也是高风险。
+存家长和孩子数据的后端模块都算高风险：`auth` 由 `**/auth/**` 覆盖，`family`、`child`、`book`、`audit`、`account` 单独列出。以后新加这类模块的 issue，要把它的路径加进高风险。书本数据写在迁移脚本里，所以改书本的 PR 也是高风险；代码写的数据迁移会改孩子的密文，也是高风险。Dockerfile 决定截图的渲染环境，改了它基准图就可能全部变，所以也是高风险。
 
 ## 依赖更新
 
@@ -577,4 +578,4 @@ LICENSE
 - 删除家长账号只在 Authing 这一家身份服务上做得到：换身份服务时，管理 API 的接入和 webhook 要重写，`AUTHING_*` 这几项也跟着换。
 - 开发机和测试用的值写在不提交的 `.env` 文件里，示例写在提交的 `.env.example` 里；`OIDC_*` 指向本机的 mock-oauth2-server，`AUTHING_*` 指向替身服务，`REDIS_URL` 指向本机的 Valkey，`JWT_SIGNING_KEY`、`CHILD_DATA_KEY` 用测试专用的密钥。
 
-Last changed: #14 (2026-11-24)
+Last changed: #14 (2026-11-25)
