@@ -39,15 +39,15 @@ describe('matchesSecret', () => {
 });
 
 describe('AuthingWebhookGuard', () => {
-  it('reads the secret from the x-authing-webhook-secret header', () => {
-    expect(AUTHING_WEBHOOK_SECRET_HEADER).toBe('x-authing-webhook-secret');
+  it('reads the secret from the x-authing-token header', () => {
+    expect(AUTHING_WEBHOOK_SECRET_HEADER).toBe('x-authing-token');
     expect(guard.canActivate(contextWith({ [AUTHING_WEBHOOK_SECRET_HEADER]: SECRET }))).toBe(true);
   });
 
   it.each([
     ['without the header', {}],
     ['with a wrong secret', { [AUTHING_WEBHOOK_SECRET_HEADER]: 'wrong-secret-of-the-tests' }],
-    ['with the secret in another header', { 'x-authing-token': SECRET }],
+    ['with the secret in another header', { 'x-authing-webhook-secret': SECRET }],
   ])('refuses a notification %s with 401 unauthenticated', (_case, headers) => {
     expect(() => guard.canActivate(contextWith(headers))).toThrow(
       expect.objectContaining({ code: 'unauthenticated', status: 401 }) as ApiError,

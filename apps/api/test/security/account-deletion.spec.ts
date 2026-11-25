@@ -117,10 +117,13 @@ describe('Deleting accounts', () => {
   describe('POST /api/webhooks/authing', () => {
     it.each([
       ['without a secret', {}],
-      ['with a wrong secret', { 'x-authing-webhook-secret': 'not-the-webhook-secret' }],
-      ['with the secret in another header', { 'x-authing-token': TEST_AUTHING.webhookSecret }],
+      ['with a wrong secret', { 'x-authing-token': 'not-the-webhook-secret' }],
+      [
+        'with the secret in another header',
+        { 'x-authing-webhook-secret': TEST_AUTHING.webhookSecret },
+      ],
       ['with the secret as a login', { authorization: `Bearer ${TEST_AUTHING.webhookSecret}` }],
-      ['with the user pool secret', { 'x-authing-webhook-secret': TEST_AUTHING.userPoolSecret }],
+      ['with the user pool secret', { 'x-authing-token': TEST_AUTHING.userPoolSecret }],
     ])('refuses a notification %s, deleting no one', async (_case, headers) => {
       await expectNotificationRefused(running, (subject) =>
         request(running.server)
