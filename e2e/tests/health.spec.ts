@@ -10,7 +10,7 @@ test(
     expect(response.status()).toBe(200);
     expect(healthResponseSchema.parse(await response.json())).toEqual({
       status: 'ok',
-      checks: { database: 'ok', storage: 'ok' },
+      checks: { database: 'ok', storage: 'ok', redis: 'ok' },
     });
   },
 );

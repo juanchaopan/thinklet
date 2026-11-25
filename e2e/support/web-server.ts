@@ -61,6 +61,11 @@ export interface WebServerOptions {
   apiOrigin: string;
   /** The interface to listen on; the port is chosen by the OS. */
   host: string;
+  /**
+   * The request header, in lower case, that a forwarded `/api` request
+   * carries the client's address in, as the api's CLIENT_IP_HEADER names it.
+   */
+  clientIpHeader: string;
   /** The key and certificate to serve HTTPS with; without them the server speaks plain HTTP. */
   tls?: TlsCredentials;
 }
@@ -72,13 +77,14 @@ export interface StartedWebServer {
 
 /**
  * Serves the built web app the way the `thinklet-web` Vercel project does:
- * static files, `/api` and `/api/*` forwarded to the api, and `index.html`
- * for every other path so the router can handle it. Every response this
- * server answers itself, errors included, carries the web security headers
- * from the same list as vercel.json; a forwarded `/api` response keeps only
- * the api's own. A request that fails is answered with 502 (api) or 500
- * (file) when nothing was sent yet, and cut off otherwise, so a client never
- * takes part of a body for all of it; the failure is written to stderr.
+ * static files, `/api` and `/api/*` forwarded to the api with the client's
+ * address in the client IP header, and `index.html` for every other path so
+ * the router can handle it. Every response this server answers itself,
+ * errors included, carries the web security headers from the same list as
+ * vercel.json; a forwarded `/api` response keeps only the api's own. A
+ * request that fails is answered with 502 (api) or 500 (file) when nothing
+ * was sent yet, and cut off otherwise, so a client never takes part of a
+ * body for all of it; the failure is written to stderr.
  */
 export async function startWebServer(options: WebServerOptions): Promise<StartedWebServer> {
   const handle: RequestListener = (incoming, outgoing) => {
@@ -90,7 +96,12 @@ export async function startWebServer(options: WebServerOptions): Promise<Started
       setWebSecurityHeaders(outgoing);
     }
     const handled = toApi
-      ? forward(incoming, outgoing, apiTarget(options.apiOrigin, pathname, search))
+      ? forward(
+          incoming,
+          outgoing,
+          apiTarget(options.apiOrigin, pathname, search),
+          options.clientIpHeader,
+        )
       : serveFile(pathname, outgoing, options.root);
     handled.catch((error: unknown) => {
       if (outgoing.destroyed) {
@@ -178,17 +189,28 @@ function endToEndHeaders(headers: IncomingHttpHeaders): OutgoingHttpHeaders {
 /**
  * Forwards a request to the api on a connection of its own: a pooled
  * connection the api is just closing as idle would fail the request with a
- * 502 that no test caused. A client that leaves before its answer is
- * complete takes the api request with it, so the api neither keeps working
- * for nobody nor waits for a request body that never comes.
+ * 502 that no test caused. The client IP header is set to the address the
+ * request came from, in place of any the client sent, as the platform's
+ * proxy does. A client that leaves before its answer is complete takes the
+ * api request with it, so the api neither keeps working for nobody nor
+ * waits for a request body that never comes.
  */
-function forward(incoming: IncomingMessage, outgoing: ServerResponse, target: URL) {
+function forward(
+  incoming: IncomingMessage,
+  outgoing: ServerResponse,
+  target: URL,
+  clientIpHeader: string,
+) {
   return new Promise<void>((resolve, reject) => {
     const proxied = request(
       target,
       {
         method: incoming.method,
-        headers: { ...endToEndHeaders(incoming.headers), host: target.host },
+        headers: {
+          ...endToEndHeaders(incoming.headers),
+          host: target.host,
+          [clientIpHeader]: incoming.socket.remoteAddress ?? '',
+        },
         agent: false,
       },
       (response) => {

@@ -18,6 +18,7 @@ describe('WEB_SECURITY_HEADERS', () => {
       'Cross-Origin-Resource-Policy': 'same-origin',
       'Permissions-Policy':
         'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()',
+      'Referrer-Policy': 'no-referrer',
     });
   });
 

@@ -5,12 +5,12 @@ import {
   INACTIVE_BOOK,
   acquire,
   getAsChild,
+  insertAssignment,
   insertFamilyBook,
   markOpened,
   setReaders,
 } from '../support/books.js';
 import { addChild } from '../support/children.js';
-import { query } from '../support/database.js';
 import {
   createFamily,
   signInParent,
@@ -94,12 +94,11 @@ describe("the child's books", () => {
   it('answers an inactive book the child still has, marked inactive', async () => {
     const ours = await createFamily(running.server, parent);
     const child = await addChild(running.server, parent, ours.id);
-    await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK, parent.id);
-    await query(
+    await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK);
+    await insertAssignment(
       running.databaseUrl,
-      `insert into book_assignments (child_id, family_id, book_id, assigned_by)
-       values ($1, $2, $3, $4)`,
-      [child.id, ours.id, INACTIVE_BOOK, parent.id],
+      { familyId: ours.id, bookId: INACTIVE_BOOK },
+      child.id,
     );
 
     const { books } = await booksOf(child);

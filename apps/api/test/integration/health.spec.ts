@@ -7,13 +7,17 @@ import request from 'supertest';
 import { CHECK_TIMEOUT_MS } from '../../src/modules/health/health.service.js';
 import { startApp } from '../support/app.js';
 import {
+  accessTo,
   apiEnvironment,
   migrate,
   startDatabase,
+  startRedis,
   startServices,
+  type ServiceAccess,
+  type StartedRedis,
   type StartedServices,
-  type StartedStorage,
 } from '../support/containers.js';
+import { freePort } from '../support/process.js';
 
 const docker = (...args: string[]) => promisify(execFile)('docker', args);
 
@@ -35,12 +39,26 @@ async function expectPingFailsInTime(ping: () => Promise<void>): Promise<void> {
   expect(performance.now() - started).toBeLessThan(CHECK_TIMEOUT_MS);
 }
 
+/** The checks of an api whose Redis alone fails. */
+const REDIS_FAILED = { database: 'ok', storage: 'ok', redis: 'error' } as const;
+
 describe('GET /api/health', () => {
   let services: StartedServices;
 
-  /** The api's environment with the given database and, unless another is given, the shared storage. */
-  const environmentWith = (databaseUrl: string, storage: StartedStorage = services.storage) =>
-    apiEnvironment(databaseUrl, storage, services.oidc);
+  /** The api's environment with the started services, but for the ones given. */
+  const environmentWith = (changes: Partial<ServiceAccess>) =>
+    apiEnvironment({ ...accessTo(services), ...changes });
+
+  /**
+   * Starts an api on a Redis of its own and waits until its health check
+   * passes, so the api is connected before a test breaks that Redis.
+   */
+  async function startOnOwnRedis(): Promise<{ redis: StartedRedis; app: NestExpressApplication }> {
+    const redis = await startRedis();
+    const app = await startApp(environmentWith({ redisUrl: redis.url }));
+    await request(app.getHttpServer()).get('/api/health').expect(200);
+    return { redis, app };
+  }
 
   beforeAll(async () => {
     services = await startServices();
@@ -51,11 +69,11 @@ describe('GET /api/health', () => {
     await services?.stop();
   });
 
-  describe('with the database and the bucket up', () => {
+  describe('with the database, the bucket and Redis up', () => {
     let app: NestExpressApplication;
 
     beforeAll(async () => {
-      app = await startApp(environmentWith(services.database.getConnectionUri()));
+      app = await startApp(environmentWith({}));
     });
 
     afterAll(async () => {
@@ -70,7 +88,7 @@ describe('GET /api/health', () => {
       expect(response.headers['cache-control']).toBe('no-store');
       expect(healthResponseSchema.parse(response.body)).toEqual({
         status: 'ok',
-        checks: { database: 'ok', storage: 'ok' },
+        checks: { database: 'ok', storage: 'ok', redis: 'ok' },
       });
     });
   });
@@ -80,10 +98,7 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       app = await startApp(
-        environmentWith(services.database.getConnectionUri(), {
-          ...services.storage,
-          bucket: 'missing-bucket',
-        }),
+        environmentWith({ storage: { ...services.storage, bucket: 'missing-bucket' } }),
       );
     });
 
@@ -92,7 +107,7 @@ describe('GET /api/health', () => {
     });
 
     it('returns 503 with the storage check marked', async () => {
-      await expectUnavailable(app, { database: 'ok', storage: 'error' });
+      await expectUnavailable(app, { database: 'ok', storage: 'error', redis: 'ok' });
     });
   });
 
@@ -102,7 +117,7 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       stoppedDatabase = await startDatabase();
-      app = await startApp(environmentWith(stoppedDatabase.getConnectionUri()));
+      app = await startApp(environmentWith({ databaseUrl: stoppedDatabase.getConnectionUri() }));
       await stoppedDatabase.stop();
     });
 
@@ -111,7 +126,42 @@ describe('GET /api/health', () => {
     });
 
     it('returns 503 with the database check marked', async () => {
-      await expectUnavailable(app, { database: 'error', storage: 'ok' });
+      await expectUnavailable(app, { database: 'error', storage: 'ok', redis: 'ok' });
+    });
+  });
+
+  describe('with Redis unreachable from the start', () => {
+    let app: NestExpressApplication;
+
+    beforeAll(async () => {
+      const closedPort = await freePort();
+      app = await startApp(environmentWith({ redisUrl: `redis://127.0.0.1:${closedPort}` }));
+    });
+
+    afterAll(async () => {
+      await app?.close();
+    });
+
+    it('returns 503 with the Redis check marked', async () => {
+      await expectUnavailable(app, REDIS_FAILED);
+    });
+  });
+
+  describe('with Redis stopped after the api connected', () => {
+    let app: NestExpressApplication;
+
+    beforeAll(async () => {
+      const started = await startOnOwnRedis();
+      app = started.app;
+      await started.redis.container.stop();
+    });
+
+    afterAll(async () => {
+      await app?.close();
+    });
+
+    it('returns 503 with the Redis check marked', async () => {
+      await expectUnavailable(app, REDIS_FAILED);
     });
   });
 
@@ -125,7 +175,7 @@ describe('GET /api/health', () => {
 
     beforeAll(async () => {
       hungDatabase = await startDatabase();
-      app = await startApp(environmentWith(hungDatabase.getConnectionUri()));
+      app = await startApp(environmentWith({ databaseUrl: hungDatabase.getConnectionUri() }));
       // An answered check leaves an open connection in the pool.
       await request(app.getHttpServer()).get('/api/health').expect(200);
       await docker('pause', hungDatabase.getId());
@@ -149,6 +199,36 @@ describe('GET /api/health', () => {
       // discards; the second has to open a new one.
       await expectPingFailsInTime(() => repository.ping());
       await expectPingFailsInTime(() => repository.ping());
+    });
+  });
+
+  // Redis that hangs the same way: its PING gives up by its own timeout.
+  describe('with Redis not answering', () => {
+    let hungRedis: StartedRedis | undefined;
+    let app: NestExpressApplication;
+    let paused = false;
+
+    beforeAll(async () => {
+      const started = await startOnOwnRedis();
+      ({ redis: hungRedis, app } = started);
+      await docker('pause', started.redis.container.getId());
+      paused = true;
+    });
+
+    afterAll(async () => {
+      if (paused && hungRedis !== undefined) {
+        await docker('unpause', hungRedis.container.getId());
+      }
+      await app?.close();
+      await hungRedis?.container.stop();
+    });
+
+    it('ends the PING before the check times out and answers 503', async () => {
+      const { RedisService } = await import('../../src/infrastructure/redis/redis.service.js');
+      const redis = app.get(RedisService);
+
+      await expectPingFailsInTime(() => redis.ping());
+      await expectUnavailable(app, REDIS_FAILED);
     });
   });
 });

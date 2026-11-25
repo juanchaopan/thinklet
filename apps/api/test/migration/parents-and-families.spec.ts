@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Client } from 'pg';
-import { migrate, startDatabase } from '../support/containers.js';
-import { migrateBefore, readJournal } from '../support/migrations.js';
+import { startDatabase } from '../support/containers.js';
+import { migrateBefore, migrateThrough } from '../support/migrations.js';
 
 const TAG = '0000_parents_and_families';
 
@@ -94,7 +94,7 @@ describe(`migration ${TAG}`, () => {
     await client.connect();
     expect(await tableExists('parents')).toBe(false);
 
-    await migrate(url);
+    await migrateThrough(url, TAG);
   });
 
   afterAll(async () => {
@@ -102,13 +102,11 @@ describe(`migration ${TAG}`, () => {
     await database?.stop();
   });
 
-  it('applies on the database at the previous version and records every migration', async () => {
+  it('applies on the database at the previous version and records the migration', async () => {
     for (const table of ['parents', 'families', 'family_members', 'join_requests']) {
       expect(await tableExists(table), table).toBe(true);
     }
-    expect(await count('select count(*) as count from drizzle.__drizzle_migrations', [])).toBe(
-      readJournal().entries.length,
-    );
+    expect(await count('select count(*) as count from drizzle.__drizzle_migrations', [])).toBe(1);
   });
 
   it('generates ids and creation times in the database', async () => {

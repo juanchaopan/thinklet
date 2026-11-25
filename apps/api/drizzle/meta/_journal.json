@@ -22,6 +22,41 @@
       "when": 1795465897632,
       "tag": "0002_library_and_books",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795555290617,
+      "tag": "0003_names_and_member_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795558279909,
+      "tag": "0004_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795562850682,
+      "tag": "0005_data_migrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795578352019,
+      "tag": "0006_login_links_in_redis",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795584922934,
+      "tag": "0007_child_password_setup",
+      "breakpoints": true
     }
   ]
 }

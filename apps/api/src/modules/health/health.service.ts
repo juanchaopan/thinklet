@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CheckStatus, HealthCheckName, HealthResponse } from '@thinklet/contracts';
 import { describeError } from '../../infrastructure/logging/describe-error.js';
+import { RedisService } from '../../infrastructure/redis/redis.service.js';
 import { StorageService } from '../../infrastructure/storage/storage.service.js';
 import { HealthRepository } from './health.repository.js';
 
@@ -15,6 +16,11 @@ class CheckTimeoutError extends Error {
   }
 }
 
+/**
+ * The health check (`.docs/design/interfaces.md`, "GET /api/health"): a
+ * query on the database, a look at the bucket and a PING to Redis, which
+ * the QR login cannot do without.
+ */
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
@@ -22,16 +28,18 @@ export class HealthService {
   constructor(
     private readonly repository: HealthRepository,
     private readonly storage: StorageService,
+    private readonly redis: RedisService,
   ) {}
 
   /** Runs every check in parallel; the overall status is ok only when all of them are. */
   async check(): Promise<HealthResponse> {
-    const [database, storage] = await Promise.all([
+    const [database, storage, redis] = await Promise.all([
       this.runCheck('database', () => this.repository.ping()),
       this.runCheck('storage', (signal) => this.storage.checkBucket(signal)),
+      this.runCheck('redis', () => this.redis.ping()),
     ]);
-    const status = database === 'ok' && storage === 'ok' ? 'ok' : 'error';
-    return { status, checks: { database, storage } };
+    const status = [database, storage, redis].every((check) => check === 'ok') ? 'ok' : 'error';
+    return { status, checks: { database, storage, redis } };
   }
 
   private async runCheck(

@@ -12,6 +12,7 @@ const SHARED_HEADERS = {
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
   'permissions-policy': PERMISSIONS_POLICY,
+  'referrer-policy': 'no-referrer',
 };
 
 const WEB_HEADERS = {
@@ -24,6 +25,9 @@ const API_HEADERS = {
   'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
   ...SHARED_HEADERS,
 };
+
+/** An invitation address: the family code in it must not leave the page in a Referer. */
+const INVITATION_PATH = '/join/7KQ4MZ';
 
 /**
  * The security headers of a response, each name present even when the
@@ -56,4 +60,22 @@ test.describe('security response headers', () => {
       expect(securityHeaders(response.headers())).toEqual(API_HEADERS);
     },
   );
+
+  test('a page at an invitation address carries the web security headers', async ({ request }) => {
+    const response = await request.get(INVITATION_PATH);
+
+    expect(response.ok()).toBe(true);
+    expect(securityHeaders(response.headers())).toEqual(WEB_HEADERS);
+  });
+
+  test('the requests of a page at an invitation address carry no Referer', async ({ page }) => {
+    const apiRequest = page.waitForRequest((sent) =>
+      new URL(sent.url()).pathname.startsWith('/api/'),
+    );
+
+    await page.goto(INVITATION_PATH);
+
+    const headers = await (await apiRequest).allHeaders();
+    expect(headers['referer']).toBeUndefined();
+  });
 });

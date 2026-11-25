@@ -78,7 +78,7 @@ describe('App', () => {
 
       expect(router.url).toBe('/');
       expect(document.title).toBe('好奇星球');
-      await expectChildHome('小明');
+      await expectChildHome('小米');
       expect(screen.queryByRole('link', { name: '家长登录 / 注册' })).toBeNull();
     });
 
@@ -88,7 +88,7 @@ describe('App', () => {
         const { router } = await renderApp(path);
 
         expect(router.url).toBe(`/?returnTo=${encodeURIComponent(path)}`);
-        await expectChildHome('小明');
+        await expectChildHome('小米');
         expect(screen.queryByRole('navigation')).toBeNull();
       },
     );
@@ -111,7 +111,7 @@ describe('App', () => {
       await renderApp('/');
 
       expect(screen.getByText('欢迎回来，林悦')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: '退出' })).toBeNull();
+      expect(screen.queryByText('你好，小米！')).toBeNull();
     });
 
     it('shows the child login as it is, without the menus', async () => {

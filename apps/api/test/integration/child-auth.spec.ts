@@ -7,6 +7,7 @@ import {
   type Child,
   type FamilyDetail,
 } from '@thinklet/contracts';
+import { decodeJwt } from 'jose';
 import type request from 'supertest';
 import {
   CHILD_SESSION_COOKIE,
@@ -21,8 +22,10 @@ import {
   addChild,
   childPath,
   childRow,
+  decryptedDeviceName,
   deviceRows,
-  testChildDataCipher,
+  endPasswordSetup,
+  insertDevice,
   type DeviceRow,
 } from '../support/children.js';
 import { query } from '../support/database.js';
@@ -33,16 +36,19 @@ import {
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
+import { expireLoginLink } from '../support/login-links.js';
 import { expectCleared, expectLoginCookieAttributes, setCookiesOf } from '../support/login.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MAX_AGE = String(7 * 24 * 60 * 60);
 const DEVICE_MAX_AGE = String(30 * 24 * 60 * 60);
-const cipher = testChildDataCipher();
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** How many times a test of two requests at the same time sends them, to meet their interleavings. */
 const RACE_ROUNDS = 20;
+
+/** How far another api instance's clock is off the database's in the clock tests: several seconds. */
+const SKEW_MS = 8_000;
 
 /** A child's login ready to send, on the browser it signs in. */
 interface PendingLogin {
@@ -56,6 +62,12 @@ interface LinkUse {
   child: Child;
   route: 'login' | 'password';
   body: { password: string; remember: boolean };
+}
+
+/** The devices given to a child directly in the database: two expired and one still valid. */
+interface PlantedDevices {
+  valid: string;
+  expired: string[];
 }
 
 /** The error code of an error response, whose body has nothing else but the request id. */
@@ -74,18 +86,63 @@ function expectSignedIn(response: request.Response, child: Child): void {
   expect(session?.attributes['max-age']).toBe(SESSION_MAX_AGE);
 }
 
+/** The device token a response sets in the browser's cookie, or an empty string when it sets none. */
+const deviceTokenSetBy = (response: request.Response) =>
+  setCookiesOf(response)[DEVICE_COOKIE]?.value ?? '';
+
 /** How long a device row lasts from its last login. */
 const lifetimeOf = (row: DeviceRow) => row.expires_at.getTime() - row.last_used_at.getTime();
 
+/** The time the given number of days ago. */
+const daysAgo = (days: number) => new Date(Date.now() - days * DAY_MS);
+
+/**
+ * Runs the work with this process's clock, and so the api's, off the
+ * database's by `offsetMs`, as on another api instance whose clock is
+ * ahead (positive) or behind (negative). Only Date is faked; it moves on.
+ */
+async function onInstanceOff<T>(offsetMs: number, work: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true, now: Date.now() + offsetMs });
+  try {
+    return await work();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/** The issue time of the child login the browser holds, in milliseconds. */
+function issuedAtOf(kid: ChildBrowser): number {
+  return (decodeJwt(kid.cookies.get(CHILD_SESSION_COOKIE) ?? '').iat ?? Number.NaN) * 1000;
+}
+
+/** The ids of the children the browser shows avatars of, in their order. */
+async function avatarsOn(kid: ChildBrowser): Promise<string[]> {
+  const response = await kid.get('/api/child-auth/remembered');
+  return rememberedChildListSchema.parse(response.body).map((remembered) => remembered.childId);
+}
+
 // Acceptance criteria covered: a child logs in with the family code, the
-// account and the password, and any wrong item is "家庭码、账号或密码不对";
-// remembering a browser shows the child's avatar there for 30 days from the
-// last avatar login, and not remembering forgets it; a revoked or expired
-// device needs the password again; a login link works for 10 minutes and
-// once, and a newer one revokes it; a child without a password sets one on
-// the link and is signed in, a child with one enters it, and a wrong one
-// keeps the link usable; a password reset or the child's deletion ends the
-// child's login at the next request; logging out keeps the avatar.
+// account and the password, and any wrong item, or a child without a
+// password whose time to set one with the account has run out, is
+// "家庭码、账号或密码不对" (#14, 25); remembering a browser shows the
+// child's avatar there for 30 days from the last avatar login, and not
+// remembering forgets it; a revoked or expired device needs the password
+// again; a password or link login that remembers the browser gives it a
+// new device token and moves the browser's valid devices of the child's
+// family to it, the siblings keeping their avatars, while other families'
+// devices and expired ones stay under the old token, and an avatar login
+// keeps the token (#14, 18); a child's login and a password reset take
+// their times from the database, so api instances whose clocks are off by
+// seconds neither end a fresh login nor keep one issued before a reset
+// (#14, 20); every login deletes the child's expired devices and no other
+// child's (#14, 23); a login link works for 10 minutes and once, two uses
+// at the same time included, and a newer one revokes it (#14, 24); a child
+// without a password sets one on the link and is signed in, a child with
+// one enters it, and a wrong one keeps the link usable; a password reset
+// or the child's deletion ends the child's login at the next request;
+// logging out keeps the avatar; a device's name is stored encrypted for
+// its own row. Setting the first password with the account is in
+// child-first-password.spec.ts.
 describe('child login', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -101,6 +158,18 @@ describe('child login', () => {
     password: child.password,
     remember,
   });
+  const loginWithout = (child: Child) => ({
+    code: family.code,
+    account: child.account,
+    remember: false,
+  });
+  /** The signed-in child as GET /api/child/me answers it. */
+  const signedInAs = (child: Child) => ({
+    id: child.id,
+    nickname: child.nickname,
+    account: child.account,
+    familyName: family.name,
+  });
   const linkOf = (child: Child) => newLoginLink(running.server, parent, family.id, child.id);
   const newerLink = (child: Child) =>
     as(running.server, parent).post(`${childPath(family.id, child.id)}/login-links`);
@@ -115,9 +184,41 @@ describe('child login', () => {
       ).body,
     ).status;
   const devicesOf = (childId: string) => deviceRows(running.databaseUrl, childId);
+  const deviceIdsOf = async (childId: string) =>
+    (await devicesOf(childId)).map((row) => row.id).sort();
   const updateDevices = (childId: string, set: string) =>
     query(running.databaseUrl, `update child_devices set ${set} where child_id = $1`, [childId]);
   const expireDevices = (childId: string) => updateDevices(childId, 'expires_at = now()');
+  const setPasswordOnLink = (kid: ChildBrowser, token: string) =>
+    kid.post(`${linkPath(token)}/password`, { password: 'my secret', remember: false });
+
+  /** The database's clock now. */
+  async function databaseNow(): Promise<Date> {
+    const [row] = await query<{ now: Date }>(
+      running.databaseUrl,
+      'select clock_timestamp() as now',
+    );
+    if (row === undefined) {
+      throw new Error('The database did not answer its time');
+    }
+    return row.now;
+  }
+
+  /**
+   * Waits until the database's clock reaches the time before which the
+   * child's logins are refused: a reset refuses the rest of its own second
+   * as well.
+   */
+  async function untilLoginsCount(childId: string): Promise<void> {
+    const validAfter = (await childRow(running.databaseUrl, childId))?.sessions_valid_after;
+    if (validAfter === undefined) {
+      throw new Error('The child is gone');
+    }
+    await vi.waitUntil(async () => (await databaseNow()).getTime() >= validAfter.getTime(), {
+      timeout: 3_000,
+      interval: 100,
+    });
+  }
 
   /** The child's one device row; fails when the child has none or more. */
   async function onlyDevice(childId: string): Promise<DeviceRow> {
@@ -143,6 +244,22 @@ describe('child login', () => {
     return { children, kid };
   }
 
+  /** Two new siblings remembered on one browser, which is signed in as the second. */
+  async function siblingsOnOneBrowser(): Promise<{
+    first: ChildWithPassword;
+    second: ChildWithPassword;
+    kid: ChildBrowser;
+  }> {
+    const {
+      children: [first, second],
+      kid,
+    } = await rememberedOnOneBrowser(2);
+    if (first === undefined || second === undefined) {
+      throw new Error('The children were not remembered');
+    }
+    return { first, second, kid };
+  }
+
   /** A new child remembered on a browser, which is signed in as the child. */
   async function rememberedChild(): Promise<{ child: ChildWithPassword; kid: ChildBrowser }> {
     const {
@@ -153,6 +270,45 @@ describe('child login', () => {
       throw new Error('No child was remembered');
     }
     return { child, kid };
+  }
+
+  /**
+   * Logs the child in on the browser with the password, remembering it, and
+   * returns the device token the login sets: a new one of 32 bytes, not the
+   * one the browser had.
+   */
+  async function loginRemembering(kid: ChildBrowser, child: ChildWithPassword): Promise<string> {
+    const oldToken = kid.cookies.get(DEVICE_COOKIE);
+
+    const response = await kid.login(loginOf(child, true));
+
+    expect(response.status).toBe(200);
+    const newToken = deviceTokenSetBy(response);
+    expect(Buffer.from(newToken, 'base64url')).toHaveLength(32);
+    expect(newToken).not.toBe(oldToken);
+    return newToken;
+  }
+
+  /** Gives the child two devices that expired days ago and one still valid, on browsers of their own. */
+  async function plantDevices(childId: string): Promise<PlantedDevices> {
+    const expired = [
+      await insertDevice(running.databaseUrl, childId, {
+        name: 'Windows 电脑 · Edge',
+        rememberedAt: daysAgo(60),
+        lastUsedAt: daysAgo(31),
+      }),
+      await insertDevice(running.databaseUrl, childId, {
+        name: 'Android 手机 · Chrome',
+        rememberedAt: daysAgo(90),
+        lastUsedAt: daysAgo(45),
+      }),
+    ];
+    const valid = await insertDevice(running.databaseUrl, childId, {
+      name: 'iPad · Safari',
+      rememberedAt: daysAgo(20),
+      lastUsedAt: daysAgo(2),
+    });
+    return { valid, expired };
   }
 
   /**
@@ -187,7 +343,7 @@ describe('child login', () => {
 
       expectSignedIn(response, child);
       expect(setCookiesOf(response)['thinklet_session']).toBeUndefined();
-      expect((await kid.me()).body).toEqual({ id: child.id, nickname: child.nickname });
+      expect((await kid.me()).body).toEqual(signedInAs(child));
     });
 
     it('takes the family code in any case', async () => {
@@ -212,10 +368,11 @@ describe('child login', () => {
       expect((await kid.me()).body).toMatchObject({ id: second.id });
     });
 
-    it('answers every wrong item, and a child without a password, with login_failed and no login', async () => {
+    it('answers every wrong item, a missing password and a child whose time to set one has run out with login_failed and no login', async () => {
       const child = await withPassword();
       const other = await createFamily(running.server, parent);
       const noPassword = await newChild();
+      await endPasswordSetup(running.databaseUrl, noPassword.id);
       const unused = ['ZZZZZZ', 'YYYYYY'].find(
         (code) => code !== family.code && code !== other.code,
       );
@@ -227,7 +384,9 @@ describe('child login', () => {
           { ...login, code: unused ?? '' },
           { ...login, account: `${child.account}x` },
           { ...login, password: `${child.password}x` },
+          loginWithout(child),
           { ...login, account: noPassword.account, password: 'anything' },
+          loginWithout(noPassword),
         ].map((body) => browser().login(body)),
       );
 
@@ -248,7 +407,7 @@ describe('child login', () => {
   });
 
   describe('remembering the browser', () => {
-    it('remembers the child for 30 days under a new device token, the device named and encrypted', async () => {
+    it('remembers the child for 30 days under a new device token, the device named and encrypted for its row', async () => {
       const child = await withPassword();
       const before = Date.now();
 
@@ -262,38 +421,120 @@ describe('child login', () => {
       const row = await onlyDevice(child.id);
       expect(row.token_hash).toBe(sha256(token));
       expect(row.name).not.toContain('iPad');
-      expect(cipher.decrypt(row.name)).toBe('iPad · Safari');
+      expect(decryptedDeviceName(row)).toBe('iPad · Safari');
       expect(row.remembered_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
       expect(row.last_used_at).toEqual(row.remembered_at);
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
     });
 
-    it('renews the same row and token on a later remembered login, keeping when it was remembered', async () => {
+    it("renews the child's row under a new device token on a later password login, keeping its id, when it was remembered and its name", async () => {
       const { child, kid } = await rememberedChild();
       const first = await onlyDevice(child.id);
-      const token = kid.cookies.get(DEVICE_COOKIE);
 
-      const response = await kid.login(loginOf(child, true));
+      const newToken = await loginRemembering(kid, child);
 
-      expect(setCookiesOf(response)[DEVICE_COOKIE]?.value).toBe(token);
       const renewed = await onlyDevice(child.id);
       expect(renewed.id).toBe(first.id);
+      expect(renewed.token_hash).toBe(sha256(newToken));
+      expect(renewed.name).toBe(first.name);
       expect(renewed.remembered_at).toEqual(first.remembered_at);
       expect(renewed.last_used_at.getTime()).toBeGreaterThan(first.last_used_at.getTime());
+      expect(lifetimeOf(renewed)).toBe(30 * DAY_MS);
     });
 
-    it('remembers an expired device anew', async () => {
+    it('remembers the browser anew under a new token once its only device has expired, as a new row whose name is encrypted for it', async () => {
       const { child, kid } = await rememberedChild();
       await updateDevices(
         child.id,
         "remembered_at = now() - interval '40 days', expires_at = now() - interval '1 day'",
       );
+      const expired = await onlyDevice(child.id);
 
-      await kid.login(loginOf(child, true));
+      const newToken = await loginRemembering(kid, child);
 
       const row = await onlyDevice(child.id);
+      expect(row.id).not.toBe(expired.id);
+      expect(row.token_hash).toBe(sha256(newToken));
+      expect(decryptedDeviceName(row)).toBe('iPad · Safari');
       expect(row.remembered_at).toEqual(row.last_used_at);
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
+    });
+
+    it("moves the family's valid devices on the browser to the new token, so the siblings keep their avatars", async () => {
+      const { children, kid } = await rememberedOnOneBrowser(3);
+      const [first] = children;
+      if (first === undefined) {
+        throw new Error('No child was remembered');
+      }
+      const before = await Promise.all(children.map((child) => onlyDevice(child.id)));
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+
+      const newToken = await loginRemembering(kid, first);
+
+      const after = await Promise.all(children.map((child) => onlyDevice(child.id)));
+      expect(after.map(({ id, name, token_hash }) => ({ id, name, token_hash }))).toEqual(
+        before.map(({ id, name }) => ({ id, name, token_hash: sha256(newToken) })),
+      );
+      expect(after.slice(1).map((row) => row.expires_at)).toEqual(
+        before.slice(1).map((row) => row.expires_at),
+      );
+      expect(await avatarsOn(kid)).toEqual(children.map((child) => child.id));
+      const stale = browser();
+      stale.cookies.set(DEVICE_COOKIE, oldToken);
+      expect(await avatarsOn(stale)).toEqual([]);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+      for (const sibling of children.slice(1)) {
+        expectSignedIn(await kid.loginRemembered(sibling.id), sibling);
+      }
+    });
+
+    it("gives a child whose own device has expired a new token, moving a sibling's valid device with it", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
+      const expired = await onlyDevice(first.id);
+      const siblingDevice = await onlyDevice(second.id);
+      await expireDevices(first.id);
+
+      const newToken = await loginRemembering(kid, first);
+
+      const row = await onlyDevice(first.id);
+      expect(row.id).not.toBe(expired.id);
+      expect(row.token_hash).toBe(sha256(newToken));
+      const moved = await onlyDevice(second.id);
+      expect([moved.id, moved.token_hash]).toEqual([siblingDevice.id, sha256(newToken)]);
+    });
+
+    it("leaves a sibling's expired device under the old token, not moving it", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
+      await expireDevices(second.id);
+      const expired = await onlyDevice(second.id);
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+
+      const newToken = await loginRemembering(kid, first);
+
+      expect(expired.token_hash).toBe(sha256(oldToken));
+      expect(await onlyDevice(second.id)).toEqual(expired);
+      expect((await onlyDevice(first.id)).token_hash).toBe(sha256(newToken));
+      expect(await avatarsOn(kid)).toEqual([first.id]);
+    });
+
+    it("leaves another family's child under the old token, whose avatar leaves the browser", async () => {
+      const otherFamily = await createFamily(running.server, parent);
+      const cousin = await addChildWithPassword(running.server, parent, otherFamily.id);
+      const kid = browser();
+      const cousinLogin = await kid.login({ ...loginOf(cousin, true), code: otherFamily.code });
+      expect(cousinLogin.status).toBe(200);
+      const cousinDevice = await onlyDevice(cousin.id);
+      const oldToken = kid.cookies.get(DEVICE_COOKIE) ?? '';
+      const child = await withPassword();
+
+      await loginRemembering(kid, child);
+
+      expect(cousinDevice.token_hash).toBe(sha256(oldToken));
+      expect(await onlyDevice(cousin.id)).toEqual(cousinDevice);
+      expect(await avatarsOn(kid)).toEqual([child.id]);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+      const avatar = await kid.loginRemembered(cousin.id);
+      expect([avatar.status, errorCodeOf(avatar)]).toEqual([401, 'remember_invalid']);
     });
 
     it('shares one device token among the children the browser remembers', async () => {
@@ -323,6 +564,178 @@ describe('child login', () => {
 
       expect(setCookiesOf(response)[DEVICE_COOKIE]).toBeUndefined();
       expect(await devicesOf(child.id)).toEqual([]);
+    });
+  });
+
+  describe('expired devices', () => {
+    it.each<[string, () => Promise<{ child: Child; send: () => Promise<request.Response> }>]>([
+      [
+        'with the account and the password',
+        async () => {
+          const child = await withPassword();
+          return { child, send: () => browser().login(loginOf(child)) };
+        },
+      ],
+      [
+        'setting the first password with the account',
+        async () => {
+          const child = await newChild();
+          return {
+            child,
+            send: () =>
+              browser().setFirstPassword({
+                code: family.code,
+                account: child.account,
+                password: 'my secret',
+                remember: false,
+              }),
+          };
+        },
+      ],
+      [
+        'by the avatar',
+        async () => {
+          const { child, kid } = await rememberedChild();
+          kid.cookies.delete(CHILD_SESSION_COOKIE);
+          return { child, send: () => kid.loginRemembered(child.id) };
+        },
+      ],
+      [
+        'setting the first password on a link',
+        async () => {
+          const child = await newChild();
+          const { token } = await linkOf(child);
+          return { child, send: () => setPasswordOnLink(browser(), token) };
+        },
+      ],
+      [
+        'with the password on a link',
+        async () => {
+          const child = await withPassword();
+          const { token } = await linkOf(child);
+          return {
+            child,
+            send: () =>
+              browser().post(`${linkPath(token)}/login`, {
+                password: child.password,
+                remember: false,
+              }),
+          };
+        },
+      ],
+    ])(
+      "are deleted for the child on a login %s, leaving its valid ones and other children's",
+      async (_case, prepare) => {
+        const { child, send } = await prepare();
+        const other = await newChild();
+        const planted = await plantDevices(child.id);
+        await plantDevices(other.id);
+        const before = await deviceIdsOf(child.id);
+        const othersBefore = await deviceIdsOf(other.id);
+
+        expect((await send()).status).toBe(200);
+
+        const kept = await deviceIdsOf(child.id);
+        expect(kept).toEqual(before.filter((id) => !planted.expired.includes(id)));
+        expect(kept).toContain(planted.valid);
+        const now = await databaseNow();
+        for (const row of await devicesOf(child.id)) {
+          expect(row.expires_at.getTime()).toBeGreaterThan(now.getTime());
+        }
+        expect(await deviceIdsOf(other.id)).toEqual(othersBefore);
+      },
+    );
+
+    it('stay on a login that fails', async () => {
+      const child = await withPassword();
+      await plantDevices(child.id);
+      const before = await deviceIdsOf(child.id);
+
+      const response = await browser().login({ ...loginOf(child), password: 'not the password' });
+
+      expect(response.status).toBe(401);
+      expect(await deviceIdsOf(child.id)).toEqual(before);
+    });
+
+    it('leave no audit event behind', async () => {
+      const child = await withPassword();
+      await plantDevices(child.id);
+      const count = async () =>
+        (
+          await query<{ count: string }>(
+            running.databaseUrl,
+            'select count(*) from audit_events where target_id = $1',
+            [child.id],
+          )
+        )[0]?.count;
+      const before = await count();
+
+      expect((await browser().login(loginOf(child))).status).toBe(200);
+
+      expect(await count()).toBe(before);
+    });
+  });
+
+  describe("the database's clock", () => {
+    it.each<[string, number]>([
+      ['ahead of', SKEW_MS],
+      ['behind', -SKEW_MS],
+    ])(
+      "issues a child's login at the database's time on an api instance %s it",
+      async (_case, offset) => {
+        const child = await withPassword();
+        const kid = browser();
+        const before = await databaseNow();
+
+        const response = await onInstanceOff(offset, () => kid.login(loginOf(child)));
+
+        const after = await databaseNow();
+        expect(response.status).toBe(200);
+        expect(issuedAtOf(kid)).toBeGreaterThanOrEqual(Math.floor(before.getTime() / 1000) * 1000);
+        expect(issuedAtOf(kid)).toBeLessThanOrEqual(after.getTime());
+      },
+    );
+
+    it('counts a fresh login on an instance behind the one that added the child', async () => {
+      const child = await onInstanceOff(SKEW_MS, () => newChild());
+      const { token } = await linkOf(child);
+      const kid = browser();
+
+      const response = await onInstanceOff(-SKEW_MS, () => setPasswordOnLink(kid, token));
+
+      expect(response.status).toBe(200);
+      expect((await onInstanceOff(-SKEW_MS, () => kid.me())).status).toBe(200);
+      expect((await kid.me()).status).toBe(200);
+    });
+
+    it('ends a login issued before a reset that an instance behind the issuing one makes', async () => {
+      const child = await withPassword();
+      const kid = browser();
+      await onInstanceOff(SKEW_MS, () => kid.login(loginOf(child)));
+      const issuedAt = issuedAtOf(kid);
+      expect((await kid.me()).status).toBe(200);
+
+      const reset = await onInstanceOff(-SKEW_MS, () => resetPassword(child));
+
+      expect(reset.status).toBe(204);
+      expect((await kid.me()).status).toBe(401);
+      expect((await onInstanceOff(SKEW_MS, () => kid.me())).status).toBe(401);
+      const validAfter = (await childRow(running.databaseUrl, child.id))?.sessions_valid_after;
+      expect((validAfter?.getTime() ?? Number.NaN) % 1000).toBe(0);
+      expect(validAfter?.getTime()).toBeGreaterThan(issuedAt);
+    });
+
+    it('counts a login after a reset on an instance behind the one that made the reset', async () => {
+      const child = await withPassword();
+      const { token } = await linkOf(child);
+      expect((await onInstanceOff(SKEW_MS, () => resetPassword(child))).status).toBe(204);
+      await untilLoginsCount(child.id);
+      const kid = browser();
+
+      const response = await onInstanceOff(-SKEW_MS, () => setPasswordOnLink(kid, token));
+
+      expect(response.status).toBe(200);
+      expect((await kid.me()).status).toBe(200);
     });
   });
 
@@ -360,7 +773,7 @@ describe('child login', () => {
   });
 
   describe('POST /api/child-auth/remembered/{childId}/login', () => {
-    it('signs the remembered child in without a password and renews the device for 30 days', async () => {
+    it('signs the remembered child in without a password and renews the device for 30 days under the same token', async () => {
       const { child, kid } = await rememberedChild();
       await updateDevices(
         child.id,
@@ -368,6 +781,7 @@ describe('child login', () => {
       );
       kid.cookies.delete(CHILD_SESSION_COOKIE);
       const before = await onlyDevice(child.id);
+      const token = kid.cookies.get(DEVICE_COOKIE) ?? '';
       const started = Date.now();
 
       const response = await kid.loginRemembered(child.id);
@@ -375,13 +789,26 @@ describe('child login', () => {
       expectSignedIn(response, child);
       const device = setCookiesOf(response)[DEVICE_COOKIE];
       expectLoginCookieAttributes(device);
-      expect(device?.value).toBe(kid.cookies.get(DEVICE_COOKIE));
+      expect(device?.value).toBe(token);
       expect(device?.attributes['max-age']).toBe(DEVICE_MAX_AGE);
       const after = await onlyDevice(child.id);
+      expect([after.id, after.token_hash]).toEqual([before.id, sha256(token)]);
       expect(after.remembered_at).toEqual(before.remembered_at);
       expect(after.last_used_at.getTime()).toBeGreaterThanOrEqual(started - 1000);
       expect(lifetimeOf(after)).toBe(30 * DAY_MS);
       expect((await kid.me()).status).toBe(200);
+    });
+
+    it("keeps the siblings' devices under the browser's token as they were", async () => {
+      const { first, second, kid } = await siblingsOnOneBrowser();
+      const siblingDevice = await onlyDevice(second.id);
+      kid.cookies.delete(CHILD_SESSION_COOKIE);
+
+      const response = await kid.loginRemembered(first.id);
+
+      expectSignedIn(response, first);
+      expect(await onlyDevice(second.id)).toEqual(siblingDevice);
+      expect(await avatarsOn(kid)).toEqual([first.id, second.id]);
     });
 
     it.each<[string, (child: Child) => Promise<unknown>]>([
@@ -431,18 +858,18 @@ describe('child login', () => {
 
   describe('login links', () => {
     it('tells a new child to set a password without using the link', async () => {
-      const child = await newChild('米粒');
+      const child = await newChild('阿乐');
       const link = await linkOf(child);
 
       const response = await browser().get(linkPath(link.token));
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual({ childId: child.id, nickname: '米粒', needsPassword: true });
+      expect(response.body).toEqual({ childId: child.id, nickname: '阿乐', needsPassword: true });
       expect(await linkStatus(child, link.id)).toBe('active');
     });
 
     it('sets the password, uses the link and signs the child in, remembering the browser', async () => {
-      const child = await newChild('米粒');
+      const child = await newChild('阿乐');
       const link = await linkOf(child);
       const kid = browser();
 
@@ -452,7 +879,7 @@ describe('child login', () => {
       });
 
       expectSignedIn(response, child);
-      expect((await kid.me()).body).toEqual({ id: child.id, nickname: '米粒' });
+      expect((await kid.me()).body).toEqual(signedInAs(child));
       expect((await childRow(running.databaseUrl, child.id))?.password_hash).toMatch(
         /^\$argon2id\$v=19\$/,
       );
@@ -460,6 +887,24 @@ describe('child login', () => {
       expect(await devicesOf(child.id)).toHaveLength(1);
       const login = await browser().login(loginOf({ ...child, password: 'my secret' }));
       expect(login.status).toBe(200);
+    });
+
+    it("moves a sibling's valid device to the new token when the link remembers the browser", async () => {
+      const { child: sibling, kid } = await rememberedChild();
+      const siblingDevice = await onlyDevice(sibling.id);
+      const child = await withPassword();
+      const link = await linkOf(child);
+
+      const response = await kid.post(`${linkPath(link.token)}/login`, {
+        password: child.password,
+        remember: true,
+      });
+
+      const newToken = deviceTokenSetBy(response);
+      expect(sha256(newToken)).not.toBe(siblingDevice.token_hash);
+      const moved = await onlyDevice(sibling.id);
+      expect([moved.id, moved.token_hash]).toEqual([siblingDevice.id, sha256(newToken)]);
+      expect(await avatarsOn(kid)).toEqual([sibling.id, child.id]);
     });
 
     it('refuses a password of the wrong length with the field, keeping the link', async () => {
@@ -547,18 +992,42 @@ describe('child login', () => {
       }
     });
 
-    it('is used by only one of two logins at the same time', async () => {
-      const child = await withPassword();
-      const link = await linkOf(child);
-      const body = { password: child.password, remember: false };
+    it.each<[string, () => Promise<LinkUse>]>([
+      [
+        'logins',
+        async () => {
+          const child = await withPassword();
+          return { child, route: 'login', body: { password: child.password, remember: false } };
+        },
+      ],
+      [
+        'first passwords',
+        async () => ({
+          child: await newChild(),
+          route: 'password',
+          body: { password: 'my secret', remember: false },
+        }),
+      ],
+    ])(
+      'is used by only one of two %s at the same time; the other is link_invalid',
+      async (_case, prepare) => {
+        for (let round = 0; round < RACE_ROUNDS; round += 1) {
+          const { child, route, body } = await prepare();
+          const link = await linkOf(child);
 
-      const responses = await Promise.all([
-        browser().post(`${linkPath(link.token)}/login`, body),
-        browser().post(`${linkPath(link.token)}/login`, body),
-      ]);
+          const responses = await Promise.all([
+            browser().post(`${linkPath(link.token)}/${route}`, body),
+            browser().post(`${linkPath(link.token)}/${route}`, body),
+          ]);
 
-      expect(responses.map((response) => response.status).sort()).toEqual([200, 404]);
-    });
+          const outcomes = responses.map((response) =>
+            response.status === 200 ? 'signed in' : errorCodeOf(response),
+          );
+          expect(outcomes.sort()).toEqual(['link_invalid', 'signed in']);
+          expect(await linkStatus(child, link.id)).toBe('used');
+        }
+      },
+    );
 
     it.each<[string, () => Promise<LinkUse>]>([
       [
@@ -590,23 +1059,17 @@ describe('child login', () => {
 
           expect(newer.status).toBe(201);
           expect([200, 404]).toContain(use.status);
+          expect(await linkStatus(child, link.id)).toBe(use.status === 200 ? 'used' : 'revoked');
         }
       },
     );
 
-    it('works within its 10 minutes and is link_invalid from then on', async () => {
+    it('works until its time is up and is link_invalid from then on, setting nothing', async () => {
       const child = await newChild();
       const link = await linkOf(child);
-      const expireAt = (sql: string) =>
-        query(
-          running.databaseUrl,
-          `update child_login_links set expires_at = ${sql} where id = $1`,
-          [link.id],
-        );
 
-      await expireAt("now() + interval '1 minute'");
       const before = await browser().get(linkPath(link.token));
-      await expireAt('now()');
+      await expireLoginLink(running.redisUrl, { ...link, childId: child.id });
       const after = await browser().get(linkPath(link.token));
       const setting = await browser().post(`${linkPath(link.token)}/password`, {
         password: 'my secret',
@@ -617,6 +1080,7 @@ describe('child login', () => {
       expect([after.status, errorCodeOf(after)]).toEqual([404, 'link_invalid']);
       expect([setting.status, errorCodeOf(setting)]).toEqual([404, 'link_invalid']);
       expect((await childRow(running.databaseUrl, child.id))?.password_hash).toBeNull();
+      expect(await linkStatus(child, link.id)).toBe('expired');
     });
 
     it('stops working once a newer link is made', async () => {
@@ -638,6 +1102,10 @@ describe('child login', () => {
 
       const responses = [
         await browser().get(linkPath(link.token)),
+        await browser().post(`${linkPath(link.token)}/password`, {
+          password: 'my secret',
+          remember: false,
+        }),
         await browser().get(linkPath(Buffer.alloc(32, 7).toString('base64url'))),
         await browser().get(linkPath('not-a-token')),
       ];
@@ -675,10 +1143,7 @@ describe('child login', () => {
       const link = await linkOf(child);
       const kid = browser();
 
-      await kid.post(`${linkPath(link.token)}/password`, {
-        password: 'my secret',
-        remember: false,
-      });
+      await setPasswordOnLink(kid, link.token);
 
       expect((await kid.me()).status).toBe(200);
     });

@@ -22,6 +22,7 @@ export const idSchema = z.uuid({ error: requiredOrInvalid });
 export const booleanFieldSchema = z.boolean({ error: requiredOrInvalid });
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+const utf8 = new TextEncoder();
 
 /**
  * The number of characters as a reader counts them: user-perceived
@@ -32,37 +33,83 @@ export function characterCount(value: string): number {
   return Array.from(graphemes.segment(value)).length;
 }
 
-/** The first `max` characters of the value, never splitting a character. */
-export function truncateCharacters(value: string, max: number): string {
-  return Array.from(graphemes.segment(value))
-    .slice(0, max)
-    .map(({ segment }) => segment)
-    .join('');
+/** The number of bytes the value takes in UTF-8, as the database stores it. */
+export function utf8Length(value: string): number {
+  return utf8.encode(value).length;
 }
+
+/**
+ * Whether the value has at most `maxCharacters` characters and takes at
+ * most `maxBytes` bytes of UTF-8. The bytes are counted first, which bounds
+ * the work of counting the characters of a huge value.
+ */
+function withinLimits(value: string, maxCharacters: number, maxBytes: number): boolean {
+  return utf8Length(value) <= maxBytes && characterCount(value) <= maxCharacters;
+}
+
+/**
+ * The first `max` characters of the value, never splitting a character.
+ * With `maxBytes`, it also stops before the character that would take the
+ * result past that many bytes of UTF-8.
+ */
+export function truncateCharacters(
+  value: string,
+  max: number,
+  maxBytes = Number.POSITIVE_INFINITY,
+): string {
+  const kept: string[] = [];
+  let bytes = 0;
+  for (const { segment } of graphemes.segment(value)) {
+    bytes += utf8Length(segment);
+    if (kept.length === max || bytes > maxBytes) {
+      break;
+    }
+    kept.push(segment);
+  }
+  return kept.join('');
+}
+
+/**
+ * How many bytes of UTF-8 a name may take for each character it may have
+ * (`.docs/design/rules.md`, "家长账号"). Ordinary text never comes near it;
+ * it stops a few visible characters from carrying long runs of combining
+ * marks into storage.
+ */
+const BYTES_PER_CHARACTER = 16;
 
 /** The most characters a family name or a parent name may have. */
 export const NAME_MAX_LENGTH = 20;
 
+/** The most bytes of UTF-8 a family name or a parent name may take: 320. */
+export const NAME_MAX_BYTES = NAME_MAX_LENGTH * BYTES_PER_CHARACTER;
+
 /** The most characters a child's nickname may have. */
 export const NICKNAME_MAX_LENGTH = 10;
 
-/** A display name: trimmed, then 1 to `max` characters of any kind. */
-function nameSchema(max: number) {
+/** The most bytes of UTF-8 a child's nickname may take: 160. */
+export const NICKNAME_MAX_BYTES = NICKNAME_MAX_LENGTH * BYTES_PER_CHARACTER;
+
+/**
+ * A display name: trimmed, then 1 to `max` characters of any kind and at
+ * most `maxBytes` bytes. Too many bytes is reported as too long, like too
+ * many characters, so the hint is the same.
+ */
+function nameSchema(max: number, maxBytes: number) {
   return z
     .string({ error: requiredOrInvalid })
     .trim()
-    .refine((value) => characterCount(value) >= 1, { error: 'required' })
-    .refine((value) => characterCount(value) <= max, { error: 'too_long' });
+    .refine((value) => value.length > 0, { error: 'required' })
+    .refine((value) => withinLimits(value, max, maxBytes), { error: 'too_long' });
 }
 
 /** The name of a family. */
-export const familyNameSchema = nameSchema(NAME_MAX_LENGTH);
+export const familyNameSchema = nameSchema(NAME_MAX_LENGTH, NAME_MAX_BYTES);
 
 /** The name a parent is shown by. */
-export const parentNameSchema = nameSchema(NAME_MAX_LENGTH);
+export const parentNameSchema = nameSchema(NAME_MAX_LENGTH, NAME_MAX_BYTES);
 
 /** The name a child is shown by; children of a family may share one. */
-export const childNicknameSchema = nameSchema(NICKNAME_MAX_LENGTH);
+export const childNicknameSchema = nameSchema(NICKNAME_MAX_LENGTH, NICKNAME_MAX_BYTES);
 
 /** The most characters a child's account may have. */
 export const CHILD_ACCOUNT_MAX_LENGTH = 20;
@@ -103,9 +150,23 @@ export const childAccountSchema = z
 export const CHILD_PASSWORD_MIN_LENGTH = 6;
 export const CHILD_PASSWORD_MAX_LENGTH = 32;
 
+/** The most bytes of UTF-8 a child's password may take. */
+export const CHILD_PASSWORD_MAX_BYTES = 128;
+
+/**
+ * Whether a password is no longer than a child's password may be: at most
+ * 32 characters and 128 bytes. A longer one is never hashed, so the cost of
+ * hashing does not grow with what a request sends.
+ */
+export function withinChildPasswordLimits(value: string): boolean {
+  return withinLimits(value, CHILD_PASSWORD_MAX_LENGTH, CHILD_PASSWORD_MAX_BYTES);
+}
+
 /**
  * A password a child sets: 6 to 32 characters of any kind, spaces
- * included, counted as a reader counts them and never trimmed.
+ * included, counted as a reader counts them and never trimmed, and at most
+ * 128 bytes. Too many bytes is reported as too long, like too many
+ * characters.
  */
 export const newChildPasswordSchema = z
   .string({ error: requiredOrInvalid })
@@ -113,12 +174,13 @@ export const newChildPasswordSchema = z
   .refine((value) => value.length === 0 || characterCount(value) >= CHILD_PASSWORD_MIN_LENGTH, {
     error: 'too_short',
   })
-  .refine((value) => characterCount(value) <= CHILD_PASSWORD_MAX_LENGTH, { error: 'too_long' });
+  .refine(withinChildPasswordLimits, { error: 'too_long' });
 
 /**
  * A password a child logs in with: anything but empty. Its length is not
- * checked, so a password of the wrong length is simply a wrong password
- * and the login answers as for any other.
+ * checked here, so a password of the wrong length is simply a wrong
+ * password and the login answers as for any other; the api refuses one
+ * past the limits without hashing it.
  */
 export const childPasswordSchema = z
   .string({ error: requiredOrInvalid })
@@ -145,6 +207,54 @@ export const familyCodeSchema = z
 const timeZoneNamePattern = /^[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*$/;
 
 /**
+ * Zones IANA has renamed whose old names Intl still resolves to: its time
+ * zone data comes from CLDR, which keeps the first name a zone had. Each
+ * old name is an alias of the new one, so the zone is shown, saved and
+ * compared by the new name everywhere.
+ */
+const RENAMED_TIME_ZONES: ReadonlyMap<string, string> = new Map([
+  ['Africa/Asmera', 'Africa/Asmara'],
+  ['America/Buenos_Aires', 'America/Argentina/Buenos_Aires'],
+  ['America/Catamarca', 'America/Argentina/Catamarca'],
+  ['America/Cordoba', 'America/Argentina/Cordoba'],
+  ['America/Godthab', 'America/Nuuk'],
+  ['America/Indianapolis', 'America/Indiana/Indianapolis'],
+  ['America/Jujuy', 'America/Argentina/Jujuy'],
+  ['America/Louisville', 'America/Kentucky/Louisville'],
+  ['America/Mendoza', 'America/Argentina/Mendoza'],
+  ['Asia/Calcutta', 'Asia/Kolkata'],
+  ['Asia/Katmandu', 'Asia/Kathmandu'],
+  ['Asia/Rangoon', 'Asia/Yangon'],
+  ['Asia/Saigon', 'Asia/Ho_Chi_Minh'],
+  ['Atlantic/Faeroe', 'Atlantic/Faroe'],
+  ['Europe/Kiev', 'Europe/Kyiv'],
+  ['Pacific/Enderbury', 'Pacific/Kanton'],
+  ['Pacific/Ponape', 'Pacific/Pohnpei'],
+  ['Pacific/Truk', 'Pacific/Chuuk'],
+]);
+
+/** The name Intl resolves a time zone to, or null when Intl does not know the zone. */
+function resolvedTimeZone(name: string): string | null {
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: name }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The standard name of a time zone (`.docs/design/rules.md`, "家庭"):
+ * aliases Intl knows become the name it resolves them to ("US/Pacific" is
+ * "America/Los_Angeles"), and the old names IANA renamed become the new
+ * ones ("Asia/Calcutta" is "Asia/Kolkata"). Null when Intl does not know
+ * the zone at all.
+ */
+export function canonicalTimeZone(name: string): string | null {
+  const resolved = resolvedTimeZone(name);
+  return resolved === null ? null : (RENAMED_TIME_ZONES.get(resolved) ?? resolved);
+}
+
+/**
  * Whether the value is an IANA time zone name that Intl knows. Intl is asked
  * directly rather than through `Intl.supportedValuesOf('timeZone')`, whose
  * list leaves out names such as "UTC" that a browser reports as its own time
@@ -155,17 +265,15 @@ export function isTimeZone(value: string): boolean {
   if (!timeZoneNamePattern.test(value)) {
     return false;
   }
-  let resolved: string;
-  try {
-    resolved = new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone;
-  } catch {
-    return false;
-  }
-  return resolved === value || resolved.toLowerCase() !== value.toLowerCase();
+  const resolved = resolvedTimeZone(value);
+  return (
+    resolved !== null && (resolved === value || resolved.toLowerCase() !== value.toLowerCase())
+  );
 }
 
-/** An IANA time zone name. */
+/** An IANA time zone name; an alias comes out as the standard name it stands for. */
 export const timeZoneSchema = z
   .string({ error: requiredOrInvalid })
   .refine((value) => value.length > 0, { error: 'required' })
-  .refine((value) => value.length === 0 || isTimeZone(value), { error: 'invalid' });
+  .refine((value) => value.length === 0 || isTimeZone(value), { error: 'invalid' })
+  .transform((value) => canonicalTimeZone(value) ?? value);

@@ -5,13 +5,13 @@ import type { ChildLoginLinkStatus } from '@thinklet/contracts';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import {
-  DUODUO,
-  LELE,
-  XIAOMING_ID,
-  XIAOMING_LINK,
+  ALE,
+  DOUDOU,
+  XIAOMI_ID,
+  XIAOMI_LINK,
   childPath,
   childRow,
-  expectXiaomingGone,
+  expectXiaomiGone,
   renderChildrenPage,
   stubChildren,
   stubLoginLinks,
@@ -24,19 +24,19 @@ import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 import { darkRuns } from '../../shared/ui/qr-code';
 import { CHECK_INTERVAL, CHECK_LIMIT, timeLeft } from './child-qr-dialog';
 
-const TITLE = '让小明扫码登录';
+const TITLE = '让小米扫码登录';
 
-/** The time 小明's link has left when it is made: 9 minutes 41 seconds. */
+/** The time 小米's link has left when it is made: 9 minutes 41 seconds. */
 const LINK_TIME = (9 * 60 + 41) * 1000;
 
 /** How far behind the server the browser's clock is, in the test of a clock behind. */
 const CLOCK_BEHIND = 2 * 60 * 1000;
 
-/** Presses 小明's QR button and returns the dialog once it shows the link. */
+/** Presses 小米's QR button and returns the dialog once it shows the link. */
 async function showQrCode(): Promise<HTMLElement> {
-  await userEvent.click(within(childRow('小明')).getByRole('button', { name: '显示登录二维码' }));
+  await userEvent.click(within(childRow('小米')).getByRole('button', { name: '显示登录二维码' }));
   const dialog = await within(document.body).findByRole('dialog', { name: TITLE });
-  await within(dialog).findByRole('img', { name: '小明的登录二维码' });
+  await within(dialog).findByRole('img', { name: '小米的登录二维码' });
   return dialog;
 }
 
@@ -77,7 +77,7 @@ async function whileHidden(work: () => Promise<void>): Promise<void> {
   }
 }
 
-/** Stubs 小明's links: made as the design's link, and checked as `status` says. */
+/** Stubs 小米's links: made as the design's link, and checked as `status` says. */
 function answerChecks(status: ChildLoginLinkStatus | 'invalid'): { made: number; checked: number } {
   return stubLoginLinks(() => status);
 }
@@ -95,8 +95,8 @@ describe('ChildQrDialog', () => {
     const dialog = await showQrCode();
 
     expect(counts.made).toBe(1);
-    const code = within(dialog).getByRole('img', { name: '小明的登录二维码' });
-    expect(code.querySelectorAll('g rect')).toHaveLength(darkRuns(XIAOMING_LINK.url).runs.length);
+    const code = within(dialog).getByRole('img', { name: '小米的登录二维码' });
+    expect(code.querySelectorAll('g rect')).toHaveLength(darkRuns(XIAOMI_LINK.url).runs.length);
     expect(textOf(dialog)).toContain('10分钟内有效，还剩9:41');
     expect(dialog.textContent).toContain('用手机或平板的相机扫一扫');
     expect(within(dialog).getByRole('button', { name: '关闭' })).toBeTruthy();
@@ -125,12 +125,12 @@ describe('ChildQrDialog', () => {
 
     await wait(CHECK_INTERVAL);
     expect(counts.checked).toBe(1);
-    expect(within(dialog).getByRole('img', { name: '小明的登录二维码' })).toBeTruthy();
+    expect(within(dialog).getByRole('img', { name: '小米的登录二维码' })).toBeTruthy();
 
     status = 'used';
     await wait(CHECK_INTERVAL);
 
-    expect(within(dialog).getByText('小明已登录')).toBeTruthy();
+    expect(within(dialog).getByText('小米已登录')).toBeTruthy();
     expect(within(dialog).queryByRole('img')).toBeNull();
     expect(within(dialog).queryByRole('button', { name: '关闭' })).toBeNull();
     await wait(CHECK_INTERVAL * 3);
@@ -164,7 +164,7 @@ describe('ChildQrDialog', () => {
       const again = answerChecks('active');
       within(dialog).getByRole('button', { name: '重新生成' }).click();
 
-      expect(await within(dialog).findByRole('img', { name: '小明的登录二维码' })).toBeTruthy();
+      expect(await within(dialog).findByRole('img', { name: '小米的登录二维码' })).toBeTruthy();
       expect(again.made).toBe(1);
     },
   );
@@ -231,14 +231,14 @@ describe('ChildQrDialog', () => {
   });
 
   it('says the child was deleted meanwhile, closes the dialog and lists the children again', async () => {
-    stubError(`post ${childPath(XIAOMING_ID, '/login-links')}`, 404, 'child_not_found');
+    stubError(`post ${childPath(XIAOMI_ID, '/login-links')}`, 404, 'child_not_found');
     const { fixture } = await renderChildrenPage();
-    stubChildren([DUODUO, LELE]);
+    stubChildren([DOUDOU, ALE]);
 
-    within(childRow('小明')).getByRole('button', { name: '显示登录二维码' }).click();
+    within(childRow('小米')).getByRole('button', { name: '显示登录二维码' }).click();
     await fixture.whenStable();
 
-    await expectXiaomingGone(TITLE);
+    await expectXiaomiGone(TITLE);
   });
 });
 

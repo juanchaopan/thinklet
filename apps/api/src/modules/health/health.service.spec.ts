@@ -1,18 +1,25 @@
 import { Logger } from '@nestjs/common';
+import type { RedisService } from '../../infrastructure/redis/redis.service.js';
 import type { StorageService } from '../../infrastructure/storage/storage.service.js';
 import type { HealthRepository } from './health.repository.js';
 import { CHECK_TIMEOUT_MS, HealthService } from './health.service.js';
 
 const never = () => new Promise<void>(() => {});
 const after = (ms: number) => () => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const ok = () => Promise.resolve();
 
-function createService(
-  ping: () => Promise<void>,
-  checkBucket: (signal: AbortSignal) => Promise<void>,
-) {
+interface Probes {
+  ping?: () => Promise<void>;
+  checkBucket?: (signal: AbortSignal) => Promise<void>;
+  redisPing?: () => Promise<void>;
+}
+
+/** The service over doubles whose probes answer at once unless given otherwise. */
+function createService({ ping = ok, checkBucket = ok, redisPing = ok }: Probes) {
   const repository = { ping: vi.fn(ping) } as unknown as HealthRepository;
   const storage = { checkBucket: vi.fn(checkBucket) } as unknown as StorageService;
-  return new HealthService(repository, storage);
+  const redis = { ping: vi.fn(redisPing) } as unknown as RedisService;
+  return new HealthService(repository, storage, redis);
 }
 
 describe('HealthService', () => {
@@ -27,58 +34,61 @@ describe('HealthService', () => {
     vi.restoreAllMocks();
   });
 
-  it('reports ok when the database and the bucket both answer', async () => {
-    const service = createService(
-      () => Promise.resolve(),
-      () => Promise.resolve(),
-    );
+  it('reports ok when the database, the bucket and Redis all answer', async () => {
+    const service = createService({});
 
     await expect(service.check()).resolves.toEqual({
       status: 'ok',
-      checks: { database: 'ok', storage: 'ok' },
+      checks: { database: 'ok', storage: 'ok', redis: 'ok' },
     });
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('marks the database when its check fails', async () => {
-    const service = createService(
-      () => Promise.reject(new Error('connect ECONNREFUSED')),
-      () => Promise.resolve(),
-    );
+    const service = createService({
+      ping: () => Promise.reject(new Error('connect ECONNREFUSED')),
+    });
 
     await expect(service.check()).resolves.toEqual({
       status: 'error',
-      checks: { database: 'error', storage: 'ok' },
+      checks: { database: 'error', storage: 'ok', redis: 'ok' },
     });
   });
 
   it('marks the storage when its check fails', async () => {
-    const service = createService(
-      () => Promise.resolve(),
-      () => Promise.reject(new Error('NotFound')),
-    );
+    const service = createService({ checkBucket: () => Promise.reject(new Error('NotFound')) });
 
     await expect(service.check()).resolves.toEqual({
       status: 'error',
-      checks: { database: 'ok', storage: 'error' },
+      checks: { database: 'ok', storage: 'error', redis: 'ok' },
     });
   });
 
-  it('marks both when both checks fail', async () => {
-    const service = createService(
-      () => Promise.reject(new Error('down')),
-      () => Promise.reject(new Error('down')),
-    );
+  it('marks Redis when its PING fails', async () => {
+    const service = createService({
+      redisPing: () => Promise.reject(new Error('Redis is not reachable')),
+    });
 
     await expect(service.check()).resolves.toEqual({
       status: 'error',
-      checks: { database: 'error', storage: 'error' },
+      checks: { database: 'ok', storage: 'ok', redis: 'error' },
     });
   });
 
-  it('runs both checks in parallel', async () => {
+  it('marks every check that fails', async () => {
+    const down = () => Promise.reject(new Error('down'));
+    const service = createService({ ping: down, checkBucket: down, redisPing: down });
+
+    await expect(service.check()).resolves.toEqual({
+      status: 'error',
+      checks: { database: 'error', storage: 'error', redis: 'error' },
+    });
+  });
+
+  it('runs the checks in parallel', async () => {
     vi.useFakeTimers();
-    const service = createService(after(CHECK_TIMEOUT_MS - 1), after(CHECK_TIMEOUT_MS - 1));
+    const slow = after(CHECK_TIMEOUT_MS - 1);
+    const service = createService({ ping: slow, checkBucket: slow, redisPing: slow });
 
     const result = service.check();
     await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS - 1);
@@ -89,9 +99,13 @@ describe('HealthService', () => {
   it('fails a check that takes longer than the timeout and aborts it', async () => {
     vi.useFakeTimers();
     let signal: AbortSignal | undefined;
-    const service = createService(never, (received) => {
-      signal = received;
-      return never();
+    const service = createService({
+      ping: never,
+      checkBucket: (received) => {
+        signal = received;
+        return never();
+      },
+      redisPing: never,
     });
 
     const result = service.check();
@@ -99,14 +113,14 @@ describe('HealthService', () => {
 
     await expect(result).resolves.toEqual({
       status: 'error',
-      checks: { database: 'error', storage: 'error' },
+      checks: { database: 'error', storage: 'error', redis: 'error' },
     });
     expect(signal?.aborted).toBe(true);
   });
 
   it('does not fail a check that answers just before the timeout', async () => {
     vi.useFakeTimers();
-    const service = createService(after(CHECK_TIMEOUT_MS - 1), () => Promise.resolve());
+    const service = createService({ ping: after(CHECK_TIMEOUT_MS - 1) });
 
     const result = service.check();
     await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);
@@ -115,10 +129,10 @@ describe('HealthService', () => {
   });
 
   it('logs the failed check and the cause without URLs', async () => {
-    const service = createService(
-      () => Promise.reject(new Error('cannot reach postgresql://user:secret@host/db')),
-      () => Promise.resolve(),
-    );
+    const service = createService({
+      ping: () => Promise.reject(new Error('cannot reach postgresql://user:secret@host/db')),
+      redisPing: () => Promise.reject(new Error('cannot reach rediss://default:secret@host:6379')),
+    });
 
     await service.check();
 
@@ -126,11 +140,15 @@ describe('HealthService', () => {
       { check: 'database', error: { name: 'Error', message: 'cannot reach [url]' } },
       'Health check failed',
     );
+    expect(warn).toHaveBeenCalledWith(
+      { check: 'redis', error: { name: 'Error', message: 'cannot reach [url]' } },
+      'Health check failed',
+    );
   });
 
   it('logs a timeout as the cause', async () => {
     vi.useFakeTimers();
-    const service = createService(() => Promise.resolve(), never);
+    const service = createService({ checkBucket: never });
 
     const result = service.check();
     await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS);

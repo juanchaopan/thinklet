@@ -12,30 +12,30 @@ import {
 } from '@nestjs/common';
 import {
   childLinkLoginRequestSchema,
+  childLoginAnswerSchema,
   childLoginLinkInfoSchema,
   childLoginRequestSchema,
   childLoginResponseSchema,
   rememberedChildListSchema,
   setChildPasswordRequestSchema,
+  setChildPasswordWithAccountRequestSchema,
   type ChildLinkLoginRequest,
+  type ChildLoginAnswer,
   type ChildLoginLinkInfo,
   type ChildLoginRequest,
   type ChildLoginResponse,
   type RememberedChild,
   type SetChildPasswordRequest,
+  type SetChildPasswordWithAccountRequest,
 } from '@thinklet/contracts';
 import type { Request, Response } from 'express';
 import { Public } from '../../infrastructure/authentication/public.decorator.js';
+import { ClientIpHeader } from '../../infrastructure/rate-limit/client-ip.js';
 import { ZodValidationPipe } from '../../infrastructure/validation/zod-validation.pipe.js';
 import { ChildSessionService } from '../auth/child-session.service.js';
 import { ChildLoginService, type Browser, type CompletedLogin } from './child-login.service.js';
 import { linkTokenPipe, rememberedChildIdPipe } from './children-params.js';
 import { readDeviceToken, setDeviceCookie } from './device-cookie.js';
-
-/** The browser a request comes from, as a login needs it. */
-function browserOf(request: Request): Browser {
-  return { deviceToken: readDeviceToken(request), userAgent: request.headers['user-agent'] };
-}
 
 /**
  * A child's login and logout (`.docs/design/interfaces.md`, "孩子登录"):
@@ -50,8 +50,13 @@ export class ChildLoginController {
   constructor(
     private readonly loginService: ChildLoginService,
     private readonly sessions: ChildSessionService,
+    private readonly clientIp: ClientIpHeader,
   ) {}
 
+  /**
+   * Signs the child in, or answers that the child has to set a password
+   * first, which signs nobody in and sets no cookie.
+   */
   @Post('child-auth/login')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
@@ -59,8 +64,27 @@ export class ChildLoginController {
     @Body(new ZodValidationPipe(childLoginRequestSchema)) body: ChildLoginRequest,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+  ): Promise<ChildLoginAnswer> {
+    const answer = await this.loginService.login(body, this.browserOf(request));
+    return 'needsPassword' in answer
+      ? childLoginAnswerSchema.parse(answer)
+      : this.signIn(response, answer);
+  }
+
+  /** Sets the first password of the child the family code and the account find, and signs the child in. */
+  @Post('child-auth/password')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async setPasswordWithAccount(
+    @Body(new ZodValidationPipe(setChildPasswordWithAccountRequestSchema))
+    body: SetChildPasswordWithAccountRequest,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ChildLoginResponse> {
-    return this.signIn(response, await this.loginService.login(body, browserOf(request)));
+    return this.signIn(
+      response,
+      await this.loginService.setPasswordWithAccount(body, this.browserOf(request)),
+    );
   }
 
   /** The children this browser remembers; none without a device cookie. */
@@ -110,7 +134,7 @@ export class ChildLoginController {
   ): Promise<ChildLoginResponse> {
     return this.signIn(
       response,
-      await this.loginService.setPasswordWithLink(token, body, browserOf(request)),
+      await this.loginService.setPasswordWithLink(token, body, this.browserOf(request)),
     );
   }
 
@@ -125,8 +149,17 @@ export class ChildLoginController {
   ): Promise<ChildLoginResponse> {
     return this.signIn(
       response,
-      await this.loginService.loginWithLink(token, body, browserOf(request)),
+      await this.loginService.loginWithLink(token, body, this.browserOf(request)),
     );
+  }
+
+  /** The browser a request comes from, as a login needs it. */
+  private browserOf(request: Request): Browser {
+    return {
+      deviceToken: readDeviceToken(request),
+      userAgent: request.headers['user-agent'],
+      clientIp: this.clientIp.read(request),
+    };
   }
 
   /**

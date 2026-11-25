@@ -98,6 +98,18 @@ export class OidcService {
     return { idToken: tokens.id_token, claims };
   }
 
+  /**
+   * The issuer exactly as the provider's discovery document names it, which
+   * is the `iss` of every ID token a login accepts and so the issuer every
+   * parent is stored with. It can differ from OIDC_ISSUER as written: the
+   * discovery accepts any issuer that is the same URL once normalised, so
+   * an issuer configured without the slash after its host has the slash in
+   * the document.
+   */
+  async issuerIdentifier(): Promise<string> {
+    return (await this.discover()).serverMetadata().issuer;
+  }
+
   /** The provider's logout address, with the ID token as a hint when there is one. */
   async endSessionUrl(idTokenHint: string | undefined): Promise<string> {
     return endSessionUrl(await this.discover(), {
@@ -109,7 +121,7 @@ export class OidcService {
 
   /**
    * The client configuration from the discovery document. A failed discovery
-   * is forgotten, so the next login tries again.
+   * is forgotten, so the next use tries again.
    */
   private discover(): Promise<client.Configuration> {
     if (this.configuration === undefined) {

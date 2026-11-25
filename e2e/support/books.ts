@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { expect, type Locator, type Page } from '@playwright/test';
-import { bookDetailSchema, meResponseSchema, type BookDetail } from '@thinklet/contracts';
+import { bookDetailSchema, type BookDetail } from '@thinklet/contracts';
 import { query } from '../../apps/api/test/support/database.ts';
 import { sentFrom } from './children.ts';
 
@@ -161,13 +161,6 @@ export async function setReaders(
   return bookDetailSchema.parse(await response.json());
 }
 
-/** The id of the parent signed in on the page. */
-async function signedInParentId(page: Page): Promise<string> {
-  const response = await page.request.get('/api/me');
-  expect(response.status()).toBe(200);
-  return meResponseSchema.parse(await response.json()).id;
-}
-
 /** The database of the environment `task test-e2e` started. */
 function databaseUrl(): string {
   const url = process.env['TEST_DATABASE_URL'];
@@ -178,31 +171,26 @@ function databaseUrl(): string {
 }
 
 /**
- * Records in the database that the family of the parent signed in on the
- * page acquired the book, by that parent, and gave it to these children,
- * as it could while the book was in the library. The site refuses both for
- * an inactive book, so this is how a test gets a family that acquired a
- * book before it left the library.
+ * Records in the database that the family acquired the book and gave it to
+ * these children, as it could while the book was in the library. The site
+ * refuses both for an inactive book, so this is how a test gets a family
+ * that acquired a book before it left the library.
  */
 export async function acquiredBeforeItLeft(
-  page: Page,
   familyId: string,
   bookId: string,
   childIds: readonly string[],
 ): Promise<void> {
-  const parentId = await signedInParentId(page);
   const url = databaseUrl();
-  await query(
-    url,
-    'insert into family_books (family_id, book_id, acquired_by) values ($1, $2, $3)',
-    [familyId, bookId, parentId],
-  );
+  await query(url, 'insert into family_books (family_id, book_id) values ($1, $2)', [
+    familyId,
+    bookId,
+  ]);
   for (const childId of childIds) {
     await query(
       url,
-      `insert into book_assignments (child_id, family_id, book_id, assigned_by)
-       values ($1, $2, $3, $4)`,
-      [childId, familyId, bookId, parentId],
+      'insert into book_assignments (child_id, family_id, book_id) values ($1, $2, $3)',
+      [childId, familyId, bookId],
     );
   }
 }

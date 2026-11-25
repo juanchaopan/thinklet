@@ -18,7 +18,7 @@ import { VIEWPORTS } from './viewports';
 // The library is a signed-in parent's `/` and the child's books are on the
 // home page every child login ends at, which many tests pass through on
 // their way, so every test starts with the design's library, children and
-// 小明's books served (testing/library.ts, testing/child-books.ts); a test's
+// 小米's books served (testing/library.ts, testing/child-books.ts); a test's
 // own stubs come later and win.
 //
 // Test files are not isolated: several run one after another on the same

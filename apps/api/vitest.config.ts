@@ -14,7 +14,8 @@ export default defineConfig({
       provider: 'v8',
       include: ['src/**/*.ts'],
       // Wiring, entry points and the database layer are covered by the
-      // integration tests, not by unit tests.
+      // integration tests, and the data migrations by the migration tests,
+      // not by unit tests.
       exclude: [
         'src/**/*.spec.ts',
         'src/**/*.module.ts',
@@ -23,6 +24,8 @@ export default defineConfig({
         'src/main.ts',
         'src/server.ts',
         'src/rebuild.ts',
+        'src/migrate-data.ts',
+        'src/data-migrations/**',
         'src/create-app.ts',
         'src/infrastructure/database/schema.ts',
       ],

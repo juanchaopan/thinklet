@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -105,5 +106,16 @@ export class StorageService {
         Metadata: object.metadata,
       }),
     );
+  }
+
+  /** Deletes the object at the key; a key without an object is already as wanted. */
+  async deleteObject(key: string): Promise<void> {
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (error) {
+      if (!isMissingObject(error)) {
+        throw error;
+      }
+    }
   }
 }

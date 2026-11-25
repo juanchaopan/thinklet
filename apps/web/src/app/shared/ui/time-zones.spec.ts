@@ -9,16 +9,21 @@ import {
 
 const MINUS = '−';
 
+// The contracts' own tests check the standard names in Node; these check
+// that the browser, whose time zone data may differ, gives the same ones.
 describe('canonicalTimeZone', () => {
-  it.each([
-    ['Asia/Shanghai', 'Asia/Shanghai'],
-    ['Asia/Calcutta', 'Asia/Kolkata'],
-    ['Asia/Kolkata', 'Asia/Kolkata'],
-    ['Asia/Saigon', 'Asia/Ho_Chi_Minh'],
-    ['Europe/Kiev', 'Europe/Kyiv'],
-    ['America/Buenos_Aires', 'America/Argentina/Buenos_Aires'],
-  ])('gives %s as %s', (name, standard) => {
-    expect(canonicalTimeZone(name)).toBe(standard);
+  it('gives the old names of renamed zones by their new names in the browser too', () => {
+    expect(['Asia/Calcutta', 'Asia/Saigon', 'Europe/Kiev'].map(canonicalTimeZone)).toEqual([
+      'Asia/Kolkata',
+      'Asia/Ho_Chi_Minh',
+      'Europe/Kyiv',
+    ]);
+  });
+
+  it('keeps every standard name the browser lists as it is', () => {
+    const standard = Intl.supportedValuesOf('timeZone').map((name) => canonicalTimeZone(name));
+
+    expect(standard.map((name) => canonicalTimeZone(name ?? ''))).toEqual(standard);
   });
 
   it('knows no zone the browser does not know', () => {

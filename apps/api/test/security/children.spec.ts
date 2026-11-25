@@ -6,8 +6,8 @@ import {
   childrenPath,
   deviceRows,
   insertDevice,
-  loginLinkRows,
 } from '../support/children.js';
+import { TEST_APP_ORIGIN } from '../support/containers.js';
 import {
   addMember,
   as,
@@ -17,6 +17,7 @@ import {
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
+import { redisContents, sha256, storedLoginLink } from '../support/login-links.js';
 import {
   FOREIGN_ORIGINS,
   each,
@@ -36,6 +37,8 @@ interface Household {
   member: Parent;
   child: Child;
   linkId: string;
+  /** The token of the child's login link, as the link's URL holds it. */
+  token: string;
   deviceId: string;
 }
 
@@ -77,10 +80,13 @@ function everyRoute(ids: Ids): Route[] {
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for the
 // children routes: a parent cannot see or change the children of a family
 // they are not in, whether by the family id in the address or by another
-// family's child, link or device id under their own family (IDOR); the
+// family's child, link or device id under their own family (IDOR), so a
+// parent of another family cannot read a login link's state either; the
 // routes need a parent's login, so a child's login opens none of them; the
 // writes need this site's Origin; a body cannot set what the api sets
-// itself; what a parent types is stored and answered as data, never run.
+// itself; what a parent types is stored and answered as data, never run;
+// Redis holds a login link under the SHA-256 of its token, never the token
+// nor the child's personal data (#14, 24).
 describe('children security', () => {
   const running = useAppWithServices();
   let ours: Household;
@@ -96,7 +102,7 @@ describe('children security', () => {
     const family = await createFamily(running.server, admin, { name, timezone: 'Asia/Shanghai' });
     await addMember(running.databaseUrl, family.id, member.id);
     const child = await addChild(running.server, admin, family.id);
-    const link = await as(running.server, admin).post(
+    const response = await as(running.server, admin).post(
       `${childPath(family.id, child.id)}/login-links`,
     );
     const deviceId = await insertDevice(running.databaseUrl, child.id, {
@@ -104,15 +110,16 @@ describe('children security', () => {
       rememberedAt: new Date(),
       lastUsedAt: new Date(),
     });
-    const linkId = childLoginLinkSchema.parse(link.body).id;
-    return { family, admin, member, child, linkId, deviceId };
+    const link = childLoginLinkSchema.parse(response.body);
+    const token = link.url.slice(`${TEST_APP_ORIGIN}/child/qr/`.length);
+    return { family, admin, member, child, linkId: link.id, token, deviceId };
   }
 
-  /** Everything the database holds about the household's child. */
-  async function stateOf({ child }: Household) {
+  /** Everything the database and Redis hold about the household's child. */
+  async function stateOf({ child, linkId, token }: Household) {
     return {
       child: await childRow(running.databaseUrl, child.id),
-      links: await loginLinkRows(running.databaseUrl, child.id),
+      link: await storedLoginLink(running.redisUrl, { token, id: linkId, childId: child.id }),
       devices: await deviceRows(running.databaseUrl, child.id),
     };
   }
@@ -170,6 +177,21 @@ describe('children security', () => {
     expect(outcomesOf([status])).toEqual([[404, 'not_found']]);
     expect(revoke.status).toBe(204);
     expect(await stateOf(theirs)).toEqual(before);
+  });
+
+  it('keeps a login link in Redis under the SHA-256 of its token, never the token or the personal data', async () => {
+    const contents = await redisContents(running.redisUrl);
+    const everything = JSON.stringify(contents);
+
+    for (const household of [ours, theirs]) {
+      expect(contents.map(({ key }) => key)).toContain(`login-link:${sha256(household.token)}`);
+      expect(everything).not.toContain(household.token);
+      expect(everything).not.toContain(household.child.account);
+      expect(everything).not.toContain(household.child.nickname);
+    }
+    for (const { key } of contents.filter((entry) => entry.key.startsWith('login-link:'))) {
+      expect(key).toMatch(/^login-link:[0-9a-f]{64}$/);
+    }
   });
 
   it('needs a login on every children route', async () => {

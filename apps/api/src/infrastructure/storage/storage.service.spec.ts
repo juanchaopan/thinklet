@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -132,5 +133,27 @@ describe('StorageService', () => {
       ContentType: 'image/png',
       Metadata: { sha256: 'abc' },
     });
+  });
+
+  it('deletes an object with DeleteObject', async () => {
+    const send = vi.fn().mockResolvedValue({});
+
+    await createService(send).deleteObject('books/a/cover.png');
+
+    const [command] = send.mock.calls[0] as [DeleteObjectCommand];
+    expect(command).toBeInstanceOf(DeleteObjectCommand);
+    expect(command.input).toEqual({ Bucket: 'configured-bucket', Key: 'books/a/cover.png' });
+  });
+
+  it('takes a missing object as deleted', async () => {
+    const send = vi.fn().mockRejectedValue(s3Failure('NoSuchKey', 404));
+
+    await expect(createService(send).deleteObject('key')).resolves.toBeUndefined();
+  });
+
+  it('rejects a delete that fails for another reason', async () => {
+    const send = vi.fn().mockRejectedValue(s3Failure('AccessDenied', 403));
+
+    await expect(createService(send).deleteObject('key')).rejects.toThrow('AccessDenied');
   });
 });

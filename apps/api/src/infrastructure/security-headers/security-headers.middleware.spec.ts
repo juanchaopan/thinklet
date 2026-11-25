@@ -12,6 +12,7 @@ const EXPECTED_HEADERS = {
   'cross-origin-resource-policy': 'same-origin',
   'permissions-policy':
     'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()',
+  'referrer-policy': 'no-referrer',
 };
 
 function newExchange(): { request: IncomingMessage; response: ServerResponse } {
@@ -20,7 +21,7 @@ function newExchange(): { request: IncomingMessage; response: ServerResponse } {
 }
 
 describe('securityHeaders', () => {
-  it('sets exactly the five api security headers with the designed values', () => {
+  it('sets exactly the six api security headers with the designed values', () => {
     const { request, response } = newExchange();
 
     securityHeaders(request, response, () => undefined);
@@ -40,9 +41,11 @@ describe('securityHeaders', () => {
   it('replaces a value set earlier instead of sending the header twice', () => {
     const { request, response } = newExchange();
     response.setHeader('X-Content-Type-Options', 'sniff');
+    response.setHeader('Referrer-Policy', 'unsafe-url');
 
     securityHeaders(request, response, () => undefined);
 
     expect(response.getHeader('x-content-type-options')).toBe('nosniff');
+    expect(response.getHeader('referrer-policy')).toBe('no-referrer');
   });
 });

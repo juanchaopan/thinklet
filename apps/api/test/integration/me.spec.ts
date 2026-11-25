@@ -5,9 +5,12 @@ import { startAppWithServices, type AppWithServices } from '../support/app.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
 import { cookieHeader, newUser, signIn } from '../support/login.js';
 
+/** A family of three: one character of 18 bytes, joined from three emoji. */
+const FAMILY = '👨‍👩‍👧';
+
 // Acceptance criteria covered: a parent changes their own name on the
-// profile page; the name is 1 to 20 characters after trimming, with
-// "请填名字" and "名字最多 20 个字" shown from the field codes.
+// profile page; the name is 1 to 20 characters after trimming and at most
+// 320 bytes, with "请填名字" and "名字最多 20 个字" shown from the field codes.
 describe('PATCH /api/me', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -50,7 +53,7 @@ describe('PATCH /api/me', () => {
   });
 
   it('accepts 20 characters of any kind, an emoji counting as one', async () => {
-    const name = `林悦${'👨‍👩‍👧'.repeat(18)}`;
+    const name = `林悦${'😀'.repeat(15)}${FAMILY.repeat(3)}`;
 
     const response = await patch({ name });
 
@@ -63,6 +66,7 @@ describe('PATCH /api/me', () => {
     ['a name of spaces only', { name: '   ' }, 'required'],
     ['a missing name', {}, 'required'],
     ['21 characters', { name: '一二三四五六七八九十一二三四五六七八九十多' }, 'too_long'],
+    ['20 characters of 330 bytes', { name: `林悦${FAMILY.repeat(18)}` }, 'too_long'],
     ['a name that is not text', { name: 42 }, 'invalid'],
   ])('refuses %s with 400 and the field code', async (_name, body, code) => {
     const response = await patch(body);

@@ -10,6 +10,7 @@ import type {
   BookStatus,
 } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import { AuditService, byParent } from '../audit/audit.service.js';
 import { childNotFound, ChildrenService } from '../child/children.service.js';
 import { decodeCursor, encodeCursor, type BookPosition } from './book-cursor.js';
 import { toBookSummary } from './book-summary.js';
@@ -158,13 +159,16 @@ export function replacementOf(book: BookDetailRecord): BookDetail['replacement']
  * Every member of the family may use it; the routes' membership check runs
  * before it. The family's children are looked up through the child module,
  * which keeps their nicknames; this module stores only their ids. Lookups
- * that do not depend on each other run at the same time.
+ * that do not depend on each other run at the same time. Every change is
+ * recorded as an audit event of the parent in its transaction; one that
+ * changes nothing is not.
  */
 @Injectable()
 export class LibraryService {
   constructor(
     private readonly repository: BooksRepository,
     private readonly childrenService: ChildrenService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -233,13 +237,22 @@ export class LibraryService {
 
   /**
    * Takes the book into the family's books. A book the family has already
-   * stays as it is, inactive or not; an inactive book the family does not
-   * have is 409 `book_inactive`.
+   * stays as it is, inactive or not, and is no change to record; an
+   * inactive book the family does not have is 409 `book_inactive`.
    */
   async acquire(parentId: string, familyId: string, bookId: string): Promise<BookDetail> {
     const status = await this.requireBook(bookId);
     if (status === 'active') {
-      await this.repository.insertFamilyBook(familyId, bookId, parentId);
+      await this.repository.transaction(async (store, transaction) => {
+        if (await store.insertFamilyBook(familyId, bookId)) {
+          await this.audit.record(transaction, {
+            actor: byParent(parentId),
+            action: 'book.acquired',
+            targetId: bookId,
+            familyId,
+          });
+        }
+      });
     } else if (!(await this.repository.isAcquired(familyId, bookId))) {
       throw bookInactive();
     }
@@ -253,9 +266,9 @@ export class LibraryService {
    * or waits and then finds the book gone. A child who still reads it is
    * 409 `book_in_use`.
    */
-  async remove(familyId: string, bookId: string): Promise<void> {
+  async remove(parentId: string, familyId: string, bookId: string): Promise<void> {
     await this.requireBook(bookId);
-    await this.repository.transaction(async (store) => {
+    await this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockFamilyBook(familyId, bookId))) {
         return;
       }
@@ -267,6 +280,12 @@ export class LibraryService {
       } catch (error) {
         throw error instanceof BookInUseError ? bookInUse() : error;
       }
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: 'book.removed',
+        targetId: bookId,
+        familyId,
+      });
     });
   }
 
@@ -277,7 +296,8 @@ export class LibraryService {
    * taken away, and children who read it already are not touched. A book
    * the family does not have is 409 `book_not_acquired`; a child who is
    * not the family's, or was deleted meanwhile, is 404 `child_not_found`
-   * and nothing changes.
+   * and nothing changes. The audit event names the children added and
+   * taken away; setting the readers a book has already changes nothing.
    */
   async setReaders(
     parentId: string,
@@ -290,18 +310,28 @@ export class LibraryService {
       this.childrenService.list(familyId),
     ]);
     const familyChildIds = new Set(children.map(({ id }) => id));
-    await this.repository.transaction(async (store) => {
+    await this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockFamilyBook(familyId, bookId))) {
         throw bookNotAcquired();
       }
       const current = await store.readerIds(familyId, bookId);
       const { added, removed } = planReaders(status, current, childIds, familyChildIds);
+      if (added.length === 0 && removed.length === 0) {
+        return;
+      }
       await store.deleteAssignments(familyId, bookId, removed);
       try {
-        await store.insertAssignments(familyId, bookId, parentId, added);
+        await store.insertAssignments(familyId, bookId, added);
       } catch (error) {
         throw error instanceof ReaderGoneError ? childNotFound() : error;
       }
+      await this.audit.record(transaction, {
+        actor: byParent(parentId),
+        action: 'book.readers_changed',
+        targetId: bookId,
+        familyId,
+        details: { added, removed },
+      });
     });
     return this.pageOf(familyId, bookId, () => Promise.resolve(children));
   }

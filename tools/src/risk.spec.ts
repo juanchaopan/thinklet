@@ -64,11 +64,20 @@ describe('parseRiskRules', () => {
   });
 
   // The architecture's risk rules put every api module that keeps parents'
-  // and children's data at high risk.
+  // and children's data at high risk, and with them the data migrations
+  // written in code and every Dockerfile.
   it.each([
     'apps/api/src/modules/auth/auth.controller.ts',
     'apps/api/src/modules/family/family.service.ts',
+    'apps/api/src/modules/audit/audit.service.ts',
+    'apps/api/src/modules/account/account.service.ts',
+    'apps/api/src/modules/account/authing-webhook.controller.ts',
     'apps/web/src/app/core/auth/auth.service.ts',
+    'apps/api/src/data-migrations/0001-bind-child-ciphertexts.ts',
+    'apps/api/src/migrate-data.ts',
+    'apps/web/component-tests.Dockerfile',
+    'Dockerfile',
+    'apps/api/Dockerfile.dev',
   ])('puts %s at high risk in the repository rules', (file) => {
     expect(riskTier([file], issue, repositoryRules())).toBe('high');
   });

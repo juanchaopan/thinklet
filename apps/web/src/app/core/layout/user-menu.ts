@@ -46,7 +46,7 @@ import { PARENT_PAGES } from './parent-pages';
           <span class="sr-only">，有新的申请结果</span>
           <span
             aria-hidden="true"
-            class="absolute top-0.5 left-[1.875rem] size-3 rounded-full border-2 border-surface bg-badge"
+            class="absolute top-0.5 left-7.5 size-3 rounded-full border-2 border-surface bg-badge"
           ></span>
         }
       </button>

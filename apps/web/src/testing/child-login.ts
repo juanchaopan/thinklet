@@ -1,16 +1,23 @@
 import { screen } from '@testing-library/angular';
-import type { ChildLoginLinkInfo, ChildMeResponse, RememberedChild } from '@thinklet/contracts';
+import type {
+  ChildLoginLinkInfo,
+  ChildMeResponse,
+  ChildNeedsPassword,
+  RememberedChild,
+  SignedInChild,
+} from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { renderApp } from './app';
-import { DUODUO_ID, XIAOMING_ID } from './children';
+import { DOUDOU_ID, XIAOMI_ID } from './children';
 import { codeBoxes, typeCode } from './families';
 import { worker } from './network';
 import { LINYUE_FAMILY, errorBody, stubVisitor } from './sample-data';
 
-// The child's side as the design draws it: 小明 (account xiaoming) and 朵朵
-// (account duoduo) of 林悦的家, whose family code is 7KQ4MZ, and helpers for
-// the tests of the child login, the QR login and the child's home page.
+// The child's side as the design draws it: 小米 (account xiaomi) and 豆豆
+// (account doudou) of 林悦的家, whose family code is 7KQ4MZ, and helpers for
+// the tests of the child login, the QR login and the child's own pages.
+// 豆豆 has no password yet and sets one at the first login.
 
 /** The family code of 林悦的家, which the children type to log in. */
 export const FAMILY_CODE = LINYUE_FAMILY.code;
@@ -18,25 +25,46 @@ export const FAMILY_CODE = LINYUE_FAMILY.code;
 /** The password the design shows typed in. */
 export const PASSWORD = 'xm2019abc';
 
-/** 小明 signed in, as `/api/child/me` and every login answer. */
-export const XIAOMING_SIGNED_IN: ChildMeResponse = { id: XIAOMING_ID, nickname: '小明' };
+/** 小米 signed in, as every login answers. */
+export const XIAOMI_SIGNED_IN: SignedInChild = { id: XIAOMI_ID, nickname: '小米' };
 
-/** 朵朵 signed in. */
-export const DUODUO_SIGNED_IN: ChildMeResponse = { id: DUODUO_ID, nickname: '朵朵' };
+/** 豆豆 signed in. */
+export const DOUDOU_SIGNED_IN: SignedInChild = { id: DOUDOU_ID, nickname: '豆豆' };
 
-/** 小明 and 朵朵 as a device that remembers them lists them. */
-export const REMEMBERED_XIAOMING: RememberedChild = {
-  childId: XIAOMING_ID,
-  nickname: '小明',
-  familyCode: FAMILY_CODE,
-  account: 'xiaoming',
+/** 小米 as `/api/child/me` answers: with the account and the family's name. */
+export const XIAOMI_ME: ChildMeResponse = {
+  ...XIAOMI_SIGNED_IN,
+  account: 'xiaomi',
+  familyName: LINYUE_FAMILY.name,
 };
 
-export const REMEMBERED_DUODUO: RememberedChild = {
-  childId: DUODUO_ID,
-  nickname: '朵朵',
+/** 豆豆 as `/api/child/me` answers. */
+export const DOUDOU_ME: ChildMeResponse = {
+  ...DOUDOU_SIGNED_IN,
+  account: 'doudou',
+  familyName: LINYUE_FAMILY.name,
+};
+
+/** 豆豆 as the login with the family code and the account answers a child who has to set a password. */
+export const DOUDOU_NEEDS_PASSWORD: ChildNeedsPassword = {
+  needsPassword: true,
+  id: DOUDOU_ID,
+  nickname: '豆豆',
+};
+
+/** 小米 and 豆豆 as a device that remembers them lists them. */
+export const REMEMBERED_XIAOMI: RememberedChild = {
+  childId: XIAOMI_ID,
+  nickname: '小米',
   familyCode: FAMILY_CODE,
-  account: 'duoduo',
+  account: 'xiaomi',
+};
+
+export const REMEMBERED_DOUDOU: RememberedChild = {
+  childId: DOUDOU_ID,
+  nickname: '豆豆',
+  familyCode: FAMILY_CODE,
+  account: 'doudou',
 };
 
 /** The token of the login link in the tests, as the design's link writes it. */
@@ -48,10 +76,10 @@ export const QR_PAGE = `/child/qr/${LINK_TOKEN}`;
 /** The link in the api. */
 export const LINK_PATH = `/api/child-login-links/${LINK_TOKEN}`;
 
-/** The link of 小明 before he has a password, and once he has one. */
+/** The link of 小米 before the child has a password, and once the child has one. */
 export const LINK_NEEDS_PASSWORD: ChildLoginLinkInfo = {
-  childId: XIAOMING_ID,
-  nickname: '小明',
+  childId: XIAOMI_ID,
+  nickname: '小米',
   needsPassword: true,
 };
 
@@ -61,7 +89,7 @@ export const LINK_HAS_PASSWORD: ChildLoginLinkInfo = {
 };
 
 /** Stubs `/api/child/me` with the child signed in on this browser. */
-export function stubChildSignedIn(child: ChildMeResponse = XIAOMING_SIGNED_IN): void {
+export function stubChildSignedIn(child: ChildMeResponse = XIAOMI_ME): void {
   worker.use(http.get('/api/child/me', () => HttpResponse.json(child)));
 }
 
@@ -82,7 +110,12 @@ export function stubLink(link: ChildLoginLinkInfo | 'invalid'): void {
 }
 
 /** A login the api lets in, answered with the child now signed in. */
-export function signedIn(child: ChildMeResponse = XIAOMING_SIGNED_IN): () => Response {
+export function signedIn(child: SignedInChild = XIAOMI_SIGNED_IN): () => Response {
+  return () => HttpResponse.json(child);
+}
+
+/** A login with the family code and the account the api answers with the child who has to set a password. */
+export function needsPassword(child: ChildNeedsPassword = DOUDOU_NEEDS_PASSWORD): () => Response {
   return () => HttpResponse.json(child);
 }
 
@@ -108,22 +141,41 @@ export function field(name: string): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>(name, { selector: 'input' });
 }
 
-/** Types the family code from its first box, then the account and the password, into the login form. */
+/**
+ * Types the family code from its first box, then the account and the
+ * password, into the login form; an empty password leaves its box empty.
+ */
 export async function fillLoginForm(
   code: string = FAMILY_CODE,
-  account = 'xiaoming',
+  account = 'xiaomi',
   password: string = PASSWORD,
 ): Promise<void> {
   const [first] = codeBoxes();
   await userEvent.click(first);
   await typeCode(code);
   await userEvent.type(field('账号'), account);
-  await userEvent.type(field('密码'), password);
+  if (password !== '') {
+    await userEvent.type(field('密码'), password);
+  }
 }
 
-/** Waits for the home page of the child with the nickname, with 退出 in its top bar. */
+/**
+ * The link to the child's own settings in the top bar of the child's
+ * pages: the child's avatar, heard as "<nickname>的个人设置".
+ */
+export function findSettingsLink(): Promise<HTMLElement> {
+  return screen.findByRole('link', { name: /的个人设置$/ });
+}
+
+/**
+ * Waits for the home page of the child with the nickname: the child's
+ * avatar in its top bar, leading to the child's own settings, and the
+ * greeting. The top bar has no way to sign out.
+ */
 export async function expectChildHome(nickname: string): Promise<void> {
-  await screen.findByRole('button', { name: '退出' });
-  expect(screen.getByRole('banner').textContent).toContain(nickname);
+  const settings = await findSettingsLink();
+  expect(settings.closest('app-child-top-bar')).not.toBeNull();
+  expect(settings.textContent).toContain(`${nickname}的个人设置`);
+  expect(screen.queryByRole('button', { name: /退出/ })).toBeNull();
   expect(screen.getByText(`你好，${nickname}！`)).toBeTruthy();
 }

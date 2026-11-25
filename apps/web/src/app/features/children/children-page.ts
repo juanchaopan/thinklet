@@ -4,8 +4,9 @@ import { FamilyTroubleView, followFamily } from '../../core/family-pages';
 import { Art } from '../../shared/ui/art';
 import { Avatar } from '../../shared/ui/avatar';
 import { Button, IconButton } from '../../shared/ui/button';
-import { Card } from '../../shared/ui/card';
+import { Card, Chip } from '../../shared/ui/card';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
+import { formatDate } from '../../shared/ui/dates';
 import { InputMode } from '../../shared/ui/input-mode';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { Menu, MenuItem } from '../../shared/ui/menu';
@@ -18,18 +19,25 @@ import { ChildrenStore } from './children-store';
 /** What is open for a child, or for adding one. */
 type ChildDialog = 'add' | 'edit' | 'qr' | 'devices' | 'reset' | 'delete';
 
+/** What a child without a password does once the time to set one with the account has run out. */
+const SETUP_OVER = '请让孩子扫登录二维码设密码，或者重设密码';
+
 /**
  * The children page at `/families/:familyId/children` (rules.md, 孩子页):
  * 孩子 under the family's name, 添加孩子, and the children in the order they
  * were added, each with the avatar, the nickname and 账号 <account>, the QR
  * button (显示登录二维码) and the button of the child's actions (更多操作):
  * 改昵称和账号, 记住的设备, 重设密码 and 删除, each opening its dialog, the last
- * two asking first. With a mouse the actions drop down from the button; on a
- * touch screen they rise in a sheet headed by the child. Without children it
- * says 还没有孩子 with 添加孩子 in the card. Every parent of the family sees
- * the same page.
+ * two asking first. A child without a password yet has 还没设密码 after the
+ * account (on its own line on a phone) and, under it, until when the child
+ * may set one by logging in with the account, in the family's time zone, or
+ * once that time has run out, how the child sets one now. With a mouse the
+ * actions drop down from the button; on a touch screen they rise in a sheet
+ * headed by the child. Without children it says 还没有孩子 with 添加孩子 in
+ * the card. Every parent of the family sees the same page.
  *
- * The children are read again whenever the window comes back to the front.
+ * The children are read again whenever the window comes back to the front,
+ * and after a password reset, which gives the child a new time to set one.
  * A family the parent is not in says 找不到这个家庭. The QR code's library is
  * loaded when a QR code is first shown (decision 0032).
  */
@@ -44,6 +52,7 @@ type ChildDialog = 'add' | 'edit' | 'qr' | 'devices' | 'reset' | 'delete';
     ChildDevicesDialog,
     ChildFormDialog,
     ChildQrDialog,
+    Chip,
     ConfirmDialog,
     FamilyTroubleView,
     IconButton,
@@ -74,7 +83,19 @@ type ChildDialog = 'add' | 'edit' | 'qr' | 'devices' | 'reset' | 'delete';
                   <app-avatar [name]="child.nickname" [personId]="child.id" size="list" />
                   <div class="min-w-0 flex-1">
                     <p [id]="nameId(child)" class="font-bold">{{ child.nickname }}</p>
-                    <p class="truncate text-sm text-ink-soft">账号 {{ child.account }}</p>
+                    <div
+                      class="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2"
+                    >
+                      <p class="max-w-full truncate text-sm text-ink-soft">
+                        账号 {{ child.account }}
+                      </p>
+                      @if (!child.passwordSet) {
+                        <span appChip="sun" class="shrink-0">还没设密码</span>
+                      }
+                    </div>
+                    @if (!child.passwordSet) {
+                      <p class="mt-1 text-sm text-ink-soft">{{ passwordSetup(child) }}</p>
+                    }
                   </div>
                   <app-tool-button
                     label="显示登录二维码"
@@ -172,9 +193,9 @@ type ChildDialog = 'add' | 'edit' | 'qr' | 'devices' | 'reset' | 'delete';
         icon="key"
         [title]="'重设' + child.nickname + '的密码？'"
         [text]="
-          '旧密码马上不能用，已经登录的设备会退出，记住的设备也会一起撤销。' +
+          '旧密码马上不能用，已经登录的设备会退出，记住的设备也会一起撤销。之后 48 小时内，' +
           child.nickname +
-          '下次扫登录二维码时设新密码。'
+          '用账号登录就能设新密码；也可以扫登录二维码设。'
         "
         action="重设"
         [busy]="store.busy() === 'reset'"
@@ -185,7 +206,7 @@ type ChildDialog = 'add' | 'edit' | 'qr' | 'devices' | 'reset' | 'delete';
         [open]="dialog() === 'delete'"
         icon="door"
         [title]="'删除' + child.nickname + '？'"
-        [text]="child.nickname + '的账号、记住的设备和同意记录都会删掉，不能恢复。'"
+        [text]="child.nickname + '的账号、记住的设备和分派给他的书都会删掉，不能恢复。'"
         action="删除"
         [danger]="true"
         [busy]="store.busy() === 'delete'"
@@ -227,6 +248,20 @@ export class ChildrenPage {
     return `app-children-${child.id}`;
   }
 
+  /**
+   * For a child without a password: until when the child may set one by
+   * logging in with the account, in the family's time zone, while that time
+   * has not run out; else how the child sets one now.
+   */
+  protected passwordSetup(child: Child): string {
+    const until = child.passwordSetupUntil;
+    if (until === null || Date.parse(until) <= Date.now()) {
+      return SETUP_OVER;
+    }
+    const timeZone = this.store.family()?.timezone ?? 'UTC';
+    return `${formatDate(until, timeZone, { withTime: true })} 前可以用账号登录设密码`;
+  }
+
   protected add(): void {
     this.formChild.set(null);
     this.dialog.set('add');
@@ -245,9 +280,15 @@ export class ChildrenPage {
     this.dialog.set(null);
   }
 
-  /** Resets the password once confirmed; the question closes whatever the outcome. */
+  /**
+   * Resets the password once confirmed; the question closes whatever the
+   * outcome. Once reset, the children are read again for the child's new
+   * time to set a password.
+   */
   protected async resetPassword(child: Child): Promise<void> {
-    await this.store.resetPassword(child);
+    if ((await this.store.resetPassword(child)) === 'done') {
+      void this.store.load();
+    }
     this.close();
   }
 

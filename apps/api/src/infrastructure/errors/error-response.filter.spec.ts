@@ -8,8 +8,14 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { errorResponseSchema } from '@thinklet/contracts';
-import { ApiError } from './api-error.js';
+import { ApiError, RateLimitedError, StillAdminError } from './api-error.js';
 import { ErrorResponseFilter, errorOutcome } from './error-response.filter.js';
+
+/** The families a parent is still the admin of, as a `still_admin` names them. */
+const ADMIN_FAMILIES = [
+  { id: '5d1e7f3a-9b2c-4d4e-a6f8-1a2b3c4d5e6f', name: '林悦的家' },
+  { id: '8a40c2e4-6f1b-4a3c-9d5e-7f8a9b0c1d2e', name: '爷爷奶奶家' },
+];
 
 /** An Express response double that records what the filter answers. */
 function fakeHttp(request: object = { id: 'request-1' }, headersSent = false) {
@@ -31,7 +37,7 @@ function fakeHttp(request: object = { id: 'request-1' }, headersSent = false) {
   const host = {
     switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
   } as unknown as ArgumentsHost;
-  return { host, sent };
+  return { host, sent, response };
 }
 
 describe('errorOutcome', () => {
@@ -46,6 +52,22 @@ describe('errorOutcome', () => {
     expect(errorOutcome(new ApiError('bad_origin', HttpStatus.FORBIDDEN))).toEqual({
       status: 403,
       code: 'bad_origin',
+    });
+  });
+
+  it('keeps the seconds left of a rate limit', () => {
+    expect(errorOutcome(new RateLimitedError(412))).toEqual({
+      status: 429,
+      code: 'rate_limited',
+      retryAfterSeconds: 412,
+    });
+  });
+
+  it('keeps the families of a still_admin', () => {
+    expect(errorOutcome(new StillAdminError(ADMIN_FAMILIES))).toEqual({
+      status: 409,
+      code: 'still_admin',
+      families: ADMIN_FAMILIES,
     });
   });
 
@@ -95,7 +117,7 @@ describe('ErrorResponseFilter', () => {
   });
 
   it('answers with the common error body and the request id', () => {
-    const { host, sent } = fakeHttp();
+    const { host, sent, response } = fakeHttp();
 
     new ErrorResponseFilter().catch(
       new ApiError('invalid_request', HttpStatus.BAD_REQUEST, [{ path: 'name', code: 'required' }]),
@@ -109,6 +131,32 @@ describe('ErrorResponseFilter', () => {
         requestId: 'request-1',
         fields: [{ path: 'name', code: 'required' }],
       },
+    });
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('answers a rate limit with the seconds left in the body and in Retry-After', () => {
+    const { host, sent, response } = fakeHttp();
+
+    new ErrorResponseFilter().catch(new RateLimitedError(412), host);
+
+    expect(sent.status).toBe(429);
+    expect(errorResponseSchema.parse(sent.body)).toEqual({
+      error: { code: 'rate_limited', requestId: 'request-1', retryAfterSeconds: 412 },
+    });
+    expect(response.setHeader).toHaveBeenCalledWith('Retry-After', '412');
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('answers a still_admin with the families the parent is the admin of', () => {
+    const { host, sent } = fakeHttp();
+
+    new ErrorResponseFilter().catch(new StillAdminError(ADMIN_FAMILIES), host);
+
+    expect(sent.status).toBe(409);
+    expect(errorResponseSchema.parse(sent.body)).toEqual({
+      error: { code: 'still_admin', requestId: 'request-1', families: ADMIN_FAMILIES },
     });
     expect(logged).not.toHaveBeenCalled();
   });

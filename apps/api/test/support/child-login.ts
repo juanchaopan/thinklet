@@ -1,7 +1,7 @@
 import { childLoginLinkSchema, type Child } from '@thinklet/contracts';
 import request from 'supertest';
 import { addChild, childPath } from './children.js';
-import { TEST_APP_ORIGIN } from './containers.js';
+import { TEST_APP_ORIGIN, TEST_CLIENT_IP_HEADER } from './containers.js';
 import { as, type Parent } from './families.js';
 import { cookieHeader, setCookiesOf, type Target } from './login.js';
 
@@ -17,8 +17,22 @@ export const IPAD_SAFARI =
 export const CHILD_SESSION_COOKIE = 'thinklet_child_session';
 export const DEVICE_COOKIE = 'thinklet_device';
 
-/** The body of a login with the family code, the account and the password. */
+/** The signed-in child's own data in the api. */
+export const CHILD_ME_PATH = '/api/child/me';
+
+/**
+ * The body of a login with the family code, the account and the password;
+ * a child without a password yet logs in without one.
+ */
 export interface ChildLoginBody {
+  code: string;
+  account: string;
+  password?: string;
+  remember: boolean;
+}
+
+/** The body of setting the first password with the family code and the account. */
+export interface FirstPasswordBody {
   code: string;
   account: string;
   password: string;
@@ -29,7 +43,8 @@ export interface ChildLoginBody {
  * A browser for the child routes. It keeps the cookies the api sets and
  * drops those it clears, the way a browser does; supertest's own agent
  * would not send Secure cookies over plain HTTP. Every request carries this
- * site's Origin and the browser's User-Agent.
+ * site's Origin and the browser's User-Agent, and, given a client IP
+ * address, the header the proxy in front of the api writes it into.
  */
 export class ChildBrowser {
   /** The browser's cookies by name; a test may change them as a user could. */
@@ -38,6 +53,7 @@ export class ChildBrowser {
   constructor(
     private readonly target: Target,
     private readonly userAgent = IPAD_SAFARI,
+    private readonly clientIp?: string,
   ) {}
 
   async get(path: string): Promise<request.Response> {
@@ -48,9 +64,18 @@ export class ChildBrowser {
     return this.keep(await this.sent(request(this.target).post(path)).send(body));
   }
 
+  async patch(path: string, body?: object): Promise<request.Response> {
+    return this.keep(await this.sent(request(this.target).patch(path)).send(body));
+  }
+
   /** Logs in with the family code, the account and the password. */
   login(body: ChildLoginBody): Promise<request.Response> {
     return this.post('/api/child-auth/login', body);
+  }
+
+  /** Sets the first password with the family code and the account, which logs the child in. */
+  setFirstPassword(body: FirstPasswordBody): Promise<request.Response> {
+    return this.post('/api/child-auth/password', body);
   }
 
   /** Clicks the avatar of a remembered child. */
@@ -60,7 +85,12 @@ export class ChildBrowser {
 
   /** The signed-in child, as the child's pages read it. */
   me(): Promise<request.Response> {
-    return this.get('/api/child/me');
+    return this.get(CHILD_ME_PATH);
+  }
+
+  /** Changes the signed-in child's nickname, as the child's own settings do. */
+  rename(body: object): Promise<request.Response> {
+    return this.patch(CHILD_ME_PATH, body);
   }
 
   /** Takes on the parent's login cookies, as a browser a parent is signed in on. */
@@ -71,7 +101,11 @@ export class ChildBrowser {
   }
 
   private sent(call: request.Test): request.Test {
-    const sent = call.set('Origin', TEST_APP_ORIGIN).set('User-Agent', this.userAgent);
+    const identified = call.set('Origin', TEST_APP_ORIGIN).set('User-Agent', this.userAgent);
+    const sent =
+      this.clientIp === undefined
+        ? identified
+        : identified.set(TEST_CLIENT_IP_HEADER, this.clientIp);
     return this.cookies.size === 0
       ? sent
       : sent.set('Cookie', cookieHeader(Object.fromEntries(this.cookies)));
@@ -113,6 +147,31 @@ export async function newLoginLink(
 /** The address of a login link's routes. */
 export const linkPath = (token: string) => `/api/child-login-links/${token}`;
 
+/**
+ * A new browser on which the child, still without a password, sets one
+ * through a login link the parent makes, as the child does on first
+ * scanning a QR code: the child is signed in on it and not remembered.
+ * Returns the browser and the password.
+ */
+export async function signInWithNewPassword(
+  target: Target,
+  parent: Parent,
+  familyId: string,
+  childId: string,
+): Promise<{ browser: ChildBrowser; password: string }> {
+  const { token } = await newLoginLink(target, parent, familyId, childId);
+  const password = `pw ${crypto.randomUUID().slice(0, 8)}`;
+  const browser = new ChildBrowser(target);
+  const response = await browser.post(`${linkPath(token)}/password`, {
+    password,
+    remember: false,
+  });
+  if (response.status !== 200) {
+    throw new Error(`The password was not set: ${response.status}`);
+  }
+  return { browser, password };
+}
+
 /** A child who has set a password, with the password to log in with. */
 export interface ChildWithPassword extends Child {
   password: string;
@@ -131,14 +190,6 @@ export async function addChildWithPassword(
   child: { nickname?: string; account?: string } = {},
 ): Promise<ChildWithPassword> {
   const added = await addChild(target, parent, familyId, child);
-  const { token } = await newLoginLink(target, parent, familyId, added.id);
-  const password = `pw ${crypto.randomUUID().slice(0, 8)}`;
-  const response = await new ChildBrowser(target).post(`${linkPath(token)}/password`, {
-    password,
-    remember: false,
-  });
-  if (response.status !== 200) {
-    throw new Error(`The password was not set: ${response.status}`);
-  }
-  return { ...added, password };
+  const { password } = await signInWithNewPassword(target, parent, familyId, added.id);
+  return { ...added, passwordSet: true, passwordSetupUntil: null, password };
 }

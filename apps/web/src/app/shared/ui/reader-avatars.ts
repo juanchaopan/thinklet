@@ -11,7 +11,7 @@ const SHOWN = 3;
 
 /**
  * Who reads a book, in words: the nicknames joined by 、 and then 可以读,
- * as in “小明、朵朵可以读”; `whenNone` while nobody reads it.
+ * as in “小米、豆豆可以读”; `whenNone` while nobody reads it.
  */
 export function readersInWords(readers: readonly Reader[], whenNone: string): string {
   return readers.length > 0

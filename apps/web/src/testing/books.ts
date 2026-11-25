@@ -19,7 +19,7 @@ import { ERROR_NUMBER, errorBody, stubSignedIn } from './sample-data';
 export const OPEN = 1000;
 
 /** The family's children in the order they were added. */
-export const NICKNAMES = ['小明', '朵朵', '乐乐'];
+export const NICKNAMES = ['小米', '豆豆', '阿乐'];
 
 /** Opens the app at the address as 林悦, with the counts the design draws on the library. */
 export async function renderAsLinyue(url: string, me: MeResponse = LINYUE_AS_DRAWN) {
@@ -62,33 +62,33 @@ export async function changeReaders(
 }
 
 /**
- * Opens 谁能读 for the book with the button of that name, ticks 乐乐 and
+ * Opens 谁能读 for the book with the button of that name, ticks 阿乐 and
  * leaves with 取消, once the dialog has gone.
  */
-export async function tickLeleAndCancel(button: string | RegExp, title: string): Promise<void> {
+export async function tickAleAndCancel(button: string | RegExp, title: string): Promise<void> {
   const dialog = await openReaders(button, title);
-  await userEvent.click(childRow(dialog, '乐乐'));
+  await userEvent.click(childRow(dialog, '阿乐'));
   await cancel(dialog, `谁能读《${title}》`);
 }
 
 /**
- * Checks 谁能读 of an inactive book read by 小明 alone: he can be taken off,
- * 朵朵 cannot be given it, and the dialog says why.
+ * Checks 谁能读 of an inactive book read by 小米 alone: 小米 can be taken
+ * off, 豆豆 cannot be given it, and the dialog says why.
  */
 export function expectNobodyNew(dialog: HTMLElement): void {
   expect(within(dialog).getByText('下架的书不能再分派')).toBeTruthy();
-  expect(childRow(dialog, '小明').hasAttribute('disabled')).toBe(false);
-  expect(childRow(dialog, '朵朵').hasAttribute('disabled')).toBe(true);
+  expect(childRow(dialog, '小米').hasAttribute('disabled')).toBe(false);
+  expect(childRow(dialog, '豆豆').hasAttribute('disabled')).toBe(true);
 }
 
 /**
- * With the keyboard alone, in 谁能读 of a book read by 小明 and 朵朵: goes
- * from 小明, where the dialog put the focus, to 乐乐, ticks him, and
+ * With the keyboard alone, in 谁能读 of a book read by 小米 and 豆豆: goes
+ * from 小米, where the dialog put the focus, to 阿乐, ticks 阿乐, and
  * presses 确定.
  */
-export async function addLeleWithKeyboard(dialog: HTMLElement): Promise<void> {
+export async function addAleWithKeyboard(dialog: HTMLElement): Promise<void> {
   await vi.waitFor(() => {
-    expect(document.activeElement).toBe(childRow(dialog, '小明'));
+    expect(document.activeElement).toBe(childRow(dialog, '小米'));
   });
   await userEvent.tab();
   await userEvent.tab();

@@ -1,7 +1,17 @@
-import { argon2Sync, randomBytes } from 'node:crypto';
+import { argon2, argon2Sync, randomBytes } from 'node:crypto';
 import { PasswordHashFormatError, PasswordHasher } from './password-hasher.js';
 
-const hasher = new PasswordHasher();
+// Node's argon2 runs as itself, through a spy, so a test can tell whether a
+// password reached it and can make one derivation fail.
+vi.mock('node:crypto', async (importOriginal) => {
+  const crypto = await importOriginal<typeof import('node:crypto')>();
+  return { ...crypto, argon2: vi.fn(crypto.argon2) };
+});
+
+const argon2Calls = vi.mocked(argon2);
+
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
 
 const unpadded = (bytes: Buffer) => bytes.toString('base64').replace(/=+$/, '');
 
@@ -19,7 +29,21 @@ function phcWith(password: string, memory: number, passes: number, parallelism: 
   return `$argon2id$v=19$m=${memory},t=${passes},p=${parallelism}$${unpadded(salt)}$${unpadded(hash)}`;
 }
 
+/** Makes the next argon2 derivation fail, as when the machine runs out of memory. */
+function failNextDerivation(): void {
+  argon2Calls.mockImplementationOnce((_algorithm, _parameters, callback) => {
+    callback(new Error('argon2 failed'), Buffer.alloc(0));
+  });
+}
+
 describe('PasswordHasher', () => {
+  let hasher: PasswordHasher;
+
+  beforeEach(() => {
+    hasher = new PasswordHasher();
+    argon2Calls.mockClear();
+  });
+
   it('writes an argon2id PHC string with the OWASP minimum cost, a 16-byte salt and a 32-byte hash', async () => {
     const stored = await hasher.hash('mi2016');
 
@@ -74,5 +98,72 @@ describe('PasswordHasher', () => {
     ],
   ])('fails on a stored value that is %s', async (_name, stored) => {
     await expect(hasher.verify('mi2016', stored)).rejects.toBeInstanceOf(PasswordHashFormatError);
+  });
+
+  describe('a password past the limits', () => {
+    it.each([
+      ['33 characters', 'a'.repeat(33)],
+      ['129 bytes in one character', `a${ACUTE.repeat(64)}`],
+      ['a megabyte', 'a'.repeat(1_000_000)],
+    ])('refuses %s without hashing it', async (_name, password) => {
+      const stored = phcWith(password, 8_192, 1, 1);
+      argon2Calls.mockClear();
+
+      await expect(hasher.verify(password, stored)).resolves.toBe(false);
+      await expect(hasher.verify(password, null)).resolves.toBe(false);
+      expect(argon2Calls).not.toHaveBeenCalled();
+    });
+
+    it('still checks a password of 32 characters and 128 bytes', async () => {
+      const password = '😀'.repeat(32);
+
+      await expect(hasher.verify(password, await hasher.hash(password))).resolves.toBe(true);
+    });
+  });
+
+  describe('without a stored hash', () => {
+    it('refuses every password after checking it against the stand-in hash', async () => {
+      await expect(hasher.verify('mi2016', null)).resolves.toBe(false);
+      await expect(hasher.verify('', null)).resolves.toBe(false);
+
+      // One derivation makes the stand-in hash and one checks each password.
+      expect(argon2Calls).toHaveBeenCalledTimes(3);
+    });
+
+    it('makes the stand-in hash once, with the cost of every new hash', async () => {
+      await hasher.verify('mi2016', null);
+      await hasher.verify('mi2017', null);
+
+      const [making, ...checks] = argon2Calls.mock.calls.map(([, parameters]) => parameters);
+      expect(making).toMatchObject({ memory: 19_456, passes: 2, parallelism: 1, tagLength: 32 });
+      expect(checks).toHaveLength(2);
+      for (const check of checks) {
+        expect(check).toMatchObject({ memory: 19_456, passes: 2, parallelism: 1 });
+        expect(check.nonce).toEqual(making?.nonce);
+      }
+    });
+
+    it('makes the stand-in hash afresh the next time after making it failed', async () => {
+      failNextDerivation();
+
+      await expect(hasher.verify('mi2016', null)).rejects.toThrow('argon2 failed');
+      await expect(hasher.verify('mi2016', null)).resolves.toBe(false);
+      await expect(hasher.verify('mi2017', null)).resolves.toBe(false);
+
+      // The failed attempt, then one new stand-in hash and the two checks.
+      expect(argon2Calls).toHaveBeenCalledTimes(4);
+    });
+
+    it('lets checks waiting on the same failed attempt fail, and the next one start anew', async () => {
+      failNextDerivation();
+
+      const waiting = await Promise.allSettled([
+        hasher.verify('mi2016', null),
+        hasher.verify('mi2017', null),
+      ]);
+
+      expect(waiting.map(({ status }) => status)).toEqual(['rejected', 'rejected']);
+      await expect(hasher.verify('mi2016', null)).resolves.toBe(false);
+    });
   });
 });

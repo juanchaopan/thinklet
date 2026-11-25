@@ -40,6 +40,20 @@ services:
       timeout: 5s
       retries: 30
 
+  valkey:
+    # Stands in for Redis, with the same protocol and commands. The api keeps
+    # only keys that expire within minutes in it (the rate-limit counters and
+    # the children's QR login links), so it has no named volume and no
+    # password.
+    image: valkey/valkey:9.2.0-alpine@sha256:c8e2d17498838af5d91e12eb7c11220b3434a7b7131a333e3af52ad5e0b80882
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
   mock-oauth2-server:
     # Stands in for Authing as the OIDC provider. Every first path segment is
     # an issuer of its own (http://localhost:<port>/<issuer id>), any client id
