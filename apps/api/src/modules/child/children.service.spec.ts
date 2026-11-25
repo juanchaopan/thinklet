@@ -157,8 +157,8 @@ function createService(
       exists = exists && !deleted;
       return Promise.resolve(deleted);
     }),
-    clearPassword: vi.fn((familyId: string, childId: string, at: Date) => {
-      calls.push(`clearPassword ${childId} ${at.toISOString()}`);
+    clearPassword: vi.fn((familyId: string, childId: string) => {
+      calls.push(`clearPassword ${childId}`);
       return Promise.resolve(inFamily(familyId, childId));
     }),
     listDevices: vi.fn((): Promise<DeviceRecord[]> => Promise.resolve([])),
@@ -239,7 +239,7 @@ describe('ChildrenService', () => {
   });
 
   describe('add', () => {
-    it("adds the child as of now and records the adding parent's consent with its version", async () => {
+    it("adds the child and records the adding parent's consent with its version", async () => {
       const { service, store, audit, calls } = createService({ child: false });
 
       const child = await service.add(PARENT_ID, FAMILY_ID, newChild);
@@ -249,7 +249,6 @@ describe('ChildrenService', () => {
         familyId: FAMILY_ID,
         nickname: '小米',
         account: 'xiaomi',
-        addedAt: NOW,
       });
       expect(calls).toEqual(['transaction', 'audit child.created', 'commit']);
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
@@ -349,7 +348,7 @@ describe('ChildrenService', () => {
   });
 
   describe('resetPassword', () => {
-    it('locks the child, then clears the password as of now, forgets every device and records it, in one transaction', async () => {
+    it('locks the child, then clears the password, forgets every device and records it, in one transaction', async () => {
       const { service, audit, links, calls } = createService();
 
       await service.resetPassword(PARENT_ID, FAMILY_ID, CHILD_ID);
@@ -357,7 +356,7 @@ describe('ChildrenService', () => {
       expect(calls).toEqual([
         'transaction',
         `lockChild ${CHILD_ID}`,
-        `clearPassword ${CHILD_ID} ${NOW.toISOString()}`,
+        `clearPassword ${CHILD_ID}`,
         `deleteDevices ${CHILD_ID}`,
         'audit child.password_reset',
         'commit',
@@ -368,19 +367,6 @@ describe('ChildrenService', () => {
         ...ON_XIAOMI,
         action: 'child.password_reset',
       });
-    });
-
-    it('refuses logins from the next whole second on when the reset falls within a second', async () => {
-      const { service, store } = createService();
-      vi.setSystemTime(new Date('2026-11-22T09:00:00.300Z'));
-
-      await service.resetPassword(PARENT_ID, FAMILY_ID, CHILD_ID);
-
-      expect(store.clearPassword).toHaveBeenCalledWith(
-        FAMILY_ID,
-        CHILD_ID,
-        new Date('2026-11-22T09:00:01.000Z'),
-      );
     });
 
     it('answers a child of another family with child_not_found and changes nothing', async () => {

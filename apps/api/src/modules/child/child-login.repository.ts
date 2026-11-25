@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, lte, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -39,6 +39,14 @@ export interface RememberedDevice {
   expiresAt: Date;
 }
 
+/** What the check of a signed-in child reads of the child's row, with the database's time of the read. */
+export interface SessionCheck {
+  /** The time before which the child's logins are refused. */
+  sessionsValidAfter: Date;
+  /** The database's clock as the row was read. */
+  checkedAt: Date;
+}
+
 const candidateColumns = {
   id: children.id,
   familyId: children.familyId,
@@ -47,12 +55,22 @@ const candidateColumns = {
 };
 
 /**
+ * The database's clock as the statement runs, in milliseconds since the
+ * epoch, as a number the driver hands over as it is. `clock_timestamp()`
+ * moves on within a transaction, where `now()` would stay at the
+ * transaction's start, before any lock the transaction waited for. A new
+ * fragment every time, as a mapping set on one would be set on all.
+ */
+const databaseClockMs = () => sql<number>`(extract(epoch from clock_timestamp()) * 1000)::float8`;
+
+/**
  * The queries of a child's login, on the pool or inside one transaction:
  * finding the child by account or by id, the child's password and the
  * check of a signed-in child, and the browsers the child is remembered on.
  * The nickname, the account and the device names are encrypted on the way
  * in and decrypted on the way out, each bound to its column and its row's
- * id.
+ * id. Every time a login compares or writes is the database's, so api
+ * instances whose clocks differ agree on it.
  */
 export class ChildLoginStore {
   constructor(
@@ -98,13 +116,34 @@ export class ChildLoginStore {
     return this.readCandidate(rows.at(0));
   }
 
-  /** The time before which the child's logins are refused, or undefined when the child is gone. */
-  async sessionsValidAfter(childId: string): Promise<Date | undefined> {
+  /** The database's clock now, read in a statement of its own, so after any lock taken before it. */
+  async databaseNow(): Promise<Date> {
+    const { rows } = await this.executor.execute<{ ms: number }>(
+      sql`select ${databaseClockMs()} as ms`,
+    );
+    const ms = rows.at(0)?.ms;
+    if (ms === undefined) {
+      throw new Error("The database did not answer its clock's time");
+    }
+    return new Date(ms);
+  }
+
+  /**
+   * The time before which the child's logins are refused, read with the
+   * database's clock, or undefined when the child is gone.
+   */
+  async sessionCheck(childId: string): Promise<SessionCheck | undefined> {
     const rows = await this.executor
-      .select({ sessionsValidAfter: children.sessionsValidAfter })
+      .select({
+        sessionsValidAfter: children.sessionsValidAfter,
+        checkedAtMs: databaseClockMs().mapWith(Number),
+      })
       .from(children)
       .where(eq(children.id, childId));
-    return rows.at(0)?.sessionsValidAfter;
+    const row = rows.at(0);
+    return row === undefined
+      ? undefined
+      : { sessionsValidAfter: row.sessionsValidAfter, checkedAt: new Date(row.checkedAtMs) };
   }
 
   /** The child's nickname, or undefined when the child is gone. */
@@ -121,17 +160,36 @@ export class ChildLoginStore {
     await this.executor.update(children).set({ passwordHash }).where(eq(children.id, childId));
   }
 
+  /** Deletes the child's devices that have expired by `now`; other children's are left to their own logins. */
+  async deleteExpiredDevices(childId: string, now: Date): Promise<void> {
+    await this.executor
+      .delete(childDevices)
+      .where(and(eq(childDevices.childId, childId), lte(childDevices.expiresAt, now)));
+  }
+
   /**
-   * Remembers the child on the browser with the token's hash, or renews the
-   * browser's row: the last login is now and it lasts until `expiresAt`. A
-   * row that had expired is remembered anew, as a new device with a new id,
-   * time and name; a row still valid keeps its id, when it was first
-   * remembered and its name. The name is encrypted for the new id, so a
-   * row that takes the new name takes the new id with it.
+   * Whether any child's device still valid at `now` has the token's hash:
+   * the token is one this api issued and a browser still remembers by.
+   */
+  async isRememberedBy(tokenHash: string, now: Date): Promise<boolean> {
+    const rows = await this.executor
+      .select({ id: childDevices.id })
+      .from(childDevices)
+      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, now)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Remembers the child on the browser with the token's hash, as a new
+   * device with an id of its own and its name encrypted for that id, or
+   * renews the browser's row: the last login is now and it lasts until
+   * `expiresAt`, keeping its id, when it was first remembered and its name.
+   * A login deletes the child's expired devices before it remembers the
+   * browser, under the child's lock, so the row renewed is one still valid.
    */
   async rememberDevice(device: RememberedDevice): Promise<void> {
     const id = randomUUID();
-    const lapsed = sql`${childDevices.expiresAt} <= excluded.last_used_at`;
     await this.executor
       .insert(childDevices)
       .values({
@@ -146,9 +204,6 @@ export class ChildLoginStore {
       .onConflictDoUpdate({
         target: [childDevices.childId, childDevices.tokenHash],
         set: {
-          id: sql`case when ${lapsed} then excluded.id else ${childDevices.id} end`,
-          rememberedAt: sql`case when ${lapsed} then excluded.remembered_at else ${childDevices.rememberedAt} end`,
-          name: sql`case when ${lapsed} then excluded.name else ${childDevices.name} end`,
           lastUsedAt: sql`excluded.last_used_at`,
           expiresAt: sql`excluded.expires_at`,
         },
@@ -187,8 +242,11 @@ export class ChildLoginStore {
       .where(and(eq(childDevices.childId, childId), eq(childDevices.tokenHash, tokenHash)));
   }
 
-  /** The children the browser with the token's hash remembers at `now`, in the order remembered. */
-  async listRemembered(tokenHash: string, now: Date): Promise<RememberedRecord[]> {
+  /**
+   * The children the browser with the token's hash remembers by the
+   * database's clock, in the order remembered.
+   */
+  async listRemembered(tokenHash: string): Promise<RememberedRecord[]> {
     const rows = await this.executor
       .select({
         childId: children.id,
@@ -198,7 +256,7 @@ export class ChildLoginStore {
       })
       .from(childDevices)
       .innerJoin(children, eq(children.id, childDevices.childId))
-      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, now)))
+      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, sql`now()`)))
       .orderBy(asc(childDevices.rememberedAt), asc(childDevices.id));
     return rows.map((row) => ({
       ...row,

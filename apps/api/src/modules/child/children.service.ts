@@ -12,7 +12,6 @@ import type {
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import { AuditService, byParent, type AuditActor } from '../audit/audit.service.js';
-import { sessionsValidAfterReset } from './child.service.js';
 import {
   AccountTakenError,
   ChildrenRepository,
@@ -131,7 +130,6 @@ export class ChildrenService {
           familyId,
           nickname: request.nickname,
           account: request.account,
-          addedAt: new Date(),
         });
         await this.audit.record(transaction, {
           ...onChild(parentId, familyId, child.id),
@@ -191,15 +189,16 @@ export class ChildrenService {
    * cleared, every login issued so far is refused and every remembered
    * browser forgotten. A login link not used yet keeps working, so the
    * child sets a new password with it. The child's row is locked before
-   * the time of the reset is taken, so a login holding the lock finishes
-   * first and its session, issued before that time, is refused.
+   * the database's clock gives the time of the reset, so a login holding
+   * the lock finishes first and its session, issued by the same clock
+   * before that time, is refused.
    */
   resetPassword(parentId: string, familyId: string, childId: string): Promise<void> {
     return this.repository.transaction(async (store, transaction) => {
       if (!(await store.lockChild(familyId, childId))) {
         throw childNotFound();
       }
-      await store.clearPassword(familyId, childId, sessionsValidAfterReset(new Date()));
+      await store.clearPassword(familyId, childId);
       await store.deleteDevices(childId);
       await this.audit.record(transaction, {
         ...onChild(parentId, familyId, childId),

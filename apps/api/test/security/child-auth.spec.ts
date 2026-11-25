@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { errorResponseSchema, type FamilyDetail } from '@thinklet/contracts';
 import request from 'supertest';
 import {
@@ -11,13 +12,14 @@ import {
 } from '../support/child-login.js';
 import { addChild, childrenPath, deviceRows } from '../support/children.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
+import { query } from '../support/database.js';
 import {
   createFamily,
   signInParent,
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
-import { cookieHeader } from '../support/login.js';
+import { cookieHeader, setCookiesOf } from '../support/login.js';
 
 /** A combining accent: two bytes of UTF-8 that add no character. */
 const ACUTE = String.fromCodePoint(0x301);
@@ -32,6 +34,8 @@ const PASSWORDS_PAST_THE_LIMITS: Array<[string, string]> = [
   ['50 000 characters', 'a'.repeat(50_000)],
 ];
 
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
 /** What a response tells: its status, the fields and code of its error, and the cookies it sets. */
 function whatItTells(response: request.Response) {
   const { error } = errorResponseSchema.parse(response.body);
@@ -43,13 +47,20 @@ function whatItTells(response: request.Response) {
   };
 }
 
+/** A login that remembers a child on the browser, and the child it logged in. */
+interface RememberingLogin {
+  childId: string;
+  response: request.Response;
+}
+
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for a
 // child's login: a failed login does not say which item was wrong; a
 // password past the limits is refused like a wrong one, and cannot be set;
 // a child's login opens no parent route and a parent's login no child
-// route; one child's remembered browser does not log in another child; the
-// routes that change data need this site's Origin, though they need no
-// login.
+// route; one child's remembered browser does not log in another child; a
+// device token written into the browser that the api never issued does
+// not become a device credential (#14, 18); the routes that change data
+// need this site's Origin, though they need no login.
 describe('child login security', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -66,6 +77,15 @@ describe('child login security', () => {
   /** Whether the link of the token can still be used: opening it answers who it is for. */
   const stillUsable = async (token: string) =>
     (await browser().get(linkPath(token))).status === 200;
+  /** How many devices of any child the database has with the token's hash. */
+  const devicesWithToken = async (token: string) =>
+    (
+      await query<{ id: string }>(
+        running.databaseUrl,
+        'select id from child_devices where token_hash = $1',
+        [sha256(token)],
+      )
+    ).length;
 
   beforeAll(async () => {
     parent = await signInParent(running.server, { name: '林悦' });
@@ -238,6 +258,67 @@ describe('child login security', () => {
     const response = await stranger.get('/api/child-auth/remembered');
 
     expect(response.body).toEqual([]);
+  });
+
+  describe('a device token the api never issued, written into the browser beforehand', () => {
+    it.each<[string, (kid: ChildBrowser) => Promise<RememberingLogin>]>([
+      [
+        'logging in with the account',
+        async (kid) => {
+          const victim = await addChildWithPassword(running.server, parent, family.id);
+          return { childId: victim.id, response: await kid.login(loginOf(victim, true)) };
+        },
+      ],
+      [
+        'logging in with the password on a link',
+        async (kid) => {
+          const victim = await addChildWithPassword(running.server, parent, family.id);
+          const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+          const response = await kid.post(`${linkPath(token)}/login`, {
+            password: victim.password,
+            remember: true,
+          });
+          return { childId: victim.id, response };
+        },
+      ],
+      [
+        'setting the first password on a link',
+        async (kid) => {
+          const victim = await addChild(running.server, parent, family.id);
+          const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+          const response = await kid.post(`${linkPath(token)}/password`, {
+            password: 'my secret',
+            remember: true,
+          });
+          return { childId: victim.id, response };
+        },
+      ],
+    ])(
+      'does not become the device credential when %s remembers the child; the response sets another token',
+      async (_case, logIn) => {
+        const planted = Buffer.alloc(32, 5).toString('base64url');
+        const kid = browser();
+        kid.cookies.set(DEVICE_COOKIE, planted);
+
+        const { childId, response } = await logIn(kid);
+
+        expect(response.status).toBe(200);
+        const issued = setCookiesOf(response)[DEVICE_COOKIE]?.value;
+        expect(issued).toBeDefined();
+        expect(issued).not.toBe(planted);
+        expect(await devicesWithToken(planted)).toBe(0);
+        const rows = await deviceRows(running.databaseUrl, childId);
+        expect(rows.map((row) => row.token_hash)).toEqual([sha256(issued ?? '')]);
+
+        const attacker = browser();
+        attacker.cookies.set(DEVICE_COOKIE, planted);
+        expect((await attacker.get('/api/child-auth/remembered')).body).toEqual([]);
+        const remembered = await attacker.loginRemembered(childId);
+        expect(remembered.status).toBe(401);
+        expect(errorResponseSchema.parse(remembered.body).error.code).toBe('remember_invalid');
+        expect((await attacker.me()).status).toBe(401);
+      },
+    );
   });
 
   describe('the Origin of requests that change data', () => {

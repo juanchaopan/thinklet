@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -34,8 +34,6 @@ export interface NewChild {
   familyId: string;
   nickname: string;
   account: string;
-  /** When the child is added; logins issued before it are refused. */
-  addedAt: Date;
 }
 
 /** A change to a child; a field left out keeps its value. */
@@ -80,7 +78,9 @@ function settingAccount<T>(write: () => Promise<T>): Promise<T> {
  * database ciphertext only. A new child gets its id here rather than from
  * the database, as its ciphertexts are bound to it before the row exists.
  * Every query of a child names its family as well, so a child of another
- * family is not found.
+ * family is not found. The times a child's logins are compared with are
+ * the database's (`.docs/design/data.md`, "children"), the clock the
+ * logins are issued by, never an api instance's.
  */
 export class ChildStore {
   constructor(
@@ -129,9 +129,10 @@ export class ChildStore {
   }
 
   /**
-   * Adds the child without a password, refusing logins issued before it
-   * was added; throws AccountTakenError when another child of the family
-   * has the account. The child is returned from what was written.
+   * Adds the child without a password, refusing logins issued before the
+   * database's time of the adding; throws AccountTakenError when another
+   * child of the family has the account. The child is returned from what
+   * was written.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
     const id = randomUUID();
@@ -142,7 +143,7 @@ export class ChildStore {
         nickname: this.cipher.encrypt(child.nickname, { column: children.nickname, rowId: id }),
         account: this.cipher.encrypt(child.account, { column: children.account, rowId: id }),
         accountLookup: this.cipher.lookup(child.familyId, child.account),
-        sessionsValidAfter: child.addedAt,
+        sessionsValidAfter: sql`now()`,
       }),
     );
     return { id, nickname: child.nickname, account: child.account };
@@ -196,13 +197,24 @@ export class ChildStore {
   }
 
   /**
-   * Clears the child's password and refuses every login issued before the
-   * given time; returns whether the family has the child.
+   * Clears the child's password and refuses every login issued until now
+   * by the database's clock, which the statement reads as it runs, after
+   * the lock the caller took on the child. The time stored is the next
+   * whole second: a JWT carries its issue time in whole seconds, so a login
+   * issued earlier in the reset's own second carries that second, and only
+   * the next one refuses it. A login made after the reset within the rest
+   * of that second is refused as well, which loses nothing in practice:
+   * the reset clears the password and forgets every remembered browser, so
+   * the child logs in again only by setting a new password, which takes
+   * far longer. Returns whether the family has the child.
    */
-  async clearPassword(familyId: string, childId: string, at: Date): Promise<boolean> {
+  async clearPassword(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
       .update(children)
-      .set({ passwordHash: null, sessionsValidAfter: at })
+      .set({
+        passwordHash: null,
+        sessionsValidAfter: sql`date_trunc('second', clock_timestamp()) + interval '1 second'`,
+      })
       .where(childInFamily(familyId, childId))
       .returning({ id: children.id });
     return rows.length > 0;

@@ -33,7 +33,7 @@ import { LoginLinks } from './login-links.js';
  * repositories with the child data cipher; the login links live in Redis,
  * in LoginLinks. Other modules use ChildrenService to look up the children
  * of a family, ChildService for its half of the child's login check
- * (`isCurrent`) on their own routes for a signed-in child, and LoginLinks
+ * (`currentAt`) on their own routes for a signed-in child, and LoginLinks
  * to remove the links of the children they delete.
  */
 @Module({

@@ -29,7 +29,7 @@ export class ChildGuard implements CanActivate {
     await this.sessions.authenticate(
       http.getRequest<Request>(),
       http.getResponse<Response>(),
-      (session) => this.childService.isCurrent(session),
+      (session) => this.childService.currentAt(session),
     );
     return true;
   }

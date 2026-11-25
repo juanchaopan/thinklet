@@ -5,7 +5,11 @@ import type { Request, Response } from 'express';
 import { ChildRoute } from '../../infrastructure/authentication/child-route.decorator.js';
 import { ParentOrChildRoute } from '../../infrastructure/authentication/parent-or-child-route.decorator.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import type { ChildSession, ChildSessionService } from '../auth/child-session.service.js';
+import type {
+  ChildSession,
+  ChildSessionCheck,
+  ChildSessionService,
+} from '../auth/child-session.service.js';
 import type { ParentSessionService } from '../auth/parent-session.service.js';
 import type { ChildService } from '../child/child.service.js';
 import { BookReaderGuard } from './book-reader.guard.js';
@@ -25,6 +29,9 @@ const SESSION: ChildSession = {
   expiresAt: new Date('2026-11-30T08:00:00Z'),
 };
 
+/** The database's time at which the child module finds a current login current. */
+const CHECKED_AT = new Date('2026-11-23T09:00:00Z');
+
 /** Whether a parent is signed in, and the child login the browser has: current, stale or none. */
 interface Browser {
   parent: boolean;
@@ -42,18 +49,16 @@ function setUp({ parent, child }: Browser) {
   const parentSessions = { authenticate: vi.fn(() => Promise.resolve(parent)) };
   const childSessions = {
     authenticate: vi.fn(
-      async (
-        _request: Request,
-        _response: Response,
-        isCurrent: (session: ChildSession) => Promise<boolean>,
-      ) => {
-        if (child === 'none' || !(await isCurrent(SESSION))) {
+      async (_request: Request, _response: Response, currentAt: ChildSessionCheck) => {
+        if (child === 'none' || (await currentAt(SESSION)) === undefined) {
           throw new ApiError('unauthenticated', HttpStatus.UNAUTHORIZED);
         }
       },
     ),
   };
-  const childService = { isCurrent: vi.fn(() => Promise.resolve(child === 'current')) };
+  const childService = {
+    currentAt: vi.fn(() => Promise.resolve(child === 'current' ? CHECKED_AT : undefined)),
+  };
   const guard = new BookReaderGuard(
     new Reflector(),
     parentSessions as unknown as ParentSessionService,
@@ -87,7 +92,7 @@ describe('BookReaderGuard', () => {
         response,
         expect.any(Function),
       );
-      expect(childService.isCurrent).toHaveBeenCalledWith(SESSION);
+      expect(childService.currentAt).toHaveBeenCalledWith(SESSION);
     });
 
     it('never asks for a parent, so a parent login opens nothing', async () => {

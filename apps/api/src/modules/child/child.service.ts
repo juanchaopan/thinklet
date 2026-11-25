@@ -10,26 +10,14 @@ const unauthenticated = () => new ApiError('unauthenticated', HttpStatus.UNAUTHO
 const SECOND_MS = 1000;
 
 /**
- * The time a password reset at `at` refuses the child's logins before:
- * `at` rounded up to a whole second. A JWT carries its issue time in whole
- * seconds, so a login issued earlier in the reset's own second carries
- * that second too, and only a whole second after the reset refuses it.
- * A login made after the reset within the rest of that second is refused
- * as well, which loses nothing in practice: the reset clears the password
- * and forgets every remembered browser, so the child logs in again only
- * by setting a new password on a login link, which takes far longer.
- */
-export function sessionsValidAfterReset(at: Date): Date {
-  return new Date(Math.ceil(at.getTime() / SECOND_MS) * SECOND_MS);
-}
-
-/**
  * Whether a login issued at `issuedAt` counts after the child's logins were
  * last ended at `sessionsValidAfter` (`.docs/design/data.md`, "children"),
- * both compared in whole seconds, the unit of the JWT's issue time. A reset
- * stores a whole second (`sessionsValidAfterReset`). The child's creation
- * stores its exact time, and a login in the same second counts: there is
- * no login of the child from before it existed.
+ * both compared in whole seconds, the unit of the JWT's issue time. Both
+ * times are the database's. A password reset stores the next whole second
+ * after it, so a login issued earlier in the reset's own second, which
+ * carries that second, is refused too. The child's creation stores its
+ * exact time, and a login in the same second counts: there is no login of
+ * the child from before it existed.
  */
 export function issuedSinceLastReset(issuedAt: Date, sessionsValidAfter: Date): boolean {
   const seconds = (date: Date) => Math.floor(date.getTime() / SECOND_MS);
@@ -45,12 +33,18 @@ export function issuedSinceLastReset(issuedAt: Date, sessionsValidAfter: Date): 
 export class ChildService {
   constructor(private readonly repository: ChildLoginRepository) {}
 
-  /** Whether the verified login still counts; the child module's half of the child's login check. */
-  async isCurrent(session: ChildSession): Promise<boolean> {
-    const sessionsValidAfter = await this.repository.sessionsValidAfter(session.childId);
-    return (
-      sessionsValidAfter !== undefined && issuedSinceLastReset(session.issuedAt, sessionsValidAfter)
-    );
+  /**
+   * The child module's half of the child's login check: the database's
+   * time at which the verified login was found to still count, or
+   * undefined when it does not. A login renewed then is issued at that
+   * time, so a password reset that follows the check ends the renewed
+   * login as well.
+   */
+  async currentAt(session: ChildSession): Promise<Date | undefined> {
+    const check = await this.repository.sessionCheck(session.childId);
+    return check !== undefined && issuedSinceLastReset(session.issuedAt, check.sessionsValidAfter)
+      ? check.checkedAt
+      : undefined;
   }
 
   /** The signed-in child; one deleted since the login check is no login. */

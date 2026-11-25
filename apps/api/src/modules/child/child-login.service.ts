@@ -20,7 +20,7 @@ import { ChildPasswords, type LoginSubject } from './child-passwords.js';
 import { rememberedUntil } from './device-cookie.js';
 import { deviceNameOf } from './device-name.js';
 import type { ActiveLoginLink } from './login-links.js';
-import { hashToken, newToken } from './tokens.js';
+import { hashToken, newToken, type NewToken } from './tokens.js';
 
 const loginFailed = () => new ApiError('login_failed', HttpStatus.UNAUTHORIZED);
 const wrongPassword = () => new ApiError('wrong_password', HttpStatus.UNAUTHORIZED);
@@ -52,9 +52,10 @@ export interface CompletedLogin {
   /** The device token to set in the browser's cookie, renewing it; undefined leaves the cookie as it is. */
   deviceToken: string | undefined;
   /**
-   * The issue time of the child's session, taken under the child's lock
-   * with the login's checks and writes; a password reset after the login
-   * is later than it, and so ends the session.
+   * The issue time of the child's session: the database's clock once the
+   * child's row is locked. A password reset after the login takes its time
+   * from the same clock, later, and so ends the session, whatever the
+   * clocks of the api instances that run the two.
    */
   issuedAt: Date;
 }
@@ -70,6 +71,8 @@ interface LockedLogin {
   store: ChildLoginStore;
   child: LoginCandidate;
   transaction: Executor;
+  /** The database's clock once the child is locked: the time of every write and of the session. */
+  now: Date;
 }
 
 /**
@@ -86,24 +89,26 @@ type LinkStep = (login: LockedLogin) => Promise<void> | void;
  * A child's logins (`.docs/design/interfaces.md`, "孩子登录"): with the
  * family code, the account and the password, by a remembered avatar, and
  * by a login link, where a child without a password sets one. Every
- * successful login leaves the browser remembering the child or not, as the
- * child chose. Signing the child in is the controller's: it sets the
- * cookies of the completed login. A login itself is not an audit event;
- * the password a child sets is, by the child, in the login's transaction.
+ * successful login deletes the child's expired devices and leaves the
+ * browser remembering the child or not, as the child chose. Signing the
+ * child in is the controller's: it sets the cookies of the completed
+ * login. A login itself is not an audit event, nor is the deleting of
+ * expired devices that comes with it; the password a child sets is, by
+ * the child, in the login's transaction.
  *
  * The logins that check a password, with the account and on a link, are
  * made within ChildPasswords' limits: once it is known whom the login is
  * for, a source at its limit is refused before the password is verified,
  * and a wrong one counts against the source.
  *
- * Each login ends in one transaction that locks the child's row and then
- * re-checks what was checked before it, writes the browser's row and takes
- * the session's issue time. A password reset locks the same row first, so
- * it runs wholly before the login, which the re-check then refuses, or
- * wholly after it, when it forgets the browser and ends the session. The
- * slow work of a password, hashing or verifying it, is done before the
- * transaction, so no lock is held during it: the re-check compares the
- * child's password hash with the one verified.
+ * Each login ends in one transaction that locks the child's row, reads the
+ * database's clock, and then re-checks what was checked before it, writes
+ * the browser's row and issues the session at that time. A password reset
+ * locks the same row first, so it runs wholly before the login, which the
+ * re-check then refuses, or wholly after it, when it forgets the browser
+ * and ends the session. The slow work of a password, hashing or verifying
+ * it, is done before the transaction, so no lock is held during it: the
+ * re-check compares the child's password hash with the one verified.
  *
  * The login links are in Redis; while Redis cannot be reached, a link can
  * be neither read nor used, and the other logins go on.
@@ -142,11 +147,11 @@ export class ChildLoginService {
       if (candidate === undefined || passwordHash === null || !matches) {
         throw loginFailed();
       }
-      return this.locked(candidate.id, loginFailed, ({ store, child }) => {
-        if (child.passwordHash !== passwordHash) {
+      return this.locked(candidate.id, loginFailed, (login) => {
+        if (login.child.passwordHash !== passwordHash) {
           throw loginFailed();
         }
-        return this.applyRemember(store, child.id, request.remember, browser);
+        return this.applyRemember(login, request.remember, browser);
       });
     });
   }
@@ -160,7 +165,7 @@ export class ChildLoginService {
     if (deviceToken === undefined) {
       return [];
     }
-    const records = await this.repository.listRemembered(hashToken(deviceToken), new Date());
+    const records = await this.repository.listRemembered(hashToken(deviceToken));
     const familyIds = [...new Set(records.map((record) => record.familyId))];
     const codes = await this.families.codesOf(familyIds);
     return records.flatMap(({ childId, familyId, nickname, account }) => {
@@ -179,8 +184,7 @@ export class ChildLoginService {
     if (deviceToken === undefined) {
       throw rememberInvalid();
     }
-    return this.locked(childId, rememberInvalid, async ({ store, child }) => {
-      const now = new Date();
+    return this.locked(childId, rememberInvalid, async ({ store, child, now }) => {
       const renewed = await store.renewDevice(
         child.id,
         hashToken(deviceToken),
@@ -308,7 +312,7 @@ export class ChildLoginService {
         throw linkInvalid();
       }
       await step(login);
-      const deviceToken = await this.applyRemember(login.store, login.child.id, remember, browser);
+      const deviceToken = await this.applyRemember(login, remember, browser);
       if (!(await this.repository.takeLink(link))) {
         throw linkInvalid();
       }
@@ -318,8 +322,11 @@ export class ChildLoginService {
 
   /**
    * Completes a login of the child in one transaction holding the child's
-   * lock: the step runs on the locked child, and the session's issue time
-   * is taken after it. A child gone by then is refused with `gone`.
+   * lock. Once the child is locked the database's clock is read, the
+   * child's devices expired by then are deleted (`.docs/design/data.md`,
+   * "child_devices"), and the step runs on the locked child; the session is
+   * issued at that time. A child gone by then is refused with `gone`, and a
+   * step that refuses rolls the deleting back with the rest.
    */
   private locked(childId: string, gone: () => ApiError, step: LockedStep): Promise<CompletedLogin> {
     return this.repository.transaction(async (store, transaction) => {
@@ -327,45 +334,62 @@ export class ChildLoginService {
       if (child === undefined) {
         throw gone();
       }
-      const deviceToken = await step({ store, child, transaction });
+      const now = await store.databaseNow();
+      await store.deleteExpiredDevices(child.id, now);
+      const deviceToken = await step({ store, child, transaction, now });
       return {
         child: { id: child.id, nickname: child.nickname },
         deviceToken,
-        issuedAt: new Date(),
+        issuedAt: now,
       };
     });
   }
 
   /**
-   * Remembers the child on the browser for 30 days from now, making the
-   * browser a device token when it has none, and returns the token for the
-   * cookie. When the child is not to be remembered, it forgets the child on
-   * this browser and leaves the cookie, which other children may share.
+   * Remembers the child on the browser for 30 days from the login, and
+   * returns the device token for the cookie. The browser's own token is
+   * kept only when a device still valid has it, the child's or another
+   * child's the browser remembers: a token the api never issued, or one no
+   * browser is remembered by any more, is replaced by a new one, so a token
+   * written into the browser by someone else never becomes the child's
+   * credential. When the child is not to be remembered, it forgets the
+   * child on this browser and leaves the cookie, which other children may
+   * share.
    */
   private async applyRemember(
-    store: ChildLoginStore,
-    childId: string,
+    { store, child, now }: LockedLogin,
     remember: boolean,
     browser: Browser,
   ): Promise<string | undefined> {
     if (!remember) {
       if (browser.deviceToken !== undefined) {
-        await store.forgetDevice(childId, hashToken(browser.deviceToken));
+        await store.forgetDevice(child.id, hashToken(browser.deviceToken));
       }
       return undefined;
     }
-    const { token, hash } =
-      browser.deviceToken === undefined
-        ? newToken()
-        : { token: browser.deviceToken, hash: hashToken(browser.deviceToken) };
-    const now = new Date();
+    const { token, hash } = await this.deviceTokenOf(store, browser, now);
     await store.rememberDevice({
-      childId,
+      childId: child.id,
       tokenHash: hash,
       name: deviceNameOf(browser.userAgent),
       now,
       expiresAt: rememberedUntil(now),
     });
     return token;
+  }
+
+  /** The browser's device token when a device valid at `now` has it, else a new one. */
+  private async deviceTokenOf(
+    store: ChildLoginStore,
+    browser: Browser,
+    now: Date,
+  ): Promise<NewToken> {
+    if (browser.deviceToken !== undefined) {
+      const hash = hashToken(browser.deviceToken);
+      if (await store.isRememberedBy(hash, now)) {
+        return { token: browser.deviceToken, hash };
+      }
+    }
+    return newToken();
   }
 }

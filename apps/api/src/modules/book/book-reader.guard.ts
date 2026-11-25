@@ -48,7 +48,7 @@ export class BookReaderGuard implements CanActivate {
       return true;
     }
     await this.childSessions.authenticate(request, response, (session) =>
-      this.childService.isCurrent(session),
+      this.childService.currentAt(session),
     );
     return true;
   }
