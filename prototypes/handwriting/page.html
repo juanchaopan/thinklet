@@ -1,0 +1,205 @@
+<title>手写识别试验台</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: one centred column like an exercise book page; the writing pad is the widest, calmest object on it. */
+  :root {
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --line: #d7dee8;
+    --fg: #1b2532;
+    --muted: #5a687b;
+    --ink: #1f3f8a;
+    --accent: #b97f00;
+    --accent-soft: #fff2d1;
+    --ok: #1d7a4c;
+    --bad: #b2362b;
+    --guide: #c7d1df;
+    --font-text: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f141b; --surface: #171e28; --line: #2a3442; --fg: #e5ebf2; --muted: #98a5b5;
+      --ink: #a3bfff; --accent: #f0b93a; --accent-soft: #3a2f13; --ok: #5cc98d; --bad: #ff8b7f; --guide: #354255;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141b; --surface: #171e28; --line: #2a3442; --fg: #e5ebf2; --muted: #98a5b5;
+    --ink: #a3bfff; --accent: #f0b93a; --accent-soft: #3a2f13; --ok: #5cc98d; --bad: #ff8b7f; --guide: #354255;
+    color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-text); font-size: 16px; line-height: 1.6; }
+  .page {
+    max-width: 760px; margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 24px 48px;
+    display: grid; gap: 20px;
+  }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0; text-wrap: balance; }
+  h2 { font-size: 1.15rem; margin: 0; }
+  p { margin: 0; }
+  .eyebrow { font-family: var(--font-data); font-size: 0.8rem; letter-spacing: 0.06em; color: var(--accent); text-transform: uppercase; }
+  .lede { color: var(--muted); max-width: 62ch; }
+  .device { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.85rem; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; background: var(--surface); }
+  .chip b { font-weight: 600; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tab {
+    min-height: 44px; padding: 0 16px; border: 0; background: none; color: var(--muted);
+    font: inherit; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap;
+  }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .view { display: grid; gap: 16px; }
+  .q { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+  .q.active { border-color: var(--ink); }
+  .q-head { display: flex; gap: 8px; align-items: baseline; }
+  .q-type { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+  .answer-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .answer-row label { color: var(--muted); }
+  .answer {
+    font-family: var(--font-data); font-size: 1.3rem; width: 7.5em; min-height: 44px; padding: 4px 10px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg);
+  }
+  button.btn {
+    min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--surface); color: var(--fg); font: inherit; cursor: pointer;
+  }
+  button.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--surface); font-weight: 600; }
+  button.btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+  button.btn:disabled { opacity: 0.45; cursor: default; }
+
+  .panel { display: grid; gap: 10px; }
+  .pad-wrap { position: relative; }
+  canvas.pad {
+    display: block; width: 100%; height: 190px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: crosshair;
+  }
+  .pad-hint { position: absolute; inset: auto 0 12px 0; text-align: center; color: var(--muted); font-size: 0.85rem; pointer-events: none; }
+  .readings { display: grid; gap: 4px; }
+  .reading { display: grid; grid-template-columns: 7.5em 1fr auto; gap: 8px; align-items: baseline; padding: 4px 8px; border-radius: 8px; }
+  .reading.chosen { background: var(--accent-soft); }
+  .reading output { font-family: var(--font-data); font-size: 1.5rem; font-weight: 600; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+  .reading .ms, .alt { font-family: var(--font-data); font-size: 0.8rem; color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .choice { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; color: var(--muted); }
+  .choice label { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; color: var(--fg); }
+
+  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  legend { color: var(--muted); font-size: 0.85rem; padding: 0 4px; }
+  fieldset label { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; }
+  .prompt { display: flex; align-items: baseline; gap: 12px; }
+  .prompt .target { font-family: var(--font-data); font-size: 2.6rem; font-weight: 600; color: var(--accent); line-height: 1; }
+  .result-line { font-size: 0.95rem; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; min-height: 44px; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .note { font-size: 0.85rem; color: var(--muted); }
+  .notice { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; font-size: 0.9rem; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: 0; }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--ink); vertical-align: middle; margin-left: 6px; }
+  @media (prefers-reduced-motion: no-preference) { .q { transition: border-color 0.15s; } }
+</style>
+
+<main class="page">
+  <header style="display:grid;gap:8px">
+    <p class="eyebrow">Spike #19 · 本地手写识别</p>
+    <h1>手写识别试验台</h1>
+    <p class="lede">用手指、笔或鼠标写数字和罗马数字，对比两种在本机运行的识别办法：笔画模板（$P 点云匹配）和小模型（卷积网络）。识别不联网，也不调用任何 AI 服务。</p>
+    <div class="device" id="device"></div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="试验内容">
+    <button class="tab" role="tab" id="tab-try" aria-controls="try" aria-selected="true">试着作答</button>
+    <button class="tab" role="tab" id="tab-collect" aria-controls="collect" aria-selected="false">采集样本</button>
+    <button class="tab" role="tab" id="tab-stats" aria-controls="stats" aria-selected="false">识别率</button>
+  </nav>
+
+  <section class="view" id="try" role="tabpanel" aria-labelledby="tab-try">
+    <p class="note">下面是示例题。点答案框或“手写”按钮，在手写面板里写，再点“填入答案”。触屏设备默认打开手写面板，用键盘和鼠标时默认收起。</p>
+    <div class="q" data-mode="digits">
+      <div class="q-head"><span class="q-type">数字</span><p>这段旋律一共有几个小节？</p></div>
+      <div class="answer-row"><label for="a1">答</label><input class="answer" id="a1" autocomplete="off" spellcheck="false"><button class="btn pen" type="button" aria-pressed="false">手写</button></div>
+      <div class="slot"></div>
+    </div>
+    <div class="q" data-mode="roman">
+      <div class="q-head"><span class="q-type">罗马数字</span><p>这个和弦是这个调的第几级？用罗马数字写。</p></div>
+      <div class="answer-row"><label for="a2">答</label><input class="answer" id="a2" autocomplete="off" spellcheck="false"><button class="btn pen" type="button" aria-pressed="false">手写</button></div>
+      <div class="slot"></div>
+    </div>
+    <div class="q" data-mode="notes">
+      <div class="q-head"><span class="q-type">音名（扩展评估）</span><p>这个音叫什么名字？升号写 #，降号写 b。</p></div>
+      <div class="answer-row"><label for="a3">答</label><input class="answer" id="a3" autocomplete="off" spellcheck="false"><button class="btn pen" type="button" aria-pressed="false">手写</button></div>
+      <div class="slot"></div>
+    </div>
+
+    <div class="panel" id="panel" hidden>
+      <div class="pad-wrap"><canvas class="pad" id="try-pad" aria-label="手写区：用手指、笔或鼠标写答案"></canvas><p class="pad-hint" id="try-hint">在这里写</p></div>
+      <div class="readings" aria-live="polite">
+        <div class="reading" data-method="cnn"><span>小模型</span><output id="try-cnn">—</output><span class="ms" id="try-cnn-ms"></span></div>
+        <div class="reading" data-method="pdollar"><span>笔画模板</span><output id="try-pdollar">—</output><span class="ms" id="try-pdollar-ms"></span></div>
+      </div>
+      <div class="choice" role="radiogroup" aria-label="填入哪种结果">
+        填入时用
+        <label><input type="radio" name="use" value="cnn" id="use-cnn" checked>小模型</label>
+        <label><input type="radio" name="use" value="pdollar" id="use-pdollar">笔画模板</label>
+      </div>
+      <div class="actions">
+        <button class="btn" type="button" id="try-undo">撤销一笔</button>
+        <button class="btn" type="button" id="try-clear">清除</button>
+        <button class="btn primary" type="button" id="try-fill" disabled>填入答案</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="collect" role="tabpanel" aria-labelledby="tab-collect" hidden>
+    <p class="note">照着提示写，写完点“提交”。每一条都保存笔迹和两种办法的识别结果，用来算各设备上的识别率。写错了可以先清除；提交后发现写错了，点“撤回这一条”。</p>
+    <div class="notice" id="store-note" hidden></div>
+    <div class="controls">
+      <fieldset><legend>谁在写</legend>
+        <label><input type="radio" name="writer" value="adult" id="w-adult" checked>大人</label>
+        <label><input type="radio" name="writer" value="child" id="w-child">孩子</label>
+      </fieldset>
+      <fieldset><legend>写什么</legend>
+        <label><input type="radio" name="cmode" value="digits" id="m-digits" checked>数字</label>
+        <label><input type="radio" name="cmode" value="roman" id="m-roman">罗马数字</label>
+        <label><input type="radio" name="cmode" value="notes" id="m-notes">音名</label>
+      </fieldset>
+    </div>
+    <div class="prompt"><span>请写</span><span class="target" id="target">7</span></div>
+    <div class="pad-wrap"><canvas class="pad" id="collect-pad" aria-label="采集区：照着提示写"></canvas><p class="pad-hint" id="collect-hint">在这里写</p></div>
+    <div class="actions">
+      <button class="btn" type="button" id="c-undo">撤销一笔</button>
+      <button class="btn" type="button" id="c-clear">清除</button>
+      <button class="btn" type="button" id="c-skip">换一个</button>
+      <button class="btn primary" type="button" id="c-submit" disabled>提交</button>
+    </div>
+    <div class="result-line" id="c-result" aria-live="polite"></div>
+    <p class="note" id="c-count"></p>
+  </section>
+
+  <section class="view" id="stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
+    <p class="note" id="stats-source"></p>
+    <h2>各设备的整题识别率</h2>
+    <div class="table-wrap"><table id="t-device"></table></div>
+    <h2>按作答类型</h2>
+    <div class="table-wrap"><table id="t-mode"></table></div>
+    <h2>两种办法的代价</h2>
+    <div class="table-wrap"><table id="t-cost"></table></div>
+    <p class="note">大小按 gzip 压缩后计算，包括切分笔画和识别的全部代码；小模型另含 int8 权重。小模型的测试集准确率来自 MNIST 和 EMNIST 的测试集，限定在每种作答类型允许的字符里。</p>
+  </section>
+</main>
+
+<!-- SCRIPTS -->
