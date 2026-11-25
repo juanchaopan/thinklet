@@ -300,7 +300,7 @@
 - `nickname` 去掉前后空格后 1–10 个字，不超过 160 字节；`account` 去掉前后空格后 1–20 个字符，只能是小写字母和数字，不是时 `code` 是 `invalid`。`consent` 不是 `true` 时，字段 `consent` 的 `code` 是 `required`。
 - 添加孩子时在同一个事务里写审计记录 `child.created`，带同意文字的版本；用账号登录能设密码的期限是添加后 48 小时。
 - `url` 是 `<本站地址>/child/qr/<令牌>`，令牌只在这个响应里出现。链接存在 Redis 里，生成时这个孩子之前还没用过的链接作废；Redis 连不上时返回 `500 internal`。
-- 链接的 `status` 是 `active`、`used`、`expired` 或 `revoked`，从 Redis 读；状态的键过期后是 `expired`。
+- 链接的 `status` 是 `active`、`used`、`expired` 或 `revoked`，从 Redis 读。状态键不在了（过期了，或者从来没有这个编号）时返回 `200 { "status": "expired", "expiresAt": <现在> }`；`404 not_found` 只在链接编号格式不对，或者是别的孩子还没过期的链接时返回。
 - 重设密码在同一个事务里清掉密码、把用账号登录设密码的期限定为 48 小时后、删掉这个孩子全部记住的设备，并让之前签发的孩子 JWT 作废；还没用掉的登录链接照常有效。
 - 删除孩子时，记住的设备和分派给他的书一起删掉，再删掉 Redis 里他的登录链接。
 
@@ -379,20 +379,20 @@
 
 这些接口不用登录。
 
-| 接口                                              | 请求                                             | 成功                                                                      | 出错                                                                                 |
-| ------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `POST /api/child-auth/login`                      | `{ "code", "account", "password"?, "remember" }` | `200 { "id", "nickname" }` 或 `200 { "needsPassword": true, "nickname" }` | `401 login_failed`、`429 rate_limited`                                               |
-| `POST /api/child-auth/password`                   | `{ "code", "account", "password", "remember" }`  | `200 { "id", "nickname" }`                                                | `400`、`401 login_failed`、`429 rate_limited`                                        |
-| `GET /api/child-auth/remembered`                  | —                                                | `200 [{ "childId", "nickname", "familyCode", "account" }]`                | —                                                                                    |
-| `POST /api/child-auth/remembered/{childId}/login` | —                                                | `200 { "id", "nickname" }`                                                | `401 remember_invalid`                                                               |
-| `POST /api/child-auth/logout`                     | —                                                | `204`                                                                     | —                                                                                    |
-| `GET /api/child-login-links/{token}`              | —                                                | `200 { "childId", "nickname", "needsPassword" }`                          | `404 link_invalid`                                                                   |
-| `POST /api/child-login-links/{token}/password`    | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                | `400`、`404 link_invalid`、`409 password_already_set`                                |
-| `POST /api/child-login-links/{token}/login`       | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                | `401 wrong_password`、`404 link_invalid`、`409 password_not_set`、`429 rate_limited` |
+| 接口                                              | 请求                                             | 成功                                                                            | 出错                                                                                 |
+| ------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /api/child-auth/login`                      | `{ "code", "account", "password"?, "remember" }` | `200 { "id", "nickname" }` 或 `200 { "needsPassword": true, "id", "nickname" }` | `401 login_failed`、`429 rate_limited`                                               |
+| `POST /api/child-auth/password`                   | `{ "code", "account", "password", "remember" }`  | `200 { "id", "nickname" }`                                                      | `400`、`401 login_failed`、`429 rate_limited`                                        |
+| `GET /api/child-auth/remembered`                  | —                                                | `200 [{ "childId", "nickname", "familyCode", "account" }]`                      | —                                                                                    |
+| `POST /api/child-auth/remembered/{childId}/login` | —                                                | `200 { "id", "nickname" }`                                                      | `401 remember_invalid`                                                               |
+| `POST /api/child-auth/logout`                     | —                                                | `204`                                                                           | —                                                                                    |
+| `GET /api/child-login-links/{token}`              | —                                                | `200 { "childId", "nickname", "needsPassword" }`                                | `404 link_invalid`                                                                   |
+| `POST /api/child-login-links/{token}/password`    | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                      | `400`、`404 link_invalid`、`409 password_already_set`                                |
+| `POST /api/child-login-links/{token}/login`       | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                      | `401 wrong_password`、`404 link_invalid`、`409 password_not_set`、`429 rate_limited` |
 
 - 登录成功（输入账号密码、用账号登录设密码、点头像、扫码设密码、扫码输密码）都签发孩子的登录 cookie，签发时间取数据库的当前时间，并删掉这个孩子已经过期的设备记录。`remember` 是 `true` 时，建立或续期这台浏览器上这个孩子的设备记录：浏览器带来的设备令牌在库里有记录才沿用，没有记录或者没有设备 cookie 时先签发一个新的令牌；是 `false` 时去掉这台浏览器上这个孩子的设备记录。
 - `password` 都是 6–32 个字符、不超过 128 字节；登录时超过的不做散列，当作密码不对。
-- `POST /api/child-auth/login`：`code` 不分大小写，后端转成大写再查。家庭码和账号对上了一个还没设密码、还在期限内的孩子时，不看 `password`，返回 `200 { "needsPassword": true, "nickname" }`，不登录，前端换成设密码的卡片。其余情况下，家庭码、账号、密码有一项不对，有密码的孩子没带 `password`，或者还没设密码的孩子已经过了期限，都返回 `401 login_failed`，不说是哪一项。
+- `POST /api/child-auth/login`：`code` 不分大小写，后端转成大写再查。家庭码和账号对上了一个还没设密码、还在期限内的孩子时，不看 `password`，返回 `200 { "needsPassword": true, "id", "nickname" }`，不登录，前端换成设密码的卡片，`id` 用来给头像配颜色。其余情况下，家庭码、账号、密码有一项不对，有密码的孩子没带 `password`，或者还没设密码的孩子已经过了期限，都返回 `401 login_failed`，不说是哪一项。
 - `POST /api/child-auth/password`：给还没设密码、还在期限内的孩子设密码并登录，清掉期限。家庭码或账号不对、孩子已经有密码、过了期限，都返回 `401 login_failed`。
 - 限流：`login` 和 `password` 的 `401 login_failed`、`child-login-links/{token}/login` 的 `401 wrong_password` 都算一次失败，按来源加孩子 15 分钟里 10 次、按来源合计 15 分钟里 200 次，见 `rules.md` 的“限流”。
 - `GET /api/child-auth/remembered`：按设备 cookie 列出这台浏览器上还有效的设备记录；没有设备 cookie 时返回 `[]`。`familyCode` 是孩子家庭的家庭码，`account` 是孩子的账号，用来在点头像登录失败时填好表单。
@@ -509,4 +509,4 @@ Authing 在用户被删除后发来的 webhook。不用登录，不查 `Origin`�
 
 - `book_in_use`、`book_not_acquired`、`book_inactive` 都显示在顶部提示条里，然后刷新这本书。
 
-Last changed: #14 (2026-11-24)
+Last changed: #14 (2026-11-25)
