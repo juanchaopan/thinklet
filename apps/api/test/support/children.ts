@@ -57,6 +57,7 @@ export interface ChildRow {
   account: string;
   account_lookup: string;
   password_hash: string | null;
+  password_setup_until: Date | null;
   sessions_valid_after: Date;
   created_at: Date;
   updated_at: Date;
@@ -73,6 +74,37 @@ export async function childRow(
   return row;
 }
 
+/**
+ * The database's clock now and the child's time to set a password with
+ * the account, as the database holds them.
+ */
+export async function passwordSetupOf(
+  databaseUrl: string,
+  childId: string,
+): Promise<{ now: Date; until: Date | null }> {
+  const [row] = await query<{ now: Date; until: Date | null }>(
+    databaseUrl,
+    'select clock_timestamp() as now, password_setup_until as until from children where id = $1',
+    [childId],
+  );
+  if (row === undefined) {
+    throw new Error(`No child ${childId}`);
+  }
+  return row;
+}
+
+/**
+ * Ends the child's time to set a password with the account, by the
+ * database's clock, as if the 48 hours had passed.
+ */
+export async function endPasswordSetup(databaseUrl: string, childId: string): Promise<void> {
+  await query(
+    databaseUrl,
+    `update children set password_setup_until = clock_timestamp() - interval '1 second' where id = $1`,
+    [childId],
+  );
+}
+
 /** The nickname and the account of a child's row, decrypted where the row holds them. */
 export function decryptedChild(row: Pick<ChildRow, 'id' | 'nickname' | 'account'>): {
   nickname: string;
@@ -87,10 +119,11 @@ export function decryptedChild(row: Pick<ChildRow, 'id' | 'nickname' | 'account'
 
 /** Gives the child a password hash directly in the database, as setting a password does. */
 export async function setPasswordHash(databaseUrl: string, childId: string): Promise<void> {
-  await query(databaseUrl, 'update children set password_hash = $2 where id = $1', [
-    childId,
-    '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA',
-  ]);
+  await query(
+    databaseUrl,
+    'update children set password_hash = $2, password_setup_until = null where id = $1',
+    [childId, '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'],
+  );
 }
 
 /** A row of the child_devices table. */

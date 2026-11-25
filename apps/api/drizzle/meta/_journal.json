@@ -50,6 +50,13 @@
       "when": 1795578352019,
       "tag": "0006_login_links_in_redis",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795584922934,
+      "tag": "0007_child_password_setup",
+      "breakpoints": true
     }
   ]
 }

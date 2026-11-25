@@ -19,6 +19,24 @@ export interface LoginCandidate {
   nickname: string;
   /** The argon2id hash of the child's password, or null when the child has none yet. */
   passwordHash: string | null;
+  /**
+   * Until when the child, while without a password, may set one by logging
+   * in with the family code and the account; null when there is no such time.
+   */
+  passwordSetupUntil: Date | null;
+}
+
+/**
+ * Whether the child may set a first password with the family code and the
+ * account at the database's time `at`: the child has no password, and the
+ * time a parent left for it has not run out.
+ */
+export function canSetPasswordWithAccount(child: LoginCandidate, at: Date): boolean {
+  return (
+    child.passwordHash === null &&
+    child.passwordSetupUntil !== null &&
+    child.passwordSetupUntil.getTime() > at.getTime()
+  );
 }
 
 /** A child the browser remembers, in plain text, with its family to fetch the code of. */
@@ -52,6 +70,7 @@ const candidateColumns = {
   familyId: children.familyId,
   nickname: children.nickname,
   passwordHash: children.passwordHash,
+  passwordSetupUntil: children.passwordSetupUntil,
 };
 
 /**
@@ -102,7 +121,7 @@ export class ChildLoginStore {
   }
 
   /**
-   * The child with its password hash as it is now, its row locked until the
+   * The child with its password as it is now, its row locked until the
    * transaction ends, or undefined when the child is gone. A password reset
    * and the making of a login link lock the same row, so each runs wholly
    * before or after the transaction.
@@ -156,8 +175,12 @@ export class ChildLoginStore {
     return row === undefined ? undefined : this.nicknameOf(childId, row.nickname);
   }
 
+  /** Stores the child's first password; the time for setting one with the account ends with it. */
   async setPassword(childId: string, passwordHash: string): Promise<void> {
-    await this.executor.update(children).set({ passwordHash }).where(eq(children.id, childId));
+    await this.executor
+      .update(children)
+      .set({ passwordHash, passwordSetupUntil: null })
+      .where(eq(children.id, childId));
   }
 
   /** Deletes the child's devices that have expired by `now`; other children's are left to their own logins. */

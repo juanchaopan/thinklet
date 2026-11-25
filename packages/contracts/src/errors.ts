@@ -8,7 +8,8 @@ export const errorCodeSchema = z.enum([
   'invalid_request',
   // 401: not signed in, or the JWT has expired, its signature is wrong or it is of the other kind.
   'unauthenticated',
-  // 401: the family code, the account or the password of a child login is wrong, or the child has no password yet.
+  // 401: the family code, the account or the password of a child login is wrong, a password is
+  // missing, or a child without one may no longer set it with the account.
   'login_failed',
   // 401: the browser no longer remembers the child: revoked, expired or never there.
   'remember_invalid',

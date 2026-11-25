@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import type { ErrorCode } from '@thinklet/contracts';
+import type { Child, ErrorCode } from '@thinklet/contracts';
 import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
 import type { AuditEvent, AuditService } from '../audit/audit.service.js';
@@ -16,6 +16,7 @@ import {
   changedChildFields,
   ChildrenService,
   loginLinkStatus,
+  toChild,
   toDevice,
 } from './children.service.js';
 import {
@@ -33,7 +34,17 @@ const CHILD_ID = 'child-1';
 const LINK_ID = 'link-1';
 const DEVICE_ID = 'device-1';
 const NOW = new Date('2026-11-22T09:00:00.000Z');
-const XIAOMI: ChildRecord = { id: CHILD_ID, nickname: '小米', account: 'xiaomi' };
+/** Until when Xiaomi, just added, may set a password with the account. */
+const SETUP_UNTIL = new Date('2026-11-24T09:00:00.000Z');
+const XIAOMI: ChildRecord = {
+  id: CHILD_ID,
+  nickname: '小米',
+  account: 'xiaomi',
+  passwordSet: false,
+  passwordSetupUntil: SETUP_UNTIL,
+};
+/** Xiaomi as the parents are answered. */
+const XIAOMI_ANSWERED: Child = { ...XIAOMI, passwordSetupUntil: '2026-11-24T09:00:00.000Z' };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
@@ -91,6 +102,26 @@ describe('loginLinkStatus', () => {
   });
 });
 
+describe('toChild', () => {
+  it('gives the time left for setting a password as an ISO date-time', () => {
+    expect(toChild(XIAOMI)).toEqual({
+      id: CHILD_ID,
+      nickname: '小米',
+      account: 'xiaomi',
+      passwordSet: false,
+      passwordSetupUntil: '2026-11-24T09:00:00.000Z',
+    });
+  });
+
+  it('gives null for a child with a password or without a time to set one', () => {
+    expect(toChild({ ...XIAOMI, passwordSet: true, passwordSetupUntil: null })).toMatchObject({
+      passwordSet: true,
+      passwordSetupUntil: null,
+    });
+    expect(toChild({ ...XIAOMI, passwordSetupUntil: null }).passwordSetupUntil).toBeNull();
+  });
+});
+
 describe('toDevice', () => {
   it('gives the times as ISO date-times', () => {
     const record: DeviceRecord = {
@@ -145,8 +176,8 @@ function createService(
       return Promise.resolve(inFamily(familyId, childId));
     }),
     listChildren: vi.fn(() => Promise.resolve(exists ? [XIAOMI] : [])),
-    insertChild: vi.fn((child: NewChild) =>
-      Promise.resolve({ id: CHILD_ID, nickname: child.nickname, account: child.account }),
+    insertChild: vi.fn((child: NewChild): Promise<ChildRecord> =>
+      Promise.resolve({ ...XIAOMI, nickname: child.nickname, account: child.account }),
     ),
     updateChild: vi.fn((familyId: string, childId: string, changes: ChildChanges) =>
       Promise.resolve(inFamily(familyId, childId) ? { ...XIAOMI, ...changes } : undefined),
@@ -231,20 +262,20 @@ describe('ChildrenService', () => {
     vi.useRealTimers();
   });
 
-  it('lists the children of the family', async () => {
+  it('lists the children of the family with whether each has set a password', async () => {
     const { service, store } = createService();
 
-    await expect(service.list(FAMILY_ID)).resolves.toEqual([XIAOMI]);
+    await expect(service.list(FAMILY_ID)).resolves.toEqual([XIAOMI_ANSWERED]);
     expect(store.listChildren).toHaveBeenCalledWith(FAMILY_ID);
   });
 
   describe('add', () => {
-    it("adds the child and records the adding parent's consent with its version", async () => {
+    it("adds the child without a password and records the adding parent's consent with its version", async () => {
       const { service, store, audit, calls } = createService({ child: false });
 
       const child = await service.add(PARENT_ID, FAMILY_ID, newChild);
 
-      expect(child).toEqual(XIAOMI);
+      expect(child).toEqual(XIAOMI_ANSWERED);
       expect(store.insertChild).toHaveBeenCalledWith({
         familyId: FAMILY_ID,
         nickname: '小米',
@@ -282,7 +313,7 @@ describe('ChildrenService', () => {
 
       await expect(
         service.update(PARENT_ID, FAMILY_ID, CHILD_ID, { nickname: '米米' }),
-      ).resolves.toEqual({ ...XIAOMI, nickname: '米米' });
+      ).resolves.toEqual({ ...XIAOMI_ANSWERED, nickname: '米米' });
       expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
         ...ON_XIAOMI,
         action: 'child.updated',
@@ -293,7 +324,9 @@ describe('ChildrenService', () => {
     it('records nothing for a change of neither field', async () => {
       const { service, audit } = createService();
 
-      await expect(service.update(PARENT_ID, FAMILY_ID, CHILD_ID, {})).resolves.toEqual(XIAOMI);
+      await expect(service.update(PARENT_ID, FAMILY_ID, CHILD_ID, {})).resolves.toEqual(
+        XIAOMI_ANSWERED,
+      );
       expect(audit.record).not.toHaveBeenCalled();
     });
 

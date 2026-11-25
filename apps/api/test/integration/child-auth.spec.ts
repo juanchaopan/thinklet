@@ -24,6 +24,7 @@ import {
   childRow,
   decryptedDeviceName,
   deviceRows,
+  endPasswordSetup,
   insertDevice,
   type DeviceRow,
 } from '../support/children.js';
@@ -111,21 +112,24 @@ function issuedAtOf(kid: ChildBrowser): number {
 }
 
 // Acceptance criteria covered: a child logs in with the family code, the
-// account and the password, and any wrong item is "家庭码、账号或密码不对";
-// remembering a browser shows the child's avatar there for 30 days from the
-// last avatar login, and not remembering forgets it; a revoked or expired
-// device needs the password again; a device token is kept only when the
-// database has a valid device with it (#14, 18); a child's login and a
-// password reset take their times from the database, so api instances
-// whose clocks are off by seconds neither end a fresh login nor keep one
-// issued before a reset (#14, 20); every login deletes the child's expired
-// devices and no other child's (#14, 23); a login link works for 10
-// minutes and once, two uses at the same time included, and a newer one
-// revokes it (#14, 24); a child without a password sets one on the link
-// and is signed in, a child with one enters it, and a wrong one keeps the
-// link usable; a password reset or the child's deletion ends the child's
-// login at the next request; logging out keeps the avatar; a device's name
-// is stored encrypted for its own row.
+// account and the password, and any wrong item, or a child without a
+// password whose time to set one with the account has run out, is
+// "家庭码、账号或密码不对" (#14, 25); remembering a browser shows the
+// child's avatar there for 30 days from the last avatar login, and not
+// remembering forgets it; a revoked or expired device needs the password
+// again; a device token is kept only when the database has a valid device
+// with it (#14, 18); a child's login and a password reset take their times
+// from the database, so api instances whose clocks are off by seconds
+// neither end a fresh login nor keep one issued before a reset (#14, 20);
+// every login deletes the child's expired devices and no other child's
+// (#14, 23); a login link works for 10 minutes and once, two uses at the
+// same time included, and a newer one revokes it (#14, 24); a child
+// without a password sets one on the link and is signed in, a child with
+// one enters it, and a wrong one keeps the link usable; a password reset
+// or the child's deletion ends the child's login at the next request;
+// logging out keeps the avatar; a device's name is stored encrypted for
+// its own row. Setting the first password with the account is in
+// child-first-password.spec.ts.
 describe('child login', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -140,6 +144,11 @@ describe('child login', () => {
     account: child.account,
     password: child.password,
     remember,
+  });
+  const loginWithout = (child: Child) => ({
+    code: family.code,
+    account: child.account,
+    remember: false,
   });
   const linkOf = (child: Child) => newLoginLink(running.server, parent, family.id, child.id);
   const newerLink = (child: Child) =>
@@ -306,10 +315,11 @@ describe('child login', () => {
       expect((await kid.me()).body).toMatchObject({ id: second.id });
     });
 
-    it('answers every wrong item, and a child without a password, with login_failed and no login', async () => {
+    it('answers every wrong item, a missing password and a child whose time to set one has run out with login_failed and no login', async () => {
       const child = await withPassword();
       const other = await createFamily(running.server, parent);
       const noPassword = await newChild();
+      await endPasswordSetup(running.databaseUrl, noPassword.id);
       const unused = ['ZZZZZZ', 'YYYYYY'].find(
         (code) => code !== family.code && code !== other.code,
       );
@@ -321,7 +331,9 @@ describe('child login', () => {
           { ...login, code: unused ?? '' },
           { ...login, account: `${child.account}x` },
           { ...login, password: `${child.password}x` },
+          loginWithout(child),
           { ...login, account: noPassword.account, password: 'anything' },
+          loginWithout(noPassword),
         ].map((body) => browser().login(body)),
       );
 
@@ -457,6 +469,22 @@ describe('child login', () => {
         async () => {
           const child = await withPassword();
           return { child, send: () => browser().login(loginOf(child)) };
+        },
+      ],
+      [
+        'setting the first password with the account',
+        async () => {
+          const child = await newChild();
+          return {
+            child,
+            send: () =>
+              browser().setFirstPassword({
+                code: family.code,
+                account: child.account,
+                password: 'my secret',
+                remember: false,
+              }),
+          };
         },
       ],
       [

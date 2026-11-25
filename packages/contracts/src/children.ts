@@ -2,11 +2,18 @@ import * as z from 'zod';
 import './runtime.js';
 import { childAccountSchema, childNicknameSchema } from './fields.js';
 
-/** A child of a family, as the family's parents see it. */
+/**
+ * A child of a family, as the family's parents see it. `passwordSet` is
+ * whether the child has set a password; `passwordSetupUntil` is, while the
+ * child has none, until when the child may set one by logging in with the
+ * account, and null once a password is set or when there is no such time.
+ */
 export const childSchema = z.strictObject({
   id: z.uuid(),
   nickname: z.string(),
   account: z.string(),
+  passwordSet: z.boolean(),
+  passwordSetupUntil: z.iso.datetime().nullable(),
 });
 
 /** Response body of `GET /api/families/{familyId}/children`, in the order they were added. */
@@ -19,7 +26,7 @@ export const childListSchema = z.array(childSchema);
  */
 export const guardianConsentSchema = z.literal(true, { error: 'required' });
 
-/** Request body of `POST /api/families/{familyId}/children`. */
+/** Request body of `POST /api/families/{familyId}/children`; the child sets the password. */
 export const addChildRequestSchema = z.strictObject({
   nickname: childNicknameSchema,
   account: childAccountSchema,

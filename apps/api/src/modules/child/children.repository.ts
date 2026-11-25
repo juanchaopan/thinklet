@@ -15,6 +15,13 @@ const { children, childDevices } = schema;
 /** The unique constraint that keeps a child's account unique within the family. */
 const ACCOUNT_UNIQUE = 'children_family_account_unique';
 
+/**
+ * How long after a parent adds a child or resets the password the child
+ * may set a password by logging in with the family code and the account
+ * (`.docs/design/rules.md`, "孩子的密码"), as an SQL interval.
+ */
+const PASSWORD_SETUP_TIME = sql.raw(`interval '48 hours'`);
+
 /** Another child of the family has the account. The statement it happened in is aborted. */
 export class AccountTakenError extends Error {
   constructor(options?: ErrorOptions) {
@@ -28,6 +35,10 @@ export interface ChildRecord {
   id: string;
   nickname: string;
   account: string;
+  /** Whether the child has set a password. */
+  passwordSet: boolean;
+  /** While the child has no password, until when the child may set one with the account; else null. */
+  passwordSetupUntil: Date | null;
 }
 
 export interface NewChild {
@@ -55,6 +66,8 @@ const childColumns = {
   id: children.id,
   nickname: children.nickname,
   account: children.account,
+  passwordSet: sql<boolean>`${children.passwordHash} is not null`,
+  passwordSetupUntil: children.passwordSetupUntil,
 };
 
 /** The child with the id, only when it belongs to the family. */
@@ -130,23 +143,34 @@ export class ChildStore {
 
   /**
    * Adds the child without a password, refusing logins issued before the
-   * database's time of the adding; throws AccountTakenError when another
-   * child of the family has the account. The child is returned from what
-   * was written.
+   * database's time of the adding and leaving the child 48 hours from then
+   * to set a password with the account; throws AccountTakenError when
+   * another child of the family has the account. The child is returned
+   * from what was written.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
     const id = randomUUID();
-    await settingAccount(() =>
-      this.executor.insert(children).values({
-        id,
-        familyId: child.familyId,
-        nickname: this.cipher.encrypt(child.nickname, { column: children.nickname, rowId: id }),
-        account: this.cipher.encrypt(child.account, { column: children.account, rowId: id }),
-        accountLookup: this.cipher.lookup(child.familyId, child.account),
-        sessionsValidAfter: sql`now()`,
-      }),
+    const rows = await settingAccount(() =>
+      this.executor
+        .insert(children)
+        .values({
+          id,
+          familyId: child.familyId,
+          nickname: this.cipher.encrypt(child.nickname, { column: children.nickname, rowId: id }),
+          account: this.cipher.encrypt(child.account, { column: children.account, rowId: id }),
+          accountLookup: this.cipher.lookup(child.familyId, child.account),
+          passwordSetupUntil: sql`now() + ${PASSWORD_SETUP_TIME}`,
+          sessionsValidAfter: sql`now()`,
+        })
+        .returning({ passwordSetupUntil: children.passwordSetupUntil }),
     );
-    return { id, nickname: child.nickname, account: child.account };
+    return {
+      id,
+      nickname: child.nickname,
+      account: child.account,
+      passwordSet: false,
+      passwordSetupUntil: rows.at(0)?.passwordSetupUntil ?? null,
+    };
   }
 
   /**
@@ -197,22 +221,25 @@ export class ChildStore {
   }
 
   /**
-   * Clears the child's password and refuses every login issued until now
-   * by the database's clock, which the statement reads as it runs, after
-   * the lock the caller took on the child. The time stored is the next
-   * whole second: a JWT carries its issue time in whole seconds, so a login
-   * issued earlier in the reset's own second carries that second, and only
-   * the next one refuses it. A login made after the reset within the rest
-   * of that second is refused as well, which loses nothing in practice:
-   * the reset clears the password and forgets every remembered browser, so
-   * the child logs in again only by setting a new password, which takes
-   * far longer. Returns whether the family has the child.
+   * Clears the child's password, leaves the child 48 hours to set a new one
+   * with the account, and refuses every login issued until now, all by the
+   * database's clock, which the statement reads as it runs, after the lock
+   * the caller took on the child. The time logins are refused before is
+   * the next whole second: a JWT carries its issue time in whole seconds,
+   * so a login issued earlier in the reset's own second carries that
+   * second, and only the next one refuses it. A login made after the reset
+   * within the rest of that second is refused as well, which loses nothing
+   * in practice: the reset clears the password and forgets every
+   * remembered browser, so the child logs in again only by setting a new
+   * password, which takes far longer. Returns whether the family has the
+   * child.
    */
   async clearPassword(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
       .update(children)
       .set({
         passwordHash: null,
+        passwordSetupUntil: sql`clock_timestamp() + ${PASSWORD_SETUP_TIME}`,
         sessionsValidAfter: sql`date_trunc('second', clock_timestamp()) + interval '1 second'`,
       })
       .where(childInFamily(familyId, childId))
@@ -264,6 +291,8 @@ export class ChildStore {
       id: row.id,
       nickname: this.cipher.decrypt(row.nickname, { column: children.nickname, rowId: row.id }),
       account: this.cipher.decrypt(row.account, { column: children.account, rowId: row.id }),
+      passwordSet: row.passwordSet,
+      passwordSetupUntil: row.passwordSetupUntil,
     }));
   }
 }

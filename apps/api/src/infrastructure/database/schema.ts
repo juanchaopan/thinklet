@@ -151,7 +151,10 @@ export const joinRequests = pgTable(
  * which keeps accounts unique within a family and finds the child at login
  * without decrypting. The unique constraint leads with `family_id`, so it
  * also serves listing a family's children. A null `password_hash` means the
- * child has not set a password yet. JWTs issued before
+ * child has not set a password yet; until `password_setup_until`, written
+ * from the database's clock when a parent adds the child or resets the
+ * password and cleared once a password is set, the child may set one by
+ * logging in with the family code and the account. JWTs issued before
  * `sessions_valid_after` are refused. The guardian's consent is the child's
  * `child.created` audit event, which outlives the child. `(id, family_id)`
  * is unique so that book assignments can reference a child together with
@@ -174,6 +177,7 @@ export const children = pgTable(
     account: text('account').notNull(),
     accountLookup: text('account_lookup').notNull(),
     passwordHash: text('password_hash'),
+    passwordSetupUntil: timestamptz('password_setup_until'),
     sessionsValidAfter: timestamptz('sessions_valid_after').notNull().defaultNow(),
     ...rowTimes(),
   },

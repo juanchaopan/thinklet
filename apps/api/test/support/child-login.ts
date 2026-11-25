@@ -17,8 +17,19 @@ export const IPAD_SAFARI =
 export const CHILD_SESSION_COOKIE = 'thinklet_child_session';
 export const DEVICE_COOKIE = 'thinklet_device';
 
-/** The body of a login with the family code, the account and the password. */
+/**
+ * The body of a login with the family code, the account and the password;
+ * a child without a password yet logs in without one.
+ */
 export interface ChildLoginBody {
+  code: string;
+  account: string;
+  password?: string;
+  remember: boolean;
+}
+
+/** The body of setting the first password with the family code and the account. */
+export interface FirstPasswordBody {
   code: string;
   account: string;
   password: string;
@@ -53,6 +64,11 @@ export class ChildBrowser {
   /** Logs in with the family code, the account and the password. */
   login(body: ChildLoginBody): Promise<request.Response> {
     return this.post('/api/child-auth/login', body);
+  }
+
+  /** Sets the first password with the family code and the account, which logs the child in. */
+  setFirstPassword(body: FirstPasswordBody): Promise<request.Response> {
+    return this.post('/api/child-auth/password', body);
   }
 
   /** Clicks the avatar of a remembered child. */
@@ -146,5 +162,5 @@ export async function addChildWithPassword(
   if (response.status !== 200) {
     throw new Error(`The password was not set: ${response.status}`);
   }
-  return { ...added, password };
+  return { ...added, passwordSet: true, passwordSetupUntil: null, password };
 }

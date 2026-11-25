@@ -12,17 +12,21 @@ import {
 } from '@nestjs/common';
 import {
   childLinkLoginRequestSchema,
+  childLoginAnswerSchema,
   childLoginLinkInfoSchema,
   childLoginRequestSchema,
   childLoginResponseSchema,
   rememberedChildListSchema,
   setChildPasswordRequestSchema,
+  setChildPasswordWithAccountRequestSchema,
   type ChildLinkLoginRequest,
+  type ChildLoginAnswer,
   type ChildLoginLinkInfo,
   type ChildLoginRequest,
   type ChildLoginResponse,
   type RememberedChild,
   type SetChildPasswordRequest,
+  type SetChildPasswordWithAccountRequest,
 } from '@thinklet/contracts';
 import type { Request, Response } from 'express';
 import { Public } from '../../infrastructure/authentication/public.decorator.js';
@@ -49,6 +53,10 @@ export class ChildLoginController {
     private readonly clientIp: ClientIpHeader,
   ) {}
 
+  /**
+   * Signs the child in, or answers that the child has to set a password
+   * first, which signs nobody in and sets no cookie.
+   */
   @Post('child-auth/login')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
@@ -56,8 +64,27 @@ export class ChildLoginController {
     @Body(new ZodValidationPipe(childLoginRequestSchema)) body: ChildLoginRequest,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
+  ): Promise<ChildLoginAnswer> {
+    const answer = await this.loginService.login(body, this.browserOf(request));
+    return 'needsPassword' in answer
+      ? childLoginAnswerSchema.parse(answer)
+      : this.signIn(response, answer);
+  }
+
+  /** Sets the first password of the child the family code and the account find, and signs the child in. */
+  @Post('child-auth/password')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  async setPasswordWithAccount(
+    @Body(new ZodValidationPipe(setChildPasswordWithAccountRequestSchema))
+    body: SetChildPasswordWithAccountRequest,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ChildLoginResponse> {
-    return this.signIn(response, await this.loginService.login(body, this.browserOf(request)));
+    return this.signIn(
+      response,
+      await this.loginService.setPasswordWithAccount(body, this.browserOf(request)),
+    );
   }
 
   /** The children this browser remembers; none without a device cookie. */

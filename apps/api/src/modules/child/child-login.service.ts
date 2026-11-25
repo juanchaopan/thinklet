@@ -4,8 +4,10 @@ import type {
   ChildLoginLinkInfo,
   ChildLoginRequest,
   ChildLoginResponse,
+  ChildNeedsPassword,
   RememberedChild,
   SetChildPasswordRequest,
+  SetChildPasswordWithAccountRequest,
 } from '@thinklet/contracts';
 import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
@@ -13,6 +15,7 @@ import { AuditService, byChild } from '../audit/audit.service.js';
 import { FamiliesService } from '../family/families.service.js';
 import {
   ChildLoginRepository,
+  canSetPasswordWithAccount,
   type ChildLoginStore,
   type LoginCandidate,
 } from './child-login.repository.js';
@@ -60,10 +63,25 @@ export interface CompletedLogin {
   issuedAt: Date;
 }
 
+/** How a login is answered with the account: signed in, or the child has to set a password first. */
+export type AccountLogin = CompletedLogin | ChildNeedsPassword;
+
 /** A login link that could be used when read, before any lock, with its child as it was then. */
 interface FoundLink {
   link: ActiveLoginLink;
   child: LoginCandidate;
+}
+
+/** The child a family code and an account name, if any, and whom a login with them counts against. */
+interface AccountMatch {
+  candidate: LoginCandidate | undefined;
+  subject: LoginSubject;
+}
+
+/** A child whose password a login has verified, with the hash it was verified against. */
+interface VerifiedChild {
+  child: LoginCandidate;
+  passwordHash: string;
 }
 
 /** The locked child of a login, with the store and the transaction the login's writes are made in. */
@@ -88,18 +106,21 @@ type LinkStep = (login: LockedLogin) => Promise<void> | void;
 /**
  * A child's logins (`.docs/design/interfaces.md`, "孩子登录"): with the
  * family code, the account and the password, by a remembered avatar, and
- * by a login link, where a child without a password sets one. Every
- * successful login deletes the child's expired devices and leaves the
- * browser remembering the child or not, as the child chose. Signing the
- * child in is the controller's: it sets the cookies of the completed
- * login. A login itself is not an audit event, nor is the deleting of
- * expired devices that comes with it; the password a child sets is, by
- * the child, in the login's transaction.
+ * by a login link. A child without a password sets the first one: on a
+ * link at any time, and with the family code and the account only until
+ * the time a parent left for it when adding the child or resetting the
+ * password (`.docs/design/rules.md`, "孩子的密码"). Every successful login
+ * deletes the child's expired devices and leaves the browser remembering
+ * the child or not, as the child chose. Signing the child in is the
+ * controller's: it sets the cookies of the completed login. A login itself
+ * is not an audit event, nor is the deleting of expired devices that comes
+ * with it; the password a child sets is, by the child, in the login's
+ * transaction.
  *
- * The logins that check a password, with the account and on a link, are
- * made within ChildPasswords' limits: once it is known whom the login is
- * for, a source at its limit is refused before the password is verified,
- * and a wrong one counts against the source.
+ * The logins that take a password, with the account (setting the first
+ * one included) and on a link, are made within ChildPasswords' limits:
+ * once it is known whom the login is for, a source at its limit is refused
+ * before anything is checked, and a refusal counts against the source.
  *
  * Each login ends in one transaction that locks the child's row, reads the
  * database's clock, and then re-checks what was checked before it, writes
@@ -108,7 +129,8 @@ type LinkStep = (login: LockedLogin) => Promise<void> | void;
  * re-check then refuses, or wholly after it, when it forgets the browser
  * and ends the session. The slow work of a password, hashing or verifying
  * it, is done before the transaction, so no lock is held during it: the
- * re-check compares the child's password hash with the one verified.
+ * re-check compares the child's password hash with the one verified, or
+ * finds the child still without one.
  *
  * The login links are in Redis; while Redis cannot be reached, a link can
  * be neither read nor used, and the other logins go on.
@@ -124,33 +146,56 @@ export class ChildLoginService {
 
   /**
    * Logs the child in with the family code, the account and the password.
-   * A wrong code, account or password, and a child without a password yet,
-   * are all 401 `login_failed`. The password is checked every time, against
-   * a stand-in hash when there is no child or no password, so the time
-   * taken does not tell which was wrong either. The login counts against
-   * the child found, or against the code and account typed when they match
-   * no child.
+   * A child who has no password and may still set one with the account is
+   * answered so, whatever password came, and nobody is signed in. Else a
+   * wrong code, account or password, a child with a password and none
+   * given, and a child without one whose time to set it has run out are
+   * all 401 `login_failed`. The login counts against the child found, or
+   * against the code and account typed when they match no child.
    */
-  async login(request: ChildLoginRequest, browser: Browser): Promise<CompletedLogin> {
-    const familyId = await this.families.findIdByCode(request.code);
-    const candidate =
-      familyId === undefined
-        ? undefined
-        : await this.repository.findLoginCandidate(familyId, request.account);
-    const subject: LoginSubject =
-      candidate === undefined
-        ? { code: request.code, account: request.account }
-        : { childId: candidate.id };
-    return this.passwords.attempt(browser.clientIp, subject, async () => {
-      const passwordHash = candidate?.passwordHash ?? null;
-      const matches = await this.passwords.verify(request.password, passwordHash);
-      if (candidate === undefined || passwordHash === null || !matches) {
+  async login(request: ChildLoginRequest, browser: Browser): Promise<AccountLogin> {
+    const { candidate, subject } = await this.matchAccount(request.code, request.account);
+    return this.passwords.attempt(browser.clientIp, subject, async (): Promise<AccountLogin> => {
+      if (candidate !== undefined && (await this.canSetNow(candidate))) {
+        return { needsPassword: true, id: candidate.id, nickname: candidate.nickname };
+      }
+      const verified = await this.verify(candidate, request.password);
+      if (verified === undefined) {
         throw loginFailed();
       }
-      return this.locked(candidate.id, loginFailed, (login) => {
-        if (login.child.passwordHash !== passwordHash) {
+      return this.locked(verified.child.id, loginFailed, (login) => {
+        if (login.child.passwordHash !== verified.passwordHash) {
           throw loginFailed();
         }
+        return this.applyRemember(login, request.remember, browser);
+      });
+    });
+  }
+
+  /**
+   * Sets the first password of the child the family code and the account
+   * find, and logs the child in, while the child has no password and the
+   * time to set it with the account has not run out; the password is
+   * recorded as `child.password_set` by the child, `via` the account. A
+   * wrong code or account, a child who has a password, and a time run out
+   * are all 401 `login_failed`, before anything is hashed, and count
+   * against the source as a failed login does.
+   */
+  async setPasswordWithAccount(
+    request: SetChildPasswordWithAccountRequest,
+    browser: Browser,
+  ): Promise<CompletedLogin> {
+    const { candidate, subject } = await this.matchAccount(request.code, request.account);
+    return this.passwords.attempt(browser.clientIp, subject, async () => {
+      if (candidate === undefined || !(await this.canSetNow(candidate))) {
+        throw loginFailed();
+      }
+      const passwordHash = await this.passwords.hash(request.password);
+      return this.locked(candidate.id, loginFailed, async (login) => {
+        if (!canSetPasswordWithAccount(login.child, login.now)) {
+          throw loginFailed();
+        }
+        await this.setFirstPassword(login, passwordHash, 'account');
         return this.applyRemember(login, request.remember, browser);
       });
     });
@@ -209,9 +254,11 @@ export class ChildLoginService {
   }
 
   /**
-   * Sets the first password of the link's child, uses the link and logs
-   * the child in; the password is recorded as `child.password_set` by the
-   * child. A child who has a password by then is 409 `password_already_set`.
+   * Sets the first password of the link's child, whenever the child was
+   * added or the password reset, uses the link and logs the child in; the
+   * password is recorded as `child.password_set` by the child, `via` the
+   * QR code. A child who has a password by then is 409
+   * `password_already_set`.
    */
   async setPasswordWithLink(
     token: string,
@@ -223,24 +270,12 @@ export class ChildLoginService {
       throw passwordAlreadySet();
     }
     const passwordHash = await this.passwords.hash(request.password);
-    return this.loginOnLink(
-      found.link,
-      request.remember,
-      browser,
-      async ({ store, child, transaction }) => {
-        if (child.passwordHash !== null) {
-          throw passwordAlreadySet();
-        }
-        await store.setPassword(child.id, passwordHash);
-        await this.audit.record(transaction, {
-          actor: byChild(child.id),
-          action: 'child.password_set',
-          targetId: child.id,
-          familyId: child.familyId,
-          details: { via: 'qr' },
-        });
-      },
-    );
+    return this.loginOnLink(found.link, request.remember, browser, async (login) => {
+      if (login.child.passwordHash !== null) {
+        throw passwordAlreadySet();
+      }
+      await this.setFirstPassword(login, passwordHash, 'qr');
+    });
   }
 
   /**
@@ -272,6 +307,69 @@ export class ChildLoginService {
           throw wrongPassword();
         }
       });
+    });
+  }
+
+  /**
+   * The child of the family with the code and the account, if any, and the
+   * subject a login with them counts against: the child found, or the code
+   * and the account as typed.
+   */
+  private async matchAccount(code: string, account: string): Promise<AccountMatch> {
+    const familyId = await this.families.findIdByCode(code);
+    const candidate =
+      familyId === undefined
+        ? undefined
+        : await this.repository.findLoginCandidate(familyId, account);
+    return {
+      candidate,
+      subject: candidate === undefined ? { code, account } : { childId: candidate.id },
+    };
+  }
+
+  /**
+   * Whether the child found may set a first password with the account now,
+   * by the database's clock; the clock is read only for a child without a
+   * password.
+   */
+  private async canSetNow(child: LoginCandidate): Promise<boolean> {
+    return (
+      child.passwordHash === null &&
+      canSetPasswordWithAccount(child, await this.repository.databaseNow())
+    );
+  }
+
+  /**
+   * The child found with the hash the password given was verified against,
+   * when the child has a password and it is the one given; else undefined.
+   * The password is checked every time, an empty one when none was given,
+   * against a stand-in hash when there is no child or no password, so the
+   * time taken does not tell which was wrong.
+   */
+  private async verify(
+    candidate: LoginCandidate | undefined,
+    password: string | undefined,
+  ): Promise<VerifiedChild | undefined> {
+    const passwordHash = candidate?.passwordHash ?? null;
+    const matches = await this.passwords.verify(password ?? '', passwordHash);
+    return candidate !== undefined && passwordHash !== null && password !== undefined && matches
+      ? { child: candidate, passwordHash }
+      : undefined;
+  }
+
+  /** Stores the locked child's first password and records it, by the child, in the login's transaction. */
+  private async setFirstPassword(
+    { store, child, transaction }: LockedLogin,
+    passwordHash: string,
+    via: 'account' | 'qr',
+  ): Promise<void> {
+    await store.setPassword(child.id, passwordHash);
+    await this.audit.record(transaction, {
+      actor: byChild(child.id),
+      action: 'child.password_set',
+      targetId: child.id,
+      familyId: child.familyId,
+      details: { via },
     });
   }
 

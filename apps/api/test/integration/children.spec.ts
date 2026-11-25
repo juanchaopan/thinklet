@@ -52,17 +52,19 @@ interface MadeLink {
 
 // Acceptance criteria covered: every parent of a family can add a child
 // with the guardian's consent, recorded with its version in the audit
-// events, see the children in the order they were added, change a
-// nickname and an account, and delete a child with its devices and its
-// login link; an account is unique within the family; the nickname, the
-// account and the device names are stored encrypted, each bound to its row
-// and column, so a ciphertext moved elsewhere is an error rather than shown;
-// a password reset clears the password, forgets the devices and ends the
-// logins issued before it while an unused login link keeps working; the
-// login links live in Redis for 10 minutes under the hash of their token, a
-// new one revokes the older one, and its state follows use, expiry and
-// revocation (#14, 24); the remembered devices are listed latest first and
-// can be revoked one by one or all at once.
+// events, without a password, see the children in the order they were
+// added with whether each has set a password, change a nickname and an
+// account, and delete a child with its devices and its login link; an
+// account is unique within the family; the nickname, the account and the
+// device names are stored encrypted, each bound to its row and column, so
+// a ciphertext moved elsewhere is an error rather than shown; a password
+// reset clears the password, opens the time to set a new one, forgets the
+// devices and ends the logins issued before it while an unused login link
+// keeps working; the login links live in Redis for 10 minutes under the
+// hash of their token, a new one revokes the older one, and its state
+// follows use, expiry and revocation (#14, 24); the remembered devices are
+// listed latest first and can be revoked one by one or all at once. The
+// time to set a password with the account is in child-first-password.spec.ts.
 describe('children', () => {
   const running = useAppWithServices();
   let admin: Parent;
@@ -129,7 +131,7 @@ describe('children', () => {
       expect(await listOf((await newFamily()).id)).toEqual([]);
     });
 
-    it('adds a child with the trimmed nickname and lists it at once, in the order added', async () => {
+    it('adds a child with the trimmed nickname and no password, and lists it at once, in the order added', async () => {
       const { id: familyId } = await newFamily();
 
       const response = await asMember().post(childrenPath(familyId), {
@@ -141,7 +143,13 @@ describe('children', () => {
 
       expect(response.status).toBe(201);
       const first = response.body as Child;
-      expect(first).toEqual({ id: expect.any(String), nickname: '小米', account: 'xiaomi' });
+      expect(first).toEqual({
+        id: expect.any(String) as unknown,
+        nickname: '小米',
+        account: 'xiaomi',
+        passwordSet: false,
+        passwordSetupUntil: expect.any(String) as unknown,
+      });
       expect(await listOf(familyId)).toEqual([first, second]);
     });
 
@@ -347,7 +355,7 @@ describe('children', () => {
   });
 
   describe('resetting the password', () => {
-    it('clears the password, ends earlier logins and forgets the devices; an unused link stays', async () => {
+    it('clears the password, opens the time to set one, ends earlier logins and forgets the devices; an unused link stays', async () => {
       const child = await addTo(family.id);
       await setPasswordHash(running.databaseUrl, child.id);
       await rememberNow(child.id);
@@ -359,7 +367,11 @@ describe('children', () => {
       expect(response.status).toBe(204);
       const after = await storedRow(child.id);
       expect(before.password_hash).not.toBeNull();
+      expect(before.password_setup_until).toBeNull();
       expect(after.password_hash).toBeNull();
+      expect(after.password_setup_until?.getTime()).toBeGreaterThan(
+        after.sessions_valid_after.getTime(),
+      );
       expect(after.sessions_valid_after.getTime()).toBeGreaterThan(
         before.sessions_valid_after.getTime(),
       );

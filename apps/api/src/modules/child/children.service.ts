@@ -15,6 +15,7 @@ import { AuditService, byParent, type AuditActor } from '../audit/audit.service.
 import {
   AccountTakenError,
   ChildrenRepository,
+  type ChildRecord,
   type ChildStore,
   type DeviceRecord,
 } from './children.repository.js';
@@ -52,6 +53,17 @@ export function loginLinkStatus(
   return state === undefined
     ? { status: 'expired', expiresAt: now.toISOString() }
     : { status: state.status, expiresAt: state.expiresAt };
+}
+
+/** A child as the parents see it, with the time left for setting a password as an ISO date-time. */
+export function toChild(record: ChildRecord): Child {
+  return {
+    id: record.id,
+    nickname: record.nickname,
+    account: record.account,
+    passwordSet: record.passwordSet,
+    passwordSetupUntil: record.passwordSetupUntil?.toISOString() ?? null,
+  };
 }
 
 /** A remembered browser with its times as ISO date-times. */
@@ -95,8 +107,9 @@ async function claimingAccount<T>(write: () => Promise<T>): Promise<T> {
  * (`.docs/design/interfaces.md`, "孩子（家长）"). Every member of the
  * family may use it, the admin and the other parents alike; the routes'
  * membership check runs before it. A child is always looked up within the
- * family, so a child of another family is not found. The repository's
- * child records are what the parents see of a child. Every change is
+ * family, so a child of another family is not found. What the parents see
+ * of a child includes whether it has set a password and, while it has
+ * not, until when it may set one with the account. Every change is
  * recorded as an audit event of the parent in its transaction; one that
  * changes nothing is not. The login links live in Redis, in LoginLinks.
  */
@@ -114,14 +127,15 @@ export class ChildrenService {
   }
 
   /** The family's children in the order they were added. */
-  list(familyId: string): Promise<Child[]> {
-    return this.repository.listChildren(familyId);
+  async list(familyId: string): Promise<Child[]> {
+    return (await this.repository.listChildren(familyId)).map(toChild);
   }
 
   /**
-   * Adds a child without a password. The guardian's consent of the parent
-   * who adds it is the audit event of the addition, with the consent's
-   * version.
+   * Adds a child without a password, who has 48 hours to set one by
+   * logging in with the family code and the account. The guardian's
+   * consent of the parent who adds it is the audit event of the addition,
+   * with the consent's version.
    */
   add(parentId: string, familyId: string, request: AddChildRequest): Promise<Child> {
     return claimingAccount(() =>
@@ -136,7 +150,7 @@ export class ChildrenService {
           action: 'child.created',
           details: { consentVersion: CHILD_CONSENT_VERSION },
         });
-        return child;
+        return toChild(child);
       }),
     );
   }
@@ -162,7 +176,7 @@ export class ChildrenService {
             details: { fields },
           });
         }
-        return record;
+        return toChild(record);
       }),
     );
   }
@@ -186,12 +200,13 @@ export class ChildrenService {
 
   /**
    * Resets the child's password in one transaction: the password is
-   * cleared, every login issued so far is refused and every remembered
-   * browser forgotten. A login link not used yet keeps working, so the
-   * child sets a new password with it. The child's row is locked before
-   * the database's clock gives the time of the reset, so a login holding
-   * the lock finishes first and its session, issued by the same clock
-   * before that time, is refused.
+   * cleared, the child has 48 hours to set a new one by logging in with
+   * the family code and the account, every login issued so far is refused
+   * and every remembered browser forgotten. A login link not used yet
+   * keeps working, so the child may set the new password with it as well.
+   * The child's row is locked before the database's clock gives the time
+   * of the reset, so a login holding the lock finishes first and its
+   * session, issued by the same clock before that time, is refused.
    */
   resetPassword(parentId: string, familyId: string, childId: string): Promise<void> {
     return this.repository.transaction(async (store, transaction) => {

@@ -2,12 +2,18 @@ import type { ErrorCode } from '@thinklet/contracts';
 import { RateLimitedError } from '../../infrastructure/errors/api-error.js';
 import type { AuditService } from '../audit/audit.service.js';
 import type { FamiliesService } from '../family/families.service.js';
-import type {
-  ChildLoginRepository,
-  ChildLoginStore,
-  LoginCandidate,
+import {
+  canSetPasswordWithAccount,
+  type ChildLoginRepository,
+  type ChildLoginStore,
+  type LoginCandidate,
 } from './child-login.repository.js';
-import { ChildLoginService, type Browser, type CompletedLogin } from './child-login.service.js';
+import {
+  ChildLoginService,
+  type AccountLogin,
+  type Browser,
+  type CompletedLogin,
+} from './child-login.service.js';
 import type { ChildPasswords } from './child-passwords.js';
 import { DEVICE_LIFETIME_MS } from './device-cookie.js';
 import type { ActiveLoginLink } from './login-links.js';
@@ -19,6 +25,8 @@ const NOW = new Date('2026-11-22T09:00:00.000Z');
 const DATABASE_NOW = new Date('2026-11-22T09:00:06.250Z');
 /** When a browser remembered at the database's time stops being remembered. */
 const REMEMBERED_UNTIL = new Date(DATABASE_NOW.getTime() + DEVICE_LIFETIME_MS);
+/** Until when a child without a password may still set one with the account, by the database's clock. */
+const SETUP_UNTIL = new Date(DATABASE_NOW.getTime() + 60 * 60 * 1000);
 const FAMILY_ID = '5d1e6f70-8192-4a3b-8c4d-5e6f708192a3';
 const OTHER_FAMILY_ID = '8a40b1c2-d3e4-4f5a-8b6c-7d8e9f0a1b2c';
 const CHILD_ID = '3f9b0c1d-2e3f-4a5b-8c6d-7e8f9a0b1c2d';
@@ -33,13 +41,26 @@ const IPAD =
 /** The address of the client the logins come from, a documentation address (RFC 5737). */
 const CLIENT_IP = '203.0.113.7';
 const LOGIN = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret1', remember: false };
+const FIRST_PASSWORD = {
+  code: '7KQ4MZ',
+  account: 'xiaomi',
+  password: 'new secret',
+  remember: false,
+};
 const XIAOMI: LoginCandidate = {
   id: CHILD_ID,
   familyId: FAMILY_ID,
   nickname: '小米',
   passwordHash: HASH,
+  passwordSetupUntil: null,
 };
+/** Xiaomi without a password and no time left to set one with the account. */
 const XIAOMI_WITHOUT_PASSWORD: LoginCandidate = { ...XIAOMI, passwordHash: null };
+/** Xiaomi without a password, who may still set one with the account. */
+const XIAOMI_SETTING_UP: LoginCandidate = {
+  ...XIAOMI_WITHOUT_PASSWORD,
+  passwordSetupUntil: SETUP_UNTIL,
+};
 const FRESH_BROWSER: Browser = { deviceToken: undefined, userAgent: IPAD, clientIp: CLIENT_IP };
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
@@ -57,12 +78,49 @@ const activeLink = (tokenHash: string): ActiveLoginLink => ({
 const expectRefusal = (call: Promise<unknown>, code: ErrorCode) =>
   expect(call).rejects.toMatchObject({ code });
 
+/** The login with the account that signed the child in; fails the test when it asked for a password instead. */
+async function signedIn(login: Promise<AccountLogin>): Promise<CompletedLogin> {
+  const answer = await login;
+  if ('needsPassword' in answer) {
+    throw new Error('The login asked for a password to be set');
+  }
+  return answer;
+}
+
+/** A mock's calls in the order of every mock's calls. */
+interface CalledMock {
+  mock: { invocationCallOrder: number[] };
+}
+
+/** When the mock was first called, among every mock's calls; NaN when it never was. */
+const firstCallOf = (mock: CalledMock) => mock.mock.invocationCallOrder[0] ?? Number.NaN;
+
+/** When the mock was last called, among every mock's calls; NaN when it never was. */
+const lastCallOf = (mock: CalledMock) => mock.mock.invocationCallOrder.at(-1) ?? Number.NaN;
+
 /** Asserts that every mock was called, each first called after the one before it. */
-function expectCalledInOrder(...mocks: Array<{ mock: { invocationCallOrder: number[] } }>): void {
-  const firstCalls = mocks.map((mock) => mock.mock.invocationCallOrder[0] ?? Number.NaN);
+function expectCalledInOrder(...mocks: CalledMock[]): void {
+  const firstCalls = mocks.map(firstCallOf);
   expect(firstCalls.every(Number.isFinite)).toBe(true);
   expect(firstCalls).toEqual([...firstCalls].sort((a, b) => a - b));
 }
+
+describe('canSetPasswordWithAccount', () => {
+  it('lets a child without a password set one until the time left for it, not at that time or after', () => {
+    expect(canSetPasswordWithAccount(XIAOMI_SETTING_UP, DATABASE_NOW)).toBe(true);
+    expect(canSetPasswordWithAccount(XIAOMI_SETTING_UP, SETUP_UNTIL)).toBe(false);
+    expect(canSetPasswordWithAccount(XIAOMI_SETTING_UP, new Date(SETUP_UNTIL.getTime() + 1))).toBe(
+      false,
+    );
+  });
+
+  it('lets no child set one who has a password or was given no time for it', () => {
+    expect(canSetPasswordWithAccount({ ...XIAOMI, passwordSetupUntil: SETUP_UNTIL }, NOW)).toBe(
+      false,
+    );
+    expect(canSetPasswordWithAccount(XIAOMI_WITHOUT_PASSWORD, NOW)).toBe(false);
+  });
+});
 
 describe('ChildLoginService', () => {
   const store = {
@@ -125,6 +183,13 @@ describe('ChildLoginService', () => {
     ],
   ];
 
+  /** Arranges Xiaomi as a child without a password who may still set one with the account. */
+  const arrangeSettingUp = () => {
+    store.findLoginCandidate.mockResolvedValue(XIAOMI_SETTING_UP);
+    store.lockChild.mockResolvedValue(XIAOMI_SETTING_UP);
+    hasher.hash.mockResolvedValue(HASH);
+  };
+
   /**
    * Every kind of successful login, each arranged on the doubles, of a
    * browser with the given device token, the child to be remembered.
@@ -134,7 +199,19 @@ describe('ChildLoginService', () => {
       'with the account and the password',
       (deviceToken) => {
         hasher.verify.mockResolvedValue(true);
-        return service.login({ ...LOGIN, remember: true }, { ...FRESH_BROWSER, deviceToken });
+        return signedIn(
+          service.login({ ...LOGIN, remember: true }, { ...FRESH_BROWSER, deviceToken }),
+        );
+      },
+    ],
+    [
+      'setting the first password with the account',
+      (deviceToken) => {
+        arrangeSettingUp();
+        return service.setPasswordWithAccount(
+          { ...FIRST_PASSWORD, remember: true },
+          { ...FRESH_BROWSER, deviceToken },
+        );
       },
     ],
     [
@@ -240,11 +317,37 @@ describe('ChildLoginService', () => {
       );
     });
 
+    it.each<[string, Partial<typeof LOGIN>]>([
+      ['with a password typed', {}],
+      ['without a password', { password: undefined }],
+    ])(
+      'answers a child who may still set a password %s that it has to set one, signing nobody in',
+      async (_case, change) => {
+        arrangeSettingUp();
+
+        const answer = await service.login({ ...LOGIN, ...change }, FRESH_BROWSER);
+
+        expect(answer).toEqual({ needsPassword: true, id: CHILD_ID, nickname: '小米' });
+        expect(store.databaseNow).toHaveBeenCalledOnce();
+        expect(hasher.verify).not.toHaveBeenCalled();
+        expect(transaction).not.toHaveBeenCalled();
+        expect(audit.record).not.toHaveBeenCalled();
+      },
+    );
+
     it.each<[string, () => void]>([
       ...noSuchChild,
       [
-        'a child without a password yet',
+        'a child without a password who was given no time to set one',
         () => store.findLoginCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD),
+      ],
+      [
+        'a child without a password whose time to set one has run out by the database’s clock',
+        () =>
+          store.findLoginCandidate.mockResolvedValue({
+            ...XIAOMI_SETTING_UP,
+            passwordSetupUntil: DATABASE_NOW,
+          }),
       ],
     ])(
       'refuses %s with login_failed, still checking the password with no hash to check it against',
@@ -253,8 +356,7 @@ describe('ChildLoginService', () => {
         hasher.verify.mockResolvedValue(true);
 
         await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
-        expect(hasher.verify).toHaveBeenCalledTimes(1);
-        expect(hasher.verify).toHaveBeenCalledWith('secret1', null);
+        expect(hasher.verify).toHaveBeenCalledExactlyOnceWith('secret1', null);
         expect(transaction).not.toHaveBeenCalled();
       },
     );
@@ -262,6 +364,18 @@ describe('ChildLoginService', () => {
     it('refuses a wrong password with the same login_failed', async () => {
       await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'login_failed');
       expect(hasher.verify).toHaveBeenCalledWith('secret1', HASH);
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('refuses a child who has a password with login_failed when none is given, still checking one', async () => {
+      hasher.verify.mockResolvedValue(true);
+
+      await expectRefusal(
+        service.login({ ...LOGIN, password: undefined }, FRESH_BROWSER),
+        'login_failed',
+      );
+      expect(hasher.verify).toHaveBeenCalledExactlyOnceWith('', HASH);
+      expect(store.databaseNow).not.toHaveBeenCalled();
       expect(transaction).not.toHaveBeenCalled();
     });
 
@@ -285,6 +399,107 @@ describe('ChildLoginService', () => {
     );
   });
 
+  describe('setPasswordWithAccount', () => {
+    beforeEach(arrangeSettingUp);
+
+    it("sets the child's first password and logs the child in", async () => {
+      const login = await service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER);
+
+      expect(login).toEqual({
+        child: { id: CHILD_ID, nickname: '小米' },
+        deviceToken: undefined,
+        issuedAt: DATABASE_NOW,
+      });
+      expect(families.findIdByCode).toHaveBeenCalledWith('7KQ4MZ');
+      expect(store.findLoginCandidate).toHaveBeenCalledWith(FAMILY_ID, 'xiaomi');
+      expect(hasher.hash).toHaveBeenCalledWith('new secret');
+      expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
+      expect(store.setPassword).toHaveBeenCalledExactlyOnceWith(CHILD_ID, HASH);
+    });
+
+    it('records the password the child set with the account, by the child, in the transaction', async () => {
+      await service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER);
+
+      expect(audit.record).toHaveBeenCalledExactlyOnceWith(TRANSACTION, {
+        actor: { kind: 'child', id: CHILD_ID },
+        action: 'child.password_set',
+        targetId: CHILD_ID,
+        familyId: FAMILY_ID,
+        details: { via: 'account' },
+      });
+      expectCalledInOrder(store.setPassword, audit.record, committed);
+    });
+
+    it("hashes the password before the transaction, then checks the time again by the database's clock under the child's lock", async () => {
+      await service.setPasswordWithAccount({ ...FIRST_PASSWORD, remember: true }, FRESH_BROWSER);
+
+      expectCalledInOrder(
+        hasher.hash,
+        transaction,
+        store.lockChild,
+        store.setPassword,
+        store.rememberDevice,
+        committed,
+      );
+      expect(store.databaseNow).toHaveBeenCalledTimes(2);
+      expect(lastCallOf(store.databaseNow)).toBeGreaterThan(firstCallOf(store.lockChild));
+    });
+
+    it.each<[string, () => void]>([
+      ...noSuchChild,
+      ['a child who has a password', () => store.findLoginCandidate.mockResolvedValue(XIAOMI)],
+      [
+        'a child who was given no time to set one with the account',
+        () => store.findLoginCandidate.mockResolvedValue(XIAOMI_WITHOUT_PASSWORD),
+      ],
+      [
+        'a child whose time has run out by the database’s clock',
+        () => store.databaseNow.mockResolvedValue(new Date(SETUP_UNTIL.getTime() + 1)),
+      ],
+    ])('refuses %s with login_failed, hashing nothing', async (_case, arrange) => {
+      arrange();
+
+      await expectRefusal(
+        service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER),
+        'login_failed',
+      );
+      expect(hasher.hash).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it.each<[string, LoginCandidate | undefined]>([
+      ['set by another login', XIAOMI],
+      ['reset with no time left', XIAOMI_WITHOUT_PASSWORD],
+      ['gone with the child', undefined],
+    ])(
+      'refuses with login_failed a password %s once the child is locked, writing nothing',
+      async (_case, locked) => {
+        store.lockChild.mockResolvedValue(locked);
+
+        await expectRefusal(
+          service.setPasswordWithAccount({ ...FIRST_PASSWORD, remember: true }, FRESH_BROWSER),
+          'login_failed',
+        );
+        expect(store.setPassword).not.toHaveBeenCalled();
+        expect(store.rememberDevice).not.toHaveBeenCalled();
+        expect(audit.record).not.toHaveBeenCalled();
+        expect(committed).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses with login_failed when the time runs out while the password is hashed', async () => {
+      store.databaseNow.mockResolvedValueOnce(DATABASE_NOW).mockResolvedValueOnce(SETUP_UNTIL);
+
+      await expectRefusal(
+        service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER),
+        'login_failed',
+      );
+      expect(store.setPassword).not.toHaveBeenCalled();
+      expect(committed).not.toHaveBeenCalled();
+    });
+  });
+
   describe("every login's time and expired devices", () => {
     it.each(everyLogin)(
       "issues a login %s at the database's time, not the instance's clock",
@@ -302,13 +517,10 @@ describe('ChildLoginService', () => {
         await logIn(newToken().token);
 
         expect(store.deleteExpiredDevices).toHaveBeenCalledExactlyOnceWith(CHILD_ID, DATABASE_NOW);
-        expectCalledInOrder(
-          transaction,
-          store.lockChild,
-          store.databaseNow,
-          store.deleteExpiredDevices,
-          committed,
-        );
+        expectCalledInOrder(transaction, store.lockChild, store.deleteExpiredDevices, committed);
+        const lastClockRead = lastCallOf(store.databaseNow);
+        expect(lastClockRead).toBeGreaterThan(firstCallOf(store.lockChild));
+        expect(lastClockRead).toBeLessThan(firstCallOf(store.deleteExpiredDevices));
       },
     );
 
@@ -372,6 +584,57 @@ describe('ChildLoginService', () => {
 
       await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'rate_limited');
       expect(hasher.verify).not.toHaveBeenCalled();
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('asks a child who may set a password to set one within the limits, before anything is checked', async () => {
+      arrangeSettingUp();
+      limits.attempt.mockRejectedValueOnce(new RateLimitedError(412));
+
+      await expectRefusal(service.login(LOGIN, FRESH_BROWSER), 'rate_limited');
+      expect(store.databaseNow).not.toHaveBeenCalled();
+    });
+
+    it('counts setting the first password with the account for the child found, before anything is hashed', async () => {
+      arrangeSettingUp();
+
+      await service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER);
+
+      expect(limits.attempt).toHaveBeenCalledExactlyOnceWith(
+        CLIENT_IP,
+        { childId: CHILD_ID },
+        expect.any(Function),
+      );
+      expectCalledInOrder(store.findLoginCandidate, limits.attempt, hasher.hash);
+    });
+
+    it.each(noSuchChild)(
+      'counts setting a password with %s for the code and account typed',
+      async (_case, arrange) => {
+        arrange();
+
+        await expectRefusal(
+          service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER),
+          'login_failed',
+        );
+
+        expect(limits.attempt).toHaveBeenCalledWith(
+          CLIENT_IP,
+          { code: '7KQ4MZ', account: 'xiaomi' },
+          expect.any(Function),
+        );
+      },
+    );
+
+    it('refuses setting a password from a source at its limit with rate_limited, hashing nothing', async () => {
+      arrangeSettingUp();
+      limits.attempt.mockRejectedValueOnce(new RateLimitedError(60));
+
+      await expectRefusal(
+        service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER),
+        'rate_limited',
+      );
+      expect(hasher.hash).not.toHaveBeenCalled();
       expect(transaction).not.toHaveBeenCalled();
     });
 
@@ -453,7 +716,7 @@ describe('ChildLoginService', () => {
     });
 
     it("gives a browser without a device token a new one and remembers the child for 30 days from the database's time", async () => {
-      const login = await service.login({ ...LOGIN, remember: true }, FRESH_BROWSER);
+      const login = await signedIn(service.login({ ...LOGIN, remember: true }, FRESH_BROWSER));
 
       expect(isWellFormedToken(login.deviceToken)).toBe(true);
       expect(store.rememberDevice).toHaveBeenCalledWith({
@@ -469,9 +732,11 @@ describe('ChildLoginService', () => {
     it("keeps the browser's own device token when a valid device has it, shared with the other children it remembers", async () => {
       const { token, hash } = newToken();
 
-      const login = await service.login(
-        { ...LOGIN, remember: true },
-        { deviceToken: token, userAgent: undefined, clientIp: CLIENT_IP },
+      const login = await signedIn(
+        service.login(
+          { ...LOGIN, remember: true },
+          { deviceToken: token, userAgent: undefined, clientIp: CLIENT_IP },
+        ),
       );
 
       expect(store.isRememberedBy).toHaveBeenCalledExactlyOnceWith(hash, DATABASE_NOW);
@@ -485,9 +750,11 @@ describe('ChildLoginService', () => {
       const planted = newToken();
       store.isRememberedBy.mockResolvedValue(false);
 
-      const login = await service.login(
-        { ...LOGIN, remember: true },
-        { ...FRESH_BROWSER, deviceToken: planted.token },
+      const login = await signedIn(
+        service.login(
+          { ...LOGIN, remember: true },
+          { ...FRESH_BROWSER, deviceToken: planted.token },
+        ),
       );
 
       expect(store.isRememberedBy).toHaveBeenCalledWith(planted.hash, DATABASE_NOW);
@@ -523,7 +790,7 @@ describe('ChildLoginService', () => {
     it('forgets the child on the browser when not remembered, and leaves its cookie', async () => {
       const { token, hash } = newToken();
 
-      const login = await service.login(LOGIN, { ...FRESH_BROWSER, deviceToken: token });
+      const login = await signedIn(service.login(LOGIN, { ...FRESH_BROWSER, deviceToken: token }));
 
       expect(login.deviceToken).toBeUndefined();
       expect(store.forgetDevice).toHaveBeenCalledWith(CHILD_ID, hash);
@@ -683,6 +950,15 @@ describe('ChildLoginService', () => {
       expect(hasher.hash).toHaveBeenCalledWith('new secret');
       expect(store.setPassword).toHaveBeenCalledWith(CHILD_ID, HASH);
       expect(links.take).toHaveBeenCalledExactlyOnceWith(activeLink(hash));
+    });
+
+    it('sets the password whether or not the child still has time to set one with the account', async () => {
+      store.findCandidate.mockResolvedValue(XIAOMI_SETTING_UP);
+      store.lockChild.mockResolvedValue(XIAOMI_SETTING_UP);
+
+      await service.setPasswordWithLink(newToken().token, request, FRESH_BROWSER);
+
+      expect(store.setPassword).toHaveBeenCalledWith(CHILD_ID, HASH);
     });
 
     it('records the password the child set on a link, by the child, in the transaction', async () => {

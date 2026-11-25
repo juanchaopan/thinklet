@@ -3,11 +3,14 @@ import type { z } from 'zod';
 import { childMeResponseSchema } from './child.js';
 import {
   childLinkLoginRequestSchema,
+  childLoginAnswerSchema,
   childLoginLinkInfoSchema,
   childLoginRequestSchema,
   childLoginResponseSchema,
+  childNeedsPasswordSchema,
   rememberedChildListSchema,
   setChildPasswordRequestSchema,
+  setChildPasswordWithAccountRequestSchema,
 } from './child-auth.js';
 import { toFieldErrors } from './errors.js';
 
@@ -20,7 +23,8 @@ function rejectedFields(schema: z.ZodType, body: unknown) {
 }
 
 describe('childLoginRequestSchema', () => {
-  const login = { code: '7KQ4MZ', account: 'xiaomi', password: 'secret 1', remember: false };
+  const withoutPassword = { code: '7KQ4MZ', account: 'xiaomi', remember: false };
+  const login = { ...withoutPassword, password: 'secret 1' };
 
   it('accepts the family code, the account, the password and whether to remember', () => {
     expect(childLoginRequestSchema.parse(login)).toEqual(login);
@@ -30,7 +34,11 @@ describe('childLoginRequestSchema', () => {
     expect(childLoginRequestSchema.parse({ ...login, code: '7kq4mz' }).code).toBe('7KQ4MZ');
   });
 
-  it('keeps the password as typed and checks only that it is there', () => {
+  it('takes a login without a password, as a child who has none yet sends it', () => {
+    expect(childLoginRequestSchema.parse(withoutPassword)).toEqual(withoutPassword);
+  });
+
+  it('keeps a password as typed and checks only that one sent is not empty', () => {
     expect(childLoginRequestSchema.parse({ ...login, password: ' abc ' }).password).toBe(' abc ');
     expect(rejectedFields(childLoginRequestSchema, { ...login, password: '' })).toEqual([
       { path: 'password', code: 'required' },
@@ -41,7 +49,6 @@ describe('childLoginRequestSchema', () => {
     expect(rejectedFields(childLoginRequestSchema, {})).toEqual([
       { path: 'code', code: 'required' },
       { path: 'account', code: 'required' },
-      { path: 'password', code: 'required' },
       { path: 'remember', code: 'required' },
     ]);
     expect(
@@ -60,6 +67,55 @@ describe('childLoginResponseSchema', () => {
     expect(childLoginResponseSchema.parse(body)).toEqual(body);
     expect(childMeResponseSchema.parse(body)).toEqual(body);
     expect(childMeResponseSchema.safeParse({ ...body, account: 'xiaomi' }).success).toBe(false);
+  });
+});
+
+describe('childLoginAnswerSchema', () => {
+  const signedIn = { id: childId, nickname: '豆豆' };
+  const needsPassword = { needsPassword: true, id: childId, nickname: '豆豆' };
+
+  it('is the child signed in, or the child who has to set a password first', () => {
+    expect(childLoginAnswerSchema.parse(signedIn)).toEqual(signedIn);
+    expect(childLoginAnswerSchema.parse(needsPassword)).toEqual(needsPassword);
+    expect(childNeedsPasswordSchema.safeParse(signedIn).success).toBe(false);
+  });
+
+  it('takes needsPassword only as true', () => {
+    expect(
+      childLoginAnswerSchema.safeParse({ ...needsPassword, needsPassword: false }).success,
+    ).toBe(false);
+  });
+});
+
+describe('setChildPasswordWithAccountRequestSchema', () => {
+  const body = { code: '7kq4mz', account: 'doudou', password: 'dd 2019', remember: true };
+
+  it('accepts the family code in capitals, the account, a new password and whether to remember', () => {
+    expect(setChildPasswordWithAccountRequestSchema.parse(body)).toEqual({
+      ...body,
+      code: '7KQ4MZ',
+    });
+  });
+
+  it('checks the password as a new one: 6 to 32 characters', () => {
+    expect(
+      rejectedFields(setChildPasswordWithAccountRequestSchema, { ...body, password: 'abcde' }),
+    ).toEqual([{ path: 'password', code: 'too_short' }]);
+    expect(
+      rejectedFields(setChildPasswordWithAccountRequestSchema, {
+        ...body,
+        password: 'a'.repeat(33),
+      }),
+    ).toEqual([{ path: 'password', code: 'too_long' }]);
+  });
+
+  it('names every field that is missing', () => {
+    expect(rejectedFields(setChildPasswordWithAccountRequestSchema, {})).toEqual([
+      { path: 'code', code: 'required' },
+      { path: 'account', code: 'required' },
+      { path: 'password', code: 'required' },
+      { path: 'remember', code: 'required' },
+    ]);
   });
 });
 
