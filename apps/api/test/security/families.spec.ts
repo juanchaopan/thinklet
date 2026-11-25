@@ -15,7 +15,7 @@ import {
   signInParent,
   type Parent,
 } from '../support/families.js';
-import { cookieHeader } from '../support/login.js';
+import { FOREIGN_ORIGINS, sendRoutes } from '../support/routes.js';
 
 /** A family with its admin and one member. */
 interface Household {
@@ -25,10 +25,10 @@ interface Household {
 }
 
 // Security test cases of .docs/architecture.md ("指标和要求", 安全): a parent
-// who is not a member of a family cannot see or change any of it by
-// changing the ids in the address or the body (IDOR); the routes need a
-// login and this site's Origin; what a parent types is stored and answered
-// as data, never run.
+// who is not a member of a family cannot see, change or delete any of it by
+// changing the ids in the address or the body (IDOR), not even the admin of
+// another family; the routes need a login and this site's Origin; what a
+// parent types is stored and answered as data, never run.
 describe('family security', () => {
   let started: AppWithServices;
   let app: NestExpressApplication;
@@ -71,7 +71,7 @@ describe('family security', () => {
     await started?.stop();
   });
 
-  /** Every route of the target's family, sent by the parent. */
+  /** Every route of the target's family, sent by the parent, deleting the family last. */
   async function everyRoute(by: Parent, target: Household): Promise<request.Response[]> {
     const client = as(server, by);
     const path = `/api/families/${target.family.id}`;
@@ -84,6 +84,7 @@ describe('family security', () => {
       await client.delete(`${path}/members/${target.member.id}`),
       await client.delete(`${path}/members/${target.admin.id}`),
       await client.delete(`${path}/members/${by.id}`),
+      await client.delete(path),
     ];
   }
 
@@ -91,7 +92,7 @@ describe('family security', () => {
     ['the admin', 'admin'],
     ['a member', 'member'],
   ] as const)(
-    'answers %s of another family with 404 on every route of it, revealing and changing nothing',
+    'answers %s of another family with 404 on every route of it, revealing, changing and deleting nothing',
     async (_who, role) => {
       const before = await stateOf(theirs.family.id);
 
@@ -113,12 +114,11 @@ describe('family security', () => {
     const responses = [
       await client.get(`/api/families/${crypto.randomUUID()}`),
       await client.get(`/api/families/${theirs.family.id}`),
+      await client.delete(`/api/families/${crypto.randomUUID()}`),
+      await client.delete(`/api/families/${theirs.family.id}`),
     ];
 
-    expect(outcomesOf(responses)).toEqual([
-      [404, 'family_not_found'],
-      [404, 'family_not_found'],
-    ]);
+    expect(outcomesOf(responses)).toEqual(responses.map(() => [404, 'family_not_found']));
   });
 
   it.each([
@@ -134,12 +134,15 @@ describe('family security', () => {
     expect(outcomesOf([response])).toEqual([[404, 'family_not_found']]);
   });
 
-  it('does not open another family by its id in capitals', async () => {
-    const response = await as(server, ours.admin).get(
-      `/api/families/${theirs.family.id.toUpperCase()}`,
-    );
+  it('does not open or delete another family by its id in capitals', async () => {
+    const before = await stateOf(theirs.family.id);
+    const client = as(server, ours.admin);
+    const path = `/api/families/${theirs.family.id.toUpperCase()}`;
 
-    expect(outcomesOf([response])).toEqual([[404, 'family_not_found']]);
+    const responses = [await client.get(path), await client.delete(path)];
+
+    expect(outcomesOf(responses)).toEqual(responses.map(() => [404, 'family_not_found']));
+    expect(await stateOf(theirs.family.id)).toEqual(before);
   });
 
   it("cannot reach another family's parents through its own family", async () => {
@@ -211,21 +214,29 @@ describe('family security', () => {
       await anonymous(request(server).post(`${path}/code`)),
       await anonymous(request(server).put(`${path}/admin`)).send({ parentId: ours.member.id }),
       await anonymous(request(server).delete(`${path}/members/${ours.member.id}`)),
+      await anonymous(request(server).delete(path)),
     ];
 
     expect(outcomesOf(responses)).toEqual(responses.map(() => [401, 'unauthenticated']));
   });
 
-  it("refuses a change from another site even with the admin's login", async () => {
-    const before = await stateOf(ours.family.id);
+  it.each(FOREIGN_ORIGINS)(
+    "refuses a change and the deletion %s even with the admin's login",
+    async (_case, foreign) => {
+      const before = await stateOf(ours.family.id);
+      const path = `/api/families/${ours.family.id}`;
 
-    const response = await request(server)
-      .patch(`/api/families/${ours.family.id}`)
-      .set('Origin', 'https://evil.example')
-      .set('Cookie', cookieHeader(ours.admin.cookies))
-      .send({ name: '被改掉了' });
+      const responses = await sendRoutes(
+        server,
+        [
+          { method: 'patch', path, body: { name: '被改掉了' } },
+          { method: 'delete', path },
+        ],
+        foreign(ours.admin),
+      );
 
-    expect(outcomesOf([response])).toEqual([[403, 'bad_origin']]);
-    expect(await stateOf(ours.family.id)).toEqual(before);
-  });
+      expect(outcomesOf(responses)).toEqual(responses.map(() => [403, 'bad_origin']));
+      expect(await stateOf(ours.family.id)).toEqual(before);
+    },
+  );
 });

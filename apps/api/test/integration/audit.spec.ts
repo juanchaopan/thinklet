@@ -17,13 +17,14 @@ import {
   signInParent,
   useAppWithServices,
 } from '../support/families.js';
+import { FAMILY_DELETION_AUDIT_CASES } from '../support/family-deletion.js';
 import { newUser, signIn } from '../support/login.js';
 
 /** What the database answers any update, delete or truncate of the audit events with. */
 const APPEND_ONLY = 'audit_events rows are never changed or deleted';
 
-/** Every data-changing request of the api, the deletions of accounts included. */
-const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES];
+/** Every data-changing request of the api, the deletions of accounts and families included. */
+const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES, ...FAMILY_DELETION_AUDIT_CASES];
 
 // Acceptance criterion covered (#14, 30): every request that changes data
 // writes one audit row, with the event name, the actor, the target, the
@@ -87,6 +88,7 @@ describe('audit events', () => {
         'family.created',
         'family.updated',
         'family.code_changed',
+        'family.deleted',
         'member.admin_transferred',
         'member.removed',
         'member.left',

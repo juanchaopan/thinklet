@@ -274,6 +274,22 @@ export class FamiliesService {
   }
 
   /**
+   * The admin deletes the family (`.docs/design/rules.md`, "删除家庭"), also
+   * while it has other parents, in one transaction that locks the family
+   * and checks the role under the lock: a parent who is not a member, or a
+   * family already deleted, is 404 `family_not_found`, and a member who is
+   * not the admin is 403 `not_admin`. The other parents' accounts and their
+   * other families stay. Returns the ids of the children deleted with it,
+   * whose login links the caller removes from Redis once this has committed.
+   */
+  delete(parentId: string, familyId: string): Promise<string[]> {
+    return this.repository.transaction(async (store, transaction) => {
+      await lockFor(store, familyId, parentId, 'admin');
+      return this.deleteWithin(transaction, familyId, byParent(parentId));
+    });
+  }
+
+  /**
    * Deletes the family with everything in it inside the caller's
    * transaction, which has locked the family and checked who may delete it:
    * its children with their devices and books, its books, its join requests

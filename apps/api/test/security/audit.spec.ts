@@ -1,6 +1,7 @@
 import { ACCOUNT_DELETION_AUDIT_CASES } from '../support/account-deletion.js';
 import { AUDIT_CASES, auditRows, PersonalData, type AuditRow } from '../support/audit.js';
 import { useAppWithServices } from '../support/families.js';
+import { FAMILY_DELETION_AUDIT_CASES } from '../support/family-deletion.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -8,8 +9,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DETAIL_WORDS = new Set(['name', 'timezone', 'nickname', 'account', 'self', 'webhook', 'qr']);
 const VERSION = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Every data-changing request of the api, the deletions of accounts included. */
-const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES];
+/** Every data-changing request of the api, the deletions of accounts and families included. */
+const CASES = [...AUDIT_CASES, ...ACCOUNT_DELETION_AUDIT_CASES, ...FAMILY_DELETION_AUDIT_CASES];
 
 /** Whether a value of an audit row's details is an id, a count or one of the allowed words. */
 function isIdentifier(value: unknown): boolean {

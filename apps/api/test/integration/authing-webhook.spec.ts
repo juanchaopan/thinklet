@@ -11,56 +11,20 @@ import {
 } from '../support/account-deletion.js';
 import { businessSnapshot, rowsAddedBy, type AuditRow } from '../support/audit.js';
 import { STUB_WEBHOOK_SECRET_HEADER } from '../support/authing-stub.js';
-import { acquire, ACTIVE_BOOK, setReaders } from '../support/books.js';
-import { newLoginLink } from '../support/child-login.js';
-import { addChild, insertDevice } from '../support/children.js';
 import { TEST_AUTHING } from '../support/containers.js';
-import { query } from '../support/database.js';
 import {
   addMember,
-  addPendingRequest,
   createFamily,
   memberRows,
   signInParent,
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
+import { familyFullOfData, NO_ROWS_OF_FAMILY, rowsOfFamily } from '../support/family-deletion.js';
 import { redisContents } from '../support/login-links.js';
 
 /** The actor columns of what the site itself does. */
 const BY_SYSTEM = { actor_kind: 'system', actor_id: null, actor_issuer: null, actor_subject: null };
-
-/** The rows a deleted family leaves in each of its tables: none. */
-const NO_ROWS_OF_FAMILY = {
-  families: 0,
-  members: 0,
-  join_requests: 0,
-  children: 0,
-  devices: 0,
-  family_books: 0,
-  assignments: 0,
-};
-
-/** How many rows of each table belong to the family. */
-async function rowsOfFamily(
-  databaseUrl: string,
-  familyId: string,
-): Promise<Record<string, number> | undefined> {
-  const [row] = await query<Record<string, number>>(
-    databaseUrl,
-    `select
-       (select count(*)::int from families where id = $1) as families,
-       (select count(*)::int from family_members where family_id = $1) as members,
-       (select count(*)::int from join_requests where family_id = $1) as join_requests,
-       (select count(*)::int from children where family_id = $1) as children,
-       (select count(*)::int from child_devices d join children c on c.id = d.child_id
-         where c.family_id = $1) as devices,
-       (select count(*)::int from family_books where family_id = $1) as family_books,
-       (select count(*)::int from book_assignments where family_id = $1) as assignments`,
-    [familyId],
-  );
-  return row;
-}
 
 // Acceptance criterion covered (#14, 27, parents deleted in Authing's
 // console): Authing's `user:deleted` notification, proven by the webhook
@@ -87,32 +51,6 @@ describe('POST /api/webhooks/authing', () => {
     expect(delivered.map(({ status }) => status)).toEqual([200]);
     expect(await rowsOfParent(running.databaseUrl, parent.id)).toEqual(NO_ROWS_OF_PARENT);
     return added;
-  }
-
-  /** A family of a new admin with a child of each kind of data a child has, and a family the admin is a member of. */
-  async function familyFullOfData() {
-    const admin = await signInParent(running.server);
-    const family = await createFamily(running.server, admin);
-    const applicant = await signInParent(running.server);
-    await addPendingRequest(running.databaseUrl, family, applicant.id);
-    const xiaomi = await addChild(running.server, admin, family.id, { nickname: '小米' });
-    const doudou = await addChild(running.server, admin, family.id, { nickname: '豆豆' });
-    await insertDevice(running.databaseUrl, xiaomi.id, {
-      name: 'iPad · Safari',
-      rememberedAt: new Date(),
-      lastUsedAt: new Date(),
-    });
-    await acquire(running.server, admin, family.id, ACTIVE_BOOK);
-    await setReaders(running.server, admin, { familyId: family.id, bookId: ACTIVE_BOOK }, [
-      xiaomi.id,
-    ]);
-    const link = await newLoginLink(running.server, admin, family.id, doudou.id);
-    const otherFamily = await createFamily(running.server, await signInParent(running.server), {
-      name: '外婆家',
-      timezone: 'Asia/Shanghai',
-    });
-    await addMember(running.databaseUrl, otherFamily.id, admin.id);
-    return { admin, family, applicant, doudou, link, otherFamily };
   }
 
   it('reads the secret from the header the stand-in sends it in', () => {
@@ -164,7 +102,7 @@ describe('POST /api/webhooks/authing', () => {
   });
 
   it('deletes a family whose only parent is deleted, with everything in it', async () => {
-    const { admin, family, applicant, doudou, link, otherFamily } = await familyFullOfData();
+    const { admin, family, applicant, doudou, link, otherFamily } = await familyFullOfData(running);
 
     const added = await deleteInConsole(admin);
 
