@@ -390,7 +390,7 @@
 | `POST /api/child-login-links/{token}/password`    | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                      | `400`、`404 link_invalid`、`409 password_already_set`                                |
 | `POST /api/child-login-links/{token}/login`       | `{ "password", "remember" }`                     | `200 { "id", "nickname" }`                                                      | `401 wrong_password`、`404 link_invalid`、`409 password_not_set`、`429 rate_limited` |
 
-- 登录成功（输入账号密码、用账号登录设密码、点头像、扫码设密码、扫码输密码）都签发孩子的登录 cookie，签发时间取数据库的当前时间，并删掉这个孩子已经过期的设备记录。`remember` 是 `true` 时，建立或续期这台浏览器上这个孩子的设备记录：浏览器带来的设备令牌在库里有记录才沿用，没有记录或者没有设备 cookie 时先签发一个新的令牌；是 `false` 时去掉这台浏览器上这个孩子的设备记录。
+- 登录成功（输入账号密码、用账号登录设密码、点头像、扫码设密码、扫码输密码）都签发孩子的登录 cookie，签发时间取数据库的当前时间，并删掉这个孩子已经过期的设备记录。`remember` 是 `true` 时，建立或续期这台浏览器上这个孩子的设备记录：输入密码、用账号设密码、扫码设密码和扫码输密码时，每次都签发新的设备令牌，浏览器旧令牌下同一个家庭的孩子还没过期的设备记录换到新令牌；点头像登录沿用原来的令牌；是 `false` 时去掉这台浏览器上这个孩子的设备记录。
 - `password` 都是 6–32 个字符、不超过 128 字节；登录时超过的不做散列，当作密码不对。
 - `POST /api/child-auth/login`：`code` 不分大小写，后端转成大写再查。家庭码和账号对上了一个还没设密码、还在期限内的孩子时，不看 `password`，返回 `200 { "needsPassword": true, "id", "nickname" }`，不登录，前端换成设密码的卡片，`id` 用来给头像配颜色。其余情况下，家庭码、账号、密码有一项不对，有密码的孩子没带 `password`，或者还没设密码的孩子已经过了期限，都返回 `401 login_failed`，不说是哪一项。
 - `POST /api/child-auth/password`：给还没设密码、还在期限内的孩子设密码并登录，清掉期限。家庭码或账号不对、孩子已经有密码、过了期限，都返回 `401 login_failed`。
