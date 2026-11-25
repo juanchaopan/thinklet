@@ -1,10 +1,15 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import type { Environment } from '../config/environment.js';
+import { childDevices, children } from '../database/schema.js';
 import {
   ChildDataCipher,
   ChildDataDecryptionError,
+  encryptionKeyOf,
   normaliseAccount,
+  openCiphertext,
+  sealCiphertext,
+  type CiphertextPlace,
 } from './child-data-cipher.js';
 
 function cipherWith(key: Buffer): ChildDataCipher {
@@ -14,6 +19,14 @@ function cipherWith(key: Buffer): ChildDataCipher {
 const key = randomBytes(32);
 const cipher = cipherWith(key);
 const familyId = randomUUID();
+const childId = randomUUID();
+const nicknameOfChild: CiphertextPlace = { column: children.nickname, rowId: childId };
+
+/**
+ * The format written before ciphertexts were bound to their place: the
+ * same layout and key, with the key id alone as the additional data.
+ */
+const UNBOUND = Buffer.from('v1');
 
 /** The ciphertext with one of its four parts replaced. */
 function withPart(encrypted: string, index: number, replace: (part: string) => string): string {
@@ -28,14 +41,16 @@ const flipFirst = (part: string) => `${part.startsWith('A') ? 'B' : 'A'}${part.s
 describe('ChildDataCipher', () => {
   describe('encrypt and decrypt', () => {
     it.each(['小米', 'xiaomi2016', 'iPad 上的 Safari', '', '😀 emoji'])(
-      'give back the text %j',
+      'give back the text %j at its place',
       (text) => {
-        expect(cipher.decrypt(cipher.encrypt(text))).toBe(text);
+        expect(cipher.decrypt(cipher.encrypt(text, nicknameOfChild), nicknameOfChild)).toBe(text);
       },
     );
 
     it('write the key id, a 12-byte IV, the ciphertext and a 16-byte tag', () => {
-      const [keyId, iv, ciphertext, tag, ...rest] = cipher.encrypt('小米').split('.');
+      const [keyId, iv, ciphertext, tag, ...rest] = cipher
+        .encrypt('小米', nicknameOfChild)
+        .split('.');
 
       expect(keyId).toBe('v1');
       expect(Buffer.from(iv ?? '', 'base64url')).toHaveLength(12);
@@ -45,8 +60,8 @@ describe('ChildDataCipher', () => {
     });
 
     it('never show the text and use a new IV every time', () => {
-      const first = cipher.encrypt('xiaomi');
-      const second = cipher.encrypt('xiaomi');
+      const first = cipher.encrypt('xiaomi', nicknameOfChild);
+      const second = cipher.encrypt('xiaomi', nicknameOfChild);
 
       expect(first).not.toContain('xiaomi');
       expect(first).not.toBe(second);
@@ -54,12 +69,14 @@ describe('ChildDataCipher', () => {
     });
 
     it('read what another instance with the same key wrote', () => {
-      expect(cipherWith(Buffer.from(key)).decrypt(cipher.encrypt('小米'))).toBe('小米');
+      const encrypted = cipher.encrypt('小米', nicknameOfChild);
+
+      expect(cipherWith(Buffer.from(key)).decrypt(encrypted, nicknameOfChild)).toBe('小米');
     });
   });
 
   describe('decrypt refuses', () => {
-    const encrypted = cipher.encrypt('小米');
+    const encrypted = cipher.encrypt('小米', nicknameOfChild);
 
     it.each<[string, string]>([
       ['a changed IV', withPart(encrypted, 1, flipFirst)],
@@ -76,21 +93,57 @@ describe('ChildDataCipher', () => {
       ['plain text', '小米'],
       ['nothing', ''],
     ])('%s', (_name, changed) => {
-      expect(() => cipher.decrypt(changed)).toThrow(ChildDataDecryptionError);
+      expect(() => cipher.decrypt(changed, nicknameOfChild)).toThrow(ChildDataDecryptionError);
     });
 
     it('what another key wrote', () => {
-      expect(() => cipherWith(randomBytes(32)).decrypt(encrypted)).toThrow(
+      expect(() => cipherWith(randomBytes(32)).decrypt(encrypted, nicknameOfChild)).toThrow(
         ChildDataDecryptionError,
       );
+    });
+
+    it.each<[string, CiphertextPlace]>([
+      ["another child's row", { column: children.nickname, rowId: randomUUID() }],
+      ['another column of the same row', { column: children.account, rowId: childId }],
+      ['another table with the same row id', { column: childDevices.name, rowId: childId }],
+    ])('a ciphertext moved to %s', (_name, place) => {
+      expect(() => cipher.decrypt(encrypted, place)).toThrow(ChildDataDecryptionError);
+    });
+
+    it('a ciphertext written without its place', () => {
+      const unbound = sealCiphertext(encryptionKeyOf(key), '小米', UNBOUND);
+
+      expect(() => cipher.decrypt(unbound, nicknameOfChild)).toThrow(ChildDataDecryptionError);
     });
 
     it('without repeating the ciphertext in the error', () => {
       const changed = withPart(encrypted, 2, flipFirst);
       const ciphertext = changed.split('.')[2] ?? '';
 
-      expect(() => cipher.decrypt(changed)).toThrow(
+      expect(() => cipher.decrypt(changed, nicknameOfChild)).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining(ciphertext) }),
+      );
+    });
+  });
+
+  describe('sealCiphertext and openCiphertext', () => {
+    it('read a ciphertext with the additional data it was written with, in the same layout', () => {
+      const unbound = sealCiphertext(encryptionKeyOf(key), '小米', UNBOUND);
+
+      expect(openCiphertext(encryptionKeyOf(key), unbound, UNBOUND)).toBe('小米');
+      expect(unbound.split('.').map((part) => part.length)).toEqual(
+        cipher
+          .encrypt('小米', nicknameOfChild)
+          .split('.')
+          .map((part) => part.length),
+      );
+    });
+
+    it('refuse it with other additional data', () => {
+      const unbound = sealCiphertext(encryptionKeyOf(key), '小米', UNBOUND);
+
+      expect(() => openCiphertext(encryptionKeyOf(key), unbound, Buffer.from('v2'))).toThrow(
+        ChildDataDecryptionError,
       );
     });
   });

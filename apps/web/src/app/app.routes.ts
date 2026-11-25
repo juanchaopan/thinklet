@@ -19,8 +19,9 @@ import {
  * The child's pages need no parent and have no parent menus: the child login
  * `/child` (a signed-in child goes on to `/child/home`; a signed-in parent
  * sees it as it is), the QR login `/child/qr/<token>`, shown whoever is
- * signed in, and the child's home page `/child/home`, which needs a
- * signed-in child (without one it is the child login).
+ * signed in, and the child's home page `/child/home` and own settings
+ * `/child/profile`, which need a signed-in child (without one they are the
+ * child login).
  *
  * Every other page needs a signed-in parent; a visitor is sent to `/`, and
  * an unknown address goes to `/`. The family pages need a family (a parent
@@ -58,6 +59,13 @@ export const routes: Routes = [
     path: 'child/home',
     canActivate: [requireChild],
     loadComponent: () => import('./features/child/child-home').then((module) => module.ChildHome),
+  },
+  {
+    path: 'child/profile',
+    title: '个人设置',
+    canActivate: [requireChild],
+    loadComponent: () =>
+      import('./features/child/child-profile').then((module) => module.ChildProfile),
   },
   {
     path: '',

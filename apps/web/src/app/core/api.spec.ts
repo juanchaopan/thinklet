@@ -55,6 +55,19 @@ describe('Api', () => {
     expect(error.code).toBe('invalid_request');
     expect(error.requestId).toBe(REQUEST_ID);
     expect(error.fields).toEqual([{ path: 'name', code: 'too_long' }]);
+    expect(error.retryAfterSeconds).toBeUndefined();
+  });
+
+  it('carries the seconds left of a rate limit', async () => {
+    stubError('post /api/child-auth/login', 429, 'rate_limited', { retryAfterSeconds: 412 });
+
+    const error = await failure(
+      api().send('POST', '/api/child-auth/login', {}, childLoginResponseSchema),
+    );
+
+    expect(error.status).toBe(429);
+    expect(error.code).toBe('rate_limited');
+    expect(error.retryAfterSeconds).toBe(412);
   });
 
   it('calls an error without a readable body internal', async () => {

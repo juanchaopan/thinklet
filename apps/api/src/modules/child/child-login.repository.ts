@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lte, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -7,36 +8,49 @@ import {
   type Executor,
 } from '../../infrastructure/database/database.module.js';
 import * as schema from '../../infrastructure/database/schema.js';
+import { LoginLinks, type ActiveLoginLink } from './login-links.js';
 
-const { children, childLoginLinks, childDevices } = schema;
+const { children, childDevices, families } = schema;
 
-/** A child as a login checks it: found by the family and the account, or locked by its id. */
+/** A child as a login checks it: found by the family and the account, or by its id. */
 export interface LoginCandidate {
   id: string;
+  familyId: string;
   nickname: string;
   /** The argon2id hash of the child's password, or null when the child has none yet. */
   passwordHash: string | null;
+  /**
+   * Until when the child, while without a password, may set one by logging
+   * in with the family code and the account; null when there is no such time.
+   */
+  passwordSetupUntil: Date | null;
 }
 
-/** The state of a login link, as a login reads it under the link's lock. */
-export interface LinkState {
-  linkId: string;
-  childId: string;
-  expiresAt: Date;
-  usedAt: Date | null;
-  revokedAt: Date | null;
-}
-
-/** A login link found by its token, with what the login needs of its child. */
-export interface LinkRecord extends LinkState {
-  nickname: string;
-  passwordHash: string | null;
+/**
+ * Whether the child may set a first password with the family code and the
+ * account at the database's time `at`: the child has no password, and the
+ * time a parent left for it has not run out.
+ */
+export function canSetPasswordWithAccount(child: LoginCandidate, at: Date): boolean {
+  return (
+    child.passwordHash === null &&
+    child.passwordSetupUntil !== null &&
+    child.passwordSetupUntil.getTime() > at.getTime()
+  );
 }
 
 /** A child the browser remembers, in plain text, with its family to fetch the code of. */
 export interface RememberedRecord {
   childId: string;
   familyId: string;
+  nickname: string;
+  account: string;
+}
+
+/** What a signed-in child sees of itself, in plain text, with its family. */
+export interface ChildProfile {
+  familyId: string;
+  familyName: string;
   nickname: string;
   account: string;
 }
@@ -51,24 +65,50 @@ export interface RememberedDevice {
   expiresAt: Date;
 }
 
-const linkStateColumns = {
-  linkId: childLoginLinks.id,
-  childId: childLoginLinks.childId,
-  expiresAt: childLoginLinks.expiresAt,
-  usedAt: childLoginLinks.usedAt,
-  revokedAt: childLoginLinks.revokedAt,
+/** The browser whose device token a login replaces, the family whose devices go with it, and when. */
+export interface DeviceTokenChange {
+  familyId: string;
+  /** The hash of the token the browser had. */
+  fromTokenHash: string;
+  /** The hash of the token the login gives it. */
+  toTokenHash: string;
+  now: Date;
+}
+
+/** What the check of a signed-in child reads of the child's row, with the database's time of the read. */
+export interface SessionCheck {
+  /** The time before which the child's logins are refused. */
+  sessionsValidAfter: Date;
+  /** The database's clock as the row was read. */
+  checkedAt: Date;
+}
+
+const candidateColumns = {
+  id: children.id,
+  familyId: children.familyId,
+  nickname: children.nickname,
+  passwordHash: children.passwordHash,
+  passwordSetupUntil: children.passwordSetupUntil,
 };
 
 /**
+ * The database's clock as the statement runs, in milliseconds since the
+ * epoch, as a number the driver hands over as it is. `clock_timestamp()`
+ * moves on within a transaction, where `now()` would stay at the
+ * transaction's start, before any lock the transaction waited for. A new
+ * fragment every time, as a mapping set on one would be set on all.
+ */
+const databaseClockMs = () => sql<number>`(extract(epoch from clock_timestamp()) * 1000)::float8`;
+
+/**
  * The queries of a child's login, on the pool or inside one transaction:
- * finding the child by account or login link, the child's password and the
- * check of a signed-in child, and the browsers the child is remembered on.
- * The nickname, the account and the device names are encrypted on the way
- * in and decrypted on the way out.
- *
- * A transaction that locks both a child's row and one of the child's login
- * links locks the child's row first, as making a login link and resetting
- * a password do, so no two of them wait for each other.
+ * finding the child by account or by id, the child's password and the
+ * check of a signed-in child, what a signed-in child sees of itself, and
+ * the browsers the child is remembered on. The nickname, the account and
+ * the device names are encrypted on the way in and decrypted on the way
+ * out, each bound to its column and its row's id. Every time a login
+ * compares or writes is the database's, so api instances whose clocks
+ * differ agree on it.
  */
 export class ChildLoginStore {
   constructor(
@@ -79,7 +119,7 @@ export class ChildLoginStore {
   /** The family's child with the account, found by its lookup value, or undefined. */
   async findLoginCandidate(familyId: string, account: string): Promise<LoginCandidate | undefined> {
     const rows = await this.executor
-      .select({ id: children.id, nickname: children.nickname, passwordHash: children.passwordHash })
+      .select(candidateColumns)
       .from(children)
       .where(
         and(
@@ -90,94 +130,142 @@ export class ChildLoginStore {
     return this.readCandidate(rows.at(0));
   }
 
+  /** The child with the id, unlocked, or undefined when the child is gone. */
+  async findCandidate(childId: string): Promise<LoginCandidate | undefined> {
+    const rows = await this.executor
+      .select(candidateColumns)
+      .from(children)
+      .where(eq(children.id, childId));
+    return this.readCandidate(rows.at(0));
+  }
+
   /**
-   * The child with its password hash as it is now, its row locked until the
+   * The child with its password as it is now, its row locked until the
    * transaction ends, or undefined when the child is gone. A password reset
-   * locks the same row, so it runs wholly before or after the transaction.
+   * and the making of a login link lock the same row, so each runs wholly
+   * before or after the transaction.
    */
   async lockChild(childId: string): Promise<LoginCandidate | undefined> {
     const rows = await this.executor
-      .select({ id: children.id, nickname: children.nickname, passwordHash: children.passwordHash })
+      .select(candidateColumns)
       .from(children)
       .where(eq(children.id, childId))
       .for('update');
     return this.readCandidate(rows.at(0));
   }
 
-  /** The time before which the child's logins are refused, or undefined when the child is gone. */
-  async sessionsValidAfter(childId: string): Promise<Date | undefined> {
-    const rows = await this.executor
-      .select({ sessionsValidAfter: children.sessionsValidAfter })
-      .from(children)
-      .where(eq(children.id, childId));
-    return rows.at(0)?.sessionsValidAfter;
+  /** The database's clock now, read in a statement of its own, so after any lock taken before it. */
+  async databaseNow(): Promise<Date> {
+    const { rows } = await this.executor.execute<{ ms: number }>(
+      sql`select ${databaseClockMs()} as ms`,
+    );
+    const ms = rows.at(0)?.ms;
+    if (ms === undefined) {
+      throw new Error("The database did not answer its clock's time");
+    }
+    return new Date(ms);
   }
 
-  /** The child's nickname, or undefined when the child is gone. */
-  async findNickname(childId: string): Promise<string | undefined> {
-    const rows = await this.executor
-      .select({ nickname: children.nickname })
-      .from(children)
-      .where(eq(children.id, childId));
-    const row = rows.at(0);
-    return row === undefined ? undefined : this.cipher.decrypt(row.nickname);
-  }
-
-  /** The login link with the token's hash and its child, unlocked, or undefined when there is none. */
-  async findLinkByToken(tokenHash: string): Promise<LinkRecord | undefined> {
+  /**
+   * The time before which the child's logins are refused, read with the
+   * database's clock, or undefined when the child is gone.
+   */
+  async sessionCheck(childId: string): Promise<SessionCheck | undefined> {
     const rows = await this.executor
       .select({
-        ...linkStateColumns,
-        nickname: children.nickname,
-        passwordHash: children.passwordHash,
+        sessionsValidAfter: children.sessionsValidAfter,
+        checkedAtMs: databaseClockMs().mapWith(Number),
       })
-      .from(childLoginLinks)
-      .innerJoin(children, eq(children.id, childLoginLinks.childId))
-      .where(eq(childLoginLinks.tokenHash, tokenHash));
+      .from(children)
+      .where(eq(children.id, childId));
     const row = rows.at(0);
-    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
+    return row === undefined
+      ? undefined
+      : { sessionsValidAfter: row.sessionsValidAfter, checkedAt: new Date(row.checkedAtMs) };
   }
 
   /**
-   * The child's login link with the token's hash, its row locked until the
-   * transaction ends, or undefined when the child has none such. The caller
-   * holds the child's lock already, so of two logins on one link the second
-   * waits for the first and finds the link used.
+   * The child's nickname and account with the family it belongs to and that
+   * family's name, or undefined when the child is gone.
    */
-  async lockLink(childId: string, tokenHash: string): Promise<LinkState | undefined> {
+  async findProfile(childId: string): Promise<ChildProfile | undefined> {
     const rows = await this.executor
-      .select(linkStateColumns)
-      .from(childLoginLinks)
-      .where(and(eq(childLoginLinks.tokenHash, tokenHash), eq(childLoginLinks.childId, childId)))
-      .for('update');
-    return rows.at(0);
+      .select({
+        familyId: children.familyId,
+        familyName: families.name,
+        nickname: children.nickname,
+        account: children.account,
+      })
+      .from(children)
+      .innerJoin(families, eq(families.id, children.familyId))
+      .where(eq(children.id, childId));
+    const row = rows.at(0);
+    return row === undefined
+      ? undefined
+      : {
+          ...row,
+          nickname: this.nicknameOf(childId, row.nickname),
+          account: this.cipher.decrypt(row.account, { column: children.account, rowId: childId }),
+        };
   }
 
+  /** Stores the child's first password; the time for setting one with the account ends with it. */
   async setPassword(childId: string, passwordHash: string): Promise<void> {
-    await this.executor.update(children).set({ passwordHash }).where(eq(children.id, childId));
+    await this.executor
+      .update(children)
+      .set({ passwordHash, passwordSetupUntil: null })
+      .where(eq(children.id, childId));
   }
 
-  async markLinkUsed(linkId: string, at: Date): Promise<void> {
+  /** Deletes the child's devices that have expired by `now`; other children's are left to their own logins. */
+  async deleteExpiredDevices(childId: string, now: Date): Promise<void> {
     await this.executor
-      .update(childLoginLinks)
-      .set({ usedAt: at })
-      .where(eq(childLoginLinks.id, linkId));
+      .delete(childDevices)
+      .where(and(eq(childDevices.childId, childId), lte(childDevices.expiresAt, now)));
   }
 
   /**
-   * Remembers the child on the browser with the token's hash, or renews the
-   * browser's row: the last login is now and it lasts until `expiresAt`. A
-   * row that had expired is remembered anew, with the new time and name; a
-   * row still valid keeps when it was first remembered and its name.
+   * Moves the browser's devices of the family's children that are still
+   * valid at `now` from the browser's old token to its new one, each keeping
+   * its row: its id, its name and its times. The rows of other families'
+   * children, and expired ones, stay under the old token. The new token is
+   * one just made, which no row has yet, so no move meets a row it would
+   * duplicate.
+   */
+  async moveFamilyDevices(change: DeviceTokenChange): Promise<void> {
+    const familyChildren = this.executor
+      .select({ id: children.id })
+      .from(children)
+      .where(eq(children.familyId, change.familyId));
+    await this.executor
+      .update(childDevices)
+      .set({ tokenHash: change.toTokenHash })
+      .where(
+        and(
+          eq(childDevices.tokenHash, change.fromTokenHash),
+          gt(childDevices.expiresAt, change.now),
+          inArray(childDevices.childId, familyChildren),
+        ),
+      );
+  }
+
+  /**
+   * Remembers the child on the browser with the token's hash, as a new
+   * device with an id of its own and its name encrypted for that id, or
+   * renews the browser's row: the last login is now and it lasts until
+   * `expiresAt`, keeping its id, when it was first remembered and its name.
+   * A login deletes the child's expired devices before it remembers the
+   * browser, under the child's lock, so the row renewed is one still valid.
    */
   async rememberDevice(device: RememberedDevice): Promise<void> {
-    const lapsed = sql`${childDevices.expiresAt} <= excluded.last_used_at`;
+    const id = randomUUID();
     await this.executor
       .insert(childDevices)
       .values({
+        id,
         childId: device.childId,
         tokenHash: device.tokenHash,
-        name: this.cipher.encrypt(device.name),
+        name: this.cipher.encrypt(device.name, { column: childDevices.name, rowId: id }),
         rememberedAt: device.now,
         lastUsedAt: device.now,
         expiresAt: device.expiresAt,
@@ -185,8 +273,6 @@ export class ChildLoginStore {
       .onConflictDoUpdate({
         target: [childDevices.childId, childDevices.tokenHash],
         set: {
-          rememberedAt: sql`case when ${lapsed} then excluded.remembered_at else ${childDevices.rememberedAt} end`,
-          name: sql`case when ${lapsed} then excluded.name else ${childDevices.name} end`,
           lastUsedAt: sql`excluded.last_used_at`,
           expiresAt: sql`excluded.expires_at`,
         },
@@ -225,8 +311,11 @@ export class ChildLoginStore {
       .where(and(eq(childDevices.childId, childId), eq(childDevices.tokenHash, tokenHash)));
   }
 
-  /** The children the browser with the token's hash remembers at `now`, in the order remembered. */
-  async listRemembered(tokenHash: string, now: Date): Promise<RememberedRecord[]> {
+  /**
+   * The children the browser with the token's hash remembers by the
+   * database's clock, in the order remembered.
+   */
+  async listRemembered(tokenHash: string): Promise<RememberedRecord[]> {
     const rows = await this.executor
       .select({
         childId: children.id,
@@ -236,38 +325,58 @@ export class ChildLoginStore {
       })
       .from(childDevices)
       .innerJoin(children, eq(children.id, childDevices.childId))
-      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, now)))
+      .where(and(eq(childDevices.tokenHash, tokenHash), gt(childDevices.expiresAt, sql`now()`)))
       .orderBy(asc(childDevices.rememberedAt), asc(childDevices.id));
     return rows.map((row) => ({
       ...row,
-      nickname: this.cipher.decrypt(row.nickname),
-      account: this.cipher.decrypt(row.account),
+      nickname: this.nicknameOf(row.childId, row.nickname),
+      account: this.cipher.decrypt(row.account, { column: children.account, rowId: row.childId }),
     }));
   }
 
+  /** The nickname of the child with the id, from its ciphertext. */
+  private nicknameOf(childId: string, encrypted: string): string {
+    return this.cipher.decrypt(encrypted, { column: children.nickname, rowId: childId });
+  }
+
   private readCandidate(row: LoginCandidate | undefined): LoginCandidate | undefined {
-    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
+    return row === undefined
+      ? undefined
+      : { ...row, nickname: this.nicknameOf(row.id, row.nickname) };
   }
 }
 
 /**
  * The data of children's logins. Its own queries run on the pool;
  * `transaction` runs a unit of work with the same queries inside one
- * transaction.
+ * transaction, and hands the work the transaction too, for the audit event
+ * of a change the login makes. The login links a login reads and uses are
+ * in Redis, outside any transaction, through LoginLinks.
  */
 @Injectable()
 export class ChildLoginRepository extends ChildLoginStore {
   constructor(
     @Inject(DATABASE) private readonly database: Database,
     cipher: ChildDataCipher,
+    private readonly links: LoginLinks,
   ) {
     super(database, cipher);
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: ChildLoginStore) => Promise<T>): Promise<T> {
+  transaction<T>(work: (store: ChildLoginStore, transaction: Executor) => Promise<T>): Promise<T> {
     return this.database.transaction((transaction) =>
-      work(new ChildLoginStore(transaction, this.cipher)),
+      work(new ChildLoginStore(transaction, this.cipher), transaction),
     );
+  }
+
+  /** The login link the token's hash opens while it can be used, or undefined. */
+  findLink(tokenHash: string): Promise<ActiveLoginLink | undefined> {
+    return this.links.find(tokenHash);
+  }
+
+  /** Uses the login link; false when it was used, revoked or expired before. */
+  takeLink(link: ActiveLoginLink): Promise<boolean> {
+    return this.links.take(link);
   }
 }

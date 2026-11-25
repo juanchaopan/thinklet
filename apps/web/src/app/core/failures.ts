@@ -23,6 +23,19 @@ export function rejectedFields(error: unknown): readonly FieldError[] {
   return error instanceof ApiError && error.code === 'invalid_request' ? error.fields : [];
 }
 
+/**
+ * What a form says where it says its other mistakes when the source has
+ * tried too often (rules.md, 限流): 试得太多了, with the minutes left of
+ * the window rounded up, at least one. Null for any other failure.
+ */
+export function tooManyTries(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.code !== 'rate_limited') {
+    return null;
+  }
+  const minutes = Math.max(1, Math.ceil((error.retryAfterSeconds ?? 0) / 60));
+  return `试得太多了，请 ${String(minutes)} 分钟后再试`;
+}
+
 /** Says 出了点问题: the parent can only try again later, and what is on the screen stays. */
 export function showSomethingWentWrong(toaster: Toaster): void {
   toaster.show(SOMETHING_WENT_WRONG, 'error', 'wrench');

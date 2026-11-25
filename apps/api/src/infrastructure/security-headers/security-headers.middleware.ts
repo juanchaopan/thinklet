@@ -24,6 +24,9 @@ export const API_SECURITY_HEADERS: Readonly<Record<string, string>> = Object.fre
     'payment=()',
     'usb=()',
   ].join(', '),
+  // No request that follows a response, a login's redirects included,
+  // carries the address it came from.
+  'Referrer-Policy': 'no-referrer',
 });
 
 /**

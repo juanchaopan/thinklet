@@ -25,6 +25,9 @@ const origin = httpUrl.pipe(
 
 const base64url = z.string().regex(/^[A-Za-z0-9_-]+$/, 'Must be base64url');
 
+/** The fewest characters a shared secret the api checks requests with may have. */
+export const SHARED_SECRET_MIN_LENGTH = 16;
+
 /** Whether the JWK is a private key whose public coordinates belong to it. */
 function isConsistentPrivateKey(jwk: webcrypto.JsonWebKey): boolean {
   try {
@@ -107,6 +110,21 @@ export const environmentSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
   S3_FORCE_PATH_STYLE: booleanString.default(false),
+  /**
+   * The Redis the api keeps short-lived data in, such as the rate limits'
+   * counters: `redis://` on a development machine and in tests, `rediss://`
+   * (TLS) with a password in staging.
+   */
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+  /**
+   * The request header, in lower case, that the proxy in front of the api
+   * writes the client's IP address into. The api takes the source of a
+   * request from this header alone, never from the connection, which comes
+   * from the proxy.
+   */
+  CLIENT_IP_HEADER: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'Must be a header name in lower case, such as x-real-ip'),
   /** The identity provider's issuer; every other endpoint comes from its discovery document. */
   OIDC_ISSUER: httpUrl,
   OIDC_CLIENT_ID: z.string().min(1),
@@ -122,6 +140,23 @@ export const environmentSchema = z.object({
    * is the key length of both AES-256 and HMAC-SHA256.
    */
   CHILD_DATA_KEY: base64Bytes(32),
+  /**
+   * The origin of Authing's management API, which deletes a parent's
+   * account (decision 0038): Authing's own in staging, the stand-in service
+   * of the tests on a development machine and in tests.
+   */
+  AUTHING_MANAGEMENT_ORIGIN: origin,
+  /** The id of the Authing user pool, with which the api asks for a management token. */
+  AUTHING_USER_POOL_ID: z.string().min(1),
+  /** The user pool's secret: it manages the whole pool, so it is never logged. */
+  AUTHING_USER_POOL_SECRET: z.string().min(1),
+  /**
+   * The secret Authing sends in a header of its webhook, which proves the
+   * notification comes from it. Long enough that it cannot be guessed.
+   */
+  AUTHING_WEBHOOK_SECRET: z
+    .string()
+    .min(SHARED_SECRET_MIN_LENGTH, `Must have at least ${SHARED_SECRET_MIN_LENGTH} characters`),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

@@ -14,6 +14,7 @@ export const apiDirectory = join(supportDirectory, '..', '..');
 const repositoryRoot = join(apiDirectory, '..', '..');
 const composeFile = join(repositoryRoot, 'docker-compose.yml');
 const S3_PORT = 8333;
+const REDIS_PORT = 6379;
 const OIDC_PORT = 8080;
 /** The mock OIDC provider serves an issuer under any first path segment; tests use this one. */
 const OIDC_ISSUER_ID = 'default';
@@ -22,6 +23,31 @@ const OIDC_LOGIN_PAGE = '/login/login.html';
 
 /** The site origin of tests that run no web server in front of the api. */
 export const TEST_APP_ORIGIN = 'http://localhost:4200';
+
+/**
+ * The request header the api under test takes the client's IP address from,
+ * as on a development machine. Nothing in front of the api sets it, so a
+ * test that needs a source sends this header itself.
+ */
+export const TEST_CLIENT_IP_HEADER = 'x-forwarded-for';
+
+/**
+ * The Authing user pool of every api this test run starts, and the secret
+ * of its webhook, made once per process. The Authing stand-in a test starts
+ * (authing-stub.ts) takes the same values.
+ */
+export const TEST_AUTHING = {
+  userPoolId: `pool-${randomUUID()}`,
+  userPoolSecret: `pool-secret-${randomUUID()}`,
+  webhookSecret: `webhook-secret-${randomUUID()}`,
+} as const;
+
+/**
+ * Where the api reaches Authing's management API when a test has started no
+ * stand-in: a port nothing listens on, so deleting an account fails there
+ * as if Authing were down. Nothing else calls it.
+ */
+const UNREACHABLE_AUTHING_ORIGIN = 'http://127.0.0.1:9';
 
 /** The repository's book folders, which every test environment imports the covers from. */
 export const bookContentDirectory = join(repositoryRoot, 'content', 'books');
@@ -77,6 +103,29 @@ export async function startStorage(): Promise<StartedStorage> {
   };
 }
 
+export interface StartedRedis {
+  container: StartedTestContainer;
+  /** The redis:// address, with the password, that the api connects to. */
+  url: string;
+}
+
+/**
+ * A throwaway Valkey, which speaks the Redis protocol, with a random
+ * password on a random host port, as staging's Redis takes one.
+ */
+export async function startRedis(): Promise<StartedRedis> {
+  const password = `pw-${randomUUID()}`;
+  const container = await new GenericContainer(composeImage('valkey'))
+    .withCommand(['valkey-server', '--requirepass', password])
+    .withExposedPorts(REDIS_PORT)
+    .withWaitStrategy(Wait.forLogMessage('Ready to accept connections'))
+    .start();
+  return {
+    container,
+    url: `redis://:${password}@${container.getHost()}:${container.getMappedPort(REDIS_PORT)}`,
+  };
+}
+
 /** The OIDC provider and the client the api signs in through. */
 export interface OidcClient {
   issuer: string;
@@ -125,6 +174,7 @@ export async function startOidcProvider(): Promise<StartedOidcProvider> {
 export interface StartedServices {
   database: StartedPostgreSqlContainer;
   storage: StartedStorage;
+  redis: StartedRedis;
   oidc: StartedOidcProvider;
   /** Stops and removes the containers. */
   stop: () => Promise<void>;
@@ -139,21 +189,22 @@ function valueOf<T>(result: PromiseSettledResult<T>): T {
 }
 
 /**
- * Starts the database, the storage and the OIDC provider side by side. When
- * one of them fails to start, the others are stopped before the failure is
- * thrown, so none is left running.
+ * Starts the database, the storage, Redis and the OIDC provider side by
+ * side. When one of them fails to start, the others are stopped before the
+ * failure is thrown, so none is left running.
  */
 export async function startServices(): Promise<StartedServices> {
-  const [database, storage, oidc] = await Promise.allSettled([
+  const [database, storage, redis, oidc] = await Promise.allSettled([
     startDatabase(),
     startStorage(),
+    startRedis(),
     startOidcProvider(),
   ]);
   const containers: StartedTestContainer[] = [];
   if (database.status === 'fulfilled') {
     containers.push(database.value);
   }
-  for (const started of [storage, oidc]) {
+  for (const started of [storage, redis, oidc]) {
     if (started.status === 'fulfilled') {
       containers.push(started.value.container);
     }
@@ -162,11 +213,44 @@ export async function startServices(): Promise<StartedServices> {
     await Promise.all(containers.map((container) => container.stop()));
   };
   try {
-    return { database: valueOf(database), storage: valueOf(storage), oidc: valueOf(oidc), stop };
+    return {
+      database: valueOf(database),
+      storage: valueOf(storage),
+      redis: valueOf(redis),
+      oidc: valueOf(oidc),
+      stop,
+    };
   } catch (error) {
     await stop();
     throw error;
   }
+}
+
+/** Where the api under test finds each service it runs against. */
+export interface ServiceAccess {
+  databaseUrl: string;
+  storage: StorageAccess;
+  oidc: OidcClient;
+  redisUrl: string;
+  /**
+   * The origin of the Authing stand-in the test started; without one,
+   * deleting an account finds no Authing.
+   */
+  authingOrigin?: string;
+}
+
+/**
+ * How the api reaches the started services. A test that points the api at
+ * a broken or missing service overrides that one field.
+ */
+export function accessTo(services: StartedServices, authingOrigin?: string): ServiceAccess {
+  return {
+    databaseUrl: services.database.getConnectionUri(),
+    storage: services.storage,
+    oidc: services.oidc,
+    redisUrl: services.redis.url,
+    ...(authingOrigin === undefined ? {} : { authingOrigin }),
+  };
 }
 
 /** A new ES256 private key as a JWK with a random key id, in the JSON form JWT_SIGNING_KEY takes. */
@@ -186,9 +270,10 @@ export function newSigningKey(): string {
 export const testSigningKey = newSigningKey();
 
 /**
- * The child data key of every api this test run starts, 32 random bytes in
- * the base64 form CHILD_DATA_KEY takes, made once per process, so those apis
- * read each other's encrypted child data.
+ * The child data key of every api and data migration this test run starts,
+ * 32 random bytes in the base64 form CHILD_DATA_KEY takes, made once per
+ * process, so those apis read each other's encrypted child data and what
+ * the data migrations wrote.
  */
 export const testChildDataKey = randomBytes(32).toString('base64');
 
@@ -204,42 +289,55 @@ function storageEnvironment(storage: StorageAccess): Record<string, string> {
   };
 }
 
-/** The api's environment variables for the given database, storage, OIDC client and site origin. */
+/** The api's environment variables for the given services and site origin. */
 export function apiEnvironment(
-  databaseUrl: string,
-  storage: StorageAccess,
-  oidc: OidcClient,
+  access: ServiceAccess,
   appOrigin = TEST_APP_ORIGIN,
 ): Record<string, string> {
   return {
-    DATABASE_URL: databaseUrl,
-    ...storageEnvironment(storage),
-    OIDC_ISSUER: oidc.issuer,
-    OIDC_CLIENT_ID: oidc.clientId,
-    OIDC_CLIENT_SECRET: oidc.clientSecret,
+    DATABASE_URL: access.databaseUrl,
+    ...storageEnvironment(access.storage),
+    REDIS_URL: access.redisUrl,
+    CLIENT_IP_HEADER: TEST_CLIENT_IP_HEADER,
+    OIDC_ISSUER: access.oidc.issuer,
+    OIDC_CLIENT_ID: access.oidc.clientId,
+    OIDC_CLIENT_SECRET: access.oidc.clientSecret,
     APP_ORIGIN: appOrigin,
     JWT_SIGNING_KEY: testSigningKey,
     CHILD_DATA_KEY: testChildDataKey,
+    AUTHING_MANAGEMENT_ORIGIN: access.authingOrigin ?? UNREACHABLE_AUTHING_ORIGIN,
+    AUTHING_USER_POOL_ID: TEST_AUTHING.userPoolId,
+    AUTHING_USER_POOL_SECRET: TEST_AUTHING.userPoolSecret,
+    AUTHING_WEBHOOK_SECRET: TEST_AUTHING.webhookSecret,
   };
 }
 
 /**
- * The cover import's environment variables for the given database, storage
- * and book folders. MIGRATION_DATABASE_URL is set as well because the import
- * prefers it, and a test run through Task has it from the local .env file,
- * pointing at the development database.
+ * The database variables of a command that runs after the migrations.
+ * MIGRATION_DATABASE_URL is set as well because the commands prefer it, and
+ * a test run through Task has it from the local .env file, pointing at the
+ * development database.
  */
+function commandDatabase(databaseUrl: string): Record<string, string> {
+  return { DATABASE_URL: databaseUrl, MIGRATION_DATABASE_URL: databaseUrl };
+}
+
+/** The cover import's environment variables for the given database, storage and book folders. */
 export function coverImportEnvironment(
   databaseUrl: string,
   storage: StorageAccess,
   contentDirectory = bookContentDirectory,
 ): Record<string, string> {
   return {
-    DATABASE_URL: databaseUrl,
-    MIGRATION_DATABASE_URL: databaseUrl,
+    ...commandDatabase(databaseUrl),
     ...storageEnvironment(storage),
     BOOK_CONTENT_DIRECTORY: contentDirectory,
   };
+}
+
+/** The data migrations' environment variables for the given database, with the tests' child data key. */
+export function dataMigrationEnvironment(databaseUrl: string): Record<string, string> {
+  return { ...commandDatabase(databaseUrl), CHILD_DATA_KEY: testChildDataKey };
 }
 
 const drizzleKit = join(
@@ -247,11 +345,14 @@ const drizzleKit = join(
   'bin.cjs',
 );
 
-/** Runs `drizzle-kit migrate` from apps/api against the given database. */
-export async function migrate(databaseUrl: string): Promise<void> {
+/**
+ * Runs `drizzle-kit migrate` from apps/api against the given database, the
+ * first step of `task migrate`: the migration scripts alone.
+ */
+export async function migrateSchema(databaseUrl: string): Promise<void> {
   await promisify(execFile)(process.execPath, [drizzleKit, 'migrate'], {
     cwd: apiDirectory,
-    env: { ...process.env, DATABASE_URL: databaseUrl, MIGRATION_DATABASE_URL: databaseUrl },
+    env: { ...process.env, ...commandDatabase(databaseUrl) },
   });
 }
 
@@ -282,21 +383,49 @@ export function spawnBuiltEntry(file: string, environment: Record<string, string
   return { child, output: () => Buffer.concat(chunks).toString('utf8') };
 }
 
-/** How a run of the cover import ended. */
-export interface CoverImportRun {
+/** How a run of a built command ended. */
+export interface CommandRun {
   exitCode: number | null;
   /** Everything it wrote to stdout and stderr. */
   output: string;
 }
 
-/** Runs the built cover import (dist/rebuild.js), as `task rebuild` does, to its end. */
-export async function runBuiltCoverImport(
+/** Runs a built command of the api (`dist/<file>`) to its end. */
+async function runBuiltCommand(
+  file: string,
   environment: Record<string, string>,
-): Promise<CoverImportRun> {
-  const { child, output } = spawnBuiltEntry('rebuild.js', environment);
+): Promise<CommandRun> {
+  const { child, output } = spawnBuiltEntry(file, environment);
   // 'close' comes after both streams have ended, so the output is whole.
   const [exitCode] = (await once(child, 'close')) as [number | null];
   return { exitCode, output: output() };
+}
+
+/** Throws when the built command did not succeed, with everything it wrote. */
+function expectSuccess(command: string, run: CommandRun): void {
+  if (run.exitCode !== 0) {
+    throw new Error(`The ${command} exited with code ${run.exitCode}:\n${run.output}`);
+  }
+}
+
+/** Runs the built data migrations (dist/migrate-data.js), the second step of `task migrate`. */
+export function runBuiltDataMigrations(databaseUrl: string): Promise<CommandRun> {
+  return runBuiltCommand('migrate-data.js', dataMigrationEnvironment(databaseUrl));
+}
+
+/**
+ * Migrates the given database as `task migrate` does: `drizzle-kit migrate`,
+ * then the built data migrations with the tests' child data key. The api
+ * must be built first.
+ */
+export async function migrate(databaseUrl: string): Promise<void> {
+  await migrateSchema(databaseUrl);
+  expectSuccess('data migration', await runBuiltDataMigrations(databaseUrl));
+}
+
+/** Runs the built cover import (dist/rebuild.js), as `task rebuild` does, to its end. */
+export function runBuiltCoverImport(environment: Record<string, string>): Promise<CommandRun> {
+  return runBuiltCommand('rebuild.js', environment);
 }
 
 /**
@@ -307,8 +436,8 @@ export async function importBuiltCovers(
   databaseUrl: string,
   storage: StorageAccess,
 ): Promise<void> {
-  const run = await runBuiltCoverImport(coverImportEnvironment(databaseUrl, storage));
-  if (run.exitCode !== 0) {
-    throw new Error(`The cover import exited with code ${run.exitCode}:\n${run.output}`);
-  }
+  expectSuccess(
+    'cover import',
+    await runBuiltCoverImport(coverImportEnvironment(databaseUrl, storage)),
+  );
 }

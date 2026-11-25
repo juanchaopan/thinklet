@@ -1,13 +1,10 @@
 import { z } from 'zod';
+import {
+  commandDatabaseShape,
+  unsetWhenEmpty,
+  withCommandDatabaseUrl,
+} from './command-environment.js';
 import { environmentSchema } from './environment.js';
-
-/**
- * A variable that may be unset. One set to an empty string, as a CI
- * variable with no value reaches the process, counts as unset.
- */
-function unsetWhenEmpty<T extends z.ZodType>(schema: T) {
-  return z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
-}
 
 /**
  * The environment variables the cover import (rebuild.ts) reads, and only
@@ -28,21 +25,9 @@ export const rebuildEnvironmentSchema = environmentSchema
     S3_FORCE_PATH_STYLE: true,
   })
   .extend({
-    MIGRATION_DATABASE_URL: unsetWhenEmpty(environmentSchema.shape.DATABASE_URL),
-    DATABASE_URL: unsetWhenEmpty(environmentSchema.shape.DATABASE_URL),
+    ...commandDatabaseShape,
     BOOK_CONTENT_DIRECTORY: unsetWhenEmpty(z.string()),
   })
-  .transform(({ MIGRATION_DATABASE_URL, DATABASE_URL, ...rest }, context) => {
-    const url = MIGRATION_DATABASE_URL ?? DATABASE_URL;
-    if (url === undefined) {
-      context.addIssue({
-        code: 'custom',
-        path: ['MIGRATION_DATABASE_URL'],
-        message: 'Set MIGRATION_DATABASE_URL or DATABASE_URL',
-      });
-      return z.NEVER;
-    }
-    return { ...rest, DATABASE_URL: url };
-  });
+  .transform(withCommandDatabaseUrl);
 
 export type RebuildEnvironment = z.output<typeof rebuildEnvironmentSchema>;

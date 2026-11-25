@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
 import {
   DATABASE,
@@ -9,10 +10,17 @@ import {
 import * as schema from '../../infrastructure/database/schema.js';
 import { translatingUniqueViolation } from '../../infrastructure/database/unique-violation.js';
 
-const { children, childLoginLinks, childDevices } = schema;
+const { children, childDevices } = schema;
 
 /** The unique constraint that keeps a child's account unique within the family. */
 const ACCOUNT_UNIQUE = 'children_family_account_unique';
+
+/**
+ * How long after a parent adds a child or resets the password the child
+ * may set a password by logging in with the family code and the account
+ * (`.docs/design/rules.md`, "孩子的密码"), as an SQL interval.
+ */
+const PASSWORD_SETUP_TIME = sql.raw(`interval '48 hours'`);
 
 /** Another child of the family has the account. The statement it happened in is aborted. */
 export class AccountTakenError extends Error {
@@ -27,37 +35,22 @@ export interface ChildRecord {
   id: string;
   nickname: string;
   account: string;
+  /** Whether the child has set a password. */
+  passwordSet: boolean;
+  /** While the child has no password, until when the child may set one with the account; else null. */
+  passwordSetupUntil: Date | null;
 }
 
 export interface NewChild {
   familyId: string;
   nickname: string;
   account: string;
-  /** The parent who ticked the guardian's consent, and the version and time of it. */
-  consentParentId: string;
-  consentVersion: string;
-  consentedAt: Date;
 }
 
 /** A change to a child; a field left out keeps its value. */
 export interface ChildChanges {
   nickname?: string;
   account?: string;
-}
-
-export interface NewLoginLink {
-  childId: string;
-  tokenHash: string;
-  createdBy: string;
-  createdAt: Date;
-  expiresAt: Date;
-}
-
-/** The times a login link's state is read from. */
-export interface LoginLinkRecord {
-  expiresAt: Date;
-  usedAt: Date | null;
-  revokedAt: Date | null;
 }
 
 /** A browser the child is remembered on, its name in plain text. */
@@ -73,6 +66,8 @@ const childColumns = {
   id: children.id,
   nickname: children.nickname,
   account: children.account,
+  passwordSet: sql<boolean>`${children.passwordHash} is not null`,
+  passwordSetupUntil: children.passwordSetupUntil,
 };
 
 /** The child with the id, only when it belongs to the family. */
@@ -89,12 +84,16 @@ function settingAccount<T>(write: () => Promise<T>): Promise<T> {
 }
 
 /**
- * The queries on children, their login links and their devices, on the
- * pool or inside one transaction. The nickname, the account and the device
- * names are encrypted on the way in and decrypted on the way out, so the
- * callers see plain text only and the database ciphertext only. Every
- * query of a child names its family as well, so a child of another family
- * is not found.
+ * The queries on children and their devices, on the pool or inside one
+ * transaction. The nickname, the account and the device names are
+ * encrypted on the way in and decrypted on the way out, each bound to its
+ * column and its row's id, so the callers see plain text only and the
+ * database ciphertext only. A new child gets its id here rather than from
+ * the database, as its ciphertexts are bound to it before the row exists.
+ * Every query of a child names its family as well, so a child of another
+ * family is not found. The times a child's logins are compared with are
+ * the database's (`.docs/design/data.md`, "children"), the clock the
+ * logins are issued by, never an api instance's.
  */
 export class ChildStore {
   constructor(
@@ -112,8 +111,8 @@ export class ChildStore {
 
   /**
    * Locks the child's row until the transaction ends, so the changes to one
-   * child's login links run one after another. Returns whether the family
-   * has the child.
+   * child, its password and its login links, run one after another.
+   * Returns whether the family has the child.
    */
   async lockChild(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
@@ -143,32 +142,35 @@ export class ChildStore {
   }
 
   /**
-   * Adds the child without a password, refusing logins issued before its
-   * consent; throws AccountTakenError when another child of the family has
-   * the account. The child is returned from what was written, so only its
-   * id is read back.
+   * Adds the child without a password, refusing logins issued before the
+   * database's time of the adding and leaving the child 48 hours from then
+   * to set a password with the account; throws AccountTakenError when
+   * another child of the family has the account. The child is returned
+   * from what was written.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
+    const id = randomUUID();
     const rows = await settingAccount(() =>
       this.executor
         .insert(children)
         .values({
+          id,
           familyId: child.familyId,
-          nickname: this.cipher.encrypt(child.nickname),
-          account: this.cipher.encrypt(child.account),
+          nickname: this.cipher.encrypt(child.nickname, { column: children.nickname, rowId: id }),
+          account: this.cipher.encrypt(child.account, { column: children.account, rowId: id }),
           accountLookup: this.cipher.lookup(child.familyId, child.account),
-          sessionsValidAfter: child.consentedAt,
-          consentParentId: child.consentParentId,
-          consentVersion: child.consentVersion,
-          consentedAt: child.consentedAt,
+          passwordSetupUntil: sql`now() + ${PASSWORD_SETUP_TIME}`,
+          sessionsValidAfter: sql`now()`,
         })
-        .returning({ id: children.id }),
+        .returning({ passwordSetupUntil: children.passwordSetupUntil }),
     );
-    const row = rows.at(0);
-    if (row === undefined) {
-      throw new Error('Adding the child returned no row');
-    }
-    return { id: row.id, nickname: child.nickname, account: child.account };
+    return {
+      id,
+      nickname: child.nickname,
+      account: child.account,
+      passwordSet: false,
+      passwordSetupUntil: rows.at(0)?.passwordSetupUntil ?? null,
+    };
   }
 
   /**
@@ -184,10 +186,16 @@ export class ChildStore {
   ): Promise<ChildRecord | undefined> {
     const set: Partial<typeof children.$inferInsert> = {};
     if (changes.nickname !== undefined) {
-      set.nickname = this.cipher.encrypt(changes.nickname);
+      set.nickname = this.cipher.encrypt(changes.nickname, {
+        column: children.nickname,
+        rowId: childId,
+      });
     }
     if (changes.account !== undefined) {
-      set.account = this.cipher.encrypt(changes.account);
+      set.account = this.cipher.encrypt(changes.account, {
+        column: children.account,
+        rowId: childId,
+      });
       set.accountLookup = this.cipher.lookup(familyId, changes.account);
     }
     if (Object.keys(set).length === 0) {
@@ -203,7 +211,7 @@ export class ChildStore {
     return this.readChildren(rows).at(0);
   }
 
-  /** Deletes the child, whose login links and devices go with it; returns whether there was one. */
+  /** Deletes the child, whose devices go with it; returns whether there was one. */
   async deleteChild(familyId: string, childId: string): Promise<boolean> {
     const rows = await this.executor
       .delete(children)
@@ -213,57 +221,27 @@ export class ChildStore {
   }
 
   /**
-   * Clears the child's password and refuses every login issued before the
-   * given time; returns whether the family has the child.
+   * Clears the child's password, leaves the child 48 hours to set a new one
+   * with the account, and refuses every login issued until now, all by the
+   * database's clock, which the statement reads as it runs, after the lock
+   * the caller took on the child, which also found the child. The time
+   * logins are refused before is the next whole second: a JWT carries its
+   * issue time in whole seconds, so a login issued earlier in the reset's
+   * own second carries that second, and only the next one refuses it. A
+   * login made after the reset within the rest of that second is refused
+   * as well, which loses nothing in practice: the reset clears the
+   * password and forgets every remembered browser, so the child logs in
+   * again only by setting a new password, which takes far longer.
    */
-  async clearPassword(familyId: string, childId: string, at: Date): Promise<boolean> {
-    const rows = await this.executor
-      .update(children)
-      .set({ passwordHash: null, sessionsValidAfter: at })
-      .where(childInFamily(familyId, childId))
-      .returning({ id: children.id });
-    return rows.length > 0;
-  }
-
-  /** Revokes the child's links that are still active at the given time: unused, unrevoked, unexpired. */
-  async revokeActiveLinks(childId: string, at: Date): Promise<void> {
+  async clearPassword(familyId: string, childId: string): Promise<void> {
     await this.executor
-      .update(childLoginLinks)
-      .set({ revokedAt: at })
-      .where(
-        and(
-          eq(childLoginLinks.childId, childId),
-          isNull(childLoginLinks.usedAt),
-          isNull(childLoginLinks.revokedAt),
-          gt(childLoginLinks.expiresAt, at),
-        ),
-      );
-  }
-
-  /** Records a login link and returns its id. */
-  async insertLoginLink(link: NewLoginLink): Promise<string> {
-    const rows = await this.executor
-      .insert(childLoginLinks)
-      .values(link)
-      .returning({ id: childLoginLinks.id });
-    const row = rows.at(0);
-    if (row === undefined) {
-      throw new Error('Recording the login link returned no row');
-    }
-    return row.id;
-  }
-
-  /** The child's login link with the id, or undefined when the child has none such. */
-  async findLoginLink(childId: string, linkId: string): Promise<LoginLinkRecord | undefined> {
-    const rows = await this.executor
-      .select({
-        expiresAt: childLoginLinks.expiresAt,
-        usedAt: childLoginLinks.usedAt,
-        revokedAt: childLoginLinks.revokedAt,
+      .update(children)
+      .set({
+        passwordHash: null,
+        passwordSetupUntil: sql`clock_timestamp() + ${PASSWORD_SETUP_TIME}`,
+        sessionsValidAfter: sql`date_trunc('second', clock_timestamp()) + interval '1 second'`,
       })
-      .from(childLoginLinks)
-      .where(and(eq(childLoginLinks.id, linkId), eq(childLoginLinks.childId, childId)));
-    return rows.at(0);
+      .where(childInFamily(familyId, childId));
   }
 
   /** The browsers the child is remembered on, the latest login first. */
@@ -278,34 +256,49 @@ export class ChildStore {
       .from(childDevices)
       .where(eq(childDevices.childId, childId))
       .orderBy(desc(childDevices.lastUsedAt), asc(childDevices.id));
-    return rows.map((row) => ({ ...row, name: this.cipher.decrypt(row.name) }));
+    return rows.map((row) => ({
+      ...row,
+      name: this.cipher.decrypt(row.name, { column: childDevices.name, rowId: row.id }),
+    }));
   }
 
-  /** Forgets one browser of the child; one that is gone already is no change. */
-  async deleteDevice(childId: string, deviceId: string): Promise<void> {
-    await this.executor
+  /**
+   * Forgets one browser of the child and returns whether there was one; a
+   * device that is gone already is no change.
+   */
+  async deleteDevice(childId: string, deviceId: string): Promise<boolean> {
+    const rows = await this.executor
       .delete(childDevices)
-      .where(and(eq(childDevices.id, deviceId), eq(childDevices.childId, childId)));
+      .where(and(eq(childDevices.id, deviceId), eq(childDevices.childId, childId)))
+      .returning({ id: childDevices.id });
+    return rows.length > 0;
   }
 
-  /** Forgets every browser of the child. */
-  async deleteDevices(childId: string): Promise<void> {
-    await this.executor.delete(childDevices).where(eq(childDevices.childId, childId));
+  /** Forgets every browser of the child and returns how many there were. */
+  async deleteDevices(childId: string): Promise<number> {
+    const rows = await this.executor
+      .delete(childDevices)
+      .where(eq(childDevices.childId, childId))
+      .returning({ id: childDevices.id });
+    return rows.length;
   }
 
   private readChildren(rows: ChildRecord[]): ChildRecord[] {
     return rows.map((row) => ({
       id: row.id,
-      nickname: this.cipher.decrypt(row.nickname),
-      account: this.cipher.decrypt(row.account),
+      nickname: this.cipher.decrypt(row.nickname, { column: children.nickname, rowId: row.id }),
+      account: this.cipher.decrypt(row.account, { column: children.account, rowId: row.id }),
+      passwordSet: row.passwordSet,
+      passwordSetupUntil: row.passwordSetupUntil,
     }));
   }
 }
 
 /**
- * Children, their login links and their devices. Its own queries run on the
- * pool; `transaction` runs a unit of work with the same queries inside one
- * transaction.
+ * Children and their devices. Its own queries run on the pool;
+ * `transaction` runs a unit of work with the same queries inside one
+ * transaction, and hands the work the transaction too, for the audit event
+ * of its change.
  */
 @Injectable()
 export class ChildrenRepository extends ChildStore {
@@ -317,9 +310,9 @@ export class ChildrenRepository extends ChildStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: ChildStore) => Promise<T>): Promise<T> {
+  transaction<T>(work: (store: ChildStore, transaction: Executor) => Promise<T>): Promise<T> {
     return this.database.transaction((transaction) =>
-      work(new ChildStore(transaction, this.cipher)),
+      work(new ChildStore(transaction, this.cipher), transaction),
     );
   }
 }

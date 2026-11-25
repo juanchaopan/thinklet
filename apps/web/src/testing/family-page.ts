@@ -110,6 +110,16 @@ export async function expectToast(text: string): Promise<void> {
   expect(await screen.findByText(text)).toBeTruthy();
 }
 
+/**
+ * Waits until the library of the sample books (`stubLibrary`) is shown with
+ * every cover loaded, so no cover is still on its way to the stubs once the
+ * test is over.
+ */
+export async function libraryShown(): Promise<void> {
+  await screen.findByRole('link', { name: '胡萝卜数数大冒险' });
+  await Promise.all(Array.from(document.images, (image) => image.decode().catch(() => undefined)));
+}
+
 /** Brings the window back to the front, as switching back to its tab does. */
 export function backToFront(): void {
   document.dispatchEvent(new Event('visibilitychange'));

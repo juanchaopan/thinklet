@@ -1,6 +1,7 @@
 import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Injectable } from '@nestjs/common';
+import { withinChildPasswordLimits } from '@thinklet/contracts';
 import { decodeCanonicalBase64, encodeBase64 } from '../encoding/canonical-base64.js';
 
 const deriveArgon2 = promisify(argon2);
@@ -17,6 +18,9 @@ const PASSWORD_HASH_COST = {
   parallelism: 1,
   tagLength: 32,
 } as const;
+
+/** The bytes of the random password the stand-in hash is made from. */
+const STAND_IN_PASSWORD_BYTES = 32;
 
 /** What a stored hash says it was made with, and the hash itself. */
 interface StoredHash {
@@ -72,9 +76,21 @@ function parse(stored: string): StoredHash {
  * a check always uses the cost the hash was made with and the cost of new
  * hashes can be raised later without breaking the old ones. Both run off
  * the event loop. The password itself is never kept or logged.
+ *
+ * A password longer than a child's password may be (32 characters, 128
+ * bytes) never reaches argon2: it cannot be anyone's password, so it is
+ * refused at once, and the cost of a check does not grow with what a
+ * request sends (`.docs/design/rules.md`, "限流").
  */
 @Injectable()
 export class PasswordHasher {
+  /**
+   * A hash of a random password with the cost of every new hash, checked
+   * when there is no hash to check. It is made on first use; a failed
+   * attempt is forgotten, so the next check makes it afresh.
+   */
+  private standIn: Promise<string> | undefined;
+
   /** The PHC string of the password with a new random 16-byte salt. */
   async hash(password: string): Promise<string> {
     const salt = randomBytes(SALT_BYTES);
@@ -92,12 +108,17 @@ export class PasswordHasher {
 
   /**
    * Whether the password is the one the stored hash was made from, compared
-   * in constant time. Rejects with PasswordHashFormatError when the stored
-   * value is not a hash this api writes, so broken data is not mistaken for
-   * a wrong password.
+   * in constant time. With no stored hash (no such account, or no password
+   * set yet) the password is checked against the stand-in hash and refused,
+   * so the time taken does not tell which was missing. Rejects with
+   * PasswordHashFormatError when the stored value is not a hash this api
+   * writes, so broken data is not mistaken for a wrong password.
    */
-  async verify(password: string, stored: string): Promise<boolean> {
-    const { memory, passes, parallelism, salt, hash } = parse(stored);
+  async verify(password: string, stored: string | null): Promise<boolean> {
+    if (!withinChildPasswordLimits(password)) {
+      return false;
+    }
+    const { memory, passes, parallelism, salt, hash } = parse(stored ?? (await this.standInHash()));
     const candidate = await deriveArgon2(ALGORITHM, {
       message: password,
       nonce: salt,
@@ -106,6 +127,17 @@ export class PasswordHasher {
       parallelism,
       tagLength: hash.length,
     });
-    return timingSafeEqual(candidate, hash);
+    return timingSafeEqual(candidate, hash) && stored !== null;
+  }
+
+  /** The stand-in hash, made on first use and made again after an attempt that failed. */
+  private standInHash(): Promise<string> {
+    this.standIn ??= this.hash(randomBytes(STAND_IN_PASSWORD_BYTES).toString('base64url')).catch(
+      (error: unknown) => {
+        this.standIn = undefined;
+        throw error;
+      },
+    );
+    return this.standIn;
   }
 }

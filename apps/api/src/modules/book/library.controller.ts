@@ -34,7 +34,8 @@ import { LibraryService } from './library.service.js';
 /**
  * The library and the books of a family as its parents use them
  * (`.docs/design/interfaces.md`, "书库和书本（家长）"). Every route passes
- * the family's membership check first; every member may use them.
+ * the family's membership check first; every member may use them. The
+ * parent signed in is the one a change's audit event names.
  */
 @Controller('families/:familyId')
 @UseGuards(BookFamilyGuard)
@@ -85,10 +86,11 @@ export class LibraryController {
   @Delete('books/:bookId/acquisition')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('bookId', bookIdPipe) bookId: string,
   ): Promise<void> {
-    await this.libraryService.remove(familyId, bookId);
+    await this.libraryService.remove(parentId, familyId, bookId);
   }
 
   /** 200 with the book and its readers as set. */

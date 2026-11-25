@@ -19,6 +19,7 @@ function setUp(readings: Record<string, CoverReading>) {
   const storage = {
     headObject: vi.fn().mockResolvedValue(undefined),
     putObject: vi.fn().mockResolvedValue(undefined),
+    deleteObject: vi.fn().mockResolvedValue(undefined),
   };
   const service = new CoverImportService(
     repository as unknown as CoverImportRepository,
@@ -58,6 +59,7 @@ describe('CoverImportService', () => {
     );
     expect(storage.headObject).not.toHaveBeenCalled();
     expect(storage.putObject).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
     expect(repository.recordCovers).not.toHaveBeenCalled();
   });
 
@@ -79,6 +81,32 @@ describe('CoverImportService', () => {
     expect(summary).toEqual({ books: 1, uploaded: 1, unchanged: 0, recorded: 1 });
   });
 
+  it("deletes each book's cover in the other format once the new hashes are recorded", async () => {
+    const { service, repository, storage } = setUp({
+      a: { cover: webpCover },
+      b: { cover: pngCover },
+    });
+
+    await service.importCovers('/content');
+
+    expect(storage.deleteObject.mock.calls).toEqual([
+      ['books/a/cover.png'],
+      ['books/b/cover.webp'],
+    ]);
+    const recordedAt = repository.recordCovers.mock.invocationCallOrder[0] ?? Infinity;
+    for (const order of storage.deleteObject.mock.invocationCallOrder) {
+      expect(order).toBeGreaterThan(recordedAt);
+    }
+  });
+
+  it('leaves the old format in storage when recording the new hashes fails', async () => {
+    const { service, repository, storage } = setUp({ a: { cover: webpCover } });
+    repository.recordCovers.mockRejectedValue(new Error('database down'));
+
+    await expect(service.importCovers('/content')).rejects.toThrow('database down');
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
   it('leaves a stored cover with the same hash and media type alone', async () => {
     const { service, storage } = setUp({ a: { cover: pngCover } });
     storage.headObject.mockResolvedValue({
@@ -89,6 +117,7 @@ describe('CoverImportService', () => {
     const summary = await service.importCovers('/content');
 
     expect(storage.putObject).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalledWith('books/a/cover.png');
     expect(summary).toEqual({ books: 1, uploaded: 0, unchanged: 1, recorded: 0 });
   });
 
@@ -115,10 +144,11 @@ describe('CoverImportService', () => {
 
     await expect(service.importCovers('/content')).rejects.toThrow('storage down');
     expect(repository.recordCovers).not.toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 
   it('imports nothing when the book table is empty', async () => {
-    const { service, repository } = setUp({});
+    const { service, repository, storage } = setUp({});
 
     expect(await service.importCovers('/content')).toEqual({
       books: 0,
@@ -127,5 +157,6 @@ describe('CoverImportService', () => {
       recorded: 0,
     });
     expect(repository.recordCovers).toHaveBeenCalledWith([]);
+    expect(storage.deleteObject).not.toHaveBeenCalled();
   });
 });

@@ -3,13 +3,13 @@ import { HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { expectNoAxeViolations } from '../../../testing/accessibility';
 import {
-  DUODUO,
-  LELE,
-  XIAOMING_DEVICES,
-  XIAOMING_ID,
+  ALE,
+  DOUDOU,
+  XIAOMI_DEVICES,
+  XIAOMI_ID,
   childPath,
   chooseAction,
-  expectXiaomingGone,
+  expectXiaomiGone,
   renderChildrenPage,
   stubChildren,
   stubDevices,
@@ -18,12 +18,12 @@ import { dialogGone, expectToast, recordCalls } from '../../../testing/family-pa
 import { stubError } from '../../../testing/sample-data';
 import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
-const TITLE = '小明记住的设备';
+const TITLE = '小米记住的设备';
 
-const [IPAD, ANDROID] = XIAOMING_DEVICES;
+const [IPAD, ANDROID] = XIAOMI_DEVICES;
 
-/** The address that revokes 小明's iPad. */
-const IPAD_PATH = childPath(XIAOMING_ID, `/devices/${IPAD?.id ?? ''}`);
+/** The address that revokes 小米's iPad. */
+const IPAD_PATH = childPath(XIAOMI_ID, `/devices/${IPAD?.id ?? ''}`);
 
 /** The text of each device row, without spaces. */
 function deviceTexts(dialog: HTMLElement): string[] {
@@ -41,7 +41,7 @@ function firstRevoke(dialog: HTMLElement): HTMLElement {
   return revoke;
 }
 
-/** Opens 小明's devices and waits until they, or the words for none, are shown. */
+/** Opens 小米's devices and waits until they, or the words for none, are shown. */
 async function showDevices(): Promise<HTMLElement> {
   const dialog = await chooseAction('记住的设备', TITLE);
   await vi.waitFor(() => {
@@ -112,14 +112,14 @@ describe('ChildDevicesDialog', () => {
     stubDevices();
     const calls = recordCalls(
       'delete',
-      childPath(XIAOMING_ID, '/devices'),
+      childPath(XIAOMI_ID, '/devices'),
       () => new HttpResponse(null, { status: 204 }),
     );
     const { fixture } = await renderChildrenPage();
     const devices = await showDevices();
 
     await userEvent.click(within(devices).getByRole('button', { name: '全部撤销' }));
-    const confirm = await screen.findByRole('dialog', { name: '撤销小明的全部设备？' });
+    const confirm = await screen.findByRole('dialog', { name: '撤销小米的全部设备？' });
     expect(confirm.textContent).toContain('这些设备上点头像不能再直接登录，要重新输入密码。');
     expect(screen.getAllByRole('dialog')).toHaveLength(2);
     await expectNoAxeViolations();
@@ -129,7 +129,7 @@ describe('ChildDevicesDialog', () => {
 
     expect(calls).toHaveLength(1);
     await expectToast('已全部撤销');
-    await dialogGone('撤销小明的全部设备？');
+    await dialogGone('撤销小米的全部设备？');
     expect(within(devices).getByText('还没有记住的设备')).toBeTruthy();
   });
 
@@ -138,16 +138,16 @@ describe('ChildDevicesDialog', () => {
     stubError(`delete ${IPAD_PATH}`, 404, 'child_not_found');
     const { fixture } = await renderChildrenPage();
     const dialog = await showDevices();
-    stubChildren([DUODUO, LELE]);
+    stubChildren([DOUDOU, ALE]);
 
     await userEvent.click(firstRevoke(dialog));
     await fixture.whenStable();
 
-    await expectXiaomingGone(TITLE);
+    await expectXiaomiGone(TITLE);
   });
 
   it('closes when the devices cannot be read, and says so', async () => {
-    stubError(`get ${childPath(XIAOMING_ID, '/devices')}`, 500, 'internal');
+    stubError(`get ${childPath(XIAOMI_ID, '/devices')}`, 500, 'internal');
     const { fixture } = await renderChildrenPage();
 
     await chooseAction('记住的设备', TITLE);

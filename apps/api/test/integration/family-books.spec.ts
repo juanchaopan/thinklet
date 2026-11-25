@@ -14,6 +14,7 @@ import {
   bookPath,
   booksPath,
   familyBookRows,
+  insertAssignment,
   insertFamilyBook,
   markOpened,
   readersPath,
@@ -51,11 +52,12 @@ const statusesOf = (responses: request.Response[]) => responses.map(({ status })
 // books and removes it again while no child reads it, both safe to repeat;
 // an inactive book cannot be acquired; a parent sets the children who read
 // a family's book, adding and taking it away in one change that keeps the
-// children who read it already as they were; only the family's own
-// children, only books the family has, and only active books for new
-// readers; deleting a child takes its books with it; the outcomes of two
-// parents doing these at the same time (`.docs/design/rules.md`, "同时操作");
-// every change is seen by the next read.
+// children who read it already as they were; who acquired a book and who
+// assigned it are in the audit events; only the family's own children, only
+// books the family has, and only active books for new readers; deleting a
+// child takes its books with it; the outcomes of two parents doing these at
+// the same time (`.docs/design/rules.md`, "同时操作"); every change is seen
+// by the next read.
 describe("the family's books", () => {
   const running = useAppWithServices();
   let admin: Parent;
@@ -66,6 +68,16 @@ describe("the family's books", () => {
   const rowsOf = ({ family }: Household) => assignmentRows(running.databaseUrl, family.id);
   const readerIdsOf = async (household: Household) =>
     (await rowsOf(household)).map(({ child_id }) => child_id);
+
+  /** Who did what to the family's book, as its audit events record it, oldest first. */
+  const bookEventsOf = (familyId: string, bookId: string) =>
+    query<{ action: string; actor_id: string; details: Record<string, unknown> }>(
+      running.databaseUrl,
+      `select action, actor_id, details from audit_events
+       where family_id = $1 and target_kind = 'book' and target_id = $2
+       order by occurred_at, id`,
+      [familyId, bookId],
+    );
 
   /** A new household with no books. */
   async function household(): Promise<Household> {
@@ -104,7 +116,7 @@ describe("the family's books", () => {
   });
 
   describe('acquiring', () => {
-    it('takes the book into the family, recording who and when, and answers it', async () => {
+    it('takes the book into the family, recording when, and who in the audit events, and answers it', async () => {
       const { family } = await household();
       const before = Date.now();
 
@@ -118,8 +130,11 @@ describe("the family's books", () => {
         replacement: null,
       });
       const [row] = await familyBookRows(running.databaseUrl, family.id);
-      expect(row).toMatchObject({ book_id: ACTIVE_BOOK, acquired_by: member.id });
+      expect(row).toMatchObject({ book_id: ACTIVE_BOOK });
       expect(row?.acquired_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
+      expect(await bookEventsOf(family.id, ACTIVE_BOOK)).toEqual([
+        { action: 'book.acquired', actor_id: member.id, details: {} },
+      ]);
     });
 
     it('is seen at once by the book page and the family scope', async () => {
@@ -156,7 +171,7 @@ describe("the family's books", () => {
 
     it('answers an inactive book the family has already with 200', async () => {
       const { family } = await household();
-      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK, admin.id);
+      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK);
 
       const response = await asMember().put(acquisitionPath(family.id, INACTIVE_BOOK), {});
 
@@ -181,7 +196,7 @@ describe("the family's books", () => {
       ]);
     });
 
-    it('acquires once when two parents acquire the book at the same time', async () => {
+    it('acquires once, and records it once, when two parents acquire the book at the same time', async () => {
       for (let round = 0; round < RACE_ROUNDS; round += 1) {
         const { family } = await household();
 
@@ -192,6 +207,7 @@ describe("the family's books", () => {
 
         expect(statusesOf(responses)).toEqual([200, 200]);
         expect(await familyBookRows(running.databaseUrl, family.id)).toHaveLength(1);
+        expect(await bookEventsOf(family.id, ACTIVE_BOOK)).toHaveLength(1);
       }
     });
   });
@@ -223,7 +239,7 @@ describe("the family's books", () => {
 
     it('removes an inactive book, which its page then does not find', async () => {
       const { family } = await household();
-      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK, admin.id);
+      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK);
 
       await asMember().delete(acquisitionPath(family.id, INACTIVE_BOOK)).expect(204);
 
@@ -288,7 +304,7 @@ describe("the family's books", () => {
   });
 
   describe('setting the readers', () => {
-    it('assigns the book to the children and answers them in the order they were added', async () => {
+    it('assigns the book to the children, records who did, and answers them in the order they were added', async () => {
       const ours = await withBook();
 
       const response = await putReaders(asMember(), ours, [
@@ -305,12 +321,13 @@ describe("the family's books", () => {
       const rows = await rowsOf(ours);
       expect(rows).toHaveLength(2);
       for (const row of rows) {
-        expect(row).toMatchObject({
-          book_id: ACTIVE_BOOK,
-          assigned_by: member.id,
-          opened_at: null,
-        });
+        expect(row).toMatchObject({ book_id: ACTIVE_BOOK, opened_at: null });
       }
+      expect((await bookEventsOf(ours.family.id, ACTIVE_BOOK)).at(-1)).toEqual({
+        action: 'book.readers_changed',
+        actor_id: member.id,
+        details: { added: [ours.doudou.id, ours.xiaomi.id], removed: [] },
+      });
     });
 
     it('takes the book from the children left out and leaves those kept as they were', async () => {
@@ -365,13 +382,9 @@ describe("the family's books", () => {
     it('takes an inactive book from its readers but refuses a new reader with 409 book_inactive', async () => {
       const ours = await household();
       const { family, xiaomi, doudou } = ours;
-      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK, admin.id);
-      await query(
-        running.databaseUrl,
-        `insert into book_assignments (child_id, family_id, book_id, assigned_by)
-         values ($1, $2, $3, $4)`,
-        [xiaomi.id, family.id, INACTIVE_BOOK, admin.id],
-      );
+      const inactive = { familyId: family.id, bookId: INACTIVE_BOOK };
+      await insertFamilyBook(running.databaseUrl, family.id, INACTIVE_BOOK);
+      await insertAssignment(running.databaseUrl, inactive, xiaomi.id);
       const setTo = (childIds: string[]) =>
         asMember().put(readersPath(family.id, INACTIVE_BOOK), { childIds });
 

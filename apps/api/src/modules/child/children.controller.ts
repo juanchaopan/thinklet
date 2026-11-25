@@ -35,7 +35,8 @@ import { ChildrenService } from './children.service.js';
 /**
  * The children of a family as its parents manage them
  * (`.docs/design/interfaces.md`, "孩子（家长）"). Every route passes the
- * family's membership check first; every member may use them.
+ * family's membership check first; every member may use them. The parent
+ * signed in is the one a change's audit event names.
  */
 @Controller('families/:familyId/children')
 @UseGuards(ChildrenFamilyGuard)
@@ -62,29 +63,32 @@ export class ChildrenController {
   @Patch(':childId')
   @Header('Cache-Control', 'no-store')
   async update(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('childId', childIdPipe) childId: string,
     @Body(new ZodValidationPipe(updateChildRequestSchema)) body: UpdateChildRequest,
   ): Promise<Child> {
-    return childSchema.parse(await this.childrenService.update(familyId, childId, body));
+    return childSchema.parse(await this.childrenService.update(parentId, familyId, childId, body));
   }
 
   @Delete(':childId')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('childId', childIdPipe) childId: string,
   ): Promise<void> {
-    await this.childrenService.remove(familyId, childId);
+    await this.childrenService.remove(parentId, familyId, childId);
   }
 
   @Post(':childId/password-reset')
   @HttpCode(HttpStatus.NO_CONTENT)
   async resetPassword(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('childId', childIdPipe) childId: string,
   ): Promise<void> {
-    await this.childrenService.resetPassword(familyId, childId);
+    await this.childrenService.resetPassword(parentId, familyId, childId);
   }
 
   /** 201 with the new link; its token appears in no other response. */
@@ -125,19 +129,21 @@ export class ChildrenController {
   @Delete(':childId/devices/:deviceId')
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeDevice(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('childId', childIdPipe) childId: string,
     @Param('deviceId', deviceIdPipe) deviceId: string | undefined,
   ): Promise<void> {
-    await this.childrenService.revokeDevice(familyId, childId, deviceId);
+    await this.childrenService.revokeDevice(parentId, familyId, childId, deviceId);
   }
 
   @Delete(':childId/devices')
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeAllDevices(
+    @CurrentParentId() parentId: string,
     @Param('familyId', familyIdPipe) familyId: string,
     @Param('childId', childIdPipe) childId: string,
   ): Promise<void> {
-    await this.childrenService.revokeAllDevices(familyId, childId);
+    await this.childrenService.revokeAllDevices(parentId, familyId, childId);
   }
 }

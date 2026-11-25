@@ -1,10 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { startBuiltAppWithServices, type BuiltAppWithServices } from '../support/app.js';
-import { ChildBrowser, DEVICE_COOKIE, linkPath, newLoginLink } from '../support/child-login.js';
+import {
+  ChildBrowser,
+  DEVICE_COOKIE,
+  IPAD_SAFARI,
+  linkPath,
+  newLoginLink,
+} from '../support/child-login.js';
 import { addChild, newAccount } from '../support/children.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
 import { createFamily, signInParent } from '../support/families.js';
+import { newClientIp } from '../support/rate-limits.js';
 import { loggedRequests, loggedUrls } from '../support/request-logs.js';
 
 /** The forms a token takes in a log: as it is, URL-encoded, and in the QR login page's address. */
@@ -22,9 +29,10 @@ function tokenForms(token: string): string[] {
 // that the browser sends along as the referer, whether the request
 // succeeds or fails. Nor may they hold what a child types to log in (the
 // password, the account and the family code), the child's nickname that
-// the logins answer with, or the device token they set. The built api runs
-// as a separate process and everything it writes is read, as the
-// platform's log collector would.
+// the logins answer with, the device token they set, or the IP address the
+// child logs in from, which the proxy in front of the api passes on. The
+// built api runs as a separate process and everything it writes is read,
+// as the platform's log collector would.
 describe("Logs of a child's logins", () => {
   const unknownToken = randomBytes(32).toString('base64url');
   const nickname = '米粒logs';
@@ -32,6 +40,7 @@ describe("Logs of a child's logins", () => {
   const password = `pw-${randomBytes(6).toString('hex')}`;
   const wrongPassword = `pw-${randomBytes(6).toString('hex')}`;
   const shortPassword = '短短的密码';
+  const clientIp = newClientIp();
   const secrets: string[] = [];
   let started: BuiltAppWithServices;
   let output: string;
@@ -43,7 +52,7 @@ describe("Logs of a child's logins", () => {
     const family = await createFamily(api, parent);
     const child = await addChild(api, parent, family.id, { nickname, account });
     const first = await newLoginLink(api, parent, family.id, child.id);
-    const kid = new ChildBrowser(api);
+    const kid = new ChildBrowser(api, IPAD_SAFARI, clientIp);
     const onLink = (token: string, path: string, body: object) =>
       kid.post(`${linkPath(token)}${path}`, body).then((response) => response.status);
     const fromQrPage = (token: string, call: request.Test) =>
@@ -104,6 +113,7 @@ describe("Logs of a child's logins", () => {
       family.code,
       family.code.toLowerCase(),
       nickname,
+      clientIp,
     );
     output = await started.stopApp();
   });
@@ -131,7 +141,7 @@ describe("Logs of a child's logins", () => {
     expect(loggedUrls(output).filter((url) => url === '/api/child-auth/login')).toHaveLength(2);
   });
 
-  it('contains no token, password, account, family code or nickname of the logins', () => {
+  it('contains no token, password, account, family code, nickname or client address of the logins', () => {
     expect(secrets.every((secret) => secret.length > 0)).toBe(true);
     for (const value of secrets) {
       expect(output).not.toContain(value);

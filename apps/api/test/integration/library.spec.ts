@@ -15,6 +15,7 @@ import {
   bookPath,
   booksPath,
   filtersPath,
+  insertAssignment,
   insertBook,
   insertFamilyBook,
   insertGrade,
@@ -223,7 +224,7 @@ describe('library', () => {
     it("lists the family's books in the family scope, the inactive ones too", async () => {
       const ours = await newFamily();
       await acquire(running.server, admin, ours.id, ACTIVE_BOOK);
-      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK, admin.id);
+      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK);
       const expected = await bookIdsInOrder(
         running.databaseUrl,
         `id in ('${ACTIVE_BOOK}', '${INACTIVE_BOOK}')`,
@@ -247,12 +248,11 @@ describe('library', () => {
       const other = await addChild(running.server, admin, ours.id, { nickname: '豆豆' });
       await acquire(running.server, admin, ours.id, ACTIVE_BOOK);
       await acquire(running.server, admin, ours.id, 'abc-songs');
-      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK, admin.id);
-      await query(
+      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK);
+      await insertAssignment(
         running.databaseUrl,
-        `insert into book_assignments (child_id, family_id, book_id, assigned_by)
-         values ($1, $2, $3, $4)`,
-        [kid.id, ours.id, INACTIVE_BOOK, admin.id],
+        { familyId: ours.id, bookId: INACTIVE_BOOK },
+        kid.id,
       );
       await setReaders(running.server, admin, { familyId: ours.id, bookId: ACTIVE_BOOK }, [
         kid.id,
@@ -457,7 +457,7 @@ describe('library', () => {
 
     it('answers an inactive book the family has with its active replacement', async () => {
       const ours = await newFamily();
-      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK, admin.id);
+      await insertFamilyBook(running.databaseUrl, ours.id, INACTIVE_BOOK);
 
       const response = await asMember().get(bookPath(ours.id, INACTIVE_BOOK));
 
@@ -485,7 +485,7 @@ describe('library', () => {
         replacementId: gone,
       });
       for (const bookId of [gone, replacedByGone]) {
-        await insertFamilyBook(running.databaseUrl, ours.id, bookId, admin.id);
+        await insertFamilyBook(running.databaseUrl, ours.id, bookId);
       }
 
       const responses = await Promise.all(

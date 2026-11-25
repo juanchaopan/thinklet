@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { JoinRequestStatus } from '@thinklet/contracts';
 import { and, desc, eq, inArray, isNull, or, type SQL } from 'drizzle-orm';
-import { DATABASE, type Database } from '../../infrastructure/database/database.module.js';
+import {
+  DATABASE,
+  type Database,
+  type Executor,
+} from '../../infrastructure/database/database.module.js';
 import {
   families,
   familyMembers,
@@ -68,11 +72,10 @@ export interface NewRequest {
   code: string;
 }
 
-/** How a request is closed; `closedBy` is the admin who decided it, null when no admin did. */
+/** How a request is closed; who closed it is in its audit event. */
 export interface Closing {
   status: Exclude<JoinRequestStatus, 'pending'>;
   closedAt: Date;
-  closedBy: string | null;
 }
 
 /** Joins each family to its admin's membership, to read the admin with the family. */
@@ -160,17 +163,22 @@ export class JoinRequestStore extends FamilyStore {
     return rows.at(0);
   }
 
-  /** Closes the request with its final status, when and by which admin. */
+  /** Closes the request with its final status and when. */
   async closeRequest(requestId: string, closing: Closing): Promise<void> {
     await this.executor.update(joinRequests).set(closing).where(eq(joinRequests.id, requestId));
   }
 
-  /** Records the applicant's 「知道了」; a request already dismissed keeps its first time. */
-  async dismissRequest(requestId: string, at: Date): Promise<void> {
-    await this.executor
+  /**
+   * Records the applicant's 「知道了」 and returns whether it changed the
+   * request; a request already dismissed keeps its first time.
+   */
+  async dismissRequest(requestId: string, at: Date): Promise<boolean> {
+    const rows = await this.executor
       .update(joinRequests)
       .set({ dismissedByApplicantAt: at })
-      .where(and(eq(joinRequests.id, requestId), isNull(joinRequests.dismissedByApplicantAt)));
+      .where(and(eq(joinRequests.id, requestId), isNull(joinRequests.dismissedByApplicantAt)))
+      .returning({ id: joinRequests.id });
+    return rows.length > 0;
   }
 
   async findApplicantRequest(requestId: string): Promise<ApplicantRequestRecord | undefined> {
@@ -250,7 +258,8 @@ export class JoinRequestStore extends FamilyStore {
 
 /**
  * Join requests. Its own queries run on the pool; `transaction` runs a unit
- * of work with the same queries inside one transaction.
+ * of work with the same queries inside one transaction, and hands the work
+ * the transaction too, for the audit event of its change.
  */
 @Injectable()
 export class JoinRequestsRepository extends JoinRequestStore {
@@ -259,7 +268,9 @@ export class JoinRequestsRepository extends JoinRequestStore {
   }
 
   /** Runs the work in one transaction, committed when it resolves and rolled back when it throws. */
-  transaction<T>(work: (store: JoinRequestStore) => Promise<T>): Promise<T> {
-    return this.database.transaction((transaction) => work(new JoinRequestStore(transaction)));
+  transaction<T>(work: (store: JoinRequestStore, transaction: Executor) => Promise<T>): Promise<T> {
+    return this.database.transaction((transaction) =>
+      work(new JoinRequestStore(transaction), transaction),
+    );
   }
 }

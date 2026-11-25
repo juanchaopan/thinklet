@@ -1,5 +1,7 @@
 // Drizzle table definitions. drizzle-kit reads this file to generate the
 // migrations in apps/api/drizzle/, and the Drizzle client is typed from it.
+// Data that should vanish once its time is up, such as the children's login
+// links, lives in Redis instead (`.docs/design/data.md`, "Redis 里的").
 import type { BookStatus, FamilyRole, JoinRequestStatus } from '@thinklet/contracts';
 import { sql } from 'drizzle-orm';
 import {
@@ -7,6 +9,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -33,7 +36,12 @@ function rowTimes() {
   };
 }
 
-/** A parent, known by the issuer and subject of their Authing account. */
+/**
+ * A parent, known by the issuer and subject of their Authing account. The
+ * name takes at most 320 bytes, the contracts' NAME_MAX_BYTES: the api
+ * counts characters, and the database bounds what is stored however the
+ * characters are made up.
+ */
 export const parents = pgTable(
   'parents',
   {
@@ -46,13 +54,16 @@ export const parents = pgTable(
     consentedAt: timestamptz('consented_at').notNull(),
     ...rowTimes(),
   },
-  (table) => [unique('parents_oidc_identity_unique').on(table.oidcIssuer, table.oidcSubject)],
+  (table) => [
+    unique('parents_oidc_identity_unique').on(table.oidcIssuer, table.oidcSubject),
+    check('parents_name_length_check', sql`octet_length(name) <= 320`),
+  ],
 );
 
 /**
  * A family; its code is unique across the platform. Family codes are text
  * with a length check: char(6) would pad a shorter value instead of
- * rejecting it.
+ * rejecting it. The name takes at most 320 bytes, as a parent's does.
  */
 export const families = pgTable(
   'families',
@@ -63,13 +74,17 @@ export const families = pgTable(
     code: text('code').notNull().unique('families_code_unique'),
     ...rowTimes(),
   },
-  () => [check('families_code_length_check', sql`char_length(code) = 6`)],
+  () => [
+    check('families_code_length_check', sql`char_length(code) = 6`),
+    check('families_name_length_check', sql`octet_length(name) <= 320`),
+  ],
 );
 
 /**
  * The parents of a family. Leaving or being removed deletes the row. The
  * partial unique index allows at most one admin per family; the services
- * keep it at exactly one.
+ * keep it at exactly one. The primary key leads with the family, so a
+ * parent's own families are found by the index on `parent_id`.
  */
 export const familyMembers = pgTable(
   'family_members',
@@ -88,16 +103,17 @@ export const familyMembers = pgTable(
     uniqueIndex('family_members_one_admin_per_family')
       .on(table.familyId)
       .where(sql`role = 'admin'`),
+    index('family_members_parent_id_idx').on(table.parentId),
     check('family_members_role_check', sql`role in ('admin', 'member')`),
   ],
 );
 
 /**
- * Requests to join a family. Rows are never deleted; the partial unique
- * index allows one pending request per parent and family at a time. The
- * code is the family code the parent applied with, checked like the
- * family's own. Only the applicant dismisses a closed request; the admin
- * sees pending requests alone.
+ * Requests to join a family. The partial unique index allows one pending
+ * request per parent and family at a time. The code is the family code the
+ * parent applied with, checked like the family's own. Only the applicant
+ * dismisses a closed request; the admin sees pending requests alone. Who
+ * approved or rejected a request is in the audit events.
  */
 export const joinRequests = pgTable(
   'join_requests',
@@ -113,7 +129,6 @@ export const joinRequests = pgTable(
     status: text('status').$type<JoinRequestStatus>().notNull(),
     createdAt: timestamptz('created_at').notNull().defaultNow(),
     closedAt: timestamptz('closed_at'),
-    closedBy: uuid('closed_by').references(() => parents.id),
     dismissedByApplicantAt: timestamptz('dismissed_by_applicant_at'),
   },
   (table) => [
@@ -130,19 +145,31 @@ export const joinRequests = pgTable(
 
 /**
  * A child of a family. The nickname and the account are ciphertexts of the
- * child data cipher; `account_lookup` is the keyed lookup value of the
- * family and the account, which keeps accounts unique within a family and
- * finds the child at login without decrypting. The unique constraint leads
- * with `family_id`, so it also serves listing a family's children. A null
- * `password_hash` means the child has not set a password yet. JWTs issued
- * before `sessions_valid_after` are refused. The guardian's consent is kept
- * in the row and goes with it. `(id, family_id)` is unique so that book
- * assignments can reference a child together with its family.
+ * child data cipher, each bound to its column and the child's id, so the id
+ * has no database default: the api makes it before it encrypts the row.
+ * `account_lookup` is the keyed lookup value of the family and the account,
+ * which keeps accounts unique within a family and finds the child at login
+ * without decrypting. The unique constraint leads with `family_id`, so it
+ * also serves listing a family's children. A null `password_hash` means the
+ * child has not set a password yet; until `password_setup_until`, written
+ * from the database's clock when a parent adds the child or resets the
+ * password and cleared once a password is set, the child may set one by
+ * logging in with the family code and the account. JWTs issued before
+ * `sessions_valid_after` are refused. The guardian's consent is the child's
+ * `child.created` audit event, which outlives the child. `(id, family_id)`
+ * is unique so that book assignments can reference a child together with
+ * its family.
+ *
+ * A ciphertext is `<key id>.<iv>.<ciphertext>.<tag>`, each part after the
+ * key id in unpadded base64url. AES-GCM keeps the length of the text, so
+ * the third part has at most 214 characters exactly when the nickname
+ * takes at most 160 bytes, the contracts' NICKNAME_MAX_BYTES: the database
+ * bounds the nickname without reading it.
  */
 export const children = pgTable(
   'children',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     familyId: uuid('family_id')
       .notNull()
       .references(() => families.id),
@@ -150,17 +177,14 @@ export const children = pgTable(
     account: text('account').notNull(),
     accountLookup: text('account_lookup').notNull(),
     passwordHash: text('password_hash'),
+    passwordSetupUntil: timestamptz('password_setup_until'),
     sessionsValidAfter: timestamptz('sessions_valid_after').notNull().defaultNow(),
-    consentParentId: uuid('consent_parent_id')
-      .notNull()
-      .references(() => parents.id),
-    consentVersion: text('consent_version').notNull(),
-    consentedAt: timestamptz('consented_at').notNull(),
     ...rowTimes(),
   },
   (table) => [
     unique('children_family_account_unique').on(table.familyId, table.accountLookup),
     unique('children_id_family_unique').on(table.id, table.familyId),
+    check('children_nickname_length_check', sql`octet_length(split_part(nickname, '.', 3)) <= 214`),
   ],
 );
 
@@ -172,38 +196,17 @@ function childReference() {
 }
 
 /**
- * The one-time login links a parent shows as a QR code. Only the SHA-256
- * of the token is stored; the token itself lives in the link. A link is
- * used, revoked or expired by its time columns.
- */
-export const childLoginLinks = pgTable(
-  'child_login_links',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    childId: childReference(),
-    tokenHash: text('token_hash').notNull().unique('child_login_links_token_hash_unique'),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => parents.id),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
-    expiresAt: timestamptz('expires_at').notNull(),
-    usedAt: timestamptz('used_at'),
-    revokedAt: timestamptz('revoked_at'),
-  },
-  (table) => [index('child_login_links_child_id_idx').on(table.childId)],
-);
-
-/**
  * The browsers a child is remembered on. A browser has one device token
  * for every child it remembers, so each child has a row of their own with
  * the token's SHA-256; the unique constraint leads with `child_id` for a
  * child's devices, and the token index finds the children a browser
- * remembers. The device name is a ciphertext.
+ * remembers. The device name is a ciphertext bound to its column and the
+ * row's id, which the api makes, as it does a child's.
  */
 export const childDevices = pgTable(
   'child_devices',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     childId: childReference(),
     tokenHash: text('token_hash').notNull(),
     name: text('name').notNull(),
@@ -311,9 +314,6 @@ export const familyBooks = pgTable(
     bookId: text('book_id')
       .notNull()
       .references(() => books.id, { onDelete: 'restrict' }),
-    acquiredBy: uuid('acquired_by')
-      .notNull()
-      .references(() => parents.id),
     acquiredAt: timestamptz('acquired_at').notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.familyId, table.bookId] })],
@@ -333,9 +333,6 @@ export const bookAssignments = pgTable(
     childId: uuid('child_id').notNull(),
     familyId: uuid('family_id').notNull(),
     bookId: text('book_id').notNull(),
-    assignedBy: uuid('assigned_by')
-      .notNull()
-      .references(() => parents.id),
     assignedAt: timestamptz('assigned_at').notNull().defaultNow(),
     openedAt: timestamptz('opened_at'),
   },
@@ -352,5 +349,63 @@ export const bookAssignments = pgTable(
       foreignColumns: [familyBooks.familyId, familyBooks.bookId],
     }).onDelete('restrict'),
     index('book_assignments_family_book_idx').on(table.familyId, table.bookId),
+  ],
+);
+
+/** Who did what an audit event records: a parent, a child or the site itself. */
+export type AuditActorKind = 'parent' | 'child' | 'system';
+
+/**
+ * Who did what to which data, one row for every action that changed data
+ * (`.docs/design/data.md`, "audit_events"). It references no table, so a
+ * deleted parent, family or child leaves its rows as they are, holding ids
+ * that match nothing; the migration that creates it adds a trigger that
+ * refuses every update and delete, so the rows are only ever added. The
+ * rows hold ids and identifiers only, never a name, an email, a nickname,
+ * an account or a device name. The site itself acts without an id; a
+ * parent also has the issuer and subject of their Authing account. The
+ * indexes serve reading a family's events in time order and the events of
+ * one thing.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    occurredAt: timestamptz('occurred_at').notNull().defaultNow(),
+    actorKind: text('actor_kind').$type<AuditActorKind>().notNull(),
+    actorId: uuid('actor_id'),
+    actorIssuer: text('actor_issuer'),
+    actorSubject: text('actor_subject'),
+    action: text('action').notNull(),
+    targetKind: text('target_kind').notNull(),
+    targetId: text('target_id').notNull(),
+    familyId: uuid('family_id'),
+    details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (table) => [
+    index('audit_events_family_occurred_at_idx').on(table.familyId, table.occurredAt),
+    index('audit_events_target_idx').on(table.targetKind, table.targetId),
+    check('audit_events_actor_kind_check', sql`actor_kind in ('parent', 'child', 'system')`),
+    check('audit_events_actor_id_check', sql`(actor_kind = 'system') = (actor_id is null)`),
+  ],
+);
+
+/**
+ * The data migrations written in code that have run (`.docs/design/data.md`,
+ * "data_migrations"), one row each, written in the migration's own
+ * transaction. The name is the migration's file name without `.ts`; the
+ * checksum is the SHA-256 of that file as it ran, so a migration changed
+ * after it ran is found before anything else runs.
+ */
+export const dataMigrations = pgTable(
+  'data_migrations',
+  {
+    name: text('name').primaryKey(),
+    checksum: text('checksum').notNull(),
+    ranAt: timestamptz('ran_at').notNull(),
+  },
+  () => [
+    check('data_migrations_name_check', sql`name ~ '^[0-9]{4}-[a-z0-9-]+$'`),
+    check('data_migrations_checksum_check', sql`checksum ~ '^[0-9a-f]{64}$'`),
   ],
 );

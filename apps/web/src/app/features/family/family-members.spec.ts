@@ -6,12 +6,14 @@ import { expectNoAxeViolations } from '../../../testing/accessibility';
 import {
   dialogGone,
   expectToast,
+  libraryShown,
   openDialog,
   recordCalls,
   renderFamilyPage,
   stubChangedWorld,
 } from '../../../testing/family-page';
 import { holdOverlaysAt } from '../../../testing/families';
+import { stubLibrary } from '../../../testing/library';
 import { closeMenu } from '../../../testing/menus';
 import { emulateTouch } from '../../../testing/pointer';
 import {
@@ -212,7 +214,8 @@ describe('FamilyMembers', () => {
     });
   });
 
-  it('goes on to the first family after leaving the last one, on its family page', async () => {
+  it("goes on to the first family's library after leaving the last one", async () => {
+    stubLibrary();
     recordCalls('delete', `/api/families/${GRANDMA_FAMILY_ID}/members/${LINYUE_ID}`, () => {
       stubChangedWorld({ ...LINYUE, families: LINYUE.families.slice(0, 1) }, LINYUE_FAMILY);
       return new HttpResponse(null, { status: 204 });
@@ -227,9 +230,12 @@ describe('FamilyMembers', () => {
 
     await expectToast('你已离开 外婆家');
     await vi.waitFor(() => {
-      expect(router.url).toBe(`/families/${LINYUE_FAMILY_ID}`);
+      expect(router.url).toBe('/');
     });
-    expect(await screen.findByRole('heading', { level: 1, name: '林悦的家' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '林悦的家 切换家庭' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '林悦的家 切换家庭' })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: '书库' })[0]?.getAttribute('aria-current')).toBe(
+      'page',
+    );
+    await libraryShown();
   });
 });

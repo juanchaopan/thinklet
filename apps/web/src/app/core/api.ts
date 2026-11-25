@@ -11,16 +11,29 @@ export interface ResponseSchema<T> {
 /** `network` stands for a request that got no answer (offline, or the server is unreachable). */
 export type ApiErrorCode = ErrorCode | 'network';
 
+/** What an error response says besides its code and request id. */
+export interface ApiErrorDetails {
+  /** The fields an `invalid_request` turned down. */
+  fields?: readonly FieldError[];
+  /** The seconds left of the window that refused a `rate_limited`. */
+  retryAfterSeconds?: number | undefined;
+}
+
 /** A request that failed, with the error code the screen picks its message by. */
 export class ApiError extends Error {
+  readonly fields: readonly FieldError[];
+  readonly retryAfterSeconds: number | undefined;
+
   constructor(
     readonly status: number,
     readonly code: ApiErrorCode,
     readonly requestId?: string,
-    readonly fields: readonly FieldError[] = [],
+    details: ApiErrorDetails = {},
   ) {
     super(`The api answered ${String(status)} ${code}`);
     this.name = 'ApiError';
+    this.fields = details.fields ?? [];
+    this.retryAfterSeconds = details.retryAfterSeconds;
   }
 }
 
@@ -110,7 +123,7 @@ export class Api {
     if (!parsed.success) {
       return new ApiError(error.status, error.status === 401 ? 'unauthenticated' : 'internal');
     }
-    const { code, requestId, fields } = parsed.data.error;
-    return new ApiError(error.status, code, requestId, fields);
+    const { code, requestId, fields, retryAfterSeconds } = parsed.data.error;
+    return new ApiError(error.status, code, requestId, { fields, retryAfterSeconds });
   }
 }

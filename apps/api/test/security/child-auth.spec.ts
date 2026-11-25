@@ -1,4 +1,10 @@
-import { errorResponseSchema, type FamilyDetail } from '@thinklet/contracts';
+import { createHash } from 'node:crypto';
+import {
+  errorResponseSchema,
+  rememberedChildListSchema,
+  type Child,
+  type FamilyDetail,
+} from '@thinklet/contracts';
 import request from 'supertest';
 import {
   CHILD_SESSION_COOKIE,
@@ -9,15 +15,37 @@ import {
   newLoginLink,
   type ChildWithPassword,
 } from '../support/child-login.js';
-import { addChild, childrenPath, deviceRows, loginLinkRows } from '../support/children.js';
+import {
+  addChild,
+  childRow,
+  childrenPath,
+  deviceRows,
+  endPasswordSetup,
+} from '../support/children.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
+import { query } from '../support/database.js';
 import {
   createFamily,
   signInParent,
   useAppWithServices,
   type Parent,
 } from '../support/families.js';
-import { cookieHeader } from '../support/login.js';
+import { cookieHeader, setCookiesOf } from '../support/login.js';
+
+/** A combining accent: two bytes of UTF-8 that add no character. */
+const ACUTE = String.fromCodePoint(0x301);
+
+/**
+ * Passwords no child can have: past 32 characters, past 128 bytes in seven
+ * characters, and as long as a request body may carry.
+ */
+const PASSWORDS_PAST_THE_LIMITS: Array<[string, string]> = [
+  ['33 characters', 'a'.repeat(33)],
+  ['129 bytes', `abcdefg${ACUTE.repeat(61)}`],
+  ['50 000 characters', 'a'.repeat(50_000)],
+];
+
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** What a response tells: its status, the fields and code of its error, and the cookies it sets. */
 function whatItTells(response: request.Response) {
@@ -30,11 +58,74 @@ function whatItTells(response: request.Response) {
   };
 }
 
+/** What a refused login with the family code and the account tells: no more than login_failed. */
+const LOGIN_FAILED = {
+  status: 401,
+  fields: ['code', 'requestId'],
+  code: 'login_failed',
+  cookies: undefined,
+};
+
+/**
+ * Sets each password past the limits as a first password, one after
+ * another, and asserts that every one is refused as too long and signs
+ * nobody in.
+ */
+async function expectPastTheLimitsRefused(
+  setPassword: (password: string) => Promise<request.Response>,
+): Promise<void> {
+  const answers = [];
+  for (const [, password] of PASSWORDS_PAST_THE_LIMITS) {
+    const answer = await setPassword(password);
+    answers.push({
+      status: answer.status,
+      fields: errorResponseSchema.parse(answer.body).error.fields,
+      cookies: answer.headers['set-cookie'],
+    });
+  }
+  expect(answers).toEqual(
+    PASSWORDS_PAST_THE_LIMITS.map(() => ({
+      status: 400,
+      fields: [{ path: 'password', code: 'too_long' }],
+      cookies: undefined,
+    })),
+  );
+}
+
+/** The ids of the children a browser's list of remembered children names, in its order. */
+const rememberedIds = (response: request.Response) =>
+  rememberedChildListSchema.parse(response.body).map((remembered) => remembered.childId);
+
+/** A login that remembers a child on the browser, and the child it logged in. */
+interface RememberingLogin {
+  childId: string;
+  response: request.Response;
+}
+
+/**
+ * A device token someone writes into a child's browser before the child
+ * logs in there, with the ids of the children the token is a valid device
+ * credential of: the ones of the family that got it.
+ */
+interface PlantedToken {
+  token: string;
+  ownChildIds: string[];
+}
+
 // Security test cases of .docs/architecture.md ("指标和要求", 安全) for a
-// child's login: a failed login does not say which item was wrong; a
-// child's login opens no parent route and a parent's login no child route;
-// one child's remembered browser does not log in another child; the routes
-// that change data need this site's Origin, though they need no login.
+// child's login: a failed login does not say which item was wrong, and a
+// child without a password whose time to set one with the account has run
+// out is answered exactly like a wrong password; a first password cannot
+// be set with the account for a child who has one, after the time has run
+// out, or for another family's child (#14, 25); a password past the limits
+// is refused like a wrong one, and cannot be set; a child's login opens no
+// parent route and a parent's login no child route; one child's remembered
+// browser does not log in another child; a device token written into the
+// browser beforehand, one the api never issued or one another family's
+// child is validly remembered by, is replaced at the login and does not
+// become the child's device credential, while the other family's device
+// keeps working where it was (#14, 18); the routes that change data need
+// this site's Origin, though they need no login.
 describe('child login security', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -48,6 +139,32 @@ describe('child login security', () => {
     password: who.password,
     remember,
   });
+  const loginWithout = (who: Child) => ({
+    code: family.code,
+    account: who.account,
+    remember: false,
+  });
+  const firstPasswordOf = (who: Child, code = family.code) => ({
+    code,
+    account: who.account,
+    password: 'taken over',
+    remember: true,
+  });
+  /** Whether the link of the token can still be used: opening it answers who it is for. */
+  const stillUsable = async (token: string) =>
+    (await browser().get(linkPath(token))).status === 200;
+  /** The ids of the children whose devices the database has with the token's hash, sorted. */
+  const childrenWithToken = async (token: string) =>
+    (
+      await query<{ child_id: string }>(
+        running.databaseUrl,
+        'select child_id from child_devices where token_hash = $1 order by child_id',
+        [sha256(token)],
+      )
+    ).map((row) => row.child_id);
+  /** The child's password hash as the database holds it. */
+  const passwordHashOf = async (who: Child) =>
+    (await childRow(running.databaseUrl, who.id))?.password_hash;
 
   beforeAll(async () => {
     parent = await signInParent(running.server, { name: '林悦' });
@@ -55,9 +172,10 @@ describe('child login security', () => {
     child = await addChildWithPassword(running.server, parent, family.id);
   });
 
-  it('answers a wrong code, account or password and a child without a password alike', async () => {
+  it('answers a wrong code, account or password, a missing password and a child whose time to set one has run out alike', async () => {
     const other = await createFamily(running.server, parent);
     const noPassword = await addChild(running.server, parent, family.id);
+    await endPasswordSetup(running.databaseUrl, noPassword.id);
     const login = loginOf(child);
 
     const answers = await Promise.all(
@@ -65,18 +183,118 @@ describe('child login security', () => {
         { ...login, code: other.code },
         { ...login, account: `${child.account}0` },
         { ...login, password: `${child.password}0` },
+        loginWithout(child),
         { ...login, account: noPassword.account },
+        loginWithout(noPassword),
       ].map(async (body) => whatItTells(await browser().login(body))),
     );
 
-    expect(answers).toEqual(
-      answers.map(() => ({
-        status: 401,
-        fields: ['code', 'requestId'],
-        code: 'login_failed',
-        cookies: undefined,
-      })),
+    expect(answers).toEqual(answers.map(() => LOGIN_FAILED));
+  });
+
+  describe('setting the first password with the account', () => {
+    it('cannot replace the password of a child who has one, which still works', async () => {
+      const before = await passwordHashOf(child);
+
+      const response = await browser().setFirstPassword(firstPasswordOf(child));
+
+      expect(whatItTells(response)).toEqual(LOGIN_FAILED);
+      expect(await passwordHashOf(child)).toBe(before);
+      expect((await browser().login(loginOf(child))).status).toBe(200);
+    });
+
+    it('cannot set one once the time to set it with the account has run out', async () => {
+      const late = await addChild(running.server, parent, family.id);
+      await endPasswordSetup(running.databaseUrl, late.id);
+
+      const response = await browser().setFirstPassword(firstPasswordOf(late));
+
+      expect(whatItTells(response)).toEqual(LOGIN_FAILED);
+      expect(await passwordHashOf(late)).toBeNull();
+    });
+
+    it("cannot set one for another family's child with this family's code", async () => {
+      const otherParent = await signInParent(running.server);
+      const otherFamily = await createFamily(running.server, otherParent);
+      const theirs = await addChild(running.server, otherParent, otherFamily.id);
+
+      const responses = [
+        await browser().setFirstPassword(firstPasswordOf(theirs)),
+        await browser().login(loginWithout(theirs)),
+      ];
+
+      expect(responses.map(whatItTells)).toEqual([LOGIN_FAILED, LOGIN_FAILED]);
+      expect(await passwordHashOf(theirs)).toBeNull();
+      expect(
+        (await browser().setFirstPassword(firstPasswordOf(theirs, otherFamily.code))).status,
+      ).toBe(200);
+    });
+
+    it('answers a child who may set one with no more than its id and nickname, and no cookie', async () => {
+      const fresh = await addChild(running.server, parent, family.id);
+
+      const response = await browser().login({ ...loginWithout(fresh), remember: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ needsPassword: true, id: fresh.id, nickname: '小米' });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(await deviceRows(running.databaseUrl, fresh.id)).toEqual([]);
+    });
+
+    it('cannot set a password past the limits', async () => {
+      const fresh = await addChild(running.server, parent, family.id);
+
+      await expectPastTheLimitsRefused((password) =>
+        browser().setFirstPassword({ ...firstPasswordOf(fresh), password }),
+      );
+
+      expect(await passwordHashOf(fresh)).toBeNull();
+    });
+  });
+
+  describe('a password past the limits', () => {
+    it.each(PASSWORDS_PAST_THE_LIMITS)(
+      'of %s is answered at login as a wrong password, signing nobody in',
+      async (_name, password) => {
+        const response = await browser().login({ ...loginOf(child), password });
+
+        expect(whatItTells(response)).toEqual(LOGIN_FAILED);
+      },
     );
+
+    it.each(PASSWORDS_PAST_THE_LIMITS)(
+      'of %s is a wrong password on a login link, which stays usable',
+      async (_name, password) => {
+        const { token } = await newLoginLink(running.server, parent, family.id, child.id);
+        const kid = browser();
+
+        const refused = await kid.post(`${linkPath(token)}/login`, { password, remember: false });
+
+        expect(whatItTells(refused)).toEqual({
+          status: 401,
+          fields: ['code', 'requestId'],
+          code: 'wrong_password',
+          cookies: undefined,
+        });
+        const accepted = await kid.post(`${linkPath(token)}/login`, {
+          password: child.password,
+          remember: false,
+        });
+        expect(accepted.status).toBe(200);
+      },
+    );
+
+    it('cannot be set as a first password, which leaves the link unused', async () => {
+      const fresh = await addChild(running.server, parent, family.id);
+      const { token } = await newLoginLink(running.server, parent, family.id, fresh.id);
+      const kid = browser();
+
+      await expectPastTheLimitsRefused((password) =>
+        kid.post(`${linkPath(token)}/password`, { password, remember: true }),
+      );
+
+      expect(await stillUsable(token)).toBe(true);
+    });
   });
 
   describe("a child's login", () => {
@@ -159,6 +377,119 @@ describe('child login security', () => {
     expect(response.body).toEqual([]);
   });
 
+  /** Where a device token written into the browser beforehand comes from, each made ready. */
+  const plantedTokens: Array<[string, () => Promise<PlantedToken>]> = [
+    [
+      'one the api never issued',
+      () => Promise.resolve({ token: Buffer.alloc(32, 5).toString('base64url'), ownChildIds: [] }),
+    ],
+    [
+      "one another family's child is validly remembered by",
+      async () => {
+        const attacker = await signInParent(running.server);
+        const attackerFamily = await createFamily(running.server, attacker);
+        const own = await addChildWithPassword(running.server, attacker, attackerFamily.id);
+        const attackerBrowser = browser();
+        const login = await attackerBrowser.login({
+          code: attackerFamily.code,
+          account: own.account,
+          password: own.password,
+          remember: true,
+        });
+        expect(login.status).toBe(200);
+        return { token: attackerBrowser.cookies.get(DEVICE_COOKIE) ?? '', ownChildIds: [own.id] };
+      },
+    ],
+  ];
+
+  /** Every password or link login that remembers a new child of the family on the given browser. */
+  const rememberingLogins: Array<[string, (kid: ChildBrowser) => Promise<RememberingLogin>]> = [
+    [
+      'logging in with the account',
+      async (kid) => {
+        const victim = await addChildWithPassword(running.server, parent, family.id);
+        return { childId: victim.id, response: await kid.login(loginOf(victim, true)) };
+      },
+    ],
+    [
+      'setting the first password with the account',
+      async (kid) => {
+        const victim = await addChild(running.server, parent, family.id);
+        return {
+          childId: victim.id,
+          response: await kid.setFirstPassword(firstPasswordOf(victim)),
+        };
+      },
+    ],
+    [
+      'logging in with the password on a link',
+      async (kid) => {
+        const victim = await addChildWithPassword(running.server, parent, family.id);
+        const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+        const response = await kid.post(`${linkPath(token)}/login`, {
+          password: victim.password,
+          remember: true,
+        });
+        return { childId: victim.id, response };
+      },
+    ],
+    [
+      'setting the first password on a link',
+      async (kid) => {
+        const victim = await addChild(running.server, parent, family.id);
+        const { token } = await newLoginLink(running.server, parent, family.id, victim.id);
+        const response = await kid.post(`${linkPath(token)}/password`, {
+          password: 'my secret',
+          remember: true,
+        });
+        return { childId: victim.id, response };
+      },
+    ],
+  ];
+
+  describe.each(plantedTokens)(
+    'a device token written into the browser beforehand, %s',
+    (_source, plant) => {
+      it.each(rememberingLogins)(
+        'does not become the device credential when %s remembers the child; the response sets another token',
+        async (_case, logIn) => {
+          const planted = await plant();
+          const kid = browser();
+          kid.cookies.set(DEVICE_COOKIE, planted.token);
+
+          const { childId, response } = await logIn(kid);
+
+          expect(response.status).toBe(200);
+          const issued = setCookiesOf(response)[DEVICE_COOKIE]?.value;
+          expect(issued).toBeDefined();
+          expect(issued).not.toBe(planted.token);
+          const rows = await deviceRows(running.databaseUrl, childId);
+          expect(rows.map((row) => row.token_hash)).toEqual([sha256(issued ?? '')]);
+          expect(await childrenWithToken(planted.token)).toEqual(planted.ownChildIds);
+          expect(rememberedIds(await kid.get('/api/child-auth/remembered'))).toEqual([childId]);
+          const ownFromVictim = await Promise.all(
+            planted.ownChildIds.map(async (id) => (await kid.loginRemembered(id)).status),
+          );
+          expect(ownFromVictim).toEqual(planted.ownChildIds.map(() => 401));
+
+          const attacker = browser();
+          attacker.cookies.set(DEVICE_COOKIE, planted.token);
+          expect(rememberedIds(await attacker.get('/api/child-auth/remembered'))).toEqual(
+            planted.ownChildIds,
+          );
+          const remembered = await attacker.loginRemembered(childId);
+          expect(remembered.status).toBe(401);
+          expect(errorResponseSchema.parse(remembered.body).error.code).toBe('remember_invalid');
+          expect((await attacker.me()).status).toBe(401);
+          const ownFromAttacker = await Promise.all(
+            planted.ownChildIds.map(async (id) => (await attacker.loginRemembered(id)).status),
+          );
+          expect(ownFromAttacker).toEqual(planted.ownChildIds.map(() => 200));
+        },
+      );
+    },
+  );
+
   describe('the Origin of requests that change data', () => {
     const badOrigins: Array<[string, string | undefined]> = [
       ['no Origin', undefined],
@@ -172,6 +503,7 @@ describe('child login security', () => {
         const { token } = await newLoginLink(running.server, parent, family.id, fresh.id);
         const routes: Array<[string, object | undefined]> = [
           ['/api/child-auth/login', loginOf(child, true)],
+          ['/api/child-auth/password', firstPasswordOf(fresh)],
           [`/api/child-auth/remembered/${child.id}/login`, undefined],
           ['/api/child-auth/logout', undefined],
           [`${linkPath(token)}/password`, { password: 'my secret', remember: true }],
@@ -186,8 +518,8 @@ describe('child login security', () => {
           expect(errorResponseSchema.parse(response.body).error.code).toBe('bad_origin');
           expect(response.headers['set-cookie']).toBeUndefined();
         }
-        const [link] = await loginLinkRows(running.databaseUrl, fresh.id);
-        expect(link?.used_at).toBeNull();
+        expect(await stillUsable(token)).toBe(true);
+        expect(await passwordHashOf(fresh)).toBeNull();
       },
     );
 

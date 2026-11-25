@@ -1,5 +1,6 @@
 import type { ErrorCode, FamilyRole, JoinRequestStatus } from '@thinklet/contracts';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
+import type { AuditEvent, AuditService } from '../audit/audit.service.js';
 import {
   RequestPendingError,
   type ApplicantRequestRecord,
@@ -31,6 +32,9 @@ const STATUSES: JoinRequestStatus[] = ['pending', 'approved', 'rejected', 'withd
 
 const CREATED_AT = new Date('2026-11-21T09:12:00Z');
 const CLOSED_AT = new Date('2026-11-21T10:03:00Z');
+
+/** The transaction the repository double hands its work, which the audit events are written with. */
+const TRANSACTION = { transaction: 'join-requests' };
 
 /** The applicant's request to the family, in the given state. */
 function requestIn(status: JoinRequestStatus): RequestState {
@@ -221,8 +225,8 @@ describe('toHandledRequest', () => {
 
 /**
  * A repository double over one family and its requests held in memory. A
- * transaction runs its work on the same store; `calls` lists the locks and
- * the writes in order.
+ * transaction runs its work on the same store; `calls` lists the locks,
+ * the writes and the audit events in order. A request is dismissed once.
  */
 function createService(
   options: { roles?: Record<string, FamilyRole>; request?: RequestState } = {},
@@ -231,6 +235,7 @@ function createService(
   const requests = new Map<string, RequestState>(
     options.request === undefined ? [] : [[REQUEST_ID, options.request]],
   );
+  const dismissed = new Set<string>();
   const calls: string[] = [];
   const familyRequest = (requestId: string): FamilyRequestRecord | undefined => {
     const request = requests.get(requestId);
@@ -271,7 +276,7 @@ function createService(
     }),
     findRequest: vi.fn((requestId: string) => Promise.resolve(requests.get(requestId))),
     closeRequest: vi.fn((requestId: string, closing: Closing) => {
-      calls.push(`closeRequest ${closing.status} by ${closing.closedBy ?? 'nobody'}`);
+      calls.push(`closeRequest ${closing.status}`);
       const request = requests.get(requestId);
       if (request !== undefined) {
         requests.set(requestId, { ...request, status: closing.status });
@@ -285,7 +290,9 @@ function createService(
     }),
     dismissRequest: vi.fn((requestId: string) => {
       calls.push(`dismissRequest ${requestId}`);
-      return Promise.resolve();
+      const first = !dismissed.has(requestId);
+      dismissed.add(requestId);
+      return Promise.resolve(first);
     }),
     findApplicantRequest: vi.fn((requestId: string) => {
       const request = requests.get(requestId);
@@ -311,11 +318,24 @@ function createService(
   };
   const repository = {
     ...store,
-    transaction: vi.fn(<T>(work: (transactionStore: typeof store) => Promise<T>) => work(store)),
+    transaction: vi.fn(
+      <T>(work: (transactionStore: typeof store, transaction: unknown) => Promise<T>) =>
+        work(store, TRANSACTION),
+    ),
+  };
+  const audit = {
+    record: vi.fn((_transaction: unknown, event: AuditEvent) => {
+      calls.push(`audit ${event.action}`);
+      return Promise.resolve();
+    }),
   };
   return {
-    service: new JoinRequestsService(repository as unknown as JoinRequestsRepository),
+    service: new JoinRequestsService(
+      repository as unknown as JoinRequestsRepository,
+      audit as unknown as AuditService,
+    ),
     store,
+    audit,
     roles,
     requests,
     calls,
@@ -359,8 +379,8 @@ describe('JoinRequestsService', () => {
   });
 
   describe('apply', () => {
-    it('locks the family by its code, then records a pending request with the code', async () => {
-      const { service, calls } = createService();
+    it('locks the family by its code, then records a pending request with the code and its audit event', async () => {
+      const { service, audit, calls } = createService();
 
       const request = await service.apply(APPLICANT, CODE);
 
@@ -372,7 +392,17 @@ describe('JoinRequestsService', () => {
         status: 'pending',
         createdAt: CREATED_AT.toISOString(),
       });
-      expect(calls).toEqual([`lockFamilyByCode ${CODE}`, `insertRequest ${APPLICANT} ${CODE}`]);
+      expect(calls).toEqual([
+        `lockFamilyByCode ${CODE}`,
+        `insertRequest ${APPLICANT} ${CODE}`,
+        'audit join_request.created',
+      ]);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: APPLICANT },
+        action: 'join_request.created',
+        targetId: REQUEST_ID,
+        familyId: FAMILY_ID,
+      });
     });
 
     it.each<[string, Parameters<typeof createService>[0], string, ErrorCode]>([
@@ -380,17 +410,19 @@ describe('JoinRequestsService', () => {
       ['a member', { roles: { [ADMIN]: 'admin', [APPLICANT]: 'member' } }, CODE, 'already_member'],
       ['a second pending request', { request: requestIn('pending') }, CODE, 'request_pending'],
     ])('refuses %s without recording anything', async (_case, options, code, expected) => {
-      const { service, store } = createService(options);
+      const { service, store, audit } = createService(options);
 
       expect(await rejectionCode(service.apply(APPLICANT, code))).toBe(expected);
       expect(store.insertRequest).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers a request that lost the race to the unique index as already pending', async () => {
-      const { service, store } = createService();
+      const { service, store, audit } = createService();
       store.insertRequest.mockRejectedValueOnce(new RequestPendingError());
 
       expect(await rejectionCode(service.apply(APPLICANT, CODE))).toBe('request_pending');
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('lets any other error through', async () => {
@@ -403,22 +435,33 @@ describe('JoinRequestsService', () => {
   });
 
   describe('withdraw', () => {
-    it("locks the request's family, then closes the request as withdrawn by nobody", async () => {
-      const { service, calls, requests } = createService({ request: requestIn('pending') });
+    it("locks the request's family, then closes the request as withdrawn and records it", async () => {
+      const { service, audit, calls, requests } = createService({ request: requestIn('pending') });
 
       await service.withdraw(APPLICANT, REQUEST_ID);
 
-      expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, 'closeRequest withdrawn by nobody']);
+      expect(calls).toEqual([
+        `lockFamily ${FAMILY_ID}`,
+        'closeRequest withdrawn',
+        'audit join_request.withdrawn',
+      ]);
       expect(requests.get(REQUEST_ID)?.status).toBe('withdrawn');
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: APPLICANT },
+        action: 'join_request.withdrawn',
+        targetId: REQUEST_ID,
+        familyId: FAMILY_ID,
+      });
     });
 
     it('checks the request as it stands under the lock', async () => {
-      const { service, store } = createService({ request: requestIn('pending') });
+      const { service, store, audit } = createService({ request: requestIn('pending') });
       store.findRequest.mockResolvedValueOnce(requestIn('pending'));
       store.findRequest.mockResolvedValueOnce(requestIn('approved'));
 
       expect(await rejectionCode(service.withdraw(APPLICANT, REQUEST_ID))).toBe('request_closed');
       expect(store.closeRequest).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it('answers a request that does not exist as not found without locking anything', async () => {
@@ -433,13 +476,32 @@ describe('JoinRequestsService', () => {
     it.each<JoinRequestStatus>(['approved', 'rejected', 'expired'])(
       "records the applicant's 「知道了」 on a %s request under the family's lock",
       async (status) => {
-        const { service, calls } = createService({ request: requestIn(status) });
+        const { service, audit, calls } = createService({ request: requestIn(status) });
 
         await service.dismissOwn(APPLICANT, REQUEST_ID);
 
-        expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, `dismissRequest ${REQUEST_ID}`]);
+        expect(calls).toEqual([
+          `lockFamily ${FAMILY_ID}`,
+          `dismissRequest ${REQUEST_ID}`,
+          'audit join_request.dismissed',
+        ]);
+        expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+          actor: { kind: 'parent', id: APPLICANT },
+          action: 'join_request.dismissed',
+          targetId: REQUEST_ID,
+          familyId: FAMILY_ID,
+        });
       },
     );
+
+    it('records no audit event when the request was dismissed already', async () => {
+      const { service, audit } = createService({ request: requestIn('approved') });
+      await service.dismissOwn(APPLICANT, REQUEST_ID);
+
+      await service.dismissOwn(APPLICANT, REQUEST_ID);
+
+      expect(audit.record).toHaveBeenCalledTimes(1);
+    });
 
     it('checks the request as it stands under the lock', async () => {
       const { service, store } = createService({ request: requestIn('approved') });
@@ -451,10 +513,11 @@ describe('JoinRequestsService', () => {
     });
 
     it("refuses someone else's request without writing", async () => {
-      const { service, store } = createService({ request: requestIn('rejected') });
+      const { service, store, audit } = createService({ request: requestIn('rejected') });
 
       expect(await rejectionCode(service.dismissOwn(STRANGER, REQUEST_ID))).toBe('not_found');
       expect(store.dismissRequest).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -478,35 +541,54 @@ describe('JoinRequestsService', () => {
   });
 
   describe('decide', () => {
-    it('approves: closes the request by the admin and makes the applicant a member, under the lock', async () => {
-      const { service, calls, roles } = createService({ request: requestIn('pending') });
+    it('approves: closes the request, makes the applicant a member and records the admin and applicant, under the lock', async () => {
+      const { service, audit, calls, roles } = createService({ request: requestIn('pending') });
 
       const handled = await service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'approved');
 
       expect(handled).toMatchObject({ id: REQUEST_ID, parentId: APPLICANT, status: 'approved' });
       expect(calls).toEqual([
         `lockFamily ${FAMILY_ID}`,
-        `closeRequest approved by ${ADMIN}`,
+        'closeRequest approved',
         `insertMember ${APPLICANT} member`,
+        'audit join_request.approved',
       ]);
       expect(roles.get(APPLICANT)).toBe('member');
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'join_request.approved',
+        targetId: REQUEST_ID,
+        familyId: FAMILY_ID,
+        details: { parentId: APPLICANT },
+      });
     });
 
-    it('rejects: closes the request by the admin and adds nobody', async () => {
-      const { service, calls, roles } = createService({ request: requestIn('pending') });
+    it('rejects: closes the request, adds nobody and records the admin and applicant', async () => {
+      const { service, audit, calls, roles } = createService({ request: requestIn('pending') });
 
       const handled = await service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'rejected');
 
       expect(handled).toMatchObject({ id: REQUEST_ID, parentId: APPLICANT, status: 'rejected' });
-      expect(calls).toEqual([`lockFamily ${FAMILY_ID}`, `closeRequest rejected by ${ADMIN}`]);
+      expect(calls).toEqual([
+        `lockFamily ${FAMILY_ID}`,
+        'closeRequest rejected',
+        'audit join_request.rejected',
+      ]);
       expect(roles.has(APPLICANT)).toBe(false);
+      expect(audit.record).toHaveBeenCalledWith(TRANSACTION, {
+        actor: { kind: 'parent', id: ADMIN },
+        action: 'join_request.rejected',
+        targetId: REQUEST_ID,
+        familyId: FAMILY_ID,
+        details: { parentId: APPLICANT },
+      });
     });
 
     it.each<[string, Record<string, FamilyRole>, ErrorCode]>([
       ['an admin who handed the role over', { [ADMIN]: 'member' }, 'not_admin'],
       ['an admin who was taken out', {}, 'family_not_found'],
     ])('refuses %s, checked under the lock', async (_who, roles, expected) => {
-      const { service, store } = createService({ roles, request: requestIn('pending') });
+      const { service, store, audit } = createService({ roles, request: requestIn('pending') });
 
       expect(await rejectionCode(service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'approved'))).toBe(
         expected,
@@ -514,18 +596,20 @@ describe('JoinRequestsService', () => {
       expect(store.lockFamily).toHaveBeenCalledWith(FAMILY_ID);
       expect(store.closeRequest).not.toHaveBeenCalled();
       expect(store.insertMember).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
     });
 
     it.each<JoinRequestStatus>(['approved', 'rejected', 'withdrawn', 'expired'])(
       'refuses a %s request with request_closed and writes nothing',
       async (status) => {
-        const { service, store } = createService({ request: requestIn(status) });
+        const { service, store, audit } = createService({ request: requestIn(status) });
 
         expect(await rejectionCode(service.decide(ADMIN, FAMILY_ID, REQUEST_ID, 'approved'))).toBe(
           'request_closed',
         );
         expect(store.closeRequest).not.toHaveBeenCalled();
         expect(store.insertMember).not.toHaveBeenCalled();
+        expect(audit.record).not.toHaveBeenCalled();
       },
     );
 

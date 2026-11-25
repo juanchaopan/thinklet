@@ -9,7 +9,7 @@ import type {
   SubjectRef,
 } from '@thinklet/contracts';
 import { http, HttpResponse, type HttpHandler } from 'msw';
-import { CHILDREN, DUODUO_ID, LELE_ID, XIAOMING_ID } from './children';
+import { ALE_ID, CHILDREN, DOUDOU_ID, XIAOMI_ID, childWithPassword } from './children';
 import { worker } from './network';
 import { errorBody, LINYUE, LINYUE_FAMILY_ID } from './sample-data';
 
@@ -300,7 +300,7 @@ const SAMPLE_BOOKS: readonly SampleBook[] = [
   ],
 ];
 
-/** The book that has left the library; 林悦的家 still has it, and 小明 reads it. */
+/** The book that has left the library; 林悦的家 still has it, and 小米 reads it. */
 export const RETIRED_BOOK_ID = 'bunny-counts';
 
 /** How many books a batch holds. */
@@ -312,27 +312,19 @@ const MISSING_COVER = 'missing';
 // Two more children who read 形状捉迷藏, so its card shows how the avatars
 // overflow into a count as the design draws it. The pages do not list them
 // among the family's children.
-const XIAOYU: Child = {
-  id: 'c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e01',
-  nickname: '小雨',
-  account: 'xiaoyu',
-};
-const TIANTIAN: Child = {
-  id: 'c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e02',
-  nickname: '天天',
-  account: 'tiantian',
-};
+const XIAOYU = childWithPassword('c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e01', '小雨', 'xiaoyu');
+const TIANTIAN = childWithPassword('c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e02', '天天', 'tiantian');
 
 /** The books 林悦的家 has, with the children who read each, as the design draws them. */
 const FAMILY_BOOKS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ['carrot-counting', [XIAOMING_ID, DUODUO_ID]],
+  ['carrot-counting', [XIAOMI_ID, DOUDOU_ID]],
   ['moon-phases', []],
-  ['robot-maze', [LELE_ID]],
-  ['seasons-poems', [XIAOMING_ID, LELE_ID]],
-  ['shape-hide-and-seek', [XIAOMING_ID, DUODUO_ID, LELE_ID, XIAOYU.id, TIANTIAN.id]],
-  ['seed-journey', [DUODUO_ID]],
-  ['bunny-counts', [XIAOMING_ID]],
-  ['write-a-diary', [XIAOMING_ID]],
+  ['robot-maze', [ALE_ID]],
+  ['seasons-poems', [XIAOMI_ID, ALE_ID]],
+  ['shape-hide-and-seek', [XIAOMI_ID, DOUDOU_ID, ALE_ID, XIAOYU.id, TIANTIAN.id]],
+  ['seed-journey', [DOUDOU_ID]],
+  ['bunny-counts', [XIAOMI_ID]],
+  ['write-a-diary', [XIAOMI_ID]],
   ['tiny-cells', []],
 ];
 

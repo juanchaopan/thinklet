@@ -164,7 +164,6 @@ export async function bookIdsInOrder(databaseUrl: string, where: string): Promis
 export interface FamilyBookRow {
   family_id: string;
   book_id: string;
-  acquired_by: string;
   acquired_at: Date;
 }
 
@@ -185,12 +184,23 @@ export async function insertFamilyBook(
   databaseUrl: string,
   familyId: string,
   bookId: string,
-  parentId: string,
+): Promise<void> {
+  await query(databaseUrl, 'insert into family_books (family_id, book_id) values ($1, $2)', [
+    familyId,
+    bookId,
+  ]);
+}
+
+/** Assigns the family's book to its child directly in the database, as a past change of readers did. */
+export async function insertAssignment(
+  databaseUrl: string,
+  { familyId, bookId }: FamilyBook,
+  childId: string,
 ): Promise<void> {
   await query(
     databaseUrl,
-    'insert into family_books (family_id, book_id, acquired_by) values ($1, $2, $3)',
-    [familyId, bookId, parentId],
+    'insert into book_assignments (child_id, family_id, book_id) values ($1, $2, $3)',
+    [childId, familyId, bookId],
   );
 }
 
@@ -199,7 +209,6 @@ export interface AssignmentRow {
   child_id: string;
   family_id: string;
   book_id: string;
-  assigned_by: string;
   assigned_at: Date;
   opened_at: Date | null;
 }

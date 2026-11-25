@@ -9,9 +9,12 @@ const SECRET_VARIABLES = [
   'MIGRATION_DATABASE_URL',
   'S3_ACCESS_KEY_ID',
   'S3_SECRET_ACCESS_KEY',
+  'REDIS_URL',
   'OIDC_CLIENT_SECRET',
   'JWT_SIGNING_KEY',
   'CHILD_DATA_KEY',
+  'AUTHING_USER_POOL_SECRET',
+  'AUTHING_WEBHOOK_SECRET',
 ] as const;
 
 /**
@@ -65,12 +68,15 @@ const atAnyDepth = (name: string) => [name, `*.${name}`, `*.*.${name}`];
 /**
  * Log fields that are replaced wherever they appear. The request log keeps
  * only the headers of LOGGED_REQUEST_HEADERS; the request header paths here
- * still cover a request logged some other way.
+ * still cover a request logged some other way, Authing's webhook secret
+ * headers among them.
  */
 export const REDACTED_PATHS = [
   'req.headers.authorization',
   'req.headers["proxy-authorization"]',
   'req.headers.cookie',
+  'req.headers["x-authing-webhook-secret"]',
+  'req.headers["x-authing-token"]',
   'res.headers["set-cookie"]',
   // The login redirect carries the state, nonce and code challenge.
   'res.headers.location',
@@ -85,10 +91,12 @@ export const REDACTED_PATHS = [
  * The request headers the request log writes, in Node's lower case. Any
  * other header is left out, so a header nobody thought of is never logged:
  * `referer` carries the address of the page the request came from, such as
- * a join page with its family code or a QR login page with its token, and
- * cookies and authorization carry the login. These say which site and
- * client sent the request and what body it had, which is what tracing a
- * failed request needs.
+ * a join page with its family code or a QR login page with its token,
+ * cookies and authorization carry the login, the webhook's secret header
+ * proves a notification comes from Authing, and the forwarding headers
+ * carry the client's IP address. These say which site and client sent the
+ * request and what body it had, which is what tracing a failed request
+ * needs.
  */
 export const LOGGED_REQUEST_HEADERS: readonly string[] = [
   'host',
@@ -111,41 +119,67 @@ const SENSITIVE_PATH_SEGMENTS: readonly RegExp[] = [
   /^(\/api\/child-login-links\/)[^/]+/i,
 ];
 
-export type SecretSettings = Pick<
-  Environment,
-  | 'DATABASE_URL'
-  | 'S3_ACCESS_KEY_ID'
-  | 'S3_SECRET_ACCESS_KEY'
-  | 'OIDC_CLIENT_SECRET'
-  | 'CHILD_DATA_KEY'
-> & { JWT_SIGNING_KEY: Pick<Environment['JWT_SIGNING_KEY'], 'd'> };
+/**
+ * The secret variables the api itself runs with: all of them but the
+ * migration's database URL, which only the migration commands read.
+ */
+type ApiSecret = Exclude<(typeof SECRET_VARIABLES)[number], 'MIGRATION_DATABASE_URL'>;
 
 /**
- * The secret values of the configuration: the database URL, its password
- * (as written in the URL and decoded), the storage credentials, the OIDC
- * client secret, the private part of the JWT signing key, and the child
- * data key in base64, as the environment holds it, and in hex, as bytes
- * are most often printed.
+ * The api's secret settings, by the names of SECRET_VARIABLES; of the JWT
+ * signing key only its private part is secret.
+ */
+export type SecretSettings = Pick<Environment, Exclude<ApiSecret, 'JWT_SIGNING_KEY'>> & {
+  JWT_SIGNING_KEY: Pick<Environment['JWT_SIGNING_KEY'], 'd'>;
+};
+
+/** The password of a connection URL as written in it and decoded; none when it has none. */
+function passwordsIn(url: string): string[] {
+  const { password } = new URL(url);
+  return password === '' ? [] : [password, decodePassword(password)];
+}
+
+/**
+ * The values each secret setting can show up in a log line as. The type
+ * asks for every secret variable of the api, so one added to
+ * SECRET_VARIABLES is not left out of the values replaced in log lines.
+ */
+const SECRET_FORMS: { [Name in ApiSecret]: (value: SecretSettings[Name]) => string[] } = {
+  DATABASE_URL: (url) => [url, ...passwordsIn(url)],
+  S3_ACCESS_KEY_ID: (value) => [value],
+  S3_SECRET_ACCESS_KEY: (value) => [value],
+  REDIS_URL: (url) => [url, ...passwordsIn(url)],
+  OIDC_CLIENT_SECRET: (value) => [value],
+  JWT_SIGNING_KEY: (key) => [key.d],
+  CHILD_DATA_KEY: (key) => [key.toString('base64'), key.toString('hex')],
+  AUTHING_USER_POOL_SECRET: (value) => [value],
+  AUTHING_WEBHOOK_SECRET: (value) => [value],
+};
+
+/** The names of the api's secret settings, in the order their values are listed. */
+const SECRET_SETTINGS = Object.keys(SECRET_FORMS) as readonly ApiSecret[];
+
+/** The values the secret setting `name` can show up in a log line as. */
+function formsOf<Name extends ApiSecret>(name: Name, value: SecretSettings[Name]): string[] {
+  return SECRET_FORMS[name](value);
+}
+
+/**
+ * The secret values of the configuration: the database URL and its
+ * password (as written in the URL and decoded), the storage credentials,
+ * the Redis URL and its password, the OIDC client secret, the private part
+ * of the JWT signing key, the child data key in base64, as the environment
+ * holds it, and in hex, as bytes are most often printed, and Authing's user
+ * pool secret and webhook secret.
  */
 export function secretValues(settings: SecretSettings): string[] {
-  const { password } = new URL(settings.DATABASE_URL);
-  return [
-    settings.DATABASE_URL,
-    password,
-    decodePassword(password),
-    settings.S3_ACCESS_KEY_ID,
-    settings.S3_SECRET_ACCESS_KEY,
-    settings.OIDC_CLIENT_SECRET,
-    settings.JWT_SIGNING_KEY.d,
-    settings.CHILD_DATA_KEY.toString('base64'),
-    settings.CHILD_DATA_KEY.toString('hex'),
-  ];
+  return SECRET_SETTINGS.flatMap((name) => formsOf(name, settings[name]));
 }
 
 /**
  * The password with its percent escapes decoded. A `%` that starts no valid
  * escape cannot be decoded; the password is then kept as written, so the
- * logger still starts and the database driver reports the URL itself.
+ * logger still starts and the driver reports the URL itself.
  */
 function decodePassword(password: string): string {
   try {
@@ -210,17 +244,22 @@ interface SerializedRequest {
   headers?: Record<string, unknown>;
   query?: unknown;
   params?: unknown;
+  remoteAddress?: unknown;
+  remotePort?: unknown;
 }
 
 /**
- * The logged request with its URL made loggable, only the allowed headers
- * and without the parsed query and route parameters. The parameters are
- * those of the logging middleware's catch-all route, which repeat every
- * segment of the path, a sensitive one included.
+ * The logged request with its URL made loggable, only the allowed headers,
+ * and without the parsed query and route parameters or the address of the
+ * connection. The parameters are those of the logging middleware's
+ * catch-all route, which repeat every segment of the path, a sensitive one
+ * included; the connection's address can be the client's IP address.
  */
 export function loggableRequest<T extends SerializedRequest>(request: T): T {
   delete request.query;
   delete request.params;
+  delete request.remoteAddress;
+  delete request.remotePort;
   if (request.url !== undefined) {
     request.url = loggableUrl(request.url);
   }

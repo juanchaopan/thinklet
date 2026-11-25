@@ -1,11 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { PublicLayout } from '../../core/layout/public-layout';
 import { loginUrl } from '../../core/login';
+import { LoginFailedDialog } from '../../core/login-failed-dialog';
 import { Art } from '../../shared/ui/art';
 import { Button } from '../../shared/ui/button';
 import { Chip } from '../../shared/ui/card';
-import { Dialog } from '../../shared/ui/dialog';
+import { AccountDeletedDialog } from './account-deleted-dialog';
 
 /**
  * The product home at `/` for visitors: what the product is, the parents'
@@ -13,12 +14,13 @@ import { Dialog } from '../../shared/ui/dialog';
  * and the children's. The rabbit teacher rises into place, its speech bubble
  * pops up after it, and then it floats gently while the page is open.
  *
- * `?login=failed` is where a failed sign-in lands: a dialog says so and
- * offers another try.
+ * `?login=failed` is where a failed sign-in lands: 登录没有成功 covers the
+ * page and offers another try. `?account=deleted` is where a parent lands
+ * once they deleted their account: 你的账号已删除 covers the page.
  */
 @Component({
   selector: 'app-visitor-home',
-  imports: [Art, Button, Chip, Dialog, PublicLayout, RouterLink],
+  imports: [Art, AccountDeletedDialog, Button, Chip, LoginFailedDialog, PublicLayout, RouterLink],
   template: `
     <app-public-layout>
       <section
@@ -58,36 +60,14 @@ import { Dialog } from '../../shared/ui/dialog';
       </section>
     </app-public-layout>
 
-    <app-dialog
-      [open]="login() === 'failed'"
-      title="登录没有成功"
-      icon="wrench"
-      (dismissed)="closeLoginFailed()"
-    >
-      <p class="mt-3 text-base text-ink-soft">请再试一次。</p>
-      <button type="button" appButton="secondary" appDialogAction (click)="closeLoginFailed()">
-        关闭
-      </button>
-      <a appButton appDialogAction [href]="loginHref()">再试一次</a>
-    </app-dialog>
+    <app-login-failed-dialog />
+    <app-account-deleted-dialog />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VisitorHome {
-  /** `failed` when signing in did not succeed. */
-  readonly login = input<string>();
   /** The page to come back to after signing in. */
   readonly returnTo = input<string>();
 
-  private readonly router = inject(Router);
-
   protected readonly loginHref = computed(() => loginUrl(this.returnTo()));
-
-  protected closeLoginFailed(): void {
-    void this.router.navigate([], {
-      queryParams: { login: null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
-  }
 }

@@ -37,12 +37,20 @@ high:
   - 'apps/api/src/modules/family/**'
   - 'apps/api/src/modules/child/**'
   - 'apps/api/src/modules/book/**'
+  - 'apps/api/src/modules/audit/**'
+  - 'apps/api/src/modules/account/**'
   # The migrations, which also hold the book data.
   - 'apps/api/drizzle/**'
   - '**/*.sql'
   - '**/.env*'
   - '**/vercel.json'
   - 'apps/api/src/infrastructure/**'
+  # The data migrations written in code, which rewrite children's encrypted
+  # data, and their entry point.
+  - 'apps/api/src/data-migrations/**'
+  - 'apps/api/src/migrate-data.ts'
+  # Dockerfiles, which decide the rendering environment of the screenshots.
+  - '**/*Dockerfile*'
 
 low:
   - '.docs/**'

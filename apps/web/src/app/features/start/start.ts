@@ -98,7 +98,7 @@ export class Start {
 
   /** A card that leads on: lifts slightly under the mouse and shrinks a little while pressed. */
   protected readonly choice =
-    'flex w-full items-center gap-4 rounded-card border border-line bg-surface p-5 text-left shadow-card transition duration-150 ease-move hover:-translate-y-0.5 hover:border-violet/40 hover:shadow-pop active:scale-[0.99]';
+    'flex w-full items-center gap-4 rounded-card border border-line bg-surface p-5 text-left shadow-card transition duration-150 ease-move hover:-translate-y-0.5 hover:border-violet/40 hover:shadow-pop active:scale-99';
 
   private entered = false;
 

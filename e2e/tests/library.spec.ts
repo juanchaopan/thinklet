@@ -24,7 +24,7 @@ import {
   removeDialog,
   scopeButton,
 } from '../support/books.ts';
-import { familyWithXiaoming } from '../support/children.ts';
+import { familyWithXiaomi } from '../support/children.ts';
 import { createFamily } from '../support/families.ts';
 import { expect, test } from '../support/fixtures.ts';
 import { newUser, signIn } from '../support/sign-in.ts';
@@ -205,7 +205,7 @@ test.describe('the library', () => {
     hasTouch,
   }) => {
     test.skip(hasTouch, 'A touch screen has no keyboard to move by');
-    const { admin: page } = await familyWithXiaoming(openParentPage);
+    const { admin: page } = await familyWithXiaomi(openParentPage);
     await page.goto('/');
     await expect(bookCards(page)).toHaveCount(BATCH_SIZE);
 
@@ -230,9 +230,9 @@ test.describe('the library', () => {
 
     const readers = readersOnCard(card, CARROT.title);
     const dialog = readersDialog(page, CARROT.title);
-    await toggleReaderByKeyboard(page, readers, dialog, '小明');
-    await expect(readers).toHaveAccessibleDescription('小明可以读');
-    await toggleReaderByKeyboard(page, readers, dialog, '小明');
+    await toggleReaderByKeyboard(page, readers, dialog, '小米');
+    await expect(readers).toHaveAccessibleDescription('小米可以读');
+    await toggleReaderByKeyboard(page, readers, dialog, '小米');
     await expect(readers).toHaveAccessibleDescription('还没有孩子在读');
 
     await tabTo(page, card.getByRole('button', { name: '更多操作' }));

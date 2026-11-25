@@ -49,7 +49,7 @@ describe('addChildRequestSchema', () => {
     ]);
   });
 
-  it('rejects other keys, such as a password', () => {
+  it('rejects other keys, such as a password, which the child sets', () => {
     const body = { nickname: '小米', account: 'xiaomi', consent: true, password: 'secret1' };
 
     expect(addChildRequestSchema.safeParse(body).success).toBe(false);
@@ -75,11 +75,27 @@ describe('updateChildRequestSchema', () => {
 });
 
 describe('childListSchema', () => {
-  it('accepts children with their nickname and account', () => {
-    const body = [{ id: childId, nickname: '小米', account: 'xiaomi' }];
+  const doudou = { id: childId, nickname: '豆豆', account: 'doudou' };
+  const settingUp = { ...doudou, passwordSet: false, passwordSetupUntil: '2026-11-25T01:12:00Z' };
+
+  it('accepts children with their nickname, account and whether they have set a password', () => {
+    const body = [
+      settingUp,
+      { ...settingUp, passwordSetupUntil: null },
+      { ...settingUp, passwordSet: true, passwordSetupUntil: null },
+    ];
 
     expect(childListSchema.parse(body)).toEqual(body);
-    expect(childListSchema.safeParse([{ id: childId, nickname: '小米' }]).success).toBe(false);
+  });
+
+  it('needs both password fields and takes a date-time or null until when it can be set', () => {
+    expect(childListSchema.safeParse([{ ...doudou, passwordSetupUntil: null }]).success).toBe(
+      false,
+    );
+    expect(childListSchema.safeParse([{ ...doudou, passwordSet: false }]).success).toBe(false);
+    expect(childListSchema.safeParse([{ ...settingUp, passwordSetupUntil: 'soon' }]).success).toBe(
+      false,
+    );
   });
 });
 

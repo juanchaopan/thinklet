@@ -1,5 +1,6 @@
 import { errorResponseSchema, logoutResponseSchema } from '@thinklet/contracts';
 import { expectAccessiblePage } from '../support/accessibility.ts';
+import { cardCovers, cardTitles, expectCoversLoaded } from '../support/books.ts';
 import { familyOfLinyue } from '../support/families.ts';
 import { expect, test } from '../support/fixtures.ts';
 import {
@@ -128,6 +129,32 @@ test.describe('signing in and out', () => {
     await dialog.getByRole('link', { name: '再试一次' }).click();
     await signInAtProvider(page, newUser('林悦'));
     await expect(page).toHaveURL('/start');
+  });
+
+  // The dialog opens from the address at once, and the library behind it
+  // comes once its books have loaded, its cards rising in one after another.
+  // The page is checked with axe once those cards and their covers are
+  // shown, so their entering animations are among those the check finishes
+  // first rather than caught half faded in.
+  test('a parent still signed in whose new login does not succeed sees 登录没有成功 over the library, which closes to /', async ({
+    openParentPage,
+  }) => {
+    const { admin } = await familyOfLinyue(openParentPage);
+
+    // A login that comes back with an error, as one cancelled at the provider does.
+    await admin.goto('/api/auth/callback?error=access_denied');
+
+    await expect(admin).toHaveURL('/?login=failed');
+    const dialog = admin.getByRole('dialog', { name: '登录没有成功' });
+    await expect(dialog).toBeVisible();
+    await expect(admin.getByText('欢迎回来，林悦')).toBeVisible();
+    await expect(cardTitles(admin).first()).toBeVisible();
+    await expectCoversLoaded(cardCovers(admin));
+    await expectAccessiblePage(admin);
+    await dialog.getByRole('button', { name: '关闭' }).click();
+    await expect(admin).toHaveURL('/');
+    await expect(dialog).toBeHidden();
+    await expect(admin.getByRole('heading', { level: 1, name: '欢迎回来，林悦' })).toBeVisible();
   });
 
   test('signing out ends the login here and at the identity provider, and parent pages need a new login', async ({

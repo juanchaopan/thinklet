@@ -1,41 +1,54 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { Button, PRESS } from '../../shared/ui/button';
+import { PRESS } from '../../shared/ui/button';
 import { ConfirmDialog } from '../../shared/ui/confirm-dialog';
+import { DeleteFamily } from './delete-family';
 import { FamilyStore } from './family-store';
 
 let nextNoteId = 0;
 
 /**
- * 离开家庭 at the foot of the family page (rules.md, 权限). A member leaves
- * after confirming. The admin cannot leave: the button is there but cannot
- * be pressed, with the reason beside it, 先把管理员设给别人才能离开.
+ * The row of the ways out of the family at the foot of the family page
+ * (rules.md, 权限 and 删除家庭; look.md, 布局), on the right: 离开家庭 and,
+ * for the admin, 删除家庭 last. A member leaves after confirming. The admin
+ * cannot leave: the button is there but faded (`ink-soft` at 40% opacity)
+ * and cannot be pressed, with the reason before it in `ink-muted`,
+ * 先把管理员设给别人才能离开. Where the reason and the buttons do not fit on
+ * one line, the reason takes a line of its own above them.
  */
 @Component({
   selector: 'app-leave-family',
-  imports: [Button, ConfirmDialog],
+  imports: [ConfirmDialog, DeleteFamily],
   host: { class: 'block' },
   template: `
     @if (store.family(); as family) {
-      @if (store.admin()) {
-        <div class="flex flex-wrap items-center justify-end gap-2 text-sm text-ink-muted">
+      <div class="flex flex-wrap items-center justify-end gap-2 text-right text-sm text-ink-muted">
+        @if (store.admin()) {
           <span [id]="noteId">先把管理员设给别人才能离开</span>
-          <button type="button" appButton="text" disabled [attr.aria-describedby]="noteId">
-            离开家庭
-          </button>
+        }
+        <div class="flex items-center">
+          @if (store.admin()) {
+            <button
+              type="button"
+              class="inline-flex min-h-11 cursor-default items-center justify-center rounded-full px-4 text-sm font-bold text-ink-soft opacity-40"
+              disabled
+              [attr.aria-describedby]="noteId"
+            >
+              离开家庭
+            </button>
+            <app-delete-family />
+          } @else {
+            <button
+              type="button"
+              class="inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-bold text-rose-ink hover:bg-canvas {{
+                press
+              }}"
+              (click)="asking.set(true)"
+            >
+              离开家庭
+            </button>
+          }
         </div>
-      } @else {
-        <div class="flex justify-end">
-          <button
-            type="button"
-            class="inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-bold text-rose-ink hover:bg-canvas {{
-              press
-            }}"
-            (click)="asking.set(true)"
-          >
-            离开家庭
-          </button>
-        </div>
-      }
+      </div>
       <app-confirm-dialog
         [open]="asking()"
         icon="door"

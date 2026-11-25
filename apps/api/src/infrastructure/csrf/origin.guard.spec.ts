@@ -1,21 +1,46 @@
 import type { ExecutionContext } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import type { Environment } from '../config/environment.js';
 import { ApiError } from '../errors/api-error.js';
 import { hasAllowedOrigin, OriginGuard } from './origin.guard.js';
+import { SkipOriginCheck } from './skip-origin-check.decorator.js';
 
 const APP_ORIGIN = 'https://app.example.com';
 
-function contextFor(method: string, origin?: string): ExecutionContext {
+class SiteController {
+  change(): void {
+    // A route of the site's own pages.
+  }
+}
+
+@SkipOriginCheck()
+class WebhookController {
+  notify(): void {
+    // A route another server calls.
+  }
+}
+
+function contextFor(
+  method: string,
+  origin?: string,
+  controller: new () => object = SiteController,
+): ExecutionContext {
   const request = { method, headers: origin === undefined ? {} : { origin } };
+  const handler = Object.getOwnPropertyNames(controller.prototype)
+    .filter((name) => name !== 'constructor')
+    .map((name) => (controller.prototype as Record<string, unknown>)[name])[0];
   return {
     switchToHttp: () => ({ getRequest: () => request }),
+    getHandler: () => handler,
+    getClass: () => controller,
   } as unknown as ExecutionContext;
 }
 
-const guard = new OriginGuard({
-  get: () => APP_ORIGIN,
-} as unknown as ConfigService<Environment, true>);
+const guard = new OriginGuard(
+  { get: () => APP_ORIGIN } as unknown as ConfigService<Environment, true>,
+  new Reflector(),
+);
 
 describe('hasAllowedOrigin', () => {
   it.each(['GET', 'HEAD', 'OPTIONS', 'get'])(
@@ -53,6 +78,13 @@ describe('OriginGuard', () => {
   it('refuses a change from elsewhere with 403 bad_origin', () => {
     expect(() => guard.canActivate(contextFor('POST', 'https://evil.example'))).toThrow(
       expect.objectContaining({ code: 'bad_origin', status: 403 }) as ApiError,
+    );
+  });
+
+  it('lets a change through without an Origin on a route marked to skip the check', () => {
+    expect(guard.canActivate(contextFor('POST', undefined, WebhookController))).toBe(true);
+    expect(guard.canActivate(contextFor('POST', 'https://evil.example', WebhookController))).toBe(
+      true,
     );
   });
 });

@@ -14,6 +14,7 @@ import { whenBackInFront } from '../../core/connectivity';
 import { CurrentFamily } from '../../core/current-family';
 import { FamilyTroubleView } from '../../core/family-pages';
 import { LibraryAddress } from '../../core/library-address';
+import { LoginFailedDialog } from '../../core/login-failed-dialog';
 import { Session } from '../../core/session';
 import { Art } from '../../shared/ui/art';
 import { BookGrid } from '../../shared/ui/book-tile';
@@ -62,6 +63,9 @@ const RISE_STEP = 40;
  * again. A card opens 谁能读 from its avatars, and asks before it removes a
  * book from the family's books.
  *
+ * A signed-in parent whose sign-in again failed lands on `/?login=failed`,
+ * which is this page: 登录没有成功 covers it (rules.md, 登录和登录状态).
+ *
  * The page opens with its parts rising one after another and the rabbit
  * rising 120 ms after its banner; a new batch, and the books of new filters,
  * rise card by card (look.md, 动画). Everything is read again whenever the
@@ -85,6 +89,7 @@ const RISE_STEP = 40;
     InView,
     LibraryCard,
     LibraryFilters,
+    LoginFailedDialog,
     ReadersDialog,
     RemoveBookDialog,
     WelcomeBanner,
@@ -179,6 +184,7 @@ const RISE_STEP = 40;
         (dismissed)="close()"
       />
     }
+    <app-login-failed-dialog />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

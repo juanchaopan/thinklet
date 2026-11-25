@@ -1,16 +1,17 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import { childSchema, type Child } from '@thinklet/contracts';
 import { ChildDataCipher } from '../../src/infrastructure/child-data/child-data-cipher.js';
 import type { Environment } from '../../src/infrastructure/config/environment.js';
+import { childDevices, children } from '../../src/infrastructure/database/schema.js';
 import { testChildDataKey } from './containers.js';
 import { query } from './database.js';
 import { as, type Parent } from './families.js';
 import type { Target } from './login.js';
 
 // Helpers for tests of the children routes: children added through the api,
-// login links and remembered devices set up directly in the database, and
-// what the database holds about them.
+// remembered devices set up directly in the database, and what the database
+// holds about them. What Redis holds of the login links is in login-links.ts.
 
 /** The api's child data cipher with the key of every api the tests start. */
 export function testChildDataCipher(): ChildDataCipher {
@@ -56,10 +57,8 @@ export interface ChildRow {
   account: string;
   account_lookup: string;
   password_hash: string | null;
+  password_setup_until: Date | null;
   sessions_valid_after: Date;
-  consent_parent_id: string;
-  consent_version: string;
-  consented_at: Date;
   created_at: Date;
   updated_at: Date;
 }
@@ -75,57 +74,56 @@ export async function childRow(
   return row;
 }
 
-/** Gives the child a password hash directly in the database, as setting a password does. */
-export async function setPasswordHash(databaseUrl: string, childId: string): Promise<void> {
-  await query(databaseUrl, 'update children set password_hash = $2 where id = $1', [
-    childId,
-    '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA',
-  ]);
-}
-
-/** A row of the child_login_links table. */
-export interface LoginLinkRow {
-  id: string;
-  child_id: string;
-  token_hash: string;
-  created_by: string;
-  created_at: Date;
-  expires_at: Date;
-  used_at: Date | null;
-  revoked_at: Date | null;
-}
-
-/** The child's login links as the database holds them, oldest first. */
-export async function loginLinkRows(databaseUrl: string, childId: string): Promise<LoginLinkRow[]> {
-  return query<LoginLinkRow>(
+/**
+ * The database's clock now and the child's time to set a password with
+ * the account, as the database holds them.
+ */
+export async function passwordSetupOf(
+  databaseUrl: string,
+  childId: string,
+): Promise<{ now: Date; until: Date | null }> {
+  const [row] = await query<{ now: Date; until: Date | null }>(
     databaseUrl,
-    'select * from child_login_links where child_id = $1 order by created_at, id',
+    'select clock_timestamp() as now, password_setup_until as until from children where id = $1',
+    [childId],
+  );
+  if (row === undefined) {
+    throw new Error(`No child ${childId}`);
+  }
+  return row;
+}
+
+/**
+ * Ends the child's time to set a password with the account, by the
+ * database's clock, as if the 48 hours had passed.
+ */
+export async function endPasswordSetup(databaseUrl: string, childId: string): Promise<void> {
+  await query(
+    databaseUrl,
+    `update children set password_setup_until = clock_timestamp() - interval '1 second' where id = $1`,
     [childId],
   );
 }
 
-/**
- * Records a login link of the child directly in the database: by default
- * one made a minute ago that expires in nine, with the given SQL
- * expressions for its times.
- */
-export async function insertLoginLink(
-  databaseUrl: string,
-  child: { id: string; createdBy: string },
-  times: { expiresAt?: string; usedAt?: string; revokedAt?: string } = {},
-): Promise<string> {
-  const [row] = await query<{ id: string }>(
+/** The nickname and the account of a child's row, decrypted where the row holds them. */
+export function decryptedChild(row: Pick<ChildRow, 'id' | 'nickname' | 'account'>): {
+  nickname: string;
+  account: string;
+} {
+  const cipher = testChildDataCipher();
+  return {
+    nickname: cipher.decrypt(row.nickname, { column: children.nickname, rowId: row.id }),
+    account: cipher.decrypt(row.account, { column: children.account, rowId: row.id }),
+  };
+}
+
+/** Gives the child a password hash directly in the database, as setting a password does. */
+export async function setPasswordHash(databaseUrl: string, childId: string): Promise<void> {
+  await query(
     databaseUrl,
-    `insert into child_login_links (child_id, token_hash, created_by, created_at, expires_at, used_at, revoked_at)
-     values ($1, $2, $3, now() - interval '1 minute', ${times.expiresAt ?? "now() + interval '9 minutes'"},
-             ${times.usedAt ?? 'null'}, ${times.revokedAt ?? 'null'})
-     returning id`,
-    [child.id, randomBytes(32).toString('hex'), child.createdBy],
+    'update children set password_hash = $2, password_setup_until = null where id = $1',
+    [childId, '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'],
   );
-  if (row === undefined) {
-    throw new Error('No login link recorded');
-  }
-  return row.id;
 }
 
 /** A row of the child_devices table. */
@@ -148,30 +146,34 @@ export async function deviceRows(databaseUrl: string, childId: string): Promise<
   );
 }
 
+/** The name of a device's row, decrypted where the row holds it. */
+export function decryptedDeviceName(row: Pick<DeviceRow, 'id' | 'name'>): string {
+  return testChildDataCipher().decrypt(row.name, { column: childDevices.name, rowId: row.id });
+}
+
 /**
- * Remembers the child on a browser directly in the database, with the name
- * encrypted as the api stores it and the last login the given time.
+ * Remembers the child on a browser directly in the database, with an id of
+ * its own and the name encrypted for it as the api stores it, and the last
+ * login the given time.
  */
 export async function insertDevice(
   databaseUrl: string,
   childId: string,
   device: { name: string; rememberedAt: Date; lastUsedAt: Date },
 ): Promise<string> {
-  const [row] = await query<{ id: string }>(
+  const id = randomUUID();
+  await query(
     databaseUrl,
-    `insert into child_devices (child_id, token_hash, name, remembered_at, last_used_at, expires_at)
-     values ($1, $2, $3, $4, $5, $5::timestamptz + interval '30 days')
-     returning id`,
+    `insert into child_devices (id, child_id, token_hash, name, remembered_at, last_used_at, expires_at)
+     values ($1, $2, $3, $4, $5, $6, $6::timestamptz + interval '30 days')`,
     [
+      id,
       childId,
       randomBytes(32).toString('hex'),
-      testChildDataCipher().encrypt(device.name),
+      testChildDataCipher().encrypt(device.name, { column: childDevices.name, rowId: id }),
       device.rememberedAt,
       device.lastUsedAt,
     ],
   );
-  if (row === undefined) {
-    throw new Error('No device recorded');
-  }
-  return row.id;
+  return id;
 }

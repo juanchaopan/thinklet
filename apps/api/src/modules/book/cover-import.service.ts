@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { StorageService } from '../../infrastructure/storage/storage.service.js';
 import { readBookCover, type LocalCover } from './cover-files.js';
-import { COVER_MEDIA_TYPES, COVER_SHA256_METADATA, coverStorageKey } from './cover-image.js';
+import {
+  COVER_MEDIA_TYPES,
+  COVER_SHA256_METADATA,
+  COVER_TYPES,
+  coverStorageKey,
+} from './cover-image.js';
 import { CoverImportRepository } from './cover-import.repository.js';
 
 /** What one import did. */
@@ -52,12 +57,14 @@ export class CoverImportService {
   /**
    * Checks every book's cover first and changes nothing when any is missing
    * or breaks the rules. Then writes each cover whose stored copy is missing
-   * or differs, and last records every cover's type and hash in one
-   * transaction, so the table never points at a cover that is not stored.
-   * Between a cover's write and the recording of its hash, the address with
-   * the recorded hash answers not found rather than the new bytes, as the
-   * cover service serves an object only under the hash in its metadata.
-   * Running it again with the same files changes nothing.
+   * or differs, records every cover's type and hash in one transaction, and
+   * last deletes each book's cover in the other format, so the table never
+   * points at a cover that is not stored and a cover that changed format
+   * leaves no old file behind. Between a cover's write and the recording of
+   * its hash, the address with the recorded hash answers not found rather
+   * than the new bytes, as the cover service serves an object only under
+   * the hash in its metadata. Running it again with the same files changes
+   * nothing.
    */
   async importCovers(contentDirectory: string): Promise<CoverImportSummary> {
     const bookIds = await this.repository.listBookIds();
@@ -90,6 +97,9 @@ export class CoverImportService {
     const recorded = await this.repository.recordCovers(
       covers.map(({ bookId, cover }) => ({ bookId, type: cover.type, sha256: cover.sha256 })),
     );
+    for (const { bookId, cover } of covers) {
+      await this.deleteOtherFormats(bookId, cover);
+    }
     return { books: covers.length, uploaded, unchanged: covers.length - uploaded, recorded };
   }
 
@@ -115,5 +125,18 @@ export class CoverImportService {
       metadata: { [COVER_SHA256_METADATA]: cover.sha256 },
     });
     return true;
+  }
+
+  /**
+   * Deletes the book's stored cover in every format but the cover's own,
+   * the one left behind when the cover changed format. Deleting a cover
+   * that is not there changes nothing, so a rerun is safe.
+   */
+  private async deleteOtherFormats(bookId: string, cover: LocalCover): Promise<void> {
+    for (const type of COVER_TYPES) {
+      if (type !== cover.type) {
+        await this.storage.deleteObject(coverStorageKey(bookId, type));
+      }
+    }
   }
 }

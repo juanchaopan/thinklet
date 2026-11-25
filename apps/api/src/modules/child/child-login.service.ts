@@ -4,22 +4,25 @@ import type {
   ChildLoginLinkInfo,
   ChildLoginRequest,
   ChildLoginResponse,
+  ChildNeedsPassword,
   RememberedChild,
   SetChildPasswordRequest,
+  SetChildPasswordWithAccountRequest,
 } from '@thinklet/contracts';
+import type { Executor } from '../../infrastructure/database/database.module.js';
 import { ApiError } from '../../infrastructure/errors/api-error.js';
-import { PasswordHasher } from '../../infrastructure/passwords/password-hasher.js';
+import { AuditService, byChild } from '../audit/audit.service.js';
 import { FamiliesService } from '../family/families.service.js';
 import {
   ChildLoginRepository,
+  canSetPasswordWithAccount,
   type ChildLoginStore,
-  type LinkRecord,
-  type LinkState,
   type LoginCandidate,
 } from './child-login.repository.js';
-import { loginLinkStatus } from './children.service.js';
+import { ChildPasswords, type LoginSubject } from './child-passwords.js';
 import { rememberedUntil } from './device-cookie.js';
 import { deviceNameOf } from './device-name.js';
+import type { ActiveLoginLink } from './login-links.js';
 import { hashToken, newToken } from './tokens.js';
 
 const loginFailed = () => new ApiError('login_failed', HttpStatus.UNAUTHORIZED);
@@ -39,6 +42,11 @@ export interface Browser {
   deviceToken: string | undefined;
   /** The browser's User-Agent, which only the device name is taken from. */
   userAgent: string | undefined;
+  /**
+   * The client's IP address as the proxy in front of the api wrote it, the
+   * source the rate limits count failed logins by; undefined without one.
+   */
+  clientIp: string | undefined;
 }
 
 /** A child's login that succeeded, for the controller to sign the child in with. */
@@ -47,16 +55,42 @@ export interface CompletedLogin {
   /** The device token to set in the browser's cookie, renewing it; undefined leaves the cookie as it is. */
   deviceToken: string | undefined;
   /**
-   * The issue time of the child's session, taken under the child's lock
-   * with the login's checks and writes; a password reset after the login
-   * is later than it, and so ends the session.
+   * The issue time of the child's session: the database's clock once the
+   * child's row is locked. A password reset after the login takes its time
+   * from the same clock, later, and so ends the session, whatever the
+   * clocks of the api instances that run the two.
    */
   issuedAt: Date;
 }
 
-/** An active login link read by its token before any lock, with the token's hash to lock it by. */
-interface FoundLink extends LinkRecord {
-  tokenHash: string;
+/** How a login is answered with the account: signed in, or the child has to set a password first. */
+export type AccountLogin = CompletedLogin | ChildNeedsPassword;
+
+/** A login link that could be used when read, before any lock, with its child as it was then. */
+interface FoundLink {
+  link: ActiveLoginLink;
+  child: LoginCandidate;
+}
+
+/** The child a family code and an account name, if any, and whom a login with them counts against. */
+interface AccountMatch {
+  candidate: LoginCandidate | undefined;
+  subject: LoginSubject;
+}
+
+/** A child whose password a login has verified, with the hash it was verified against. */
+interface VerifiedChild {
+  child: LoginCandidate;
+  passwordHash: string;
+}
+
+/** The locked child of a login, with the store and the transaction the login's writes are made in. */
+interface LockedLogin {
+  store: ChildLoginStore;
+  child: LoginCandidate;
+  transaction: Executor;
+  /** The database's clock once the child is locked: the time of every write and of the session. */
+  now: Date;
 }
 
 /**
@@ -64,73 +98,105 @@ interface FoundLink extends LinkRecord {
  * child's current row no longer allows, makes the login's writes and
  * returns the device token for the browser's cookie.
  */
-type LockedStep = (store: ChildLoginStore, child: LoginCandidate) => Promise<string | undefined>;
+type LockedStep = (login: LockedLogin) => Promise<string | undefined>;
 
 /** What a login on a link checks, and changes, of the link's locked child before the link is used. */
-type LinkStep = (store: ChildLoginStore, child: LoginCandidate) => Promise<void> | void;
-
-/** The link, when it can be used at `now`; else 404 `link_invalid`. */
-function requireActive<T extends LinkState>(link: T | undefined, now: Date): T {
-  if (link === undefined || loginLinkStatus(link, now) !== 'active') {
-    throw linkInvalid();
-  }
-  return link;
-}
+type LinkStep = (login: LockedLogin) => Promise<void> | void;
 
 /**
  * A child's logins (`.docs/design/interfaces.md`, "孩子登录"): with the
  * family code, the account and the password, by a remembered avatar, and
- * by a login link, where a child without a password sets one. Every
- * successful login leaves the browser remembering the child or not, as the
- * child chose. Signing the child in is the controller's: it sets the
- * cookies of the completed login.
+ * by a login link. A child without a password sets the first one: on a
+ * link at any time, and with the family code and the account only until
+ * the time a parent left for it when adding the child or resetting the
+ * password (`.docs/design/rules.md`, "孩子的密码"). Every successful login
+ * deletes the child's expired devices and leaves the browser remembering
+ * the child or not, as the child chose. Signing the child in is the
+ * controller's: it sets the cookies of the completed login. A login itself
+ * is not an audit event, nor are the device changes that come with it; the
+ * password a child sets is, by the child, in the login's transaction.
  *
- * Each login ends in one transaction that locks the child's row and then
- * re-checks what was checked before it, writes the browser's row and takes
- * the session's issue time. A password reset locks the same row first, so
- * it runs wholly before the login, which the re-check then refuses, or
- * wholly after it, when it forgets the browser and ends the session. The
- * slow work of a password, hashing or verifying it, is done before the
- * transaction, so no lock is held during it: the re-check compares the
- * child's password hash with the one verified.
+ * The logins that take a password, with the account (setting the first
+ * one included) and on a link, are made within ChildPasswords' limits:
+ * once it is known whom the login is for, a source at its limit is refused
+ * before anything is checked, and a refusal counts against the source.
+ *
+ * Each login ends in one transaction that locks the child's row, reads the
+ * database's clock, and then re-checks what was checked before it, writes
+ * the browser's row and issues the session at that time. A password reset
+ * locks the same row first, so it runs wholly before the login, which the
+ * re-check then refuses, or wholly after it, when it forgets the browser
+ * and ends the session. The slow work of a password, hashing or verifying
+ * it, is done before the transaction, so no lock is held during it: the
+ * re-check compares the child's password hash with the one verified, or
+ * finds the child still without one.
+ *
+ * The login links are in Redis; while Redis cannot be reached, a link can
+ * be neither read nor used, and the other logins go on.
  */
 @Injectable()
 export class ChildLoginService {
-  /** A hash of a random password, made once and checked when there is no hash to check. */
-  private standIn: Promise<string> | undefined;
-
   constructor(
     private readonly repository: ChildLoginRepository,
     private readonly families: FamiliesService,
-    private readonly hasher: PasswordHasher,
+    private readonly passwords: ChildPasswords,
+    private readonly audit: AuditService,
   ) {}
 
   /**
    * Logs the child in with the family code, the account and the password.
-   * A wrong code, account or password, and a child without a password yet,
-   * are all 401 `login_failed`. A password is checked against a hash every
-   * time, a stand-in one with the same cost when there is no child or no
-   * password, so the time taken does not tell which was wrong either.
+   * A child who has no password and may still set one with the account is
+   * answered so, whatever password came, and nobody is signed in. Else a
+   * wrong code, account or password, a child with a password and none
+   * given, and a child without one whose time to set it has run out are
+   * all 401 `login_failed`. The login counts against the child found, or
+   * against the code and account typed when they match no child.
    */
-  async login(request: ChildLoginRequest, browser: Browser): Promise<CompletedLogin> {
-    const familyId = await this.families.findIdByCode(request.code);
-    const candidate =
-      familyId === undefined
-        ? undefined
-        : await this.repository.findLoginCandidate(familyId, request.account);
-    const passwordHash = candidate?.passwordHash ?? null;
-    const matches = await this.hasher.verify(
-      request.password,
-      passwordHash ?? (await this.standInHash()),
-    );
-    if (candidate === undefined || passwordHash === null || !matches) {
-      throw loginFailed();
-    }
-    return this.locked(candidate.id, loginFailed, (store, child) => {
-      if (child.passwordHash !== passwordHash) {
+  async login(request: ChildLoginRequest, browser: Browser): Promise<AccountLogin> {
+    const { candidate, subject } = await this.matchAccount(request.code, request.account);
+    return this.passwords.attempt(browser.clientIp, subject, async (): Promise<AccountLogin> => {
+      if (candidate !== undefined && (await this.canSetNow(candidate))) {
+        return { needsPassword: true, id: candidate.id, nickname: candidate.nickname };
+      }
+      const verified = await this.verify(candidate, request.password);
+      if (verified === undefined) {
         throw loginFailed();
       }
-      return this.applyRemember(store, child.id, request.remember, browser);
+      return this.locked(verified.child.id, loginFailed, (login) => {
+        if (login.child.passwordHash !== verified.passwordHash) {
+          throw loginFailed();
+        }
+        return this.applyRemember(login, request.remember, browser);
+      });
+    });
+  }
+
+  /**
+   * Sets the first password of the child the family code and the account
+   * find, and logs the child in, while the child has no password and the
+   * time to set it with the account has not run out; the password is
+   * recorded as `child.password_set` by the child, `via` the account. A
+   * wrong code or account, a child who has a password, and a time run out
+   * are all 401 `login_failed`, before anything is hashed, and count
+   * against the source as a failed login does.
+   */
+  async setPasswordWithAccount(
+    request: SetChildPasswordWithAccountRequest,
+    browser: Browser,
+  ): Promise<CompletedLogin> {
+    const { candidate, subject } = await this.matchAccount(request.code, request.account);
+    return this.passwords.attempt(browser.clientIp, subject, async () => {
+      if (candidate === undefined || !(await this.canSetNow(candidate))) {
+        throw loginFailed();
+      }
+      const passwordHash = await this.passwords.hash(request.password);
+      return this.locked(candidate.id, loginFailed, async (login) => {
+        if (!canSetPasswordWithAccount(login.child, login.now)) {
+          throw loginFailed();
+        }
+        await this.setFirstPassword(login, passwordHash, 'account');
+        return this.applyRemember(login, request.remember, browser);
+      });
     });
   }
 
@@ -143,7 +209,7 @@ export class ChildLoginService {
     if (deviceToken === undefined) {
       return [];
     }
-    const records = await this.repository.listRemembered(hashToken(deviceToken), new Date());
+    const records = await this.repository.listRemembered(hashToken(deviceToken));
     const familyIds = [...new Set(records.map((record) => record.familyId))];
     const codes = await this.families.codesOf(familyIds);
     return records.flatMap(({ childId, familyId, nickname, account }) => {
@@ -154,16 +220,15 @@ export class ChildLoginService {
 
   /**
    * Logs in a child the browser remembers, without a password, and renews
-   * the browser's remembering for 30 days. A browser that does not remember
-   * the child (revoked, expired, another child's, no device token) is 401
-   * `remember_invalid`.
+   * the browser's remembering for 30 days under the token it has. A browser
+   * that does not remember the child (revoked, expired, another child's, no
+   * device token) is 401 `remember_invalid`.
    */
   async loginRemembered(childId: string, deviceToken: string | undefined): Promise<CompletedLogin> {
     if (deviceToken === undefined) {
       throw rememberInvalid();
     }
-    return this.locked(childId, rememberInvalid, async (store, child) => {
-      const now = new Date();
+    return this.locked(childId, rememberInvalid, async ({ store, child, now }) => {
       const renewed = await store.renewDevice(
         child.id,
         hashToken(deviceToken),
@@ -179,17 +244,19 @@ export class ChildLoginService {
 
   /** Whose login link it is and whether the child still has to set a password; reading it does not use it. */
   async linkInfo(token: string): Promise<ChildLoginLinkInfo> {
-    const link = await this.findActiveLink(token);
+    const { child } = await this.findActiveLink(token);
     return {
-      childId: link.childId,
-      nickname: link.nickname,
-      needsPassword: link.passwordHash === null,
+      childId: child.id,
+      nickname: child.nickname,
+      needsPassword: child.passwordHash === null,
     };
   }
 
   /**
-   * Sets the first password of the link's child, uses the link and logs
-   * the child in. A child who has a password by then is 409
+   * Sets the first password of the link's child, whenever the child was
+   * added or the password reset, uses the link and logs the child in; the
+   * password is recorded as `child.password_set` by the child, `via` the
+   * QR code. A child who has a password by then is 409
    * `password_already_set`.
    */
   async setPasswordWithLink(
@@ -197,16 +264,16 @@ export class ChildLoginService {
     request: SetChildPasswordRequest,
     browser: Browser,
   ): Promise<CompletedLogin> {
-    const link = await this.findActiveLink(token);
-    if (link.passwordHash !== null) {
+    const found = await this.findActiveLink(token);
+    if (found.child.passwordHash !== null) {
       throw passwordAlreadySet();
     }
-    const passwordHash = await this.hasher.hash(request.password);
-    return this.loginOnLink(link, request.remember, browser, async (store, child) => {
-      if (child.passwordHash !== null) {
+    const passwordHash = await this.passwords.hash(request.password);
+    return this.loginOnLink(found.link, request.remember, browser, async (login) => {
+      if (login.child.passwordHash !== null) {
         throw passwordAlreadySet();
       }
-      await store.setPassword(child.id, passwordHash);
+      await this.setFirstPassword(login, passwordHash, 'qr');
     });
   }
 
@@ -214,115 +281,209 @@ export class ChildLoginService {
    * Logs the link's child in with the password the child has, using the
    * link. A wrong password is 401 `wrong_password` and leaves the link as
    * it was; a child without a password is 409 `password_not_set`. A
-   * password changed while it was verified is wrong as well.
+   * password changed while it was verified is wrong as well. The login
+   * counts against the link's child.
    */
   async loginWithLink(
     token: string,
     request: ChildLinkLoginRequest,
     browser: Browser,
   ): Promise<CompletedLogin> {
-    const link = await this.findActiveLink(token);
-    const verified = link.passwordHash;
+    const { link, child } = await this.findActiveLink(token);
+    const verified = child.passwordHash;
     if (verified === null) {
       throw passwordNotSet();
     }
-    if (!(await this.hasher.verify(request.password, verified))) {
-      throw wrongPassword();
-    }
-    return this.loginOnLink(link, request.remember, browser, (_store, child) => {
-      if (child.passwordHash === null) {
-        throw passwordNotSet();
-      }
-      if (child.passwordHash !== verified) {
+    return this.passwords.attempt(browser.clientIp, { childId: child.id }, async () => {
+      if (!(await this.passwords.verify(request.password, verified))) {
         throw wrongPassword();
       }
+      return this.loginOnLink(link, request.remember, browser, ({ child: locked }) => {
+        if (locked.passwordHash === null) {
+          throw passwordNotSet();
+        }
+        if (locked.passwordHash !== verified) {
+          throw wrongPassword();
+        }
+      });
     });
   }
 
-  /** The login link of the token, read without a lock, when it can be used now; else 404 `link_invalid`. */
-  private async findActiveLink(token: string): Promise<FoundLink> {
-    const tokenHash = hashToken(token);
-    const link = requireActive(await this.repository.findLinkByToken(tokenHash), new Date());
-    return { ...link, tokenHash };
+  /**
+   * The child of the family with the code and the account, if any, and the
+   * subject a login with them counts against: the child found, or the code
+   * and the account as typed.
+   */
+  private async matchAccount(code: string, account: string): Promise<AccountMatch> {
+    const familyId = await this.families.findIdByCode(code);
+    const candidate =
+      familyId === undefined
+        ? undefined
+        : await this.repository.findLoginCandidate(familyId, account);
+    return {
+      candidate,
+      subject: candidate === undefined ? { code, account } : { childId: candidate.id },
+    };
   }
 
   /**
-   * Logs the child of a link found before the transaction in: under the
-   * child's lock the link is locked and checked again, the step checks the
-   * child and may set its password, then the link is used. Of two logins on
-   * one link at once only the first uses it and the other finds it used. A
-   * step that refuses leaves the link as it was.
+   * Whether the child found may set a first password with the account now,
+   * by the database's clock; the clock is read only for a child without a
+   * password.
+   */
+  private async canSetNow(child: LoginCandidate): Promise<boolean> {
+    return (
+      child.passwordHash === null &&
+      canSetPasswordWithAccount(child, await this.repository.databaseNow())
+    );
+  }
+
+  /**
+   * The child found with the hash the password given was verified against,
+   * when the child has a password and it is the one given; else undefined.
+   * The password is checked every time, an empty one when none was given,
+   * against a stand-in hash when there is no child or no password, so the
+   * time taken does not tell which was wrong.
+   */
+  private async verify(
+    candidate: LoginCandidate | undefined,
+    password: string | undefined,
+  ): Promise<VerifiedChild | undefined> {
+    const passwordHash = candidate?.passwordHash ?? null;
+    const matches = await this.passwords.verify(password ?? '', passwordHash);
+    return candidate !== undefined && passwordHash !== null && password !== undefined && matches
+      ? { child: candidate, passwordHash }
+      : undefined;
+  }
+
+  /** Stores the locked child's first password and records it, by the child, in the login's transaction. */
+  private async setFirstPassword(
+    { store, child, transaction }: LockedLogin,
+    passwordHash: string,
+    via: 'account' | 'qr',
+  ): Promise<void> {
+    await store.setPassword(child.id, passwordHash);
+    await this.audit.record(transaction, {
+      actor: byChild(child.id),
+      action: 'child.password_set',
+      targetId: child.id,
+      familyId: child.familyId,
+      details: { via },
+    });
+  }
+
+  /**
+   * The login link of the token, with its child read without a lock, when
+   * the link can be used now and its child is still there; else 404
+   * `link_invalid`.
+   */
+  private async findActiveLink(token: string): Promise<FoundLink> {
+    const link = await this.repository.findLink(hashToken(token));
+    const child =
+      link === undefined ? undefined : await this.repository.findCandidate(link.childId);
+    if (link === undefined || child === undefined) {
+      throw linkInvalid();
+    }
+    return { link, child };
+  }
+
+  /**
+   * Logs the child of a link found before the transaction in. Under the
+   * child's lock the link is read again, so a link used meanwhile is
+   * `link_invalid` before anything else; the step checks the child and may
+   * set its password, the browser is remembered or forgotten, and then the
+   * link is used, in one Redis script, as the last step of the transaction.
+   * Of two logins on one link at once only the first uses it: the other
+   * finds it used, and should both come to use it, Redis lets one only,
+   * and the other's writes are rolled back. A step that refuses leaves the
+   * link as it was.
    */
   private loginOnLink(
-    link: FoundLink,
+    link: ActiveLoginLink,
     remember: boolean,
     browser: Browser,
     step: LinkStep,
   ): Promise<CompletedLogin> {
-    return this.locked(link.childId, linkInvalid, async (store, child) => {
-      const locked = requireActive(await store.lockLink(child.id, link.tokenHash), new Date());
-      await step(store, child);
-      await store.markLinkUsed(locked.linkId, new Date());
-      return this.applyRemember(store, child.id, remember, browser);
+    return this.locked(link.childId, linkInvalid, async (login) => {
+      if ((await this.repository.findLink(link.tokenHash)) === undefined) {
+        throw linkInvalid();
+      }
+      await step(login);
+      const deviceToken = await this.applyRemember(login, remember, browser);
+      if (!(await this.repository.takeLink(link))) {
+        throw linkInvalid();
+      }
+      return deviceToken;
     });
   }
 
   /**
    * Completes a login of the child in one transaction holding the child's
-   * lock: the step runs on the locked child, and the session's issue time
-   * is taken after it. A child gone by then is refused with `gone`.
+   * lock. Once the child is locked the database's clock is read, the
+   * child's devices expired by then are deleted (`.docs/design/data.md`,
+   * "child_devices"), and the step runs on the locked child; the session is
+   * issued at that time. A child gone by then is refused with `gone`, and a
+   * step that refuses rolls the deleting back with the rest.
    */
   private locked(childId: string, gone: () => ApiError, step: LockedStep): Promise<CompletedLogin> {
-    return this.repository.transaction(async (store) => {
+    return this.repository.transaction(async (store, transaction) => {
       const child = await store.lockChild(childId);
       if (child === undefined) {
         throw gone();
       }
-      const deviceToken = await step(store, child);
+      const now = await store.databaseNow();
+      await store.deleteExpiredDevices(child.id, now);
+      const deviceToken = await step({ store, child, transaction, now });
       return {
         child: { id: child.id, nickname: child.nickname },
         deviceToken,
-        issuedAt: new Date(),
+        issuedAt: now,
       };
     });
   }
 
   /**
-   * Remembers the child on the browser for 30 days from now, making the
-   * browser a device token when it has none, and returns the token for the
-   * cookie. When the child is not to be remembered, it forgets the child on
-   * this browser and leaves the cookie, which other children may share.
+   * Remembers the child on the browser for 30 days from a login with a
+   * password or on a link, under a new device token, and returns it for the
+   * cookie (`.docs/design/rules.md`, "在这台设备上记住我"). The browser's
+   * devices of the child's family that are still valid move from its old
+   * token to the new one, so the siblings it remembers keep their avatars;
+   * then the child's own row is renewed, or made, under the new token. The
+   * old token is not kept even when a valid device has it: a token written
+   * into the browser by someone else, one another family's child is
+   * remembered by included, never becomes this child's credential, and the
+   * devices of other families stay under it, which the browser no longer
+   * has, until they expire. When the child is not to be remembered, it
+   * forgets the child on this browser and leaves the cookie, which other
+   * children may share.
    */
   private async applyRemember(
-    store: ChildLoginStore,
-    childId: string,
+    { store, child, now }: LockedLogin,
     remember: boolean,
     browser: Browser,
   ): Promise<string | undefined> {
     if (!remember) {
       if (browser.deviceToken !== undefined) {
-        await store.forgetDevice(childId, hashToken(browser.deviceToken));
+        await store.forgetDevice(child.id, hashToken(browser.deviceToken));
       }
       return undefined;
     }
-    const { token, hash } =
-      browser.deviceToken === undefined
-        ? newToken()
-        : { token: browser.deviceToken, hash: hashToken(browser.deviceToken) };
-    const now = new Date();
+    const { token, hash } = newToken();
+    if (browser.deviceToken !== undefined) {
+      await store.moveFamilyDevices({
+        familyId: child.familyId,
+        fromTokenHash: hashToken(browser.deviceToken),
+        toTokenHash: hash,
+        now,
+      });
+    }
     await store.rememberDevice({
-      childId,
+      childId: child.id,
       tokenHash: hash,
       name: deviceNameOf(browser.userAgent),
       now,
       expiresAt: rememberedUntil(now),
     });
     return token;
-  }
-
-  /** The stand-in hash, made on first use with the cost of every new hash. */
-  private standInHash(): Promise<string> {
-    this.standIn ??= this.hasher.hash(newToken().token);
-    return this.standIn;
   }
 }
