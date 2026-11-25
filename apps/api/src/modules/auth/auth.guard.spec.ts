@@ -5,6 +5,7 @@ import { ChildRoute } from '../../infrastructure/authentication/child-route.deco
 import { currentParentIdOf } from '../../infrastructure/authentication/current-parent.js';
 import { ParentOrChildRoute } from '../../infrastructure/authentication/parent-or-child-route.decorator.js';
 import { Public } from '../../infrastructure/authentication/public.decorator.js';
+import type { FamilyService } from '../family/family.service.js';
 import { AuthGuard } from './auth.guard.js';
 import { ParentSessionService } from './parent-session.service.js';
 import type { Session, SessionTokensService } from './session-tokens.service.js';
@@ -27,13 +28,20 @@ function handler(): void {}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function setUp(session: Session | undefined, cookies: Record<string, string> = {}) {
+interface Options {
+  cookies?: Record<string, string>;
+  /** Whether the session's parent still exists. */
+  parentExists?: boolean;
+}
+
+function setUp(session: Session | undefined, { cookies = {}, parentExists = true }: Options = {}) {
   const tokens = {
     verifySession: vi.fn(() => Promise.resolve(session)),
     issueSession: vi.fn(() => Promise.resolve('renewed-session')),
   };
+  const family = { exists: vi.fn(() => Promise.resolve(parentExists)) };
   const request = { cookies } as unknown as Request;
-  const response = { cookie: vi.fn() };
+  const response = { cookie: vi.fn(), clearCookie: vi.fn() };
   const contextFor = (controller: object): ExecutionContext =>
     ({
       getHandler: () => handler,
@@ -42,10 +50,14 @@ function setUp(session: Session | undefined, cookies: Record<string, string> = {
     }) as unknown as ExecutionContext;
   const guard = new AuthGuard(
     new Reflector(),
-    new ParentSessionService(tokens as unknown as SessionTokensService),
+    new ParentSessionService(
+      tokens as unknown as SessionTokensService,
+      family as unknown as FamilyService,
+    ),
   );
   return {
     tokens,
+    family,
     request,
     response,
     closed: () => guard.canActivate(contextFor(ClosedController)),
@@ -71,7 +83,7 @@ describe('AuthGuard', () => {
 
   it("leaves a child route to the child's login check, asking for no parent", async () => {
     const { child, tokens, response } = setUp(undefined, {
-      thinklet_child_session: 'child-session-1',
+      cookies: { thinklet_child_session: 'child-session-1' },
     });
 
     await expect(child()).resolves.toBe(true);
@@ -88,26 +100,43 @@ describe('AuthGuard', () => {
   });
 
   it('refuses any other route without a valid login with 401 unauthenticated', async () => {
-    const { closed } = setUp(undefined, { thinklet_session: 'bad' });
+    const { closed, family } = setUp(undefined, { cookies: { thinklet_session: 'bad' } });
 
     await expect(closed()).rejects.toMatchObject({ code: 'unauthenticated', status: 401 });
+    expect(family.exists).not.toHaveBeenCalled();
   });
 
   it("verifies only the parent's cookie, as a parent login, and records the parent", async () => {
-    const { closed, tokens, request, response } = setUp(sessionExpiringIn(6 * DAY_MS), {
-      thinklet_session: 'session-1',
-      thinklet_child_session: 'child-session-1',
+    const { closed, tokens, family, request, response } = setUp(sessionExpiringIn(6 * DAY_MS), {
+      cookies: { thinklet_session: 'session-1', thinklet_child_session: 'child-session-1' },
     });
 
     await expect(closed()).resolves.toBe(true);
     expect(tokens.verifySession).toHaveBeenCalledTimes(1);
     expect(tokens.verifySession).toHaveBeenCalledWith('session-1', 'parent', expect.any(Date));
+    expect(family.exists).toHaveBeenCalledWith('parent-1');
     expect(currentParentIdOf(request)).toBe('parent-1');
     expect(response.cookie).not.toHaveBeenCalled();
   });
 
+  it('refuses the valid session of a deleted parent with 401 and clears its cookies, renewing nothing', async () => {
+    const { closed, tokens, request, response } = setUp(sessionExpiringIn(DAY_MS), {
+      cookies: { thinklet_session: 'session-1', thinklet_id_token: 'id-token-1' },
+      parentExists: false,
+    });
+
+    await expect(closed()).rejects.toMatchObject({ code: 'unauthenticated', status: 401 });
+    expect(() => currentParentIdOf(request)).toThrow();
+    expect(tokens.issueSession).not.toHaveBeenCalled();
+    expect(response.cookie).not.toHaveBeenCalled();
+    expect(response.clearCookie).toHaveBeenCalledWith('thinklet_session', expect.any(Object));
+    expect(response.clearCookie).toHaveBeenCalledWith('thinklet_id_token', expect.any(Object));
+  });
+
   it("refuses a browser with only a child's login", async () => {
-    const { closed, tokens } = setUp(undefined, { thinklet_child_session: 'child-session-1' });
+    const { closed, tokens } = setUp(undefined, {
+      cookies: { thinklet_child_session: 'child-session-1' },
+    });
 
     await expect(closed()).rejects.toMatchObject({ code: 'unauthenticated', status: 401 });
     expect(tokens.verifySession).toHaveBeenCalledWith(undefined, 'parent', expect.any(Date));
@@ -115,8 +144,7 @@ describe('AuthGuard', () => {
 
   it('renews a login with less than 3.5 days left as a parent login, with the ID token', async () => {
     const { closed, tokens, response } = setUp(sessionExpiringIn(3 * DAY_MS), {
-      thinklet_session: 'session-1',
-      thinklet_id_token: 'id-token-1',
+      cookies: { thinklet_session: 'session-1', thinklet_id_token: 'id-token-1' },
     });
 
     await closed();
@@ -136,7 +164,7 @@ describe('AuthGuard', () => {
 
   it('renews only the session when the browser has no ID token', async () => {
     const { closed, response } = setUp(sessionExpiringIn(DAY_MS), {
-      thinklet_session: 'session-1',
+      cookies: { thinklet_session: 'session-1' },
     });
 
     await closed();

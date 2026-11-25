@@ -70,6 +70,8 @@ describe('parseRiskRules', () => {
     'apps/api/src/modules/auth/auth.controller.ts',
     'apps/api/src/modules/family/family.service.ts',
     'apps/api/src/modules/audit/audit.service.ts',
+    'apps/api/src/modules/account/account.service.ts',
+    'apps/api/src/modules/account/authing-webhook.controller.ts',
     'apps/web/src/app/core/auth/auth.service.ts',
     'apps/api/src/data-migrations/0001-bind-child-ciphertexts.ts',
     'apps/api/src/migrate-data.ts',

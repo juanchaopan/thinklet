@@ -25,6 +25,9 @@ const PER_SOURCE = 200;
 const FAMILY_CODE_WINDOW_SECONDS = 60 * 60;
 const FAMILY_CODE_MISSES = 30;
 
+/** How many attempts over a limit a burst sends at the same time. */
+const BURST_EXTRA = 15;
+
 // Acceptance criterion 28: the child login with the family code, the account
 // and the password, the password on a QR login page and a parent's family
 // code lookup are refused once a source has failed too often in a window;
@@ -57,6 +60,19 @@ describe('rate limits by source', () => {
     return statuses;
   }
 
+  /** Sends the request `times` times at once and returns how many got each status. */
+  async function burstOf(
+    times: number,
+    send: () => Promise<request.Response>,
+  ): Promise<Record<number, number>> {
+    const responses = await Promise.all(Array.from({ length: times }, send));
+    const counts: Record<number, number> = {};
+    for (const { status } of responses) {
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   beforeAll(async () => {
     parent = await signInParent(running.server);
     family = await createFamily(running.server, parent);
@@ -76,6 +92,19 @@ describe('rate limits by source', () => {
       expect(refused.headers['set-cookie']).toBeUndefined();
     });
 
+    it('checks no more than 10 wrong passwords on a child sent at the same time', async () => {
+      const child = await withPassword();
+      const sibling = await withPassword();
+      const clientIp = newClientIp();
+
+      expect(
+        await burstOf(PER_CHILD + BURST_EXTRA, () => browserAt(clientIp).login(wrongLogin(child))),
+      ).toEqual({ 401: PER_CHILD, 429: BURST_EXTRA });
+
+      expectRateLimited(await browserAt(clientIp).login(loginOf(child)), CHILD_WINDOW_SECONDS);
+      expect((await browserAt(clientIp).login(loginOf(sibling))).status).toBe(200);
+    });
+
     it('does not count a successful login', async () => {
       const child = await withPassword();
       const kid = browserAt(newClientIp());
@@ -87,6 +116,19 @@ describe('rate limits by source', () => {
       expect((await kid.login(wrongLogin(child))).status).toBe(401);
 
       expectRateLimited(await kid.login(loginOf(child)), CHILD_WINDOW_SECONDS);
+    });
+
+    it('does not count successful logins sent at the same time', async () => {
+      const child = await withPassword();
+      const clientIp = newClientIp();
+
+      expect(await burstOf(PER_CHILD, () => browserAt(clientIp).login(loginOf(child)))).toEqual({
+        200: PER_CHILD,
+      });
+
+      expect(
+        await statusesOf(PER_CHILD, () => browserAt(clientIp).login(wrongLogin(child))),
+      ).toEqual(Array<number>(PER_CHILD).fill(401));
     });
 
     it('lets another child behind the same source log in, and the child from another source', async () => {
@@ -183,6 +225,17 @@ describe('rate limits by source', () => {
 
       expectRateLimited(await lookUp(applicant, family.code, clientIp), FAMILY_CODE_WINDOW_SECONDS);
       expect((await lookUp(applicant, family.code, newClientIp())).status).toBe(200);
+    });
+
+    it('looks up no more than 30 codes not found sent at the same time', async () => {
+      const applicant = await signInParent(running.server);
+      const clientIp = newClientIp();
+
+      expect(
+        await burstOf(FAMILY_CODE_MISSES + BURST_EXTRA, () =>
+          lookUp(applicant, unknownFamilyCode(), clientIp),
+        ),
+      ).toEqual({ 404: FAMILY_CODE_MISSES, 429: BURST_EXTRA });
     });
 
     it('counts only codes not found: neither a family found nor one the parent is in', async () => {

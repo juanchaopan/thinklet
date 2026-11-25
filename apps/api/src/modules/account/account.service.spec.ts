@@ -1,14 +1,14 @@
-import type { ConfigService } from '@nestjs/config';
-import type { Environment } from '../../infrastructure/config/environment.js';
 import { StillAdminError } from '../../infrastructure/errors/api-error.js';
 import {
   IdentityProviderError,
   type AuthingManagement,
 } from '../../infrastructure/identity-provider/authing-management.js';
+import type { OidcService } from '../auth/oidc.service.js';
 import type { ChildrenService } from '../child/children.service.js';
 import type { ParentDeletionService } from '../family/parent-deletion.service.js';
 import { AccountService } from './account.service.js';
 
+/** The issuer the provider's discovery document names. */
 const ISSUER = 'https://idp.example.com/oidc';
 const PARENT_ID = '0b7c4e2a-1d3f-4a5b-9c6d-7e8f90a1b2c6';
 
@@ -49,13 +49,14 @@ function serviceWith(options: {
       return options.authingFails ? Promise.reject(options.authingFails) : Promise.resolve();
     }),
   };
+  const oidc = { issuerIdentifier: vi.fn(() => Promise.resolve(ISSUER)) };
   const service = new AccountService(
     parents as unknown as ParentDeletionService,
     children as unknown as ChildrenService,
     authing as unknown as AuthingManagement,
-    { get: () => ISSUER } as unknown as ConfigService<Environment, true>,
+    oidc as unknown as OidcService,
   );
-  return { service, calls, parents };
+  return { service, calls, parents, oidc };
 }
 
 describe('AccountService', () => {
@@ -115,7 +116,7 @@ describe('AccountService', () => {
   });
 
   describe('deleteReportedUsers', () => {
-    it("deletes each reported user by the configured issuer, one after another, with their children's links", async () => {
+    it("deletes each reported user by the discovered issuer, one after another, with their children's links", async () => {
       const { service, calls, parents } = serviceWith({});
 
       await service.deleteReportedUsers(['a', 'unknown', 'b']);
@@ -129,6 +130,15 @@ describe('AccountService', () => {
         'deleteReportedAccount b',
         'removeLoginLinksOf child-b',
       ]);
+    });
+
+    it('asks the provider for nothing when no user is reported', async () => {
+      const { service, oidc, calls } = serviceWith({});
+
+      await service.deleteReportedUsers([]);
+
+      expect(oidc.issuerIdentifier).not.toHaveBeenCalled();
+      expect(calls).toEqual([]);
     });
   });
 });

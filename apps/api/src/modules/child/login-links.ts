@@ -50,6 +50,10 @@ const tokenKey = (tokenHash: string) => `login-link:${tokenHash}`;
 const stateKey = (linkId: string) => `login-link-status:${linkId}`;
 const currentKey = (childId: string) => `child-login-link:${childId}`;
 
+/** The value of the child's current-link key that names the link. */
+const currentValueOf = ({ linkId, tokenHash }: { linkId: string; tokenHash: string }) =>
+  JSON.stringify({ linkId, tokenHash });
+
 /**
  * Stores a new link and makes it the child's current one, all to expire at
  * the link's expiry time. When the child had a link, its token key is
@@ -92,6 +96,22 @@ redis.call('SET', KEYS[2], ARGV[1], 'XX', 'KEEPTTL')
 return 1
 `;
 
+/**
+ * Takes back a link that was stored but must not exist: deletes its token
+ * key and its state key, and the child's current-link key only while it
+ * still names this link, so a newer link made meanwhile stays.
+ *
+ * KEYS: the child's current-link key, the token key, the state key.
+ * ARGV: the current-link value that names this link.
+ */
+const DISCARD_SCRIPT = `
+redis.call('DEL', KEYS[2], KEYS[3])
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+end
+return 1
+`;
+
 /** The value parsed with the schema, or undefined for a key that is not there. */
 function parsed<T>(schema: z.ZodType<T>, value: string | null): T | undefined {
   return value === null ? undefined : schema.parse(JSON.parse(value));
@@ -126,7 +146,7 @@ export class LoginLinks {
       const current = parsed(currentValueSchema, await client.get(currentKey(link.childId)));
       const keys = [currentKey(link.childId), tokenKey(link.tokenHash), stateKey(link.linkId)];
       const values = [
-        JSON.stringify({ linkId: link.linkId, tokenHash: link.tokenHash }),
+        currentValueOf(link),
         JSON.stringify({ linkId: link.linkId, childId: link.childId }),
         JSON.stringify({ childId: link.childId, status: 'active', expiresAt }),
         String(link.expiresAt.getTime()),
@@ -178,6 +198,29 @@ export class LoginLinks {
     return this.redis.run(async (client) =>
       parsed(stateValueSchema, await client.get(stateKey(linkId))),
     );
+  }
+
+  /**
+   * Takes back a link `create` stored whose making then failed, such as
+   * one whose audit event did not commit, so no link works without its
+   * audit event; a newer link of the child stays. A failure is logged, not
+   * thrown, so the making's own failure is what the caller sees; the
+   * link's keys then expire within ten minutes.
+   */
+  async discard(link: NewLoginLink): Promise<void> {
+    try {
+      await this.redis.run((client) =>
+        client.eval(DISCARD_SCRIPT, {
+          keys: [currentKey(link.childId), tokenKey(link.tokenHash), stateKey(link.linkId)],
+          arguments: [currentValueOf(link)],
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        { error: describeError(error) },
+        'Login link of a failed making not discarded: Redis failed',
+      );
+    }
   }
 
   /**

@@ -36,12 +36,20 @@ function newLink(childId: string): NewLoginLink & { token: string } {
 // The login links in Redis on their own (#14, 24): a link is used once,
 // even by many uses at the same moment, since the use is one Redis script;
 // a newer link of the child makes the older one unusable; the keys of a
-// deleted child's link are removed. These need a real Redis, as they are
-// the Lua scripts' behaviour.
+// deleted child's link are removed, and so are those of a link whose
+// making did not commit. These need a real Redis, as they are the Lua
+// scripts' behaviour.
 describe('LoginLinks', () => {
   let redis: StartedRedis;
   let service: RedisService;
   let links: LoginLinks;
+
+  /** Every key in Redis that names the link or its child. */
+  const keysOf = async (link: NewLoginLink) =>
+    (await withRedis(redis.url, (client) => client.keys('*'))).filter(
+      (key) =>
+        key.includes(link.linkId) || key.includes(link.childId) || key.includes(link.tokenHash),
+    );
 
   beforeAll(async () => {
     redis = await startRedis();
@@ -124,6 +132,31 @@ describe('LoginLinks', () => {
     expect(await links.find(theirs.tokenHash)).toMatchObject({ linkId: theirs.linkId });
   });
 
+  it('discards every key of a link whose making failed, so it cannot be used', async () => {
+    const link = newLink(randomUUID());
+    await links.create(link);
+
+    await links.discard(link);
+
+    expect(await links.find(link.tokenHash)).toBeUndefined();
+    expect(await links.state(link.linkId)).toBeUndefined();
+    expect(await keysOf(link)).toEqual([]);
+  });
+
+  it('keeps a newer link of the child when an older one is discarded', async () => {
+    const childId = randomUUID();
+    const older = newLink(childId);
+    const newer = newLink(childId);
+    await links.create(older);
+    await links.create(newer);
+
+    await links.discard(older);
+
+    expect(await links.find(newer.tokenHash)).toMatchObject({ linkId: newer.linkId });
+    await links.removeOf([childId]);
+    expect(await keysOf(newer)).toEqual([]);
+  });
+
   it('removes every key of the current links of deleted children, and only theirs', async () => {
     const first = newLink(randomUUID());
     const second = newLink(randomUUID());
@@ -134,12 +167,8 @@ describe('LoginLinks', () => {
 
     await links.removeOf([first.childId, second.childId, randomUUID()]);
 
-    const keys = await withRedis(redis.url, (client) => client.keys('*'));
     for (const link of [first, second]) {
-      expect(keys.filter((key) => key.includes(link.linkId) || key.includes(link.childId))).toEqual(
-        [],
-      );
-      expect(keys).not.toContain(`login-link:${link.tokenHash}`);
+      expect(await keysOf(link)).toEqual([]);
     }
     expect(await links.find(kept.tokenHash)).toMatchObject({ linkId: kept.linkId });
   });
@@ -181,6 +210,10 @@ describe('LoginLinks', () => {
 
     it('resolves the removal of deleted children’s links, which cannot be used anyway', async () => {
       await expect(downLinks.removeOf([randomUUID()])).resolves.toBeUndefined();
+    });
+
+    it('resolves the discarding of a link, whose keys expire within ten minutes', async () => {
+      await expect(downLinks.discard(newLink(randomUUID()))).resolves.toBeUndefined();
     });
   });
 });

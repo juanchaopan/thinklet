@@ -155,12 +155,18 @@ describe('changedChildFields', () => {
  * A repository double over one family with at most one child, held in
  * memory, the child remembered on one device unless told otherwise, and a
  * double of the login links in Redis that holds the given state of link
- * LINK_ID. A transaction runs its work on the same store; `calls` lists
- * the transactions, the locks, the writes, the audit events and the
- * commands to the links in order.
+ * LINK_ID. A transaction runs its work on the same store, then commits,
+ * or rolls back with `commitFails` when told so; `calls` lists the
+ * transactions, the locks, the writes, the audit events and the commands
+ * to the links in order.
  */
 function createService(
-  options: { child?: boolean; devices?: boolean; state?: LoginLinkState } = {},
+  options: {
+    child?: boolean;
+    devices?: boolean;
+    state?: LoginLinkState;
+    commitFails?: Error;
+  } = {},
 ) {
   let exists = options.child ?? true;
   let remembered = options.devices ?? true;
@@ -212,6 +218,10 @@ function createService(
       async <T>(work: (transactionStore: typeof store, transaction: unknown) => Promise<T>) => {
         calls.push('transaction');
         const result = await work(store, TRANSACTION);
+        if (options.commitFails !== undefined) {
+          calls.push('rollback');
+          throw options.commitFails;
+        }
         calls.push('commit');
         return result;
       },
@@ -226,6 +236,10 @@ function createService(
   const links = {
     create: vi.fn((link: NewLoginLink) => {
       calls.push(`links.create ${link.childId}`);
+      return Promise.resolve();
+    }),
+    discard: vi.fn((link: NewLoginLink) => {
+      calls.push(`links.discard ${link.childId}`);
       return Promise.resolve();
     }),
     state: vi.fn((linkId: string) =>
@@ -470,6 +484,7 @@ describe('ChildrenService', () => {
         'child_not_found',
       );
       expect(links.create).not.toHaveBeenCalled();
+      expect(links.discard).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
@@ -480,6 +495,24 @@ describe('ChildrenService', () => {
 
       await expect(service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID)).rejects.toBe(failure);
       expect(calls).not.toContain('commit');
+      expect(links.discard).not.toHaveBeenCalled();
+    });
+
+    it('discards the stored link from Redis when its transaction does not commit, and fails', async () => {
+      const failure = new Error('connection lost at commit');
+      const { service, links, calls } = createService({ commitFails: failure });
+
+      await expect(service.createLoginLink(PARENT_ID, FAMILY_ID, CHILD_ID)).rejects.toBe(failure);
+
+      expect(calls).toEqual([
+        'transaction',
+        `lockChild ${CHILD_ID}`,
+        'audit child.login_link_created',
+        `links.create ${CHILD_ID}`,
+        'rollback',
+        `links.discard ${CHILD_ID}`,
+      ]);
+      expect(links.discard).toHaveBeenCalledExactlyOnceWith(links.create.mock.calls[0]?.[0]);
     });
   });
 

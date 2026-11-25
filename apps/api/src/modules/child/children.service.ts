@@ -19,7 +19,12 @@ import {
   type ChildStore,
   type DeviceRecord,
 } from './children.repository.js';
-import { LOGIN_LINK_LIFETIME_MS, LoginLinks, type LoginLinkState } from './login-links.js';
+import {
+  LOGIN_LINK_LIFETIME_MS,
+  LoginLinks,
+  type LoginLinkState,
+  type NewLoginLink,
+} from './login-links.js';
 import { newToken } from './tokens.js';
 
 /**
@@ -239,31 +244,46 @@ export class ChildrenService {
    * child's older link stops working. The link is stored in Redis last in
    * the transaction of its audit event, holding the child's row lock, so
    * one child's links are made one after another, and a link Redis does
-   * not take leaves no audit event. The token is in the answer's URL only;
-   * Redis keeps its hash.
+   * not take leaves no audit event. A link stored whose transaction then
+   * does not commit is discarded from Redis, so no link works without its
+   * audit event. The token is in the answer's URL only; Redis keeps its
+   * hash.
    */
   async createLoginLink(
     parentId: string,
     familyId: string,
     childId: string,
   ): Promise<ChildLoginLink> {
-    const id = randomUUID();
-    const expiresAt = new Date(Date.now() + LOGIN_LINK_LIFETIME_MS);
     const { token, hash } = newToken();
-    await this.repository.transaction(async (store, transaction) => {
-      if (!(await store.lockChild(familyId, childId))) {
-        throw childNotFound();
-      }
-      await this.audit.record(transaction, {
-        ...onChild(parentId, familyId, childId),
-        action: 'child.login_link_created',
+    const link: NewLoginLink = {
+      linkId: randomUUID(),
+      childId,
+      tokenHash: hash,
+      expiresAt: new Date(Date.now() + LOGIN_LINK_LIFETIME_MS),
+    };
+    const making = { stored: false };
+    try {
+      await this.repository.transaction(async (store, transaction) => {
+        if (!(await store.lockChild(familyId, childId))) {
+          throw childNotFound();
+        }
+        await this.audit.record(transaction, {
+          ...onChild(parentId, familyId, childId),
+          action: 'child.login_link_created',
+        });
+        await this.links.create(link);
+        making.stored = true;
       });
-      await this.links.create({ linkId: id, childId, tokenHash: hash, expiresAt });
-    });
+    } catch (error) {
+      if (making.stored) {
+        await this.links.discard(link);
+      }
+      throw error;
+    }
     return {
-      id,
+      id: link.linkId,
       url: `${this.appOrigin}${LOGIN_LINK_PATH}${token}`,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: link.expiresAt.toISOString(),
     };
   }
 

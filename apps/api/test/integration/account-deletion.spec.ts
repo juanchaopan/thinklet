@@ -2,9 +2,11 @@ import { errorResponseSchema } from '@thinklet/contracts';
 import request from 'supertest';
 import {
   deleteOwnAccount,
+  notify,
   rowsOfParent,
   subjectOf,
   storedByAction,
+  userDeletedNotification,
 } from '../support/account-deletion.js';
 import { auditRows, businessSnapshot, rowsAddedBy } from '../support/audit.js';
 import { TEST_APP_ORIGIN } from '../support/containers.js';
@@ -25,9 +27,9 @@ import { cookieHeader, expectCleared, setCookiesOf } from '../support/login.js';
 // who is no family's admin deletes their account; Authing deletes it first,
 // and only once it has, their memberships, their join requests and the
 // parent go in one transaction, recorded as `parent.deleted` `via: self`,
-// and their login ends. A family's admin is refused with `still_admin` and
-// the families they run; Authing failing or not answering is
-// `identity_provider_failed`; either way nothing is deleted.
+// and their login ends, on other browsers too. A family's admin is refused
+// with `still_admin` and the families they run; Authing failing or not
+// answering is `identity_provider_failed`; either way nothing is deleted.
 describe('DELETE /api/me', () => {
   const running = useAppWithServices();
   const snapshot = () => businessSnapshot(running.databaseUrl, running.redisUrl);
@@ -112,6 +114,44 @@ describe('DELETE /api/me', () => {
     expect(errorResponseSchema.parse(me.body).error.code).toBe('unauthenticated');
     expect(again.status).toBe(401);
   });
+
+  it.each([
+    ['by the parent', (parent: Parent) => deleteOwnAccount(running.server, parent).expect(204)],
+    [
+      'at Authing',
+      async (parent: Parent) =>
+        notify(
+          running.server,
+          userDeletedNotification([await subjectOf(running.databaseUrl, parent.id)]),
+        ).expect(200),
+    ],
+  ])(
+    'answers a session of the parent deleted %s 401 on a read and a write, clearing its cookies',
+    async (_case, deleteParent) => {
+      const parent = await signInParent(running.server);
+      const elsewhere = await createFamily(running.server, await signInParent(running.server));
+      await deleteParent(parent);
+
+      const read = await as(running.server, parent).get(`/api/family-codes/${elsewhere.code}`);
+      const write = await as(running.server, parent).post('/api/families', {
+        name: '林悦的家',
+        timezone: 'Asia/Shanghai',
+      });
+
+      for (const response of [read, write]) {
+        expect(response.status).toBe(401);
+        expect(errorResponseSchema.parse(response.body).error.code).toBe('unauthenticated');
+        const cookies = setCookiesOf(response);
+        expectCleared(cookies['thinklet_session']);
+        expectCleared(cookies['thinklet_id_token']);
+      }
+      expect(await rowsOfParent(running.databaseUrl, parent.id)).toEqual({
+        parents: 0,
+        memberships: 0,
+        joinRequests: 0,
+      });
+    },
+  );
 
   it('deletes a parent of no family', async () => {
     const parent = await signInParent(running.server);

@@ -38,6 +38,7 @@ high:
   - 'apps/api/src/modules/child/**'
   - 'apps/api/src/modules/book/**'
   - 'apps/api/src/modules/audit/**'
+  - 'apps/api/src/modules/account/**'
   # The migrations, which also hold the book data.
   - 'apps/api/drizzle/**'
   - '**/*.sql'

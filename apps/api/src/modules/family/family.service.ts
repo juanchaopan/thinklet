@@ -102,6 +102,11 @@ export class FamilyService {
     });
   }
 
+  /** Whether the parent still exists; a session of a deleted parent signs no one in. */
+  async exists(parentId: string): Promise<boolean> {
+    return (await this.repository.findParent(parentId)) !== undefined;
+  }
+
   /**
    * The signed-in parent with their families and the number of their request
    * results not yet seen. A parent that no longer exists is not signed in.

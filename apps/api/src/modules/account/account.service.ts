@@ -1,11 +1,10 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { Environment } from '../../infrastructure/config/environment.js';
 import { ApiError, StillAdminError } from '../../infrastructure/errors/api-error.js';
 import {
   AuthingManagement,
   IdentityProviderError,
 } from '../../infrastructure/identity-provider/authing-management.js';
+import { OidcService } from '../auth/oidc.service.js';
 import { ChildrenService } from '../child/children.service.js';
 import { ParentDeletionService } from '../family/parent-deletion.service.js';
 
@@ -22,22 +21,20 @@ import { ParentDeletionService } from '../family/parent-deletion.service.js';
  *
  * A parent deleted in Authing's console is reported by the webhook alone,
  * by their subject at the configured issuer, and their data here goes the
- * same way, families they ran handed over or deleted. Every deletion that
- * deleted children removes the children's login links from Redis after it
- * has committed.
+ * same way, families they ran handed over or deleted. The issuer is the
+ * one the provider's discovery document names, which every login stores,
+ * not OIDC_ISSUER as written, which may differ from it by a slash. Every
+ * deletion that deleted children removes the children's login links from
+ * Redis after it has committed.
  */
 @Injectable()
 export class AccountService {
-  private readonly issuer: string;
-
   constructor(
     private readonly parents: ParentDeletionService,
     private readonly children: ChildrenService,
     private readonly authing: AuthingManagement,
-    config: ConfigService<Environment, true>,
-  ) {
-    this.issuer = config.get('OIDC_ISSUER', { infer: true });
-  }
+    private readonly oidc: OidcService,
+  ) {}
 
   /**
    * Deletes the signed-in parent's own account, at Authing and here. A
@@ -66,8 +63,12 @@ export class AccountService {
 
   /** Deletes here, one after another, the parents Authing reports deleted, by their user ids. */
   async deleteReportedUsers(userIds: readonly string[]): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+    const issuer = await this.oidc.issuerIdentifier();
     for (const userId of userIds) {
-      const deleted = await this.parents.deleteReportedAccount(this.issuer, userId);
+      const deleted = await this.parents.deleteReportedAccount(issuer, userId);
       await this.children.removeLoginLinksOf(deleted?.childIds ?? []);
     }
   }

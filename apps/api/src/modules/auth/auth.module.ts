@@ -17,7 +17,9 @@ import { SessionTokensService } from './session-tokens.service.js';
  * is exported for the child module, which signs children in and out and
  * completes the login check of the child routes with its own check of the
  * child; it and ParentSessionService are exported for the modules whose
- * routes a signed-in parent and a signed-in child may both use.
+ * routes a signed-in parent and a signed-in child may both use. OidcService
+ * is exported for the issuer parents are stored with, which finds the
+ * parents the identity provider reports deleted.
  */
 @Module({
   imports: [FamilyModule],
@@ -31,6 +33,6 @@ import { SessionTokensService } from './session-tokens.service.js';
     ParentSessionService,
     ChildSessionService,
   ],
-  exports: [ParentSessionService, ChildSessionService],
+  exports: [ParentSessionService, ChildSessionService, OidcService],
 })
 export class AuthModule {}

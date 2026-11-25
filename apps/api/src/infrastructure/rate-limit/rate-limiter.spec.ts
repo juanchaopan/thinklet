@@ -5,7 +5,13 @@ import type { MockInstance } from 'vitest';
 import type { Environment } from '../config/environment.js';
 import { RateLimitedError } from '../errors/api-error.js';
 import type { RedisClient, RedisService } from '../redis/redis.service.js';
-import { RateLimiter, secondsLeft, type RateCounter } from './rate-limiter.js';
+import {
+  RELEASE_SCRIPT,
+  RESERVE_SCRIPT,
+  RateLimiter,
+  secondsLeft,
+  type RateCounter,
+} from './rate-limiter.js';
 
 const NOW = new Date('2026-11-24T09:00:00.000Z');
 /** A documentation address (RFC 5737), and another one. */
@@ -21,64 +27,72 @@ const PER_CHILD: RateCounter = {
 const PER_SOURCE: RateCounter = { name: 'child-login', limit: 5, windowSeconds: 900 };
 
 interface Entry {
-  value: string;
-  expiresAt: number | undefined;
+  count: number;
+  expiresAt: number;
 }
 
 /**
- * Redis in memory with the commands the limiter uses, its keys expiring on
- * the clock as Redis expires them.
+ * Redis in memory running the limiter's two scripts as Redis runs them,
+ * each in one step, its keys expiring on the clock. The scripts themselves
+ * run on Redis in the integration tests.
  */
 class MemoryRedis {
   readonly entries = new Map<string, Entry>();
 
-  get(key: string): Promise<string | null> {
-    return Promise.resolve(this.live(key)?.value ?? null);
-  }
-
-  pTTL(key: string): Promise<number> {
-    const entry = this.live(key);
-    if (entry === undefined) {
-      return Promise.resolve(-2);
+  eval(script: string, options: { keys: string[]; arguments?: string[] }): Promise<number> {
+    if (script === RESERVE_SCRIPT) {
+      return Promise.resolve(this.reserve(options.keys, options.arguments ?? []));
     }
-    return Promise.resolve(entry.expiresAt === undefined ? -1 : entry.expiresAt - Date.now());
+    if (script === RELEASE_SCRIPT) {
+      this.release(options.keys);
+      return Promise.resolve(1);
+    }
+    return Promise.reject(new Error('unknown script'));
   }
 
-  multi() {
-    const steps: Array<() => unknown> = [];
-    const transaction = {
-      set: (
-        key: string,
-        value: string,
-        options: { expiration: { type: 'EX'; value: number }; condition: 'NX' },
-      ) => {
-        steps.push(() => {
-          if (this.live(key) !== undefined) {
-            return null;
-          }
-          const expiresAt = Date.now() + options.expiration.value * 1000;
-          this.entries.set(key, { value, expiresAt });
-          return 'OK';
-        });
-        return transaction;
-      },
-      incr: (key: string) => {
-        steps.push(() => {
-          const entry = this.live(key) ?? { value: '0', expiresAt: undefined };
-          const value = String(Number(entry.value) + 1);
-          this.entries.set(key, { ...entry, value });
-          return Number(value);
-        });
-        return transaction;
-      },
-      exec: () => Promise.resolve(steps.map((step) => step())),
-    };
-    return transaction;
+  counts(): number[] {
+    return [...this.entries.keys()].map((key) => this.live(key)?.count ?? 0);
+  }
+
+  private reserve(keys: string[], limitsAndWindows: string[]): number {
+    let wait = 0;
+    keys.forEach((key, index) => {
+      const entry = this.live(key) ?? {
+        count: 0,
+        expiresAt: Date.now() + Number(limitsAndWindows[2 * index + 1]),
+      };
+      entry.count += 1;
+      this.entries.set(key, entry);
+      const left = entry.expiresAt - Date.now();
+      if (entry.count > Number(limitsAndWindows[2 * index]) && left > wait) {
+        wait = left;
+      }
+    });
+    if (wait > 0) {
+      this.giveBack(keys);
+    }
+    return wait;
+  }
+
+  private release(keys: string[]): void {
+    this.giveBack(keys.filter((key) => this.live(key) !== undefined));
+  }
+
+  private giveBack(keys: string[]): void {
+    for (const key of keys) {
+      const entry = this.entries.get(key);
+      if (entry !== undefined) {
+        entry.count -= 1;
+        if (entry.count <= 0) {
+          this.entries.delete(key);
+        }
+      }
+    }
   }
 
   private live(key: string): Entry | undefined {
     const entry = this.entries.get(key);
-    if (entry?.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
+    if (entry !== undefined && entry.expiresAt <= Date.now()) {
       this.entries.delete(key);
       return undefined;
     }
@@ -108,6 +122,24 @@ class WrongPassword extends Error {}
 const isWrongPassword = (error: unknown) => error instanceof WrongPassword;
 const fails = () => Promise.reject(new WrongPassword());
 const succeeds = () => Promise.resolve('signed in');
+
+/** An attempt that stays in flight until it is settled. */
+function heldAttempt() {
+  let settle: (outcome: 'success' | 'failure') => void = () => {};
+  const made = vi.fn(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        settle = (outcome) => {
+          if (outcome === 'success') {
+            resolve('signed in');
+          } else {
+            reject(new WrongPassword());
+          }
+        };
+      }),
+  );
+  return { made, settle: (outcome: 'success' | 'failure') => settle(outcome) };
+}
 
 describe('RateLimiter', () => {
   let logged: MockInstance<Logger['error']>;
@@ -151,7 +183,7 @@ describe('RateLimiter', () => {
 
     await failTimes(limiter, 2);
 
-    expect([...memory.entries.values()].map((entry) => entry.value)).toEqual(['2', '2']);
+    expect(memory.counts()).toEqual([2, 2]);
   });
 
   it('does not count an error that is not a failure', async () => {
@@ -165,8 +197,17 @@ describe('RateLimiter', () => {
     expect(memory.entries.size).toBe(0);
   });
 
-  it('refuses the attempt after the limit with the seconds left of the window, without making it', async () => {
-    const { limiter } = createLimiter();
+  it('keeps a success from giving back the failures counted before it', async () => {
+    const { limiter, memory } = createLimiter();
+    await failTimes(limiter, 2);
+
+    await limiter.attempt(CLIENT_IP, [PER_CHILD, PER_SOURCE], succeeds, isWrongPassword);
+
+    expect(memory.counts()).toEqual([2, 2]);
+  });
+
+  it('refuses the attempt after the limit with the seconds left of the window, without making it or counting it', async () => {
+    const { limiter, memory } = createLimiter();
     await failTimes(limiter, PER_CHILD.limit);
     vi.advanceTimersByTime(100_500);
     const attempt = vi.fn(succeeds);
@@ -176,6 +217,45 @@ describe('RateLimiter', () => {
     await expect(refusal).rejects.toBeInstanceOf(RateLimitedError);
     await expect(refusal).rejects.toMatchObject({ code: 'rate_limited', retryAfterSeconds: 800 });
     expect(attempt).not.toHaveBeenCalled();
+    expect(memory.counts()).toEqual([PER_CHILD.limit, PER_CHILD.limit]);
+  });
+
+  it('makes no more attempts at the same time than the limit lets fail', async () => {
+    const { limiter, memory } = createLimiter();
+    const held = Array.from({ length: PER_CHILD.limit + 4 }, heldAttempt);
+
+    const outcomes = held.map(({ made }) =>
+      limiter.attempt(CLIENT_IP, [PER_CHILD, PER_SOURCE], made, isWrongPassword).then(
+        () => 'signed in',
+        (error: unknown) => (error instanceof RateLimitedError ? 'refused' : 'failed'),
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(held.filter(({ made }) => made.mock.calls.length > 0)).toHaveLength(PER_CHILD.limit);
+    });
+    held.forEach(({ settle }) => settle('failure'));
+
+    expect((await Promise.all(outcomes)).sort()).toEqual([
+      ...Array<string>(PER_CHILD.limit).fill('failed'),
+      ...Array<string>(4).fill('refused'),
+    ]);
+    expect(memory.counts()).toEqual([PER_CHILD.limit, PER_CHILD.limit]);
+  });
+
+  it('gives back the counts of attempts in flight that succeed', async () => {
+    const { limiter, memory } = createLimiter();
+    const held = Array.from({ length: PER_CHILD.limit }, heldAttempt);
+    const outcomes = held.map(({ made }) =>
+      limiter.attempt(CLIENT_IP, [PER_CHILD, PER_SOURCE], made, isWrongPassword),
+    );
+    await vi.waitFor(() => {
+      expect(held.every(({ made }) => made.mock.calls.length > 0)).toBe(true);
+    });
+
+    held.forEach(({ settle }) => settle('success'));
+    await Promise.all(outcomes);
+
+    expect(memory.entries.size).toBe(0);
   });
 
   it('lets the source try again once the window from its first failure is over', async () => {
@@ -268,7 +348,7 @@ describe('RateLimiter', () => {
     );
   });
 
-  it('makes the attempt when Redis fails, logging the failure without the address', async () => {
+  it('makes the attempt uncounted when Redis fails, logging the failure without the address', async () => {
     const { limiter, redis } = createLimiter();
     redis.failing = true;
 
@@ -279,15 +359,30 @@ describe('RateLimiter', () => {
       limiter.attempt(CLIENT_IP, [PER_CHILD, PER_SOURCE], fails, isWrongPassword),
     ).rejects.toThrow(WrongPassword);
 
+    expect(redis.run).toHaveBeenCalledTimes(2);
     expect(logged).toHaveBeenCalledWith(
       { error: { name: 'Error', message: 'Redis is not reachable' } },
       'Rate limit not applied: Redis failed',
     );
+    expect(JSON.stringify(logged.mock.calls)).not.toContain(CLIENT_IP);
+  });
+
+  it('answers a success when Redis fails before its reservation is given back, logging it', async () => {
+    const { limiter, memory, redis } = createLimiter();
+    const failsRedisThenSucceeds = () => {
+      redis.failing = true;
+      return succeeds();
+    };
+
+    await expect(
+      limiter.attempt(CLIENT_IP, [PER_CHILD, PER_SOURCE], failsRedisThenSucceeds, isWrongPassword),
+    ).resolves.toBe('signed in');
+
+    expect(memory.counts()).toEqual([1, 1]);
     expect(logged).toHaveBeenCalledWith(
       { error: { name: 'Error', message: 'Redis is not reachable' } },
-      'Failure not counted: Redis failed',
+      'Reservation not given back: Redis failed',
     );
-    expect(JSON.stringify(logged.mock.calls)).not.toContain(CLIENT_IP);
   });
 });
 
