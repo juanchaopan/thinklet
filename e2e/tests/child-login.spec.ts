@@ -3,6 +3,7 @@ import { childListSchema, rememberedChildListSchema } from '@thinklet/contracts'
 import { expectAccessiblePage } from '../support/accessibility.ts';
 import {
   PASSWORD,
+  SET_PASSWORD,
   actOnChild,
   childRow,
   childrenApi,
@@ -15,6 +16,7 @@ import {
   loginWithAccount,
   logoutChild,
   sentFrom,
+  setFirstPassword,
   showLoginQr,
   type ChildCredentials,
   type FamilyWithChild,
@@ -30,8 +32,8 @@ const REFUSED = '家庭码、账号或密码不对';
 /** What a login link says once it is no longer valid. */
 const LINK_INVALID = '这个二维码已经失效了';
 
-/** What the QR login says to a child who has no password yet. */
-const SET_PASSWORD = '先设一个密码，以后登录要用。';
+/** The label of a child without a password on the children page. */
+const NO_PASSWORD = '还没设密码';
 
 /** 小米's right family code, account and password. */
 function xiaomiCredentials({ family }: FamilyWithChild): ChildCredentials {
@@ -90,17 +92,77 @@ async function typePassword(page: Page, password: string): Promise<void> {
   await page.getByRole('button', { name: '登录', exact: true }).click();
 }
 
+/** Checks that the page greets 小米 and asks for a first password. */
+async function expectSettingPassword(page: Page): Promise<void> {
+  await expect(page.getByRole('heading', { name: '你好，小米！' })).toBeVisible();
+  await expect(page.getByText(SET_PASSWORD)).toBeVisible();
+}
+
+/**
+ * On the card that greets 小米 and asks for a first password, with
+ * 在这台设备上记住我 ticked, sets `PASSWORD` and checks that he is home.
+ */
+async function xiaomiSetsPassword(page: Page): Promise<void> {
+  await expectSettingPassword(page);
+  await expect(page.getByRole('checkbox', { name: '在这台设备上记住我' })).toBeChecked();
+  await expectAccessiblePage(page);
+  await setFirstPassword(page);
+  await expect(page).toHaveURL('/child/home');
+  await expectChildHome(page, '小米');
+}
+
+/** Checks that the children page no longer marks 小米 as without a password, once read again. */
+async function expectPasswordSetFor(admin: Page): Promise<void> {
+  await admin.reload();
+  await expect(childRow(admin, '小米')).toBeVisible();
+  await expect(childRow(admin, '小米').getByText(NO_PASSWORD)).toHaveCount(0);
+}
+
 // The child's side of the login and what the parents do to it, through the
-// real api (.docs/design/rules.md, 孩子, 登录二维码, 孩子登录, 记住的设备,
-// 登录和登录状态, 权限). Each parent and each child device has a browser of
-// its own; `page` is the child's device. The children's first passwords and
-// the families are made straight through the api where a test is not about
-// them. The address a QR code holds is read from the api's answer when the
-// dialog makes the link, not from the picture. A link that has run out after
-// 10 minutes is left to the api's integration tests, which set the api's
-// clock; these tests run against the api as it is. A page is checked with axe
-// once its content is shown.
+// real api (.docs/design/rules.md, 孩子, 孩子的密码, 登录二维码, 孩子登录,
+// 记住的设备, 登录和登录状态, 权限). Each parent and each child device has a
+// browser of its own; `page` is the child's device. The children's first
+// passwords and the families are made straight through the api where a test
+// is not about them. The address a QR code holds is read from the api's
+// answer when the dialog makes the link, not from the picture. A link that
+// has run out after 10 minutes, and the 48 hours to set a first password
+// with the account, are left to the api's integration tests, which set the
+// times; these tests run against the api as it is. A page is checked with
+// axe once its content is shown.
 test.describe('the child login', () => {
+  test('a child just added signs in with the family code and the account, sets a password and is in; the parent sees 还没设密码 go', async ({
+    page,
+    openParentPage,
+  }) => {
+    const linyue = await familyWithXiaomi(openParentPage);
+    const { admin, family } = linyue;
+    await admin.goto(childrenPage(family.id));
+    await expect(childRow(admin, '小米').getByText(NO_PASSWORD)).toBeVisible();
+    await expect(childRow(admin, '小米').getByText(/前可以用账号登录设密码$/)).toBeVisible();
+    await expectAccessiblePage(admin);
+
+    await page.goto('/child');
+    await page.getByRole('button', { name: '忘记密码' }).click();
+    const forgot = page.getByRole('dialog', { name: '忘记密码了？' });
+    await expect(forgot.getByText('请家长在「孩子」里点「重设密码」。')).toBeVisible();
+    await expectAccessiblePage(page);
+    await forgot.getByRole('button', { name: '知道了' }).click();
+    await expect(forgot).toHaveCount(0);
+
+    await loginWithAccount(page, { ...xiaomiCredentials(linyue), password: '' }, true);
+    await xiaomiSetsPassword(page);
+
+    await logoutChild(page);
+    await expect(avatar(page, '小米')).toBeVisible();
+    await page.getByRole('button', { name: '用账号登录' }).click();
+    await loginWithAccount(page, { ...xiaomiCredentials(linyue), password: '' });
+    await expect(page.getByRole('alert')).toHaveText(REFUSED);
+    await typePassword(page, PASSWORD);
+    await expect(page).toHaveURL('/child/home');
+
+    await expectPasswordSetFor(admin);
+  });
+
   test('a child scans the QR code, sets a password and is in; the parent sees it, and the code works once', async ({
     page,
     openParentPage,
@@ -112,21 +174,14 @@ test.describe('the child login', () => {
     await expectAccessiblePage(admin);
 
     await page.goto(link);
-    await expect(page.getByRole('heading', { name: '你好，小米！' })).toBeVisible();
-    await expect(page.getByText(SET_PASSWORD)).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: '在这台设备上记住我' })).toBeChecked();
-    await expectAccessiblePage(page);
-    await passwordBox(page).fill(PASSWORD);
-    await page.getByLabel('再输一遍', { exact: true }).fill(PASSWORD);
-    await page.getByRole('button', { name: '设好了，进入' }).click();
+    await xiaomiSetsPassword(page);
 
-    await expect(page).toHaveURL('/child/home');
-    await expectChildHome(page, '小米');
     await expectAccessiblePage(page);
     const dialog = admin.getByRole('dialog', { name: '让小米扫码登录' });
     await expect(dialog.getByText('小米已登录')).toBeVisible({ timeout: 10_000 });
     await dialog.getByRole('button', { name: '完成' }).click();
     await expect(dialog).toHaveCount(0);
+    await expectPasswordSetFor(admin);
 
     await page.goto(link);
     await expect(page.getByRole('heading', { name: LINK_INVALID })).toBeVisible();
@@ -228,7 +283,7 @@ test.describe('the child login', () => {
     await expect(page).toHaveURL('/child/home');
   });
 
-  test('after the parent resets the password the old one no longer works, the signed-in child is sent out, and the next code asks for a new one', async ({
+  test('after the parent resets the password the old one no longer works, the signed-in child is sent out, and the child sets a new one with the account or the next code', async ({
     page,
     openParentPage,
     request,
@@ -240,14 +295,16 @@ test.describe('the child login', () => {
     await admin.goto(childrenPage(family.id));
     await actOnChild(admin, '小米', '重设密码');
     const confirm = admin.getByRole('dialog', { name: '重设小米的密码？' });
+    await expect(confirm.getByText('之后 48 小时内，小米用账号登录就能设新密码')).toBeVisible();
     await expectAccessiblePage(admin);
     await confirm.getByRole('button', { name: '重设' }).click();
     await expect(admin.getByText('已重设「小米」的密码')).toBeVisible();
+    await expect(childRow(admin, '小米').getByText(NO_PASSWORD)).toBeVisible();
 
     await bringToFront(page);
     await expect(page).toHaveURL('/child');
     await loginWithAccount(page, xiaomiCredentials(linyue));
-    await expect(page.getByRole('alert')).toHaveText(REFUSED);
+    await expectSettingPassword(page);
 
     const link = await showLoginQr(admin, '小米');
     await page.goto(link);

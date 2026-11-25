@@ -402,19 +402,14 @@ describe('ChildLoginService', () => {
   describe('setPasswordWithAccount', () => {
     beforeEach(arrangeSettingUp);
 
-    it("sets the child's first password and logs the child in", async () => {
+    it("hashes the child's first password, stores it under the lock and logs the child in", async () => {
       const login = await service.setPasswordWithAccount(FIRST_PASSWORD, FRESH_BROWSER);
 
-      expect(login).toEqual({
-        child: { id: CHILD_ID, nickname: '小米' },
-        deviceToken: undefined,
-        issuedAt: DATABASE_NOW,
-      });
-      expect(families.findIdByCode).toHaveBeenCalledWith('7KQ4MZ');
-      expect(store.findLoginCandidate).toHaveBeenCalledWith(FAMILY_ID, 'xiaomi');
-      expect(hasher.hash).toHaveBeenCalledWith('new secret');
-      expect(store.lockChild).toHaveBeenCalledWith(CHILD_ID);
+      expect(hasher.hash).toHaveBeenCalledExactlyOnceWith('new secret');
+      expect(store.lockChild).toHaveBeenCalledExactlyOnceWith(CHILD_ID);
       expect(store.setPassword).toHaveBeenCalledExactlyOnceWith(CHILD_ID, HASH);
+      expect(login.child).toEqual({ id: CHILD_ID, nickname: '小米' });
+      expect([login.deviceToken, login.issuedAt]).toEqual([undefined, DATABASE_NOW]);
     });
 
     it('records the password the child set with the account, by the child, in the transaction', async () => {

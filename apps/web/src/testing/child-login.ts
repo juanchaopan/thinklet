@@ -1,5 +1,10 @@
 import { screen } from '@testing-library/angular';
-import type { ChildLoginLinkInfo, ChildMeResponse, RememberedChild } from '@thinklet/contracts';
+import type {
+  ChildLoginLinkInfo,
+  ChildMeResponse,
+  ChildNeedsPassword,
+  RememberedChild,
+} from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
 import { renderApp } from './app';
@@ -11,6 +16,7 @@ import { LINYUE_FAMILY, errorBody, stubVisitor } from './sample-data';
 // The child's side as the design draws it: 小米 (account xiaomi) and 豆豆
 // (account doudou) of 林悦的家, whose family code is 7KQ4MZ, and helpers for
 // the tests of the child login, the QR login and the child's home page.
+// 豆豆 has no password yet and sets one at the first login.
 
 /** The family code of 林悦的家, which the children type to log in. */
 export const FAMILY_CODE = LINYUE_FAMILY.code;
@@ -23,6 +29,13 @@ export const XIAOMI_SIGNED_IN: ChildMeResponse = { id: XIAOMI_ID, nickname: '小
 
 /** 豆豆 signed in. */
 export const DOUDOU_SIGNED_IN: ChildMeResponse = { id: DOUDOU_ID, nickname: '豆豆' };
+
+/** 豆豆 as the login with the family code and the account answers a child who has to set a password. */
+export const DOUDOU_NEEDS_PASSWORD: ChildNeedsPassword = {
+  needsPassword: true,
+  id: DOUDOU_ID,
+  nickname: '豆豆',
+};
 
 /** 小米 and 豆豆 as a device that remembers them lists them. */
 export const REMEMBERED_XIAOMI: RememberedChild = {
@@ -86,6 +99,11 @@ export function signedIn(child: ChildMeResponse = XIAOMI_SIGNED_IN): () => Respo
   return () => HttpResponse.json(child);
 }
 
+/** A login with the family code and the account the api answers with the child who has to set a password. */
+export function needsPassword(child: ChildNeedsPassword = DOUDOU_NEEDS_PASSWORD): () => Response {
+  return () => HttpResponse.json(child);
+}
+
 /**
  * Opens the child login with nobody signed in, on a device that remembers
  * the children given (none unless a test says otherwise).
@@ -108,7 +126,10 @@ export function field(name: string): HTMLInputElement {
   return screen.getByLabelText<HTMLInputElement>(name, { selector: 'input' });
 }
 
-/** Types the family code from its first box, then the account and the password, into the login form. */
+/**
+ * Types the family code from its first box, then the account and the
+ * password, into the login form; an empty password leaves its box empty.
+ */
 export async function fillLoginForm(
   code: string = FAMILY_CODE,
   account = 'xiaomi',
@@ -118,7 +139,9 @@ export async function fillLoginForm(
   await userEvent.click(first);
   await typeCode(code);
   await userEvent.type(field('账号'), account);
-  await userEvent.type(field('密码'), password);
+  if (password !== '') {
+    await userEvent.type(field('密码'), password);
+  }
 }
 
 /** Waits for the home page of the child with the nickname, with 退出 in its top bar. */

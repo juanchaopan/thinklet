@@ -34,13 +34,38 @@ import { CONSENT_TEXT } from './child-form-dialog';
 /** Longer than any opening, so a menu held there is fully open. */
 const OPEN = 1000;
 
-/** Each child in the list as "<nickname> <account>". */
+/** The label of a child without a password. */
+const NO_PASSWORD = '还没设密码';
+
+/** What a child's row says once the time to set a password with the account has run out. */
+const SETUP_OVER = '请让孩子扫登录二维码设密码，或者重设密码';
+
+/** 小雨, just added, with 48 hours from the tests' fixed time to set a password with the account. */
+const XIAOYU: Child = {
+  id: '0c4d6e8f-1a2b-4c3d-9e5f-6a7b8c9d0e01',
+  nickname: '小雨',
+  account: 'xiaoyu',
+  passwordSet: false,
+  passwordSetupUntil: '2026-11-23T12:00:00Z',
+};
+
+/** Each child in the list as "<nickname> 账号 <account>". */
 function listed(): string[] {
   return within(screen.getByRole('list'))
     .getAllByRole('listitem')
     .map((row) =>
-      Array.from(row.querySelectorAll('p'), (line) => line.textContent?.trim()).join(' '),
+      Array.from(row.querySelectorAll('p'), (line) => line.textContent?.trim())
+        .slice(0, 2)
+        .join(' '),
     );
+}
+
+/** What the child's row says of the password: the label and the line under it, or nothing. */
+function passwordState(nickname: string): string[] {
+  const row = childRow(nickname);
+  const label = row.querySelector('[appChip]')?.textContent?.trim();
+  const line = row.querySelectorAll('p')[2]?.textContent?.trim();
+  return [label, line].filter((text): text is string => text !== undefined);
 }
 
 /** Opens 小米's actions afresh and holds the menu fully open. */
@@ -77,6 +102,21 @@ describe('ChildrenPage', () => {
     expect(screen.getByRole('button', { name: '添加孩子' })).toBeTruthy();
     await expectNoAxeViolations();
     await expectScreenshotsAtEverySize('children');
+  });
+
+  it('marks the children without a password, with until when they may set one with the account in the family’s time zone', async () => {
+    await renderChildrenPage();
+
+    expect(passwordState('小米')).toEqual([]);
+    expect(passwordState('豆豆')).toEqual([NO_PASSWORD, '11月25日 09:12 前可以用账号登录设密码']);
+    expect(passwordState('阿乐')).toEqual([NO_PASSWORD, SETUP_OVER]);
+    expect(childRow('豆豆').querySelector('[appChip]')?.classList).toContain('bg-sun');
+  });
+
+  it('says how a child sets a password who was given no time to set one with the account', async () => {
+    await renderChildrenPage([{ ...ALE, passwordSetupUntil: null }]);
+
+    expect(passwordState('阿乐')).toEqual([NO_PASSWORD, SETUP_OVER]);
   });
 
   it('says there are no children yet, with 添加孩子 in the card', async () => {
@@ -117,7 +157,7 @@ describe('ChildrenPage', () => {
   });
 
   describe('adding a child', () => {
-    it('asks for the nickname, the account and the consent', async () => {
+    it('asks for the nickname, the account and the consent, and no password', async () => {
       await renderChildrenPage();
 
       const dialog = await openDialog('添加孩子', '添加孩子');
@@ -131,6 +171,7 @@ describe('ChildrenPage', () => {
         name: CONSENT_TEXT,
       });
       expect(consent.checked).toBe(false);
+      expect(within(dialog).queryByLabelText('密码')).toBeNull();
       await vi.waitFor(() => {
         expect(document.activeElement).toBe(nickname);
       });
@@ -148,14 +189,9 @@ describe('ChildrenPage', () => {
       expect(account.value).toBe('xiaomi2019');
     });
 
-    it('adds the child to the end of the list and says so, without opening the QR code', async () => {
-      const added: Child = {
-        id: '0c4d6e8f-1a2b-4c3d-9e5f-6a7b8c9d0e01',
-        nickname: '小雨',
-        account: 'xiaoyu',
-      };
+    it('adds the child to the end of the list without a password and says so, without opening the QR code', async () => {
       const calls = recordCalls('post', CHILDREN_PATH, () =>
-        HttpResponse.json(added, { status: 201 }),
+        HttpResponse.json(XIAOYU, { status: 201 }),
       );
       const { fixture } = await renderChildrenPage();
       const dialog = await openDialog('添加孩子', '添加孩子');
@@ -170,6 +206,7 @@ describe('ChildrenPage', () => {
       await expectToast('已添加「小雨」');
       await dialogGone('添加孩子');
       expect(listed().at(-1)).toBe('小雨 账号 xiaoyu');
+      expect(passwordState('小雨')).toEqual([NO_PASSWORD, '11月23日 20:00 前可以用账号登录设密码']);
       expect(screen.queryByRole('dialog')).toBeNull();
     });
 
@@ -279,7 +316,7 @@ describe('ChildrenPage', () => {
     });
   });
 
-  it("resets the child's password after confirming, and says so", async () => {
+  it("resets the child's password after confirming, says so, and shows the child's new time to set one", async () => {
     const calls = recordCalls(
       'post',
       childPath(XIAOMI_ID, '/password-reset'),
@@ -289,16 +326,24 @@ describe('ChildrenPage', () => {
 
     const dialog = await chooseAction('重设密码', '重设小米的密码？');
     expect(dialog.textContent).toContain(
-      '旧密码马上不能用，已经登录的设备会退出，记住的设备也会一起撤销。小米下次扫登录二维码时设新密码。',
+      '旧密码马上不能用，已经登录的设备会退出，记住的设备也会一起撤销。之后 48 小时内，小米用账号登录就能设新密码；也可以扫登录二维码设。',
     );
     await expectNoAxeViolations();
     await expectScreenshotsAtEverySize('dialog-reset-password');
+    stubChildren([
+      { ...XIAOMI, passwordSet: false, passwordSetupUntil: '2026-11-23T12:00:00Z' },
+      DOUDOU,
+      ALE,
+    ]);
     await userEvent.click(within(dialog).getByRole('button', { name: '重设' }));
     await fixture.whenStable();
 
     expect(calls).toHaveLength(1);
     await expectToast('已重设「小米」的密码');
     await dialogGone('重设小米的密码？');
+    await vi.waitFor(() => {
+      expect(passwordState('小米')).toEqual([NO_PASSWORD, '11月23日 20:00 前可以用账号登录设密码']);
+    });
   });
 
   it('deletes the child after confirming, and says so', async () => {
@@ -310,7 +355,9 @@ describe('ChildrenPage', () => {
     const { fixture } = await renderChildrenPage();
 
     const dialog = await chooseAction('删除', '删除小米？');
-    expect(dialog.textContent).toContain('小米的账号、记住的设备和同意记录都会删掉，不能恢复。');
+    expect(dialog.textContent).toContain(
+      '小米的账号、记住的设备和分派给他的书都会删掉，不能恢复。',
+    );
     const remove = within(dialog).getByRole('button', { name: '删除' });
     expect(remove.classList).toContain('bg-rose-ink');
     await expectNoAxeViolations();
@@ -346,16 +393,12 @@ describe('ChildrenPage', () => {
 
     await expectToast('出了点问题，请稍后再试');
     expect(listed()).toHaveLength(CHILDREN.length);
+    expect(passwordState('小米')).toEqual([]);
   });
 
   it('reads the children again when the window comes back to the front', async () => {
     const { fixture } = await renderChildrenPage();
-    const added: Child = {
-      id: 'aa4d6e8f-1a2b-4c3d-9e5f-6a7b8c9d0e02',
-      nickname: '小雨',
-      account: 'xiaoyu',
-    };
-    stubChildren([...CHILDREN, added]);
+    stubChildren([...CHILDREN, XIAOYU]);
 
     backToFront();
     await fixture.whenStable();

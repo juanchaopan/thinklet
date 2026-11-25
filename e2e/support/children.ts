@@ -19,6 +19,9 @@ import { newUser, signIn } from './sign-in.ts';
 /** The password the children of the tests set and sign in with. */
 export const PASSWORD = 'xm2019abc';
 
+/** What a child without a password yet is asked to do when signing in. */
+export const SET_PASSWORD = '先设一个密码，以后登录要用。';
+
 /** The children page of a family. */
 export function childrenPage(familyId: string): string {
   return `/families/${familyId}/children`;
@@ -81,7 +84,7 @@ export interface FamilyWithChild {
   child: Child;
 }
 
-/** 林悦's family with 小米 (account xiaomi), 林悦 signed in on a page of her own. */
+/** 林悦's family with 小米 (account xiaomi), who has no password yet, 林悦 signed in on a page of her own. */
 export async function familyWithXiaomi(openParentPage: OpenParentPage): Promise<FamilyWithChild> {
   const { admin, family } = await familyOfLinyue(openParentPage);
   return { admin, family, child: await addChild(admin, family.id, '小米', 'xiaomi') };
@@ -89,7 +92,8 @@ export async function familyWithXiaomi(openParentPage: OpenParentPage): Promise<
 
 /**
  * 林悦's family, made by the parent signed in on `admin`, with 小米, who has
- * set the password `PASSWORD` with a first login link from `request`.
+ * set the password `PASSWORD` with a first login link from `request`. The
+ * child is as the parents see it once the password is set.
  */
 export async function familyWithXiaomiOn(
   admin: Page,
@@ -98,7 +102,7 @@ export async function familyWithXiaomiOn(
   const family = await createFamily(admin, '林悦的家');
   const child = await addChild(admin, family.id, '小米', 'xiaomi');
   await setPasswordByLink(request, await makeLoginLink(admin, family.id, child));
-  return { admin, family, child };
+  return { admin, family, child: { ...child, passwordSet: true, passwordSetupUntil: null } };
 }
 
 /** Like `familyWithXiaomiOn`, with 林悦 signed in on a page of her own. */
@@ -147,7 +151,7 @@ export async function showLoginQr(page: Page, nickname: string): Promise<string>
   return url;
 }
 
-/** What the child types into the child login's form. */
+/** What the child types into the child login's form; a child without a password yet types none. */
 export interface ChildCredentials {
   code: string;
   account: string;
@@ -157,7 +161,8 @@ export interface ChildCredentials {
 /**
  * Fills the child login's form shown on the page and signs in, ticking
  * 在这台设备上记住我 when `remember` is set (it starts unticked). The family
- * code goes into its six boxes as typed.
+ * code goes into its six boxes as typed; an empty password leaves its box
+ * empty.
  */
 export async function loginWithAccount(
   page: Page,
@@ -172,6 +177,13 @@ export async function loginWithAccount(
     await page.getByText('在这台设备上记住我').click();
   }
   await page.getByRole('button', { name: '登录', exact: true }).click();
+}
+
+/** Types the first password twice on the card that sets it, and presses 设好了，进入. */
+export async function setFirstPassword(page: Page, password: string = PASSWORD): Promise<void> {
+  await page.getByLabel('密码', { exact: true }).fill(password);
+  await page.getByLabel('再输一遍', { exact: true }).fill(password);
+  await page.getByRole('button', { name: '设好了，进入' }).click();
 }
 
 /** Checks that the page is the home page of the signed-in child with this nickname. */

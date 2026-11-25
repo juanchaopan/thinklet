@@ -10,15 +10,34 @@ import { LINYUE_FAMILY_ID, errorBody } from './sample-data';
 
 // The children of 林悦的家 the design draws, and helpers for the tests of the
 // children page. The children's ids give them the design's avatar colours:
-// 小米 fuchsia, 豆豆 sun, 阿乐 mint.
+// 小米 fuchsia, 豆豆 sun, 阿乐 mint. 小米 has set a password; 豆豆 has not
+// and may still set one with the account until 11月25日 09:12 in Shanghai;
+// 阿乐 has not either, and that time has run out.
 
 export const XIAOMI_ID = '3f9b2c1d-4e5a-4b6c-8d7e-9f0a1b2c3d00';
 export const DOUDOU_ID = '7a2e4c6b-8d1f-4a3e-9b5c-6d7e8f9a0b00';
 export const ALE_ID = 'b8c4d2e6-1f3a-4c5b-8e7d-0a9b1c2d3e03';
 
-export const XIAOMI: Child = { id: XIAOMI_ID, nickname: '小米', account: 'xiaomi' };
-export const DOUDOU: Child = { id: DOUDOU_ID, nickname: '豆豆', account: 'doudou' };
-export const ALE: Child = { id: ALE_ID, nickname: '阿乐', account: 'ale2019' };
+/** A child who has set a password, as the parents see one. */
+export function childWithPassword(id: string, nickname: string, account: string): Child {
+  return { id, nickname, account, passwordSet: true, passwordSetupUntil: null };
+}
+
+export const XIAOMI: Child = childWithPassword(XIAOMI_ID, '小米', 'xiaomi');
+export const DOUDOU: Child = {
+  id: DOUDOU_ID,
+  nickname: '豆豆',
+  account: 'doudou',
+  passwordSet: false,
+  passwordSetupUntil: '2026-11-25T01:12:00Z',
+};
+export const ALE: Child = {
+  id: ALE_ID,
+  nickname: '阿乐',
+  account: 'ale2019',
+  passwordSet: false,
+  passwordSetupUntil: '2026-11-19T01:12:00Z',
+};
 
 /** 林悦的家's children in the order they were added. */
 export const CHILDREN: readonly Child[] = [XIAOMI, DOUDOU, ALE];

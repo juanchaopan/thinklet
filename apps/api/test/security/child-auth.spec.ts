@@ -61,6 +61,32 @@ const LOGIN_FAILED = {
   cookies: undefined,
 };
 
+/**
+ * Sets each password past the limits as a first password, one after
+ * another, and asserts that every one is refused as too long and signs
+ * nobody in.
+ */
+async function expectPastTheLimitsRefused(
+  setPassword: (password: string) => Promise<request.Response>,
+): Promise<void> {
+  const answers = [];
+  for (const [, password] of PASSWORDS_PAST_THE_LIMITS) {
+    const answer = await setPassword(password);
+    answers.push({
+      status: answer.status,
+      fields: errorResponseSchema.parse(answer.body).error.fields,
+      cookies: answer.headers['set-cookie'],
+    });
+  }
+  expect(answers).toEqual(
+    PASSWORDS_PAST_THE_LIMITS.map(() => ({
+      status: 400,
+      fields: [{ path: 'password', code: 'too_long' }],
+      cookies: undefined,
+    })),
+  );
+}
+
 /** A login that remembers a child on the browser, and the child it logged in. */
 interface RememberingLogin {
   childId: string;
@@ -197,23 +223,10 @@ describe('child login security', () => {
     it('cannot set a password past the limits', async () => {
       const fresh = await addChild(running.server, parent, family.id);
 
-      const answers = [];
-      for (const [, password] of PASSWORDS_PAST_THE_LIMITS) {
-        const answer = await browser().setFirstPassword({ ...firstPasswordOf(fresh), password });
-        answers.push({
-          status: answer.status,
-          fields: errorResponseSchema.parse(answer.body).error.fields,
-          cookies: answer.headers['set-cookie'],
-        });
-      }
-
-      expect(answers).toEqual(
-        PASSWORDS_PAST_THE_LIMITS.map(() => ({
-          status: 400,
-          fields: [{ path: 'password', code: 'too_long' }],
-          cookies: undefined,
-        })),
+      await expectPastTheLimitsRefused((password) =>
+        browser().setFirstPassword({ ...firstPasswordOf(fresh), password }),
       );
+
       expect(await passwordHashOf(fresh)).toBeNull();
     });
   });
@@ -255,23 +268,10 @@ describe('child login security', () => {
       const { token } = await newLoginLink(running.server, parent, family.id, fresh.id);
       const kid = browser();
 
-      const answers = [];
-      for (const [, password] of PASSWORDS_PAST_THE_LIMITS) {
-        const answer = await kid.post(`${linkPath(token)}/password`, { password, remember: true });
-        answers.push({
-          status: answer.status,
-          fields: errorResponseSchema.parse(answer.body).error.fields,
-          cookies: answer.headers['set-cookie'],
-        });
-      }
-
-      expect(answers).toEqual(
-        PASSWORDS_PAST_THE_LIMITS.map(() => ({
-          status: 400,
-          fields: [{ path: 'password', code: 'too_long' }],
-          cookies: undefined,
-        })),
+      await expectPastTheLimitsRefused((password) =>
+        kid.post(`${linkPath(token)}/password`, { password, remember: true }),
       );
+
       expect(await stillUsable(token)).toBe(true);
     });
   });
