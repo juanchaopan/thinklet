@@ -14,10 +14,10 @@ import type { AddressInfo } from 'node:net';
 export const STUB_TOKEN_PATH = '/api/v3/get-management-token';
 /** Where users are deleted with a management token. */
 export const STUB_DELETE_USERS_PATH = '/api/v3/delete-users-batch';
-/** The header that names the user pool of a management call. */
+/** The header that names the user pool of a management call and of a webhook notification. */
 export const STUB_USER_POOL_HEADER = 'x-authing-userpool-id';
-/** The header the webhook carries its secret in. */
-export const STUB_WEBHOOK_SECRET_HEADER = 'x-authing-webhook-secret';
+/** The header the webhook carries its secret in, unchanged, as Authing sends it. */
+export const STUB_WEBHOOK_SECRET_HEADER = 'x-authing-token';
 /** The event the webhook reports deleted users with. */
 export const STUB_USER_DELETED_EVENT = 'user:deleted';
 
@@ -120,7 +120,10 @@ export async function startAuthingStub(options: AuthingStubOptions): Promise<Aut
   let failure: DeletionFailure | undefined;
   const delivery = options.delivery ?? 'manual';
 
-  /** Posts one report to the webhook, as Authing does, and answers the webhook's status. */
+  /**
+   * Posts one report to the webhook as Authing does: the webhook secret in
+   * its header and the user pool's id beside it. Answers the webhook's status.
+   */
   const send = async (userIds: string[]): Promise<DeliveredReport> => {
     if (webhookUrl === undefined) {
       throw new Error('The stand-in has no webhook address to report to');
@@ -130,6 +133,7 @@ export async function startAuthingStub(options: AuthingStubOptions): Promise<Aut
       headers: {
         'content-type': 'application/json',
         [STUB_WEBHOOK_SECRET_HEADER]: options.webhookSecret,
+        [STUB_USER_POOL_HEADER]: options.userPoolId,
       },
       body: JSON.stringify({
         eventName: STUB_USER_DELETED_EVENT,

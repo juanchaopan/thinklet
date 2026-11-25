@@ -454,7 +454,7 @@
 
 Authing 在用户被删除后发来的 webhook。不用登录，不查 `Origin`。
 
-- 请求头里的 webhook 密钥和 `AUTHING_WEBHOOK_SECRET` 用定长比较核对，不对或者没有时返回 `401`，错误码 `unauthenticated`，什么都不做。Authing 文档里请求头的名字有两种写法（`x-authing-webhook-secret`、`X-Authing-Token`），scaffold 步骤在测试环境上用真的通知核对后写在这里。
+- 请求头 `x-authing-token` 里的 webhook 密钥和 `AUTHING_WEBHOOK_SECRET` 用定长比较核对，不对或者没有时返回 `401`，错误码 `unauthenticated`，什么都不做。Authing 把 webhook 的请求密钥原样放在这个请求头里，同时带上 `x-authing-userpool-id`。
 - 请求体是 JSON：`eventName` 和 `data`。只处理 `eventName` 是 `user:deleted` 的，被删的用户在 `data.users` 里，用每个用户的编号作为 `sub`、身份服务发现文档里的 issuer（和登录时存下的一样）找家长，读不到发现文档时返回 `500`，由 Authing 重试；别的事件返回 `200`，什么都不做。
 - 找到的家长在一个事务里删掉：他是管理员、家里还有别的家长的家庭，管理员交给其余家长里最早加入的一位（审计记录 `member.admin_transferred`，做事的是 `system`）；只剩他一位家长的家庭整个删掉（`family.deleted`）；再删掉他的成员关系、加入申请和他自己（`parent.deleted`，`via` 是 `webhook`）。之后删掉 Redis 里被删的孩子的登录链接。
 - 找不到的家长（比如他自己删的、已经删过了）不处理。同一个通知来几次结果都一样，都返回 `200`。

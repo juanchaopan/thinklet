@@ -7,11 +7,10 @@ import { ApiError } from '../errors/api-error.js';
 
 /**
  * The request header Authing's webhook carries its secret in, in Node's
- * lower case. Authing's documentation names two headers; this is the one
- * for the secret set with the webhook. Which one Authing sends is checked
- * with a real notification on staging.
+ * lower case. Authing sends the secret set with the webhook unchanged in
+ * this header, with the user pool's id in `x-authing-userpool-id` beside it.
  */
-export const AUTHING_WEBHOOK_SECRET_HEADER = 'x-authing-webhook-secret';
+export const AUTHING_WEBHOOK_SECRET_HEADER = 'x-authing-token';
 
 const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest();
 
