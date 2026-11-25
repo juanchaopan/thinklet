@@ -76,6 +76,9 @@ const cardText = (familyName: string) => card(familyName).textContent?.replace(/
 /** The toasts on screen. */
 const toastCount = () => document.querySelector('app-toast-outlet')?.childElementCount ?? 0;
 
+/** The six boxes of the family code, as one group. */
+const codeGroup = () => screen.getByRole('group', { name: '家庭码，6 位' });
+
 async function openJoinDialog(): Promise<HTMLElement> {
   await userEvent.click(choice(/^申请加入家庭/));
   return screen.findByRole('dialog', { name: '申请加入家庭' });
@@ -402,11 +405,24 @@ describe('Start', () => {
 
       expect(await screen.findByText('没有这个家庭码')).toBeTruthy();
       expect(asked).toEqual(['7KQ4MW']);
-      expect(screen.getByRole('group', { name: '家庭码，6 位' }).classList).toContain(
-        'animate-shake',
-      );
+      expect(codeGroup().classList).toContain('animate-shake');
       await expectNoAxeViolations();
       await expectScreenshotsAtEverySize('family-join-error');
+    });
+
+    it('says under the boxes how many minutes to wait once too many codes were tried', async () => {
+      stubError('get /api/family-codes/:code', 429, 'rate_limited', { retryAfterSeconds: 2350 });
+      await renderStart();
+
+      await openJoinDialog();
+      await typeCode('7KQ4MW');
+
+      expect(await screen.findByText('试得太多了，请 40 分钟后再试')).toBeTruthy();
+      expect(boxValues()).toEqual(['7', 'K', 'Q', '4', 'M', 'W']);
+      expect(codeGroup().classList).toContain('animate-shake');
+      expect(toastCount()).toBe(0);
+      await expectNoAxeViolations();
+      await expectScreenshotsAtEverySize('family-join-rate-limited');
     });
 
     it('shows the family found and its admin, to confirm before sending', async () => {

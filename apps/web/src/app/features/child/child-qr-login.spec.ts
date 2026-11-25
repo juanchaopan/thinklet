@@ -28,15 +28,29 @@ import { expectScreenshotsAtEverySize } from '../../../testing/screenshots';
 
 const REMEMBER = '在这台设备上记住我';
 
-/** Answers a call with the error code and status, as the api does. */
-function refuse(code: ErrorCode, status: number): () => Response {
-  return () => HttpResponse.json(errorBody(code), { status });
+/** Answers a call with the error code and status, and anything else the error carries, as the api does. */
+function refuse(
+  code: ErrorCode,
+  status: number,
+  extra: Record<string, unknown> = {},
+): () => Response {
+  return () => HttpResponse.json(errorBody(code, extra), { status });
 }
 
 /** Presses the button, then takes the mouse off it, so the page shows it at rest. */
 async function submit(name: string): Promise<void> {
   await userEvent.click(screen.getByRole('button', { name }));
   await moveMouseOffPage();
+}
+
+/** Types the right password on the link, which still works after a refused try, and signs in. */
+async function expectSignedInOnTheLink(): Promise<void> {
+  const logins = recordCalls('post', `${LINK_PATH}/login`, signedIn());
+  await userEvent.type(field('密码'), PASSWORD);
+  await submit('登录');
+
+  await expectChildHome('小米');
+  expect(logins).toEqual([{ password: PASSWORD, remember: true }]);
 }
 
 describe('ChildQrLogin', () => {
@@ -204,12 +218,27 @@ describe('ChildQrLogin', () => {
       await expectNoAxeViolations();
       await expectScreenshotsAtEverySize('child-qr-password-error');
 
-      const logins = recordCalls('post', `${LINK_PATH}/login`, signedIn());
+      await expectSignedInOnTheLink();
+    });
+
+    it('says under the password how many minutes a device that has tried too often waits, keeping the link', async () => {
+      await renderQrLogin(LINK_HAS_PASSWORD);
+      recordCalls(
+        'post',
+        `${LINK_PATH}/login`,
+        refuse('rate_limited', 429, { retryAfterSeconds: 60 }),
+      );
       await userEvent.type(field('密码'), PASSWORD);
+
       await submit('登录');
 
-      await expectChildHome('小米');
-      expect(logins).toEqual([{ password: PASSWORD, remember: true }]);
+      expect(await screen.findByText('试得太多了，请 1 分钟后再试')).toBeTruthy();
+      expect(field('密码').value).toBe('');
+      expect(screen.getByText('输入你的密码。')).toBeTruthy();
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '登录' }).disabled).toBe(false);
+      await expectNoAxeViolations();
+
+      await expectSignedInOnTheLink();
     });
 
     it('shows the form to set a password when the password was reset meanwhile', async () => {

@@ -51,6 +51,23 @@ async function expectAtRestAtEverySize(name: string): Promise<void> {
   await expectScreenshotsAtEverySize(name);
 }
 
+/**
+ * Opens the form, fills it in and presses 登录, the api answering with
+ * `answer`; returns the logins sent and what the form then says above 登录.
+ */
+async function refusedLogin(
+  answer: () => Response,
+): Promise<{ logins: unknown[]; message: string | undefined }> {
+  await renderChildLogin();
+  const logins = recordCalls('post', '/api/child-auth/login', answer);
+  await fillLoginForm();
+
+  await userEvent.click(screen.getByRole('button', { name: '登录' }));
+
+  const message = (await screen.findByRole('alert')).textContent?.trim();
+  return { logins, message };
+}
+
 describe('ChildLogin', () => {
   describe('on a device that remembers no child', () => {
     it('asks for the family code, the account and the password under the rabbit teacher', async () => {
@@ -116,15 +133,11 @@ describe('ChildLogin', () => {
     });
 
     it('says a login turned down without saying what was wrong, and empties the password', async () => {
-      await renderChildLogin();
-      const logins = recordCalls('post', '/api/child-auth/login', () =>
+      const { logins, message } = await refusedLogin(() =>
         HttpResponse.json(errorBody('login_failed'), { status: 401 }),
       );
-      await fillLoginForm();
 
-      await userEvent.click(screen.getByRole('button', { name: '登录' }));
-
-      expect((await screen.findByRole('alert')).textContent?.trim()).toBe('家庭码、账号或密码不对');
+      expect(message).toBe('家庭码、账号或密码不对');
       expect(logins).toEqual([
         { code: FAMILY_CODE, account: 'xiaomi', password: PASSWORD, remember: false },
       ]);
@@ -132,6 +145,29 @@ describe('ChildLogin', () => {
       expect(boxValues().join('')).toBe(FAMILY_CODE);
       expect(field('账号').value).toBe('xiaomi');
       await expectAtRestAtEverySize('child-login-error');
+    });
+
+    it('says a device that has tried too often how many minutes to wait, in the same place, and 登录 can still be pressed', async () => {
+      const { logins, message } = await refusedLogin(() =>
+        HttpResponse.json(errorBody('rate_limited', { retryAfterSeconds: 452 }), {
+          status: 429,
+          headers: { 'Retry-After': '452' },
+        }),
+      );
+
+      expect(message).toBe('试得太多了，请 8 分钟后再试');
+      expect(field('密码').value).toBe('');
+      expect(boxValues().join('')).toBe(FAMILY_CODE);
+      expect(field('账号').value).toBe('xiaomi');
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '登录' }).disabled).toBe(false);
+      await expectAtRestAtEverySize('child-login-rate-limited');
+
+      await userEvent.type(field('密码'), PASSWORD);
+      await userEvent.click(screen.getByRole('button', { name: '登录' }));
+
+      await vi.waitFor(() => {
+        expect(logins).toHaveLength(2);
+      });
     });
 
     it('signs the child in and opens the home page, remembering the device when ticked', async () => {

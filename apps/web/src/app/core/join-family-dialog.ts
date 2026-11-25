@@ -23,7 +23,7 @@ import { CodeBoxes, codeSlots, filledCode } from '../shared/ui/code-boxes';
 import { Dialog } from '../shared/ui/dialog';
 import { Toaster } from '../shared/ui/toast';
 import { ApiError } from './api';
-import { isSignedOut, showSomethingWentWrong } from './failures';
+import { isSignedOut, showSomethingWentWrong, tooManyTries } from './failures';
 import { JoinRequests } from './join-requests';
 
 /** What the boxes say when a code cannot be used (rules.md, 输入家庭码). */
@@ -32,6 +32,17 @@ const CODE_HINTS: Partial<Record<ErrorCode, string>> = {
   already_member: '你已经是这个家庭的成员',
   request_pending: '你已经申请过了，等管理员处理',
 };
+
+/**
+ * What the boxes say about a failure: why the code cannot be used, or that
+ * too many codes were tried (rules.md, 限流); null for any other failure.
+ */
+function codeHint(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.code === 'network') {
+    return null;
+  }
+  return CODE_HINTS[error.code] ?? tooManyTries(error);
+}
 
 /** A family found by its code, kept with the code that found it. */
 interface FoundFamily extends FamilyCodeLookupResponse {
@@ -42,7 +53,8 @@ interface FoundFamily extends FamilyCodeLookupResponse {
  * The dialog that asks to join a family (rules.md, 输入家庭码). The code goes
  * into six boxes; as soon as the last one is filled the code is looked up,
  * with no button to press. A code that is not there, a family the parent is
- * already in or has already asked to join is said under the boxes. A family
+ * already in or has already asked to join, and a device that has tried too
+ * many codes, with the minutes to wait, are said under the boxes. A family
  * found shows its name and its admin, and the parent sends the request from
  * there or goes back with 换一个家庭码. A sent request closes the dialog with
  * 申请已发出.
@@ -234,17 +246,16 @@ export class JoinFamilyDialog {
   }
 
   /**
-   * A code that cannot be used goes back to the boxes, which say why and
-   * shake; anything else (the server failing or not answering) is a toast,
-   * and what was typed stays.
+   * A code that cannot be used, or one too many tried, goes back to the
+   * boxes, which say why and shake; anything else (the server failing or
+   * not answering) is a toast, and what was typed stays.
    */
   private showFailure(error: unknown): void {
     if (isSignedOut(error)) {
       return;
     }
-    const hint =
-      error instanceof ApiError && error.code !== 'network' ? CODE_HINTS[error.code] : undefined;
-    if (!hint) {
+    const hint = codeHint(error);
+    if (hint === null) {
       showSomethingWentWrong(this.toaster);
       return;
     }

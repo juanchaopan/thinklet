@@ -5,7 +5,7 @@ import {
   type ChildLoginLinkInfo,
   type ErrorCode,
 } from '@thinklet/contracts';
-import { asApiError, rejectedFields } from '../../core/failures';
+import { asApiError, rejectedFields, tooManyTries } from '../../core/failures';
 import { Avatar } from '../../shared/ui/avatar';
 import { Button } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
@@ -178,7 +178,9 @@ export class SetPasswordForm extends QrForm {
 
 /**
  * The QR login of a child who has a password (rules.md, 扫码登录页). A wrong
- * password says so and empties the box; the link can still be used.
+ * password says so and empties the box; the link can still be used. A
+ * device that has tried too often (rules.md, 限流) is told so under the box
+ * the same way, with the minutes to wait.
  */
 @Component({
   selector: 'app-password-form',
@@ -231,11 +233,13 @@ export class PasswordForm extends QrForm {
   }
 
   protected explain(error: unknown): boolean {
-    if (asApiError(error).code !== 'wrong_password') {
+    const message =
+      asApiError(error).code === 'wrong_password' ? WRONG_PASSWORD : tooManyTries(error);
+    if (message === null) {
       return this.leftToPage(error);
     }
     this.password.set('');
-    this.passwordError.set(WRONG_PASSWORD);
+    this.passwordError.set(message);
     this.shake();
     return true;
   }

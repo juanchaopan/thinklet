@@ -7,7 +7,7 @@ import {
   signal,
 } from '@angular/core';
 import { childAccountSchema, childPasswordSchema, type RememberedChild } from '@thinklet/contracts';
-import { asApiError } from '../../core/failures';
+import { asApiError, tooManyTries } from '../../core/failures';
 import { Avatar } from '../../shared/ui/avatar';
 import { Button } from '../../shared/ui/button';
 import { Card } from '../../shared/ui/card';
@@ -22,6 +22,9 @@ import { ChildForm, LOGIN_PASSWORD_HINTS } from './child-form';
 /** The hint for a family code with an empty box. */
 const CODE_REQUIRED = '请填家庭码';
 
+/** What a login the api turns down says, without telling which of the three was wrong. */
+const LOGIN_FAILED = '家庭码、账号或密码不对';
+
 /**
  * The card of the child login that signs in with the family code, the
  * account and the password (rules.md, 孩子登录页). The family code goes into
@@ -33,7 +36,9 @@ const CODE_REQUIRED = '请填家庭码';
  * Every field is checked before anything is sent, each mistake said under
  * its field. A login the api turns down does not say which of the three was
  * wrong: 家庭码、账号或密码不对 shows above 登录 and the password box is
- * emptied.
+ * emptied. A device that has tried too often (rules.md, 限流) is told so in
+ * the same place, with the minutes to wait, and the password box is
+ * emptied too; 登录 can still be pressed.
  *
  * Given the remembered child whose device has to type the password again
  * (`relogin`), the card says so with the child's avatar, the family code and
@@ -107,9 +112,9 @@ const CODE_REQUIRED = '请填家庭码';
         <app-checkbox class="mt-3" [large]="true" [(checked)]="remember"
           >在这台设备上记住我</app-checkbox
         >
-        @if (refused()) {
+        @if (refusal(); as message) {
           <p role="alert" class="mt-2 animate-fade text-base font-bold text-rose-ink">
-            家庭码、账号或密码不对
+            {{ message }}
           </p>
         }
         <button
@@ -139,8 +144,8 @@ export class ChildLoginForm extends ChildForm {
   protected readonly account = linkedSignal(() => this.relogin()?.account ?? '');
   protected readonly codeError = signal<string | null>(null);
   protected readonly accountError = signal<string | null>(null);
-  /** The api turned the login down. */
-  protected readonly refused = signal(false);
+  /** Why the api turned the login down, said above 登录; null while it has not. */
+  protected readonly refusal = signal<string | null>(null);
 
   protected editCode(code: readonly string[]): void {
     this.code.set(code);
@@ -157,7 +162,7 @@ export class ChildLoginForm extends ChildForm {
     if (this.sending()) {
       return;
     }
-    this.refused.set(false);
+    this.refusal.set(null);
     const code = filledCode(this.code());
     const account = this.account().trim();
     const password = this.password();
@@ -173,10 +178,11 @@ export class ChildLoginForm extends ChildForm {
   }
 
   protected explain(error: unknown): boolean {
-    if (asApiError(error).code !== 'login_failed') {
+    const refusal = asApiError(error).code === 'login_failed' ? LOGIN_FAILED : tooManyTries(error);
+    if (refusal === null) {
       return false;
     }
-    this.refused.set(true);
+    this.refusal.set(refusal);
     this.password.set('');
     return true;
   }
