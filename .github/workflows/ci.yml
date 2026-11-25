@@ -135,8 +135,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # The migration tests run when the pull request changes a migration script
-  # or the migration tests, and always on a release pull request.
+  # The migration tests run when the pull request changes a migration script,
+  # a data migration or its command, or the migration tests, and always on a
+  # release pull request.
   test-migration:
     name: test-migration
     if: github.event_name == 'pull_request'
@@ -158,8 +159,8 @@ jobs:
           if [[ "$HEAD_REF" == release/* ]]; then
             echo "Release pull request: the migration tests run."
             echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "$BASE_SHA...HEAD" -- apps/api/drizzle apps/api/drizzle.config.ts apps/api/test/migration; then
-            echo "No migration script or migration test changed: nothing to run."
+          elif git diff --quiet "$BASE_SHA...HEAD" -- apps/api/drizzle apps/api/drizzle.config.ts apps/api/src/data-migrations apps/api/src/migrate-data.ts apps/api/src/migrate-data.module.ts apps/api/test/migration; then
+            echo "No migration script, data migration or migration test changed: nothing to run."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"

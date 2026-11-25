@@ -126,6 +126,16 @@ export function migrationRows(client: () => Client) {
     return row.id;
   }
 
+  /** The SQLSTATE a statement fails with, or undefined when it succeeds. */
+  async function failureOf(text: string, values: unknown[]): Promise<string | undefined> {
+    try {
+      await client().query(text, values);
+      return undefined;
+    } catch (error) {
+      return (error as { code?: string }).code;
+    }
+  }
+
   /** A parent with a new Authing subject. */
   function newParent(): Promise<string> {
     return insertedId(
@@ -143,5 +153,5 @@ export function migrationRows(client: () => Client) {
     );
   }
 
-  return { rows, insertedId, newParent, newFamily };
+  return { rows, insertedId, failureOf, newParent, newFamily };
 }

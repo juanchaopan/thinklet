@@ -209,9 +209,12 @@ tasks:
       - task: component-tests-in-container
         vars: { UPDATE_SCREENSHOTS: 'true' }
 
+  # The integration, security and migration tests migrate their databases
+  # as `task migrate` does, the data migrations from the api's build, so
+  # they build the api first.
   test-integration:
-    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS, Valkey and mock OIDC provider containers
-    deps: [build-contracts]
+    desc: Run the api integration tests against throwaway PostgreSQL, SeaweedFS, Valkey and mock OIDC provider containers, migrated with the built data migrations
+    deps: [build-api]
     cmds:
       - pnpm --filter api run test:integration
 
@@ -222,7 +225,8 @@ tasks:
       - pnpm --filter api run test:security
 
   test-migration:
-    desc: Run the migration tests against a throwaway PostgreSQL container
+    desc: Run the migration tests, of the migration scripts and of the built data migrations, against throwaway PostgreSQL containers
+    deps: [build-api]
     cmds:
       - pnpm --filter api run test:migration
 

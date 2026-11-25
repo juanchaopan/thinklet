@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
 import { childSchema, type Child } from '@thinklet/contracts';
 import { ChildDataCipher } from '../../src/infrastructure/child-data/child-data-cipher.js';
 import type { Environment } from '../../src/infrastructure/config/environment.js';
+import { childDevices, children } from '../../src/infrastructure/database/schema.js';
 import { testChildDataKey } from './containers.js';
 import { query } from './database.js';
 import { as, type Parent } from './families.js';
@@ -70,6 +71,18 @@ export async function childRow(
     childId,
   ]);
   return row;
+}
+
+/** The nickname and the account of a child's row, decrypted where the row holds them. */
+export function decryptedChild(row: Pick<ChildRow, 'id' | 'nickname' | 'account'>): {
+  nickname: string;
+  account: string;
+} {
+  const cipher = testChildDataCipher();
+  return {
+    nickname: cipher.decrypt(row.nickname, { column: children.nickname, rowId: row.id }),
+    account: cipher.decrypt(row.account, { column: children.account, rowId: row.id }),
+  };
 }
 
 /** Gives the child a password hash directly in the database, as setting a password does. */
@@ -145,30 +158,34 @@ export async function deviceRows(databaseUrl: string, childId: string): Promise<
   );
 }
 
+/** The name of a device's row, decrypted where the row holds it. */
+export function decryptedDeviceName(row: Pick<DeviceRow, 'id' | 'name'>): string {
+  return testChildDataCipher().decrypt(row.name, { column: childDevices.name, rowId: row.id });
+}
+
 /**
- * Remembers the child on a browser directly in the database, with the name
- * encrypted as the api stores it and the last login the given time.
+ * Remembers the child on a browser directly in the database, with an id of
+ * its own and the name encrypted for it as the api stores it, and the last
+ * login the given time.
  */
 export async function insertDevice(
   databaseUrl: string,
   childId: string,
   device: { name: string; rememberedAt: Date; lastUsedAt: Date },
 ): Promise<string> {
-  const [row] = await query<{ id: string }>(
+  const id = randomUUID();
+  await query(
     databaseUrl,
-    `insert into child_devices (child_id, token_hash, name, remembered_at, last_used_at, expires_at)
-     values ($1, $2, $3, $4, $5, $5::timestamptz + interval '30 days')
-     returning id`,
+    `insert into child_devices (id, child_id, token_hash, name, remembered_at, last_used_at, expires_at)
+     values ($1, $2, $3, $4, $5, $6, $6::timestamptz + interval '30 days')`,
     [
+      id,
       childId,
       randomBytes(32).toString('hex'),
-      testChildDataCipher().encrypt(device.name),
+      testChildDataCipher().encrypt(device.name, { column: childDevices.name, rowId: id }),
       device.rememberedAt,
       device.lastUsedAt,
     ],
   );
-  if (row === undefined) {
-    throw new Error('No device recorded');
-  }
-  return row.id;
+  return id;
 }

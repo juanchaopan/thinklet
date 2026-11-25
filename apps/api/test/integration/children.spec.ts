@@ -13,6 +13,8 @@ import {
   childPath,
   childRow,
   childrenPath,
+  decryptedChild,
+  decryptedDeviceName,
   deviceRows,
   insertDevice,
   insertLoginLink,
@@ -42,10 +44,11 @@ const cipher = testChildDataCipher();
 // events, see the children in the order they were added, change a
 // nickname and an account, and delete a child with its login links and
 // devices; an account is unique within the family; the nickname, the
-// account and the device names are stored encrypted; a password reset
-// clears the password, forgets the devices and ends the logins issued
-// before it while unused login links keep working; a new login link
-// revokes the older ones, and its state follows use, expiry and
+// account and the device names are stored encrypted, each bound to its row
+// and column, so a ciphertext moved elsewhere is an error rather than shown;
+// a password reset clears the password, forgets the devices and ends the
+// logins issued before it while unused login links keep working; a new
+// login link revokes the older ones, and its state follows use, expiry and
 // revocation; the remembered devices are listed latest first and can be
 // revoked one by one or all at once.
 describe('children', () => {
@@ -138,7 +141,7 @@ describe('children', () => {
       expect(consent?.occurred_at.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
     });
 
-    it('stores the nickname and the account only as ciphertext, with a hex lookup value', async () => {
+    it('stores the nickname and the account only as ciphertext bound to the row, with a hex lookup value', async () => {
       const account = newAccount();
 
       const child = await addTo(family.id, { nickname: '小米粒', account });
@@ -148,10 +151,38 @@ describe('children', () => {
       expect(row.account).not.toContain(account);
       expect(row.nickname).toMatch(/^v1\./);
       expect(row.account).toMatch(/^v1\./);
-      expect(cipher.decrypt(row.nickname)).toBe('小米粒');
-      expect(cipher.decrypt(row.account)).toBe(account);
+      expect(decryptedChild(row)).toEqual({ nickname: '小米粒', account });
       expect(row.account_lookup).toMatch(HEX_SHA256);
       expect(row.account_lookup).toBe(cipher.lookup(family.id, account));
+    });
+
+    it('answers 500 internal rather than show a ciphertext moved from another child or column', async () => {
+      const swapped = await newFamily();
+      const crossed = await newFamily();
+      const xiaomi = await addTo(swapped.id, { nickname: '小米' });
+      const doudou = await addTo(swapped.id, { nickname: '豆豆' });
+      const ale = await addTo(crossed.id, { nickname: '阿乐' });
+      const copyIntoNickname = (column: 'nickname' | 'account', from: string, to: string) =>
+        query(
+          running.databaseUrl,
+          `update children set nickname = (select ${column} from children where id = $1) where id = $2`,
+          [from, to],
+        );
+
+      await copyIntoNickname('nickname', doudou.id, xiaomi.id);
+      await copyIntoNickname('account', ale.id, ale.id);
+      const responses = [
+        await asAdmin().get(childrenPath(swapped.id)),
+        await asAdmin().get(childrenPath(crossed.id)),
+      ];
+
+      expect(outcomesOf(responses)).toEqual([
+        [500, 'internal'],
+        [500, 'internal'],
+      ]);
+      expect(JSON.stringify(responses.map(({ body }): unknown => body))).not.toMatch(
+        /小米|豆豆|阿乐/,
+      );
     });
 
     it('refuses an account another child of the family has, and lets another family use it', async () => {
@@ -207,9 +238,9 @@ describe('children', () => {
       expect(moved.body).toEqual({ ...child, nickname: '米米', account });
       expect(both.body).toEqual(child);
       expect(await listOf(family.id)).toContainEqual(child);
-      expect((await storedRow(child.id)).account_lookup).toBe(
-        cipher.lookup(family.id, child.account),
-      );
+      const row = await storedRow(child.id);
+      expect(decryptedChild(row)).toEqual({ nickname: child.nickname, account: child.account });
+      expect(row.account_lookup).toBe(cipher.lookup(family.id, child.account));
     });
 
     it('keeps the child as it is on a change without fields, and allows its own account', async () => {
@@ -421,7 +452,7 @@ describe('children', () => {
       child = await addTo(family.id);
     });
 
-    it('lists the devices latest login first, with their names stored only as ciphertext', async () => {
+    it('lists the devices latest login first, with their names stored only as ciphertext bound to the row', async () => {
       const older = await remember('Windows 电脑 · Edge', '2026-11-20T10:00:00Z');
       const newer = await remember('iPad · Safari', '2026-11-22T01:12:00Z');
 
@@ -439,10 +470,12 @@ describe('children', () => {
           lastUsedAt: '2026-11-20T10:00:00.000Z',
         },
       ]);
-      for (const row of await deviceRows(running.databaseUrl, child.id)) {
+      const rows = await deviceRows(running.databaseUrl, child.id);
+      for (const row of rows) {
         expect(row.name).toMatch(/^v1\./);
         expect(row.name).not.toMatch(/iPad|Safari|Windows|Edge/);
       }
+      expect(rows.map(decryptedDeviceName)).toEqual(['iPad · Safari', 'Windows 电脑 · Edge']);
     });
 
     it('revokes one device, and answers 204 again once it is gone', async () => {

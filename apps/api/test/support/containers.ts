@@ -246,9 +246,10 @@ export function newSigningKey(): string {
 export const testSigningKey = newSigningKey();
 
 /**
- * The child data key of every api this test run starts, 32 random bytes in
- * the base64 form CHILD_DATA_KEY takes, made once per process, so those apis
- * read each other's encrypted child data.
+ * The child data key of every api and data migration this test run starts,
+ * 32 random bytes in the base64 form CHILD_DATA_KEY takes, made once per
+ * process, so those apis read each other's encrypted child data and what
+ * the data migrations wrote.
  */
 export const testChildDataKey = randomBytes(32).toString('base64');
 
@@ -284,22 +285,31 @@ export function apiEnvironment(
 }
 
 /**
- * The cover import's environment variables for the given database, storage
- * and book folders. MIGRATION_DATABASE_URL is set as well because the import
- * prefers it, and a test run through Task has it from the local .env file,
- * pointing at the development database.
+ * The database variables of a command that runs after the migrations.
+ * MIGRATION_DATABASE_URL is set as well because the commands prefer it, and
+ * a test run through Task has it from the local .env file, pointing at the
+ * development database.
  */
+function commandDatabase(databaseUrl: string): Record<string, string> {
+  return { DATABASE_URL: databaseUrl, MIGRATION_DATABASE_URL: databaseUrl };
+}
+
+/** The cover import's environment variables for the given database, storage and book folders. */
 export function coverImportEnvironment(
   databaseUrl: string,
   storage: StorageAccess,
   contentDirectory = bookContentDirectory,
 ): Record<string, string> {
   return {
-    DATABASE_URL: databaseUrl,
-    MIGRATION_DATABASE_URL: databaseUrl,
+    ...commandDatabase(databaseUrl),
     ...storageEnvironment(storage),
     BOOK_CONTENT_DIRECTORY: contentDirectory,
   };
+}
+
+/** The data migrations' environment variables for the given database, with the tests' child data key. */
+export function dataMigrationEnvironment(databaseUrl: string): Record<string, string> {
+  return { ...commandDatabase(databaseUrl), CHILD_DATA_KEY: testChildDataKey };
 }
 
 const drizzleKit = join(
@@ -307,11 +317,14 @@ const drizzleKit = join(
   'bin.cjs',
 );
 
-/** Runs `drizzle-kit migrate` from apps/api against the given database. */
-export async function migrate(databaseUrl: string): Promise<void> {
+/**
+ * Runs `drizzle-kit migrate` from apps/api against the given database, the
+ * first step of `task migrate`: the migration scripts alone.
+ */
+export async function migrateSchema(databaseUrl: string): Promise<void> {
   await promisify(execFile)(process.execPath, [drizzleKit, 'migrate'], {
     cwd: apiDirectory,
-    env: { ...process.env, DATABASE_URL: databaseUrl, MIGRATION_DATABASE_URL: databaseUrl },
+    env: { ...process.env, ...commandDatabase(databaseUrl) },
   });
 }
 
@@ -342,21 +355,49 @@ export function spawnBuiltEntry(file: string, environment: Record<string, string
   return { child, output: () => Buffer.concat(chunks).toString('utf8') };
 }
 
-/** How a run of the cover import ended. */
-export interface CoverImportRun {
+/** How a run of a built command ended. */
+export interface CommandRun {
   exitCode: number | null;
   /** Everything it wrote to stdout and stderr. */
   output: string;
 }
 
-/** Runs the built cover import (dist/rebuild.js), as `task rebuild` does, to its end. */
-export async function runBuiltCoverImport(
+/** Runs a built command of the api (`dist/<file>`) to its end. */
+async function runBuiltCommand(
+  file: string,
   environment: Record<string, string>,
-): Promise<CoverImportRun> {
-  const { child, output } = spawnBuiltEntry('rebuild.js', environment);
+): Promise<CommandRun> {
+  const { child, output } = spawnBuiltEntry(file, environment);
   // 'close' comes after both streams have ended, so the output is whole.
   const [exitCode] = (await once(child, 'close')) as [number | null];
   return { exitCode, output: output() };
+}
+
+/** Throws when the built command did not succeed, with everything it wrote. */
+function expectSuccess(command: string, run: CommandRun): void {
+  if (run.exitCode !== 0) {
+    throw new Error(`The ${command} exited with code ${run.exitCode}:\n${run.output}`);
+  }
+}
+
+/** Runs the built data migrations (dist/migrate-data.js), the second step of `task migrate`. */
+export function runBuiltDataMigrations(databaseUrl: string): Promise<CommandRun> {
+  return runBuiltCommand('migrate-data.js', dataMigrationEnvironment(databaseUrl));
+}
+
+/**
+ * Migrates the given database as `task migrate` does: `drizzle-kit migrate`,
+ * then the built data migrations with the tests' child data key. The api
+ * must be built first.
+ */
+export async function migrate(databaseUrl: string): Promise<void> {
+  await migrateSchema(databaseUrl);
+  expectSuccess('data migration', await runBuiltDataMigrations(databaseUrl));
+}
+
+/** Runs the built cover import (dist/rebuild.js), as `task rebuild` does, to its end. */
+export function runBuiltCoverImport(environment: Record<string, string>): Promise<CommandRun> {
+  return runBuiltCommand('rebuild.js', environment);
 }
 
 /**
@@ -367,8 +408,8 @@ export async function importBuiltCovers(
   databaseUrl: string,
   storage: StorageAccess,
 ): Promise<void> {
-  const run = await runBuiltCoverImport(coverImportEnvironment(databaseUrl, storage));
-  if (run.exitCode !== 0) {
-    throw new Error(`The cover import exited with code ${run.exitCode}:\n${run.output}`);
-  }
+  expectSuccess(
+    'cover import',
+    await runBuiltCoverImport(coverImportEnvironment(databaseUrl, storage)),
+  );
 }

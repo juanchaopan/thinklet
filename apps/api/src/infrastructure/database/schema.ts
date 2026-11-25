@@ -143,15 +143,17 @@ export const joinRequests = pgTable(
 
 /**
  * A child of a family. The nickname and the account are ciphertexts of the
- * child data cipher; `account_lookup` is the keyed lookup value of the
- * family and the account, which keeps accounts unique within a family and
- * finds the child at login without decrypting. The unique constraint leads
- * with `family_id`, so it also serves listing a family's children. A null
- * `password_hash` means the child has not set a password yet. JWTs issued
- * before `sessions_valid_after` are refused. The guardian's consent is the
- * child's `child.created` audit event, which outlives the child.
- * `(id, family_id)` is unique so that book assignments can reference a
- * child together with its family.
+ * child data cipher, each bound to its column and the child's id, so the id
+ * has no database default: the api makes it before it encrypts the row.
+ * `account_lookup` is the keyed lookup value of the family and the account,
+ * which keeps accounts unique within a family and finds the child at login
+ * without decrypting. The unique constraint leads with `family_id`, so it
+ * also serves listing a family's children. A null `password_hash` means the
+ * child has not set a password yet. JWTs issued before
+ * `sessions_valid_after` are refused. The guardian's consent is the child's
+ * `child.created` audit event, which outlives the child. `(id, family_id)`
+ * is unique so that book assignments can reference a child together with
+ * its family.
  *
  * A ciphertext is `<key id>.<iv>.<ciphertext>.<tag>`, each part after the
  * key id in unpadded base64url. AES-GCM keeps the length of the text, so
@@ -162,7 +164,7 @@ export const joinRequests = pgTable(
 export const children = pgTable(
   'children',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     familyId: uuid('family_id')
       .notNull()
       .references(() => families.id),
@@ -214,12 +216,13 @@ export const childLoginLinks = pgTable(
  * for every child it remembers, so each child has a row of their own with
  * the token's SHA-256; the unique constraint leads with `child_id` for a
  * child's devices, and the token index finds the children a browser
- * remembers. The device name is a ciphertext.
+ * remembers. The device name is a ciphertext bound to its column and the
+ * row's id, which the api makes, as it does a child's.
  */
 export const childDevices = pgTable(
   'child_devices',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     childId: childReference(),
     tokenHash: text('token_hash').notNull(),
     name: text('name').notNull(),
@@ -400,5 +403,25 @@ export const auditEvents = pgTable(
     index('audit_events_target_idx').on(table.targetKind, table.targetId),
     check('audit_events_actor_kind_check', sql`actor_kind in ('parent', 'child', 'system')`),
     check('audit_events_actor_id_check', sql`(actor_kind = 'system') = (actor_id is null)`),
+  ],
+);
+
+/**
+ * The data migrations written in code that have run (`.docs/design/data.md`,
+ * "data_migrations"), one row each, written in the migration's own
+ * transaction. The name is the migration's file name without `.ts`; the
+ * checksum is the SHA-256 of that file as it ran, so a migration changed
+ * after it ran is found before anything else runs.
+ */
+export const dataMigrations = pgTable(
+  'data_migrations',
+  {
+    name: text('name').primaryKey(),
+    checksum: text('checksum').notNull(),
+    ranAt: timestamptz('ran_at').notNull(),
+  },
+  () => [
+    check('data_migrations_name_check', sql`name ~ '^[0-9]{4}-[a-z0-9-]+$'`),
+    check('data_migrations_checksum_check', sql`checksum ~ '^[0-9a-f]{64}$'`),
   ],
 );

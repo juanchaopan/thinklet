@@ -1,9 +1,8 @@
 import { resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NestFactory } from '@nestjs/core';
+import { runCommand } from './infrastructure/commands/run-command.js';
 import type { RebuildEnvironment } from './infrastructure/config/rebuild-environment.js';
-import { describeError } from './infrastructure/logging/describe-error.js';
 import { defaultContentDirectory } from './modules/book/cover-files.js';
 import { CoverImportError, CoverImportService } from './modules/book/cover-import.service.js';
 import { RebuildModule } from './rebuild.module.js';
@@ -19,23 +18,12 @@ import { RebuildModule } from './rebuild.module.js';
 
 const logger = new Logger('CoverImport');
 
-/** A failure as one line of its name, code and safe message. */
-function failureMessage(error: unknown): string {
-  if (error instanceof CoverImportError) {
-    return error.message;
-  }
-  const { name, code, message } = describeError(error);
-  return `${name}${code === undefined ? '' : ` (${code})`}: ${message}`;
-}
-
-try {
-  // abortOnError off: a failure while starting is thrown to the catch below
-  // instead of aborting the process, so it gets the same exit code.
-  const context = await NestFactory.createApplicationContext(RebuildModule, {
-    abortOnError: false,
-    logger: ['fatal', 'error', 'warn', 'log'],
-  });
-  try {
+await runCommand({
+  module: RebuildModule,
+  logger,
+  failure: 'Cover import failed.',
+  safeErrors: [CoverImportError],
+  work: async (context) => {
     const configured = context
       .get(ConfigService<RebuildEnvironment, true>)
       .get('BOOK_CONTENT_DIRECTORY', { infer: true });
@@ -45,10 +33,5 @@ try {
     logger.log(
       `Covers of ${summary.books} books: ${summary.uploaded} uploaded, ${summary.unchanged} unchanged; ${summary.recorded} recorded in the book table`,
     );
-  } finally {
-    await context.close();
-  }
-} catch (error) {
-  logger.error(`Cover import failed. ${failureMessage(error)}`);
-  process.exitCode = 1;
-}
+  },
+});

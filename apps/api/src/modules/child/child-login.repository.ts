@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
@@ -72,7 +73,8 @@ const linkStateColumns = {
  * finding the child by account or login link, the child's password and the
  * check of a signed-in child, and the browsers the child is remembered on.
  * The nickname, the account and the device names are encrypted on the way
- * in and decrypted on the way out.
+ * in and decrypted on the way out, each bound to its column and its row's
+ * id.
  *
  * A transaction that locks both a child's row and one of the child's login
  * links locks the child's row first, as making a login link and resetting
@@ -128,7 +130,7 @@ export class ChildLoginStore {
       .from(children)
       .where(eq(children.id, childId));
     const row = rows.at(0);
-    return row === undefined ? undefined : this.cipher.decrypt(row.nickname);
+    return row === undefined ? undefined : this.nicknameOf(childId, row.nickname);
   }
 
   /** The login link with the token's hash and its child, unlocked, or undefined when there is none. */
@@ -143,7 +145,9 @@ export class ChildLoginStore {
       .innerJoin(children, eq(children.id, childLoginLinks.childId))
       .where(eq(childLoginLinks.tokenHash, tokenHash));
     const row = rows.at(0);
-    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
+    return row === undefined
+      ? undefined
+      : { ...row, nickname: this.nicknameOf(row.childId, row.nickname) };
   }
 
   /**
@@ -175,17 +179,21 @@ export class ChildLoginStore {
   /**
    * Remembers the child on the browser with the token's hash, or renews the
    * browser's row: the last login is now and it lasts until `expiresAt`. A
-   * row that had expired is remembered anew, with the new time and name; a
-   * row still valid keeps when it was first remembered and its name.
+   * row that had expired is remembered anew, as a new device with a new id,
+   * time and name; a row still valid keeps its id, when it was first
+   * remembered and its name. The name is encrypted for the new id, so a
+   * row that takes the new name takes the new id with it.
    */
   async rememberDevice(device: RememberedDevice): Promise<void> {
+    const id = randomUUID();
     const lapsed = sql`${childDevices.expiresAt} <= excluded.last_used_at`;
     await this.executor
       .insert(childDevices)
       .values({
+        id,
         childId: device.childId,
         tokenHash: device.tokenHash,
-        name: this.cipher.encrypt(device.name),
+        name: this.cipher.encrypt(device.name, { column: childDevices.name, rowId: id }),
         rememberedAt: device.now,
         lastUsedAt: device.now,
         expiresAt: device.expiresAt,
@@ -193,6 +201,7 @@ export class ChildLoginStore {
       .onConflictDoUpdate({
         target: [childDevices.childId, childDevices.tokenHash],
         set: {
+          id: sql`case when ${lapsed} then excluded.id else ${childDevices.id} end`,
           rememberedAt: sql`case when ${lapsed} then excluded.remembered_at else ${childDevices.rememberedAt} end`,
           name: sql`case when ${lapsed} then excluded.name else ${childDevices.name} end`,
           lastUsedAt: sql`excluded.last_used_at`,
@@ -248,13 +257,20 @@ export class ChildLoginStore {
       .orderBy(asc(childDevices.rememberedAt), asc(childDevices.id));
     return rows.map((row) => ({
       ...row,
-      nickname: this.cipher.decrypt(row.nickname),
-      account: this.cipher.decrypt(row.account),
+      nickname: this.nicknameOf(row.childId, row.nickname),
+      account: this.cipher.decrypt(row.account, { column: children.account, rowId: row.childId }),
     }));
   }
 
+  /** The nickname of the child with the id, from its ciphertext. */
+  private nicknameOf(childId: string, encrypted: string): string {
+    return this.cipher.decrypt(encrypted, { column: children.nickname, rowId: childId });
+  }
+
   private readCandidate(row: LoginCandidate | undefined): LoginCandidate | undefined {
-    return row === undefined ? undefined : { ...row, nickname: this.cipher.decrypt(row.nickname) };
+    return row === undefined
+      ? undefined
+      : { ...row, nickname: this.nicknameOf(row.id, row.nickname) };
   }
 }
 

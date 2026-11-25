@@ -1,8 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { Client } from 'pg';
-import { migrate } from '../support/containers.js';
-import { migrationRows, startDatabaseBefore } from '../support/migrations.js';
+import { migrateThrough, migrationRows, startDatabaseBefore } from '../support/migrations.js';
 
 const TAG = '0003_names_and_member_index';
 
@@ -31,22 +30,14 @@ function ciphertextOf(textBytes: number): string {
     .join('.');
 }
 
+// The database stops at this script, so the later ones and the data
+// migrations, which would decrypt the made-up ciphertexts, do not run.
 describe(`migration ${TAG}`, () => {
   let client: Client;
   let database: StartedPostgreSqlContainer;
   /** The parent, family and child written in the previous version's format. */
   const earlier = { parentId: '', familyId: '', childId: '' };
-  const { rows, insertedId, newParent, newFamily } = migrationRows(() => client);
-
-  /** The SQLSTATE an update fails with, or undefined when it succeeds. */
-  async function failureOf(text: string, values: unknown[]): Promise<string | undefined> {
-    try {
-      await client.query(text, values);
-      return undefined;
-    } catch (error) {
-      return (error as { code?: string }).code;
-    }
-  }
+  const { rows, insertedId, failureOf, newParent, newFamily } = migrationRows(() => client);
 
   const renameParent = (name: string) =>
     failureOf('update parents set name = $1 where id = $2', [name, earlier.parentId]);
@@ -79,7 +70,7 @@ describe(`migration ${TAG}`, () => {
       ],
     );
 
-    await migrate(started.url);
+    await migrateThrough(started.url, TAG);
   });
 
   afterAll(async () => {

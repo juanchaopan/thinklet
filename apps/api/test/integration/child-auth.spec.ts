@@ -21,8 +21,8 @@ import {
   addChild,
   childPath,
   childRow,
+  decryptedDeviceName,
   deviceRows,
-  testChildDataCipher,
   type DeviceRow,
 } from '../support/children.js';
 import { query } from '../support/database.js';
@@ -38,7 +38,6 @@ import { expectCleared, expectLoginCookieAttributes, setCookiesOf } from '../sup
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_MAX_AGE = String(7 * 24 * 60 * 60);
 const DEVICE_MAX_AGE = String(30 * 24 * 60 * 60);
-const cipher = testChildDataCipher();
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 /** How many times a test of two requests at the same time sends them, to meet their interleavings. */
@@ -85,7 +84,8 @@ const lifetimeOf = (row: DeviceRow) => row.expires_at.getTime() - row.last_used_
 // once, and a newer one revokes it; a child without a password sets one on
 // the link and is signed in, a child with one enters it, and a wrong one
 // keeps the link usable; a password reset or the child's deletion ends the
-// child's login at the next request; logging out keeps the avatar.
+// child's login at the next request; logging out keeps the avatar; a
+// device's name is stored encrypted for its own row.
 describe('child login', () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -248,7 +248,7 @@ describe('child login', () => {
   });
 
   describe('remembering the browser', () => {
-    it('remembers the child for 30 days under a new device token, the device named and encrypted', async () => {
+    it('remembers the child for 30 days under a new device token, the device named and encrypted for its row', async () => {
       const child = await withPassword();
       const before = Date.now();
 
@@ -262,13 +262,13 @@ describe('child login', () => {
       const row = await onlyDevice(child.id);
       expect(row.token_hash).toBe(sha256(token));
       expect(row.name).not.toContain('iPad');
-      expect(cipher.decrypt(row.name)).toBe('iPad · Safari');
+      expect(decryptedDeviceName(row)).toBe('iPad · Safari');
       expect(row.remembered_at.getTime()).toBeGreaterThanOrEqual(before - 1000);
       expect(row.last_used_at).toEqual(row.remembered_at);
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
     });
 
-    it('renews the same row and token on a later remembered login, keeping when it was remembered', async () => {
+    it('renews the same row and token on a later remembered login, keeping when it was remembered and its name', async () => {
       const { child, kid } = await rememberedChild();
       const first = await onlyDevice(child.id);
       const token = kid.cookies.get(DEVICE_COOKIE);
@@ -278,20 +278,24 @@ describe('child login', () => {
       expect(setCookiesOf(response)[DEVICE_COOKIE]?.value).toBe(token);
       const renewed = await onlyDevice(child.id);
       expect(renewed.id).toBe(first.id);
+      expect(renewed.name).toBe(first.name);
       expect(renewed.remembered_at).toEqual(first.remembered_at);
       expect(renewed.last_used_at.getTime()).toBeGreaterThan(first.last_used_at.getTime());
     });
 
-    it('remembers an expired device anew', async () => {
+    it('remembers an expired device anew, as a new row whose name is encrypted for it', async () => {
       const { child, kid } = await rememberedChild();
       await updateDevices(
         child.id,
         "remembered_at = now() - interval '40 days', expires_at = now() - interval '1 day'",
       );
+      const expired = await onlyDevice(child.id);
 
       await kid.login(loginOf(child, true));
 
       const row = await onlyDevice(child.id);
+      expect(row.id).not.toBe(expired.id);
+      expect(decryptedDeviceName(row)).toBe('iPad · Safari');
       expect(row.remembered_at).toEqual(row.last_used_at);
       expect(lifetimeOf(row)).toBe(30 * DAY_MS);
     });

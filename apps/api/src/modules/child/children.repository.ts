@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, isNull } from 'drizzle-orm';
 import { ChildDataCipher } from '../../infrastructure/child-data/child-data-cipher.js';
@@ -89,10 +90,12 @@ function settingAccount<T>(write: () => Promise<T>): Promise<T> {
 /**
  * The queries on children, their login links and their devices, on the
  * pool or inside one transaction. The nickname, the account and the device
- * names are encrypted on the way in and decrypted on the way out, so the
- * callers see plain text only and the database ciphertext only. Every
- * query of a child names its family as well, so a child of another family
- * is not found.
+ * names are encrypted on the way in and decrypted on the way out, each
+ * bound to its column and its row's id, so the callers see plain text only
+ * and the database ciphertext only. A new child gets its id here rather
+ * than from the database, as its ciphertexts are bound to it before the
+ * row exists. Every query of a child names its family as well, so a child
+ * of another family is not found.
  */
 export class ChildStore {
   constructor(
@@ -143,27 +146,21 @@ export class ChildStore {
   /**
    * Adds the child without a password, refusing logins issued before it
    * was added; throws AccountTakenError when another child of the family
-   * has the account. The child is returned from what was written, so only
-   * its id is read back.
+   * has the account. The child is returned from what was written.
    */
   async insertChild(child: NewChild): Promise<ChildRecord> {
-    const rows = await settingAccount(() =>
-      this.executor
-        .insert(children)
-        .values({
-          familyId: child.familyId,
-          nickname: this.cipher.encrypt(child.nickname),
-          account: this.cipher.encrypt(child.account),
-          accountLookup: this.cipher.lookup(child.familyId, child.account),
-          sessionsValidAfter: child.addedAt,
-        })
-        .returning({ id: children.id }),
+    const id = randomUUID();
+    await settingAccount(() =>
+      this.executor.insert(children).values({
+        id,
+        familyId: child.familyId,
+        nickname: this.cipher.encrypt(child.nickname, { column: children.nickname, rowId: id }),
+        account: this.cipher.encrypt(child.account, { column: children.account, rowId: id }),
+        accountLookup: this.cipher.lookup(child.familyId, child.account),
+        sessionsValidAfter: child.addedAt,
+      }),
     );
-    const row = rows.at(0);
-    if (row === undefined) {
-      throw new Error('Adding the child returned no row');
-    }
-    return { id: row.id, nickname: child.nickname, account: child.account };
+    return { id, nickname: child.nickname, account: child.account };
   }
 
   /**
@@ -179,10 +176,16 @@ export class ChildStore {
   ): Promise<ChildRecord | undefined> {
     const set: Partial<typeof children.$inferInsert> = {};
     if (changes.nickname !== undefined) {
-      set.nickname = this.cipher.encrypt(changes.nickname);
+      set.nickname = this.cipher.encrypt(changes.nickname, {
+        column: children.nickname,
+        rowId: childId,
+      });
     }
     if (changes.account !== undefined) {
-      set.account = this.cipher.encrypt(changes.account);
+      set.account = this.cipher.encrypt(changes.account, {
+        column: children.account,
+        rowId: childId,
+      });
       set.accountLookup = this.cipher.lookup(familyId, changes.account);
     }
     if (Object.keys(set).length === 0) {
@@ -273,7 +276,10 @@ export class ChildStore {
       .from(childDevices)
       .where(eq(childDevices.childId, childId))
       .orderBy(desc(childDevices.lastUsedAt), asc(childDevices.id));
-    return rows.map((row) => ({ ...row, name: this.cipher.decrypt(row.name) }));
+    return rows.map((row) => ({
+      ...row,
+      name: this.cipher.decrypt(row.name, { column: childDevices.name, rowId: row.id }),
+    }));
   }
 
   /**
@@ -300,8 +306,8 @@ export class ChildStore {
   private readChildren(rows: ChildRecord[]): ChildRecord[] {
     return rows.map((row) => ({
       id: row.id,
-      nickname: this.cipher.decrypt(row.nickname),
-      account: this.cipher.decrypt(row.account),
+      nickname: this.cipher.decrypt(row.nickname, { column: children.nickname, rowId: row.id }),
+      account: this.cipher.decrypt(row.account, { column: children.account, rowId: row.id }),
     }));
   }
 }
