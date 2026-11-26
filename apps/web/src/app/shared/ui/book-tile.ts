@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, input, linkedSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { BookStatus } from '@thinklet/contracts';
+import { GradeRange, type GradeSpan } from './grade-range';
 import { LineIcon } from './line-icon';
 
 /** What a book card shows of a book, the same for the parents' library and a child's books. */
-export interface ShownBook {
+export interface ShownBook extends GradeSpan {
   readonly title: string;
   readonly intro: string;
-  readonly grade: { readonly name: string };
   readonly subject: { readonly name: string };
   readonly status: BookStatus;
   readonly coverUrl: string | null;
@@ -65,19 +65,20 @@ export class BookCover {
 
 /**
  * A book in a grid (rules.md, 书的卡片): a white card with the cover on top,
- * then the title in at most two lines, “一年级 · 数学” and the introduction
- * in at most two lines. With a `link` the whole card leads there, through
- * the title's link stretched over the card, and with a mouse it lifts a
- * little while hovered. The card's footer is its content, the children
- * marked `appBookTileCorner` sit over the cover's top right; both stay above
- * the stretched link, so pressing them does not follow it. The card does not
+ * then the title in at most two lines, the grades and subject such as
+ * “一年级 · 数学” or “四年级～初二 · 编程”, and the introduction in at most
+ * two lines. With a `link` the whole card leads there, through the title's
+ * link stretched over the card, and with a mouse it lifts a little while
+ * hovered. The card's footer is its content, the children marked
+ * `appBookTileCorner` sit over the cover's top right; both stay above the
+ * stretched link, so pressing them does not follow it. The card does not
  * clip what it holds; the cover rounds its own top corners.
  *
  *   <app-book-tile [book]="book" link="/books/…">…footer…</app-book-tile>
  */
 @Component({
   selector: 'app-book-tile',
-  imports: [BookCover, RouterLink],
+  imports: [BookCover, GradeRange, RouterLink],
   host: { class: 'block' },
   template: `
     <article
@@ -108,7 +109,7 @@ export class BookCover {
           }
         </h3>
         <p class="mt-1 text-xs font-bold text-ink-muted">
-          {{ book().grade.name }} · {{ book().subject.name }}
+          <app-grade-range [grades]="book()" /> · {{ book().subject.name }}
         </p>
         <p class="mt-2 line-clamp-2 text-sm leading-relaxed text-ink-soft">{{ book().intro }}</p>
         <div class="mt-auto flex min-h-11 items-center gap-1 pt-3 empty:hidden sm:gap-2">

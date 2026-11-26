@@ -19,6 +19,7 @@ import { FamilyTroubleView } from '../../core/family-pages';
 import { LibraryAddress } from '../../core/library-address';
 import { pageTitle } from '../../core/page-title';
 import { Button, PRESS } from '../../shared/ui/button';
+import { GradeRange } from '../../shared/ui/grade-range';
 import { LineIcon } from '../../shared/ui/line-icon';
 import { PageProblem } from '../../shared/ui/page-problem';
 import { ReaderAvatars, readersInWords } from '../../shared/ui/reader-avatars';
@@ -30,7 +31,7 @@ import { BookStore } from './book-store';
 /** What is open for the book. */
 type BookDialog = 'readers' | 'remove';
 
-/** A white pill above the title: the grade or the subject. */
+/** A white pill above the title: the grades or the subject. */
 const PILL =
   'rounded-full bg-surface/85 px-3 py-1 text-sm font-bold text-ink-soft ring-1 ring-line';
 
@@ -40,15 +41,15 @@ const TEXT_BUTTON = `inline-flex min-h-11 items-center justify-center rounded-fu
 /**
  * One book as the current family sees it, at `/books/<id>` (rules.md, 书本
  * 页; look.md, 书本页). A band as wide as the content area, coloured by the
- * cover, holds 返回, the cover drawn as a book, the grade and subject, the
- * title and the actions: 获取 while the family does not have the book;
- * once it does, ✓ 已获取 with the button that opens 谁能读, showing the
- * readers' avatars and names or the dashed plus and 选择谁能读, or, while
- * the family has no children, 还没有孩子 with 去添加孩子. An inactive book
- * says so above the grade and subject, with a link to the book that
- * replaces it when there is one. What the book is about follows under the
- * band, and 从我家的书里移除 under it while the family has the book and no
- * child reads it, asking first.
+ * cover, holds 返回, the cover drawn as a book, the grades and subject
+ * (written as rules.md, 年级的写法 says), the title and the actions: 获取
+ * while the family does not have the book; once it does, ✓ 已获取 with the
+ * button that opens 谁能读, showing the readers' avatars and names or the
+ * dashed plus and 选择谁能读, or, while the family has no children, 还没有
+ * 孩子 with 去添加孩子. An inactive book says so above the grades and
+ * subject, with a link to the book that replaces it when there is one.
+ * What the book is about follows under the band, and 从我家的书里移除 under
+ * it while the family has the book and no child reads it, asking first.
  *
  * 返回 leads to the library with the filters it had (core/library-address).
  * A book that does not exist, or that the family cannot see, is 找不到这本书
@@ -66,6 +67,7 @@ const TEXT_BUTTON = `inline-flex min-h-11 items-center justify-center rounded-fu
     Button,
     CoverGlow,
     FamilyTroubleView,
+    GradeRange,
     LineIcon,
     PageProblem,
     ReaderAvatars,
@@ -115,7 +117,7 @@ const TEXT_BUTTON = `inline-flex min-h-11 items-center justify-center rounded-fu
                   </p>
                 }
                 <div class="flex flex-wrap justify-center gap-2 sm:justify-start">
-                  <span class="{{ pill }}">{{ book.grade.name }}</span>
+                  <span class="{{ pill }}"><app-grade-range [grades]="book" /></span>
                   <span class="{{ pill }}">{{ book.subject.name }}</span>
                 </div>
                 <h1 class="mt-4 text-4xl leading-tight font-black tracking-tight sm:text-5xl">

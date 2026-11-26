@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/angular';
 import { http, HttpResponse } from 'msw';
 import { userEvent } from 'vitest/browser';
-import { expectNoAxeViolations } from '../../../testing/accessibility';
+import { expectNoAxeViolations, heardText, seenText } from '../../../testing/accessibility';
 import {
   OPEN,
   addAleWithKeyboard,
@@ -46,6 +46,15 @@ function renderBook(bookId: string) {
 /** The book's title, the page's own heading. */
 function heading(): HTMLElement {
   return screen.getByRole('heading', { level: 1 });
+}
+
+/** The pill above the title that gives the book's grades. */
+function gradePill(): HTMLElement {
+  const pill = screen.getByRole('main').querySelector('app-grade-range')?.parentElement;
+  if (!pill) {
+    throw new Error('No grades on the page');
+  }
+  return pill;
 }
 
 /** The button that opens 谁能读, by what it says. */
@@ -108,7 +117,7 @@ describe('BookPage', () => {
 
       expect(document.title).toBe('花园里的小儿歌 - 好奇星球');
       expect(heading().textContent?.trim()).toBe('花园里的小儿歌');
-      expect(screen.getByText('学前')).toBeTruthy();
+      expect(seenText(gradePill())).toBe('学前～一年级');
       expect(screen.getByText('语文')).toBeTruthy();
       expect(screen.getByRole('heading', { level: 2, name: '这本书讲什么' })).toBeTruthy();
       expect(screen.getByText(/跟着小兔老师在花园里念儿歌/)).toBeTruthy();
@@ -124,9 +133,17 @@ describe('BookPage', () => {
       await expectPageAtEverySize('book');
     });
 
+    it('has screen readers hear the range of grades with 到', async () => {
+      await renderBook('garden-rhymes');
+
+      expect(heardText(gradePill())).toBe('学前到一年级');
+    });
+
     it('shows a book the family has with the children who read it, and no 移除', async () => {
       await renderBook('carrot-counting');
 
+      expect(seenText(gradePill())).toBe('一年级');
+      expect(heardText(gradePill())).toBe('一年级');
       expect(screen.getByText('已获取')).toBeTruthy();
       expect(readersButton('小米、豆豆可以读').getAttribute('aria-haspopup')).toBe('dialog');
       expect(screen.queryByRole('button', { name: '获取' })).toBeNull();

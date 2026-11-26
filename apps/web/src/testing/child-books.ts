@@ -81,8 +81,9 @@ export class FakeChildShelf {
   }
 
   private book(bookId: string, isNew: boolean): ChildBook {
-    const { id, title, intro, grade, subject, status, coverUrl } = this.library.card(bookId);
-    return { id, title, intro, grade, subject, status, coverUrl, isNew };
+    const { id, title, intro, minGrade, maxGrade, subject, status, coverUrl } =
+      this.library.card(bookId);
+    return { id, title, intro, minGrade, maxGrade, subject, status, coverUrl, isNew };
   }
 }
 

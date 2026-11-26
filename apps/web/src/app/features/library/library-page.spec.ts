@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/angular';
 import type { MeResponse } from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { page, userEvent } from 'vitest/browser';
-import { expectNoAxeViolations } from '../../../testing/accessibility';
+import { expectNoAxeViolations, heardText, seenText } from '../../../testing/accessibility';
 import {
   OPEN,
   addAleWithKeyboard,
@@ -26,6 +26,7 @@ import { ALE, ALE_ID, DOUDOU, XIAOMI_ID } from '../../../testing/children';
 import { useFixedClock } from '../../../testing/clock';
 import { holdOverlaysAt, noDialog } from '../../../testing/families';
 import { dialogGone, expectToast } from '../../../testing/family-page';
+import { gradeHolder } from '../../../testing/grades';
 import { holdNextGet } from '../../../testing/held-answers';
 import {
   BOOKS_PATH,
@@ -71,6 +72,11 @@ function card(title: string): HTMLElement {
     throw new Error(`No card for ${title}`);
   }
   return article;
+}
+
+/** The line of the book's card that gives its grades and subject. */
+function gradeLine(title: string): HTMLElement {
+  return gradeHolder(card(title));
 }
 
 /** The button of a filter, by what it says now. */
@@ -203,11 +209,12 @@ describe('LibraryPage', () => {
         '一次函数的故事',
       ]);
       const garden = within(card('花园里的小儿歌'));
-      expect(garden.getByText('学前 · 语文')).toBeTruthy();
+      expect(seenText(gradeLine('花园里的小儿歌'))).toBe('学前～一年级 · 语文');
       expect(garden.getByRole('button', { name: '获取' })).toBeTruthy();
       expect(garden.queryByRole('button', { name: '更多操作' })).toBeNull();
       expect(garden.getByRole('link').getAttribute('href')).toBe('/books/garden-rhymes');
       const carrots = within(card('胡萝卜数数大冒险'));
+      expect(seenText(gradeLine('胡萝卜数数大冒险'))).toBe('一年级 · 数学');
       expect(carrots.getByText('已获取')).toBeTruthy();
       expect(carrots.getByText('小米、豆豆可以读')).toBeTruthy();
       expect(carrots.queryByRole('button', { name: '更多操作' })).toBeNull();
@@ -226,6 +233,15 @@ describe('LibraryPage', () => {
       await expectScreenshotsAtEverySize('library', undefined, { sizes: DESKTOP_FIRST });
       await next.reached;
       await next.release();
+    });
+
+    it('writes the grades of a book for several grades as a range, which screen readers hear with 到', async () => {
+      await renderLibrary();
+
+      expect(seenText(gradeLine('让小机器人走出迷宫'))).toBe('四年级～初二 · 编程');
+      expect(heardText(gradeLine('让小机器人走出迷宫'))).toBe('四年级到初二 · 编程');
+      expect(heardText(gradeLine('花园里的小儿歌'))).toBe('学前到一年级 · 语文');
+      expect(heardText(gradeLine('胡萝卜数数大冒险'))).toBe('一年级 · 数学');
     });
 
     it.each([0, 120, 300, 620])('rises into place, at %i ms', async (time) => {
@@ -359,7 +375,12 @@ describe('LibraryPage', () => {
       expect(
         within(grades).getByRole('checkbox', { name: '一年级' }).getAttribute('aria-checked'),
       ).toBe('true');
-      expect(titles()).toEqual(['胡萝卜数数大冒险', '拼音小火车', '箭头卡片编程']);
+      expect(titles()).toEqual([
+        '花园里的小儿歌',
+        '胡萝卜数数大冒险',
+        '拼音小火车',
+        '箭头卡片编程',
+      ]);
 
       await userEvent.click(within(grades).getByRole('checkbox', { name: '二年级' }));
       await settled();
@@ -380,11 +401,23 @@ describe('LibraryPage', () => {
       expect(document.activeElement).toBe(filter(/^年级：全部/));
     });
 
+    it('lets through every book whose range holds a grade chosen', async () => {
+      await renderLibrary('/?grade=grade-5');
+
+      expect(titles()).toEqual([
+        '让小机器人走出迷宫',
+        '四季里的古诗',
+        '家里的电从哪里来',
+        '用 Scratch 做小游戏',
+      ]);
+    });
+
     it('shows the grades chosen in the address, three to a row', async () => {
       await renderLibrary('/?grade=grade-1&grade=grade-2');
 
       expect(filter(/^年级：一年级、二年级/)).toBeTruthy();
       expect(titles()).toEqual([
+        '花园里的小儿歌',
         '胡萝卜数数大冒险',
         'Hello，动物朋友',
         '拼音小火车',
@@ -410,7 +443,7 @@ describe('LibraryPage', () => {
         within(subjects)
           .getAllByRole('checkbox')
           .map((tile) => tile.textContent?.trim()),
-      ).toEqual(['数学', '英语', '科学']);
+      ).toEqual(['数学', '英语', '科学', '编程']);
     });
 
     it('filters by subject, ticking the subject chosen', async () => {

@@ -1,7 +1,7 @@
 import type { Router } from '@angular/router';
 import { screen, within } from '@testing-library/angular';
 import { userEvent } from 'vitest/browser';
-import { expectNoAxeViolations } from '../../../testing/accessibility';
+import { expectNoAxeViolations, heardText, seenText } from '../../../testing/accessibility';
 import { renderApp } from '../../../testing/app';
 import { NO_BOOKS, stubChildBooks, stubChildShelf } from '../../../testing/child-books';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../../../testing/child-login';
 import { DOUDOU_ID, XIAOMI_ID } from '../../../testing/children';
 import { backToFront } from '../../../testing/family-page';
+import { gradeHolder } from '../../../testing/grades';
 import { stubLibrary, type FakeLibrary } from '../../../testing/library';
 import { worker } from '../../../testing/network';
 import { ERROR_NUMBER, stubError, stubNoChild, stubVisitor } from '../../../testing/sample-data';
@@ -63,6 +64,11 @@ function card(title: string): HTMLElement {
     throw new Error(`No card for ${title}`);
   }
   return article;
+}
+
+/** The line of the book's card that gives its grades and subject. */
+function gradeLine(title: string): HTMLElement {
+  return gradeHolder(card(title));
 }
 
 /** The labels over the cover of the book with the title, 新 and 已下架. */
@@ -117,11 +123,21 @@ describe('ChildHome', () => {
       expect(coverTags('一起来写日记')).toEqual([]);
       expect(coverTags('形状捉迷藏')).toEqual([]);
       expect(coverTags('小兔数萝卜')).toEqual(['已下架']);
-      expect(within(card('胡萝卜数数大冒险')).getByText('一年级 · 数学')).toBeTruthy();
+      expect(seenText(gradeLine('胡萝卜数数大冒险'))).toBe('一年级 · 数学');
       expect(within(card('胡萝卜数数大冒险')).getByText(/^小兔要把 20 根胡萝卜/)).toBeTruthy();
       expect(screen.queryByRole('heading', { name: '还没有书' })).toBeNull();
       await expectNoAxeViolations();
       await expectScreenshotsAtEverySize('child-home-books');
+    });
+
+    it('writes the grades of a book for several grades as a range, which screen readers hear with 到', async () => {
+      await renderChildHome();
+      await findMyBooksHeading();
+
+      expect(seenText(gradeLine('四季里的古诗'))).toBe('四年级～六年级 · 语文');
+      expect(heardText(gradeLine('四季里的古诗'))).toBe('四年级到六年级 · 语文');
+      expect(seenText(gradeLine('一起来写日记'))).toBe('四年级 · 语文');
+      expect(heardText(gradeLine('一起来写日记'))).toBe('四年级 · 语文');
     });
 
     it('tells screen readers the count of new books in the heading, the badge being only a mark', async () => {
