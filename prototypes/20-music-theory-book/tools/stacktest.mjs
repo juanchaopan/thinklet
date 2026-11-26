@@ -3,10 +3,11 @@
 // its edges, the pile and the blank margins; checks that lights fade and
 // blank taps clear; that slips, numbers and bubbles cover no text and stay
 // inside the stack; that the thread ends at its sources; that stepping back
-// restores an act without entrances and masks survive; that practice taps
+// restores an act with nothing moving and masks survive; that practice taps
 // do nothing; that a slip with a stave sounds and stop silences it; and
 // that the page does not scroll sideways. Every tap first scrolls the stack
-// into view, so a tap never lands off screen.
+// into view, so a tap never lands off screen. How smooth a push moves is
+// checked separately (probe/csmotion.mjs).
 // Usage: node stacktest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 
@@ -94,35 +95,35 @@ const pile = await page.$('#main-stack .tl-cs-pile');
 if (pile) {
   const pb = await pile.boundingBox();
   await page.mouse.click(pb.x + pb.width - 20, pb.y + pb.height / 2);
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(900);
   const opened = await lastOf('pileTap');
   const shown = await page.$$eval('#main-stack .tl-cs-slip', (s) => s.length);
   const o = await overlaps();
   await toStack();
   const f = await page.$eval('#main-stack', (h) => { const r = h.querySelector('.tl-cs-fresh').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom + 12 }; });
   await page.mouse.click(f.x, f.y);
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(900);
   console.log(`pile tap -> open ${opened.open}, slips ${shown}${o.length ? ', OVERLAPS ' + o.join(' ') : ''}; after a blank tap slips ${await page.$$eval('#main-stack .tl-cs-slip', (s) => s.length)}`);
 }
 
 // Highlight brings a folded conclusion out; caption sits under the newest
 // and the stack grows to hold it.
 await page.click('[data-cmd="recall"]');
-await page.waitForTimeout(700);
+await page.waitForTimeout(900);
 const recalled = await page.$$eval('#main-stack .tl-cs-slip.tl-lit', (s) => s.map((e) => e.dataset.id));
 await page.click('[data-cmd="revealAnswer"]');
 await page.click('[data-cmd="caption"]');
-await page.waitForTimeout(700);
+await page.waitForTimeout(900);
 await toStack();
 const capO = await overlaps();
 console.log(`highlight k1 -> lit ${recalled.join(',')}; caption under the answer${capO.length ? ', OVERLAPS ' + capO.join(' ') : ' covers nothing and stays inside'}`);
 
-// Stepping back restores an act with no entrance; a masked conclusion stays masked.
+// Stepping back restores an act with nothing moving; a masked conclusion stays masked.
 await page.evaluate(() => window.tlMain.mask('k2'));
 await page.click('[data-cmd="back"]');
 await page.waitForTimeout(100);
-const back = await page.$eval('#main-stack', (h) => ({ ids: [...h.querySelectorAll('.tl-cs-slip')].map((e) => e.dataset.id), entering: h.querySelectorAll('.tl-cs-enter, .tl-cs-draw').length, covers: h.querySelectorAll('.tl-cs-cover').length }));
-console.log(`back one act -> slips ${back.ids.join(',')}, entrances ${back.entering}, covers ${back.covers}`);
+const back = await page.$eval('#main-stack', (h) => ({ ids: [...h.querySelectorAll('.tl-cs-slip')].map((e) => e.dataset.id), moving: h.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length, draws: h.querySelectorAll('.tl-cs-draw').length, covers: h.querySelectorAll('.tl-cs-cover').length }));
+console.log(`back one act -> slips ${back.ids.join(',')}, animations running ${back.moving}, threads drawing ${back.draws}, covers ${back.covers}`);
 await page.evaluate(() => window.tlMain.reveal());
 
 // Sound: a slip with a stave sounds its notes; stop silences them.
