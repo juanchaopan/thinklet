@@ -20,12 +20,6 @@ interface Range {
   teaching: GradeKey;
 }
 
-/** What the database refuses a statement with: its SQLSTATE and the constraint. */
-interface Refusal {
-  code: string | undefined;
-  constraint: string | undefined;
-}
-
 // Books cover a range of grades and teach at one grade within it (#21,
 // data.md, books): the migration gives every book written so far its one
 // grade as the lowest, highest and teaching grade, with that grade's
@@ -49,25 +43,16 @@ describe(`migration ${TAG}`, () => {
       [id, gradeId, status],
     );
 
-  /**
-   * Writes a book of the range as a migration script does after this one;
-   * answers what the database refuses it with, or undefined when it is written.
-   */
-  async function refusalOf({ min, max, teaching }: Range): Promise<Refusal | undefined> {
+  /** Writes a book of the range as a migration script does after this one. */
+  function insertLaterBook({ min, max, teaching }: Range) {
     written += 1;
-    try {
-      await client.query(
-        `insert into books
-           (id, title, intro, min_grade_id, min_grade_level, max_grade_id, max_grade_level,
-            teaching_grade_id, teaching_grade_level, subject_id, status)
-         values ($1, '新格式的书', '迁移之后写的书。', $2, $3, $4, $5, $6, $7, 'math', 'active')`,
-        [`${TEST_BOOK_PREFIX}after-${written}`, ...min, ...max, ...teaching],
-      );
-      return undefined;
-    } catch (error) {
-      const { code, constraint } = error as { code?: string; constraint?: string };
-      return { code, constraint };
-    }
+    return client.query(
+      `insert into books
+         (id, title, intro, min_grade_id, min_grade_level, max_grade_id, max_grade_level,
+          teaching_grade_id, teaching_grade_level, subject_id, status)
+       values ($1, '新格式的书', '迁移之后写的书。', $2, $3, $4, $5, $6, $7, 'math', 'active')`,
+      [`${TEST_BOOK_PREFIX}after-${written}`, ...min, ...max, ...teaching],
+    );
   }
 
   beforeAll(async () => {
@@ -179,31 +164,30 @@ describe(`migration ${TAG}`, () => {
       ['within the range', ['grade-6', 6]],
       ['at the highest grade', ['grade-8', 8]],
     ])('accepts a range with the teaching grade %s', async (_case, teaching) => {
-      expect(
-        await refusalOf({ min: ['grade-4', 4], max: ['grade-8', 8], teaching }),
-      ).toBeUndefined();
+      await expect(
+        insertLaterBook({ min: ['grade-4', 4], max: ['grade-8', 8], teaching }),
+      ).resolves.toBeDefined();
     });
 
     it('accepts a range of one grade', async () => {
-      expect(
-        await refusalOf({ min: ['grade-2', 2], max: ['grade-2', 2], teaching: ['grade-2', 2] }),
-      ).toBeUndefined();
+      await expect(
+        insertLaterBook({ min: ['grade-2', 2], max: ['grade-2', 2], teaching: ['grade-2', 2] }),
+      ).resolves.toBeDefined();
     });
 
     it('rejects a range whose lowest grade is above its highest', async () => {
-      expect(
-        await refusalOf({ min: ['grade-6', 6], max: ['grade-4', 4], teaching: ['grade-6', 6] }),
-      ).toEqual({ code: CHECK_VIOLATION, constraint: 'books_grade_range_check' });
+      await expect(
+        insertLaterBook({ min: ['grade-6', 6], max: ['grade-4', 4], teaching: ['grade-6', 6] }),
+      ).rejects.toMatchObject({ code: CHECK_VIOLATION, constraint: 'books_grade_range_check' });
     });
 
     it.each<[string, GradeKey]>([
       ['below', ['grade-3', 3]],
       ['above', ['grade-9', 9]],
     ])('rejects a teaching grade %s the range', async (_case, teaching) => {
-      expect(await refusalOf({ min: ['grade-4', 4], max: ['grade-8', 8], teaching })).toEqual({
-        code: CHECK_VIOLATION,
-        constraint: 'books_teaching_grade_check',
-      });
+      await expect(
+        insertLaterBook({ min: ['grade-4', 4], max: ['grade-8', 8], teaching }),
+      ).rejects.toMatchObject({ code: CHECK_VIOLATION, constraint: 'books_teaching_grade_check' });
     });
 
     it.each<[string, string, Range]>([
@@ -223,17 +207,20 @@ describe(`migration ${TAG}`, () => {
         { min: ['grade-4', 4], max: ['grade-8', 8], teaching: ['grade-6', 5] },
       ],
     ])("rejects a level of %s that is not the grade's", async (_case, constraint, range) => {
-      expect(await refusalOf(range)).toEqual({ code: FOREIGN_KEY_VIOLATION, constraint });
+      await expect(insertLaterBook(range)).rejects.toMatchObject({
+        code: FOREIGN_KEY_VIOLATION,
+        constraint,
+      });
     });
 
     it('rejects a grade that does not exist', async () => {
-      expect(
-        await refusalOf({
+      await expect(
+        insertLaterBook({
           min: ['grade-13', 13],
           max: ['grade-13', 13],
           teaching: ['grade-13', 13],
         }),
-      ).toMatchObject({ code: FOREIGN_KEY_VIOLATION });
+      ).rejects.toMatchObject({ code: FOREIGN_KEY_VIOLATION });
     });
   });
 });

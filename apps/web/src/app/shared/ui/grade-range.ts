@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import type { GradeRef } from '@thinklet/contracts';
 
 /** The grades a book is written for: the lowest and the highest, the same grade for one grade. */
 export interface GradeSpan {
-  readonly minGrade: { readonly id: string; readonly name: string };
-  readonly maxGrade: { readonly id: string; readonly name: string };
+  readonly minGrade: Readonly<GradeRef>;
+  readonly maxGrade: Readonly<GradeRef>;
 }
 
 /** A book's grades as the page writes them and as screen readers say them. */

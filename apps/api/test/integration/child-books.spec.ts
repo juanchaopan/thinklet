@@ -3,6 +3,7 @@ import {
   ACTIVE_BOOK,
   CHILD_BOOKS_PATH,
   INACTIVE_BOOK,
+  TEST_GRADE_NAME,
   acquire,
   getAsChild,
   insertAssignment,
@@ -33,6 +34,7 @@ describe("the child's books", () => {
   let parent: Parent;
   let family: FamilyDetail;
 
+  /** The child's books, read through the strict schema, which refuses any key it does not name. */
   const booksOf = async (child: Child) => {
     const response = await getAsChild(running.server, child.id, CHILD_BOOKS_PATH);
     expect(response.status).toBe(200);
@@ -91,15 +93,13 @@ describe("the child's books", () => {
     await acquire(running.server, parent, family.id, bookId);
     await setReaders(running.server, parent, { familyId: family.id, bookId }, [child.id]);
 
-    const response = await getAsChild(running.server, child.id, CHILD_BOOKS_PATH);
+    const [book] = (await booksOf(child)).books;
 
-    const [book] = childBooksResponseSchema.parse(response.body).books;
     expect(book).toMatchObject({
       id: bookId,
-      minGrade: { id: lowest, name: '测试年级' },
-      maxGrade: { id: highest, name: '测试年级' },
+      minGrade: { id: lowest, name: TEST_GRADE_NAME },
+      maxGrade: { id: highest, name: TEST_GRADE_NAME },
     });
-    expect((response.body as { books: object[] }).books[0]).not.toHaveProperty('teachingGrade');
   });
 
   it('answers a book the child has opened as not new and leaves it out of the count', async () => {

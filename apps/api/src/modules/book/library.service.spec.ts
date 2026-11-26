@@ -31,16 +31,15 @@ const XIAOMI = { id: 'child-1', nickname: '小米', account: 'xiaomi' };
 const DOUDOU = { id: 'child-2', nickname: '豆豆', account: 'doudou' };
 const PRESCHOOL = { id: 'preschool', name: '学前' };
 const FIRST_GRADE = { id: 'grade-1', name: '一年级' };
+const SECOND_GRADE = { id: 'grade-2', name: '二年级' };
 const GRADES: GradeRecord[] = [
   { ...PRESCHOOL, level: 0 },
   { ...FIRST_GRADE, level: 1 },
-  { id: 'grade-2', name: '二年级', level: 2 },
+  { ...SECOND_GRADE, level: 2 },
 ];
-const SUBJECTS = [
-  { id: 'chinese', name: '语文' },
-  { id: 'math', name: '数学' },
-];
+const CHINESE = { id: 'chinese', name: '语文' };
 const MATH = { id: 'math', name: '数学' };
+const SUBJECTS = [CHINESE, MATH];
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
 const TRANSACTION = { transaction: 'books' };
@@ -273,7 +272,7 @@ function createService(
     listGrades: vi.fn(() => Promise.resolve(GRADES)),
     listSubjects: vi.fn(() => Promise.resolve(SUBJECTS)),
     listSubjectsWithBooks: vi.fn<(filter: BookFilter) => Promise<NamedRecord[]>>(() =>
-      Promise.resolve(SUBJECTS.slice(1)),
+      Promise.resolve([MATH]),
     ),
     listBooks: vi.fn((_filter: BookFilter, _position: unknown, limit: number) =>
       Promise.resolve((options.rows ?? []).slice(0, limit)),
@@ -461,8 +460,8 @@ describe('LibraryService', () => {
     );
 
     expect(filters).toEqual({
-      grades: [PRESCHOOL, FIRST_GRADE, { id: 'grade-2', name: '二年级' }],
-      subjects: [SUBJECTS[1]],
+      grades: [PRESCHOOL, FIRST_GRADE, SECOND_GRADE],
+      subjects: [MATH],
     });
     expect(store.listSubjectsWithBooks).toHaveBeenCalledWith({
       scope: 'family',

@@ -23,6 +23,7 @@ import {
 import { ALE, DOUDOU, XIAOMI } from '../../../testing/children';
 import { holdOverlaysAt } from '../../../testing/families';
 import { backToFront, dialogGone, expectToast } from '../../../testing/family-page';
+import { gradeHolder } from '../../../testing/grades';
 import { bookPath, stubLibrary, type FakeLibrary } from '../../../testing/library';
 import { worker } from '../../../testing/network';
 import { moveMouseOffPage } from '../../../testing/pointer';
@@ -50,11 +51,7 @@ function heading(): HTMLElement {
 
 /** The pill above the title that gives the book's grades. */
 function gradePill(): HTMLElement {
-  const pill = screen.getByRole('main').querySelector('app-grade-range')?.parentElement;
-  if (!pill) {
-    throw new Error('No grades on the page');
-  }
-  return pill;
+  return gradeHolder(screen.getByRole('main'));
 }
 
 /** The button that opens 谁能读, by what it says. */

@@ -34,6 +34,10 @@ export const CHILD_BOOKS_PATH = '/api/child/books';
 export const ACTIVE_BOOK = 'carrot-counting';
 export const INACTIVE_BOOK = 'bunny-counts';
 
+/** The name of every grade and every subject a test writes. */
+export const TEST_GRADE_NAME = '测试年级';
+export const TEST_SUBJECT_NAME = '测试学科';
+
 /** A book of a family. */
 export interface FamilyBook {
   familyId: string;
@@ -103,8 +107,8 @@ export async function insertGrade(databaseUrl: string): Promise<string> {
   await query(
     databaseUrl,
     `insert into grades (id, name, level, position)
-     values ($1, '测试年级', (select max(level) + 1 from grades), (select max(position) + 1 from grades))`,
-    [id],
+     values ($1, $2, (select max(level) + 1 from grades), (select max(position) + 1 from grades))`,
+    [id, TEST_GRADE_NAME],
   );
   return id;
 }
@@ -115,8 +119,8 @@ export async function insertSubject(databaseUrl: string): Promise<string> {
   await query(
     databaseUrl,
     `insert into subjects (id, name, position)
-     values ($1, '测试学科', (select max(position) + 1 from subjects))`,
-    [id],
+     values ($1, $2, (select max(position) + 1 from subjects))`,
+    [id, TEST_SUBJECT_NAME],
   );
   return id;
 }

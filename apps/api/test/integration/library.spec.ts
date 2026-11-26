@@ -10,6 +10,8 @@ import {
 import {
   ACTIVE_BOOK,
   INACTIVE_BOOK,
+  TEST_GRADE_NAME,
+  TEST_SUBJECT_NAME,
   acquire,
   bookIdsInOrder,
   bookPath,
@@ -39,10 +41,6 @@ const COVER_URL = /^\/api\/books\/[a-z0-9-]+\/cover\?v=[0-9a-f]{64}$/;
 
 /** The subjects of the sample books, in their set order. */
 const SAMPLE_SUBJECTS = ['chinese', 'math', 'english', 'science', 'coding'];
-
-/** The name every grade and subject a test writes has. */
-const TEST_GRADE_NAME = '测试年级';
-const TEST_SUBJECT_NAME = '测试学科';
 
 type Parameters = Record<string, string | string[] | undefined>;
 
@@ -89,7 +87,10 @@ describe('library', () => {
     return created;
   }
 
-  /** One batch of the family's library with the parameters. */
+  /**
+   * One batch of the family's library with the parameters, read through
+   * the strict schema, which refuses any key it does not name.
+   */
   async function batchOf(familyId: string, parameters: Parameters = {}): Promise<BookListResponse> {
     const response = await asMember().get(`${booksPath(familyId)}${queryOf(parameters)}`);
     expect(response.status).toBe(200);
@@ -178,30 +179,30 @@ describe('library', () => {
     });
 
     it('orders books added at the same time by id and keeps microseconds apart across batches', async () => {
-      const minGradeId = await insertGrade(running.databaseUrl);
+      const gradeId = await insertGrade(running.databaseUrl);
       const subjectId = await insertSubject(running.databaseUrl);
       const tied = await Promise.all(
         Array.from({ length: 14 }, (_, index) =>
           insertBook(running.databaseUrl, {
-            id: `tied-${String(index).padStart(2, '0')}-${minGradeId}`,
-            minGradeId,
+            id: `tied-${String(index).padStart(2, '0')}-${gradeId}`,
+            minGradeId: gradeId,
             subjectId,
             createdAt: '2021-06-01 08:00:00.123456+00',
           }),
         ),
       );
       const later = await insertBook(running.databaseUrl, {
-        minGradeId,
+        minGradeId: gradeId,
         subjectId,
         createdAt: '2021-06-01 08:00:00.123457+00',
       });
       const earlier = await insertBook(running.databaseUrl, {
-        minGradeId,
+        minGradeId: gradeId,
         subjectId,
         createdAt: '2021-06-01 08:00:00.123455+00',
       });
 
-      const { ids, sizes } = await everyBatch(family.id, { grade: minGradeId });
+      const { ids, sizes } = await everyBatch(family.id, { grade: gradeId });
 
       expect(ids).toEqual([later, ...[...tied].sort(), earlier]);
       expect(sizes).toEqual([12, 4]);
@@ -411,6 +412,8 @@ describe('library', () => {
       );
     });
 
+    // The strict schemas the card and the page are read through refuse the
+    // teaching grade, so reading them is what checks it stays with the api.
     it('shows its lowest and highest grades on its card and page, never the grade it teaches at', async () => {
       const range = {
         minGrade: { id: grades.lowest, name: TEST_GRADE_NAME },
@@ -421,10 +424,8 @@ describe('library', () => {
       const response = await asMember().get(bookPath(family.id, bookId));
 
       expect(card).toMatchObject({ id: bookId, ...range });
-      expect(card).not.toHaveProperty('teachingGrade');
       expect(response.status).toBe(200);
       expect(bookDetailSchema.parse(response.body)).toMatchObject({ id: bookId, ...range });
-      expect(response.body).not.toHaveProperty('teachingGrade');
     });
 
     it('gives its subject as a filter option for a grade within its range only', async () => {
@@ -550,15 +551,15 @@ describe('library', () => {
 
     it('answers no replacement when the replacement is inactive too, or there is none', async () => {
       const ours = await newFamily();
-      const minGradeId = await insertGrade(running.databaseUrl);
+      const gradeId = await insertGrade(running.databaseUrl);
       const subjectId = await insertSubject(running.databaseUrl);
       const gone = await insertBook(running.databaseUrl, {
-        minGradeId,
+        minGradeId: gradeId,
         subjectId,
         status: 'inactive',
       });
       const replacedByGone = await insertBook(running.databaseUrl, {
-        minGradeId,
+        minGradeId: gradeId,
         subjectId,
         status: 'inactive',
         replacementId: gone,

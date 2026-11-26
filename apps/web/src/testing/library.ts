@@ -372,16 +372,15 @@ function gradeRef(gradeId: string): GradeRef {
   return grade;
 }
 
-/** A grade's place in the set order, which ranges are measured by. */
-function gradeLevel(grade: GradeRef | string): number {
-  const gradeId = typeof grade === 'string' ? grade : grade.id;
+/** The place in the set order of the grade with the id, which ranges are measured by. */
+function gradeLevel(gradeId: string): number {
   return GRADES.findIndex(({ id }) => id === gradeId);
 }
 
 /** Whether any of the grades asked for lies within the book's range, its ends included. */
 function coversAnyGrade(book: BookCard, gradeIds: readonly string[]): boolean {
-  const lowest = gradeLevel(book.minGrade);
-  const highest = gradeLevel(book.maxGrade);
+  const lowest = gradeLevel(book.minGrade.id);
+  const highest = gradeLevel(book.maxGrade.id);
   return gradeIds.some((gradeId) => {
     const level = gradeLevel(gradeId);
     return level >= lowest && level <= highest;
