@@ -41,6 +41,13 @@ describe('covers', () => {
   const recordHash = (bookId: string, hash: string) =>
     query(running.databaseUrl, 'update books set cover_sha256 = $2 where id = $1', [bookId, hash]);
 
+  /** A book of the test's own grade and subject, which has no cover yet. */
+  async function insertCoverlessBook(): Promise<string> {
+    const minGradeId = await insertGrade(running.databaseUrl);
+    const subjectId = await insertSubject(running.databaseUrl);
+    return insertBook(running.databaseUrl, { minGradeId, subjectId });
+  }
+
   beforeAll(async () => {
     parent = await signInParent(running.server, { name: '林悦' });
     cover = await readFile(join(bookContentDirectory, ACTIVE_BOOK, 'cover.png'));
@@ -98,9 +105,7 @@ describe('covers', () => {
   });
 
   it('answers a book without a cover, and one that does not exist, with 404 not_found', async () => {
-    const gradeId = await insertGrade(running.databaseUrl);
-    const subjectId = await insertSubject(running.databaseUrl);
-    const coverless = await insertBook(running.databaseUrl, { gradeId, subjectId });
+    const coverless = await insertCoverlessBook();
 
     const responses = [
       await asParent().get(coverPath(coverless, '0'.repeat(64))),
@@ -113,9 +118,7 @@ describe('covers', () => {
   });
 
   it('answers a cover missing from storage with 404 not_found', async () => {
-    const gradeId = await insertGrade(running.databaseUrl);
-    const subjectId = await insertSubject(running.databaseUrl);
-    const bookId = await insertBook(running.databaseUrl, { gradeId, subjectId });
+    const bookId = await insertCoverlessBook();
     const version = 'a'.repeat(64);
     await query(
       running.databaseUrl,

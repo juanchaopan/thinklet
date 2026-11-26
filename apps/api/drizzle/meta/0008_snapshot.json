@@ -1,0 +1,1321 @@
+{
+  "id": "86b71125-7af1-43a0-a9a6-55f2663f19d7",
+  "prevId": "92b5dab3-8840-47f4-888e-fb9bf676972c",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.audit_events": {
+      "name": "audit_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "actor_kind": {
+          "name": "actor_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_issuer": {
+          "name": "actor_issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_subject": {
+          "name": "actor_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_kind": {
+          "name": "target_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "details": {
+          "name": "details",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "audit_events_family_occurred_at_idx": {
+          "name": "audit_events_family_occurred_at_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_events_target_idx": {
+          "name": "audit_events_target_idx",
+          "columns": [
+            {
+              "expression": "target_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "target_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "audit_events_actor_kind_check": {
+          "name": "audit_events_actor_kind_check",
+          "value": "actor_kind in ('parent', 'child', 'system')"
+        },
+        "audit_events_actor_id_check": {
+          "name": "audit_events_actor_id_check",
+          "value": "(actor_kind = 'system') = (actor_id is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.book_assignments": {
+      "name": "book_assignments",
+      "schema": "",
+      "columns": {
+        "child_id": {
+          "name": "child_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "book_assignments_family_book_idx": {
+          "name": "book_assignments_family_book_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "book_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "book_assignments_child_fk": {
+          "name": "book_assignments_child_fk",
+          "tableFrom": "book_assignments",
+          "tableTo": "children",
+          "columnsFrom": [
+            "child_id",
+            "family_id"
+          ],
+          "columnsTo": [
+            "id",
+            "family_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "book_assignments_family_book_fk": {
+          "name": "book_assignments_family_book_fk",
+          "tableFrom": "book_assignments",
+          "tableTo": "family_books",
+          "columnsFrom": [
+            "family_id",
+            "book_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "book_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "book_assignments_child_id_book_id_pk": {
+          "name": "book_assignments_child_id_book_id_pk",
+          "columns": [
+            "child_id",
+            "book_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.books": {
+      "name": "books",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intro": {
+          "name": "intro",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_grade_id": {
+          "name": "min_grade_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_grade_level": {
+          "name": "min_grade_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_grade_id": {
+          "name": "max_grade_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_grade_level": {
+          "name": "max_grade_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "teaching_grade_id": {
+          "name": "teaching_grade_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "teaching_grade_level": {
+          "name": "teaching_grade_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "replacement_id": {
+          "name": "replacement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_type": {
+          "name": "cover_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cover_sha256": {
+          "name": "cover_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "books_created_at_id_idx": {
+          "name": "books_created_at_id_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "books_subject_id_subjects_id_fk": {
+          "name": "books_subject_id_subjects_id_fk",
+          "tableFrom": "books",
+          "tableTo": "subjects",
+          "columnsFrom": [
+            "subject_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "books_replacement_id_books_id_fk": {
+          "name": "books_replacement_id_books_id_fk",
+          "tableFrom": "books",
+          "tableTo": "books",
+          "columnsFrom": [
+            "replacement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "books_min_grade_fk": {
+          "name": "books_min_grade_fk",
+          "tableFrom": "books",
+          "tableTo": "grades",
+          "columnsFrom": [
+            "min_grade_id",
+            "min_grade_level"
+          ],
+          "columnsTo": [
+            "id",
+            "level"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "cascade"
+        },
+        "books_max_grade_fk": {
+          "name": "books_max_grade_fk",
+          "tableFrom": "books",
+          "tableTo": "grades",
+          "columnsFrom": [
+            "max_grade_id",
+            "max_grade_level"
+          ],
+          "columnsTo": [
+            "id",
+            "level"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "cascade"
+        },
+        "books_teaching_grade_fk": {
+          "name": "books_teaching_grade_fk",
+          "tableFrom": "books",
+          "tableTo": "grades",
+          "columnsFrom": [
+            "teaching_grade_id",
+            "teaching_grade_level"
+          ],
+          "columnsTo": [
+            "id",
+            "level"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "books_id_check": {
+          "name": "books_id_check",
+          "value": "id ~ '^[a-z0-9-]{1,60}$'"
+        },
+        "books_title_length_check": {
+          "name": "books_title_length_check",
+          "value": "char_length(title) between 1 and 30"
+        },
+        "books_intro_length_check": {
+          "name": "books_intro_length_check",
+          "value": "char_length(intro) between 1 and 200"
+        },
+        "books_grade_range_check": {
+          "name": "books_grade_range_check",
+          "value": "min_grade_level <= max_grade_level"
+        },
+        "books_teaching_grade_check": {
+          "name": "books_teaching_grade_check",
+          "value": "teaching_grade_level between min_grade_level and max_grade_level"
+        },
+        "books_status_check": {
+          "name": "books_status_check",
+          "value": "status in ('active', 'inactive')"
+        },
+        "books_replacement_check": {
+          "name": "books_replacement_check",
+          "value": "replacement_id <> id"
+        },
+        "books_cover_type_check": {
+          "name": "books_cover_type_check",
+          "value": "cover_type in ('webp', 'png')"
+        },
+        "books_cover_sha256_check": {
+          "name": "books_cover_sha256_check",
+          "value": "cover_sha256 ~ '^[0-9a-f]{64}$'"
+        },
+        "books_cover_check": {
+          "name": "books_cover_check",
+          "value": "(cover_type is null) = (cover_sha256 is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.child_devices": {
+      "name": "child_devices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "child_id": {
+          "name": "child_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "remembered_at": {
+          "name": "remembered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "child_devices_token_hash_idx": {
+          "name": "child_devices_token_hash_idx",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "child_devices_child_id_children_id_fk": {
+          "name": "child_devices_child_id_children_id_fk",
+          "tableFrom": "child_devices",
+          "tableTo": "children",
+          "columnsFrom": [
+            "child_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "child_devices_child_token_unique": {
+          "name": "child_devices_child_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "child_id",
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.children": {
+      "name": "children",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nickname": {
+          "name": "nickname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_lookup": {
+          "name": "account_lookup",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_setup_until": {
+          "name": "password_setup_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sessions_valid_after": {
+          "name": "sessions_valid_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "children_family_id_families_id_fk": {
+          "name": "children_family_id_families_id_fk",
+          "tableFrom": "children",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "children_family_account_unique": {
+          "name": "children_family_account_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "family_id",
+            "account_lookup"
+          ]
+        },
+        "children_id_family_unique": {
+          "name": "children_id_family_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "family_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "children_nickname_length_check": {
+          "name": "children_nickname_length_check",
+          "value": "octet_length(split_part(nickname, '.', 3)) <= 214"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.data_migrations": {
+      "name": "data_migrations",
+      "schema": "",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "checksum": {
+          "name": "checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ran_at": {
+          "name": "ran_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "data_migrations_name_check": {
+          "name": "data_migrations_name_check",
+          "value": "name ~ '^[0-9]{4}-[a-z0-9-]+$'"
+        },
+        "data_migrations_checksum_check": {
+          "name": "data_migrations_checksum_check",
+          "value": "checksum ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.families": {
+      "name": "families",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "families_code_unique": {
+          "name": "families_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "families_code_length_check": {
+          "name": "families_code_length_check",
+          "value": "char_length(code) = 6"
+        },
+        "families_name_length_check": {
+          "name": "families_name_length_check",
+          "value": "octet_length(name) <= 320"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.family_books": {
+      "name": "family_books",
+      "schema": "",
+      "columns": {
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acquired_at": {
+          "name": "acquired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "family_books_family_id_families_id_fk": {
+          "name": "family_books_family_id_families_id_fk",
+          "tableFrom": "family_books",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "family_books_book_id_books_id_fk": {
+          "name": "family_books_book_id_books_id_fk",
+          "tableFrom": "family_books",
+          "tableTo": "books",
+          "columnsFrom": [
+            "book_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "family_books_family_id_book_id_pk": {
+          "name": "family_books_family_id_book_id_pk",
+          "columns": [
+            "family_id",
+            "book_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.family_members": {
+      "name": "family_members",
+      "schema": "",
+      "columns": {
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "family_members_one_admin_per_family": {
+          "name": "family_members_one_admin_per_family",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "role = 'admin'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "family_members_parent_id_idx": {
+          "name": "family_members_parent_id_idx",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "family_members_family_id_families_id_fk": {
+          "name": "family_members_family_id_families_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "family_members_parent_id_parents_id_fk": {
+          "name": "family_members_parent_id_parents_id_fk",
+          "tableFrom": "family_members",
+          "tableTo": "parents",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "family_members_family_id_parent_id_pk": {
+          "name": "family_members_family_id_parent_id_pk",
+          "columns": [
+            "family_id",
+            "parent_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "family_members_role_check": {
+          "name": "family_members_role_check",
+          "value": "role in ('admin', 'member')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.grades": {
+      "name": "grades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "grades_level_unique": {
+          "name": "grades_level_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "level"
+          ]
+        },
+        "grades_position_unique": {
+          "name": "grades_position_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "position"
+          ]
+        },
+        "grades_id_level_unique": {
+          "name": "grades_id_level_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "level"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "grades_id_check": {
+          "name": "grades_id_check",
+          "value": "id ~ '^[a-z0-9-]{1,30}$'"
+        },
+        "grades_name_length_check": {
+          "name": "grades_name_length_check",
+          "value": "char_length(name) between 1 and 10"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.join_requests": {
+      "name": "join_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dismissed_by_applicant_at": {
+          "name": "dismissed_by_applicant_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "join_requests_one_pending_per_parent": {
+          "name": "join_requests_one_pending_per_parent",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "join_requests_family_id_families_id_fk": {
+          "name": "join_requests_family_id_families_id_fk",
+          "tableFrom": "join_requests",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "join_requests_parent_id_parents_id_fk": {
+          "name": "join_requests_parent_id_parents_id_fk",
+          "tableFrom": "join_requests",
+          "tableTo": "parents",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "join_requests_status_check": {
+          "name": "join_requests_status_check",
+          "value": "status in ('pending', 'approved', 'rejected', 'withdrawn', 'expired')"
+        },
+        "join_requests_code_length_check": {
+          "name": "join_requests_code_length_check",
+          "value": "char_length(code) = 6"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.parents": {
+      "name": "parents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "oidc_issuer": {
+          "name": "oidc_issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "oidc_subject": {
+          "name": "oidc_subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consent_version": {
+          "name": "consent_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consented_at": {
+          "name": "consented_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "parents_oidc_identity_unique": {
+          "name": "parents_oidc_identity_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "oidc_issuer",
+            "oidc_subject"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "parents_name_length_check": {
+          "name": "parents_name_length_check",
+          "value": "octet_length(name) <= 320"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.subjects": {
+      "name": "subjects",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "subjects_position_unique": {
+          "name": "subjects_position_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "position"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "subjects_id_check": {
+          "name": "subjects_id_check",
+          "value": "id ~ '^[a-z0-9-]{1,30}$'"
+        },
+        "subjects_name_length_check": {
+          "name": "subjects_name_length_check",
+          "value": "char_length(name) between 1 and 10"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

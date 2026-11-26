@@ -94,8 +94,9 @@ function uniqueName(prefix: string): string {
 }
 
 /**
- * Writes a grade of the test's own, after every other in the order, so a
- * test can list books that no other test lists.
+ * Writes a grade of the test's own, after every other in the order and
+ * above every other in level, so a test can list books that no other test
+ * lists: a book of the test's grades covers no grade written before them.
  */
 export async function insertGrade(databaseUrl: string): Promise<string> {
   const id = uniqueName('test-grade');
@@ -120,10 +121,17 @@ export async function insertSubject(databaseUrl: string): Promise<string> {
   return id;
 }
 
-/** A book a test writes; the times are SQL timestamptz literals. */
+/**
+ * A book a test writes; the times are SQL timestamptz literals. The book
+ * is written for `minGradeId` alone unless `maxGradeId` names a higher
+ * grade, and teaches at its lowest grade unless `teachingGradeId` says
+ * otherwise.
+ */
 export interface NewBook {
   id?: string;
-  gradeId: string;
+  minGradeId: string;
+  maxGradeId?: string;
+  teachingGradeId?: string;
   subjectId: string;
   status?: 'active' | 'inactive';
   replacementId?: string;
@@ -131,24 +139,49 @@ export interface NewBook {
   createdAt?: string;
 }
 
-/** Writes a book directly into the database, as a migration script does, and returns its id. */
+/**
+ * Writes a book directly into the database, as a migration script does,
+ * with the levels of its grades from the grades table, and returns its id.
+ */
 export async function insertBook(databaseUrl: string, book: NewBook): Promise<string> {
   const id = book.id ?? uniqueName('test-book');
-  await query(
+  const inserted = await query<{ id: string }>(
     databaseUrl,
-    `insert into books (id, title, intro, grade_id, subject_id, status, replacement_id, created_at)
-     values ($1, $2, '测试用的书。', $3, $4, $5, $6, $7)`,
+    `insert into books
+       (id, title, intro, min_grade_id, min_grade_level, max_grade_id, max_grade_level,
+        teaching_grade_id, teaching_grade_level, subject_id, status, replacement_id, created_at)
+     select $1, $2, '测试用的书。', lowest.id, lowest.level, highest.id, highest.level,
+            teaching.id, teaching.level, $6, $7, $8, $9
+     from grades lowest, grades highest, grades teaching
+     where lowest.id = $3 and highest.id = $4 and teaching.id = $5
+     returning id`,
     [
       id,
       `书 ${id.slice(-8)}`,
-      book.gradeId,
+      book.minGradeId,
+      book.maxGradeId ?? book.minGradeId,
+      book.teachingGradeId ?? book.minGradeId,
       book.subjectId,
       book.status ?? 'active',
       book.replacementId ?? null,
       book.createdAt ?? '2020-01-01 00:00:00+00',
     ],
   );
+  if (inserted.length !== 1) {
+    throw new Error(`The book ${id} was not written: a grade it names does not exist`);
+  }
   return id;
+}
+
+/**
+ * The SQL condition on `books` of a book whose range of grades covers at
+ * least one of the grades, the way the library filters by grades, for
+ * tests to find the books they expect.
+ */
+export function coversAnyGrade(gradeIds: readonly string[]): string {
+  const ids = gradeIds.map((id) => `'${id}'`).join(', ');
+  return `exists (select 1 from grades g where g.id in (${ids})
+                  and g.level between books.min_grade_level and books.max_grade_level)`;
 }
 
 /** The ids of the books in the library's order, newest first and then by id, with the condition. */

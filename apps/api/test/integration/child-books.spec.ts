@@ -6,7 +6,10 @@ import {
   acquire,
   getAsChild,
   insertAssignment,
+  insertBook,
   insertFamilyBook,
+  insertGrade,
+  insertSubject,
   markOpened,
   setReaders,
 } from '../support/books.js';
@@ -22,8 +25,9 @@ const COVER_URL = /^\/api\/books\/[a-z0-9-]+\/cover\?v=[0-9a-f]{64}$/;
 
 // Acceptance criteria covered: a signed-in child sees the books assigned
 // to them, all at once, the latest assignment first, with the inactive ones
-// marked; the books the child has not opened are new, and their number is
-// answered with them; a book taken away is gone at once.
+// marked and the range of grades each is written for, never the grade it
+// teaches at; the books the child has not opened are new, and their number
+// is answered with them; a book taken away is gone at once.
 describe("the child's books", () => {
   const running = useAppWithServices();
   let parent: Parent;
@@ -64,12 +68,38 @@ describe("the child's books", () => {
       id: ACTIVE_BOOK,
       title: '胡萝卜数数大冒险',
       intro: expect.any(String),
-      grade: { id: 'grade-1', name: '一年级' },
+      minGrade: { id: 'grade-1', name: '一年级' },
+      maxGrade: { id: 'grade-1', name: '一年级' },
       subject: { id: 'math', name: '数学' },
       status: 'active',
       coverUrl: expect.stringMatching(COVER_URL),
       isNew: true,
     });
+  });
+
+  it('answers a book of a range of grades with its lowest and highest grades, never the grade it teaches at', async () => {
+    const lowest = await insertGrade(running.databaseUrl);
+    const middle = await insertGrade(running.databaseUrl);
+    const highest = await insertGrade(running.databaseUrl);
+    const bookId = await insertBook(running.databaseUrl, {
+      minGradeId: lowest,
+      maxGradeId: highest,
+      teachingGradeId: middle,
+      subjectId: await insertSubject(running.databaseUrl),
+    });
+    const child = await addChild(running.server, parent, family.id);
+    await acquire(running.server, parent, family.id, bookId);
+    await setReaders(running.server, parent, { familyId: family.id, bookId }, [child.id]);
+
+    const response = await getAsChild(running.server, child.id, CHILD_BOOKS_PATH);
+
+    const [book] = childBooksResponseSchema.parse(response.body).books;
+    expect(book).toMatchObject({
+      id: bookId,
+      minGrade: { id: lowest, name: '测试年级' },
+      maxGrade: { id: highest, name: '测试年级' },
+    });
+    expect((response.body as { books: object[] }).books[0]).not.toHaveProperty('teachingGrade');
   });
 
   it('answers a book the child has opened as not new and leaves it out of the count', async () => {

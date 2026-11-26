@@ -19,8 +19,8 @@ import {
   BooksRepository,
   ReaderGoneError,
   type BookDetailRecord,
+  type GradeRecord,
   type LibraryBookRecord,
-  type NamedRecord,
   type ReaderRecord,
   type ScopeFilter,
 } from './books.repository.js';
@@ -50,13 +50,28 @@ export interface ReaderChanges {
 }
 
 /**
- * The requested ids that exist among the known ones, in the order known.
- * An id that does not exist is no part of the filter, so a filter of only
- * such ids takes in everything (`.docs/design/interfaces.md`, "书库和书本").
+ * The known records whose ids were requested, in the order known, each
+ * once. An id that does not exist is no part of the filter, so a filter of
+ * only such ids takes in everything (`.docs/design/interfaces.md`,
+ * "书库和书本").
  */
-export function knownIds(requested: readonly string[], known: readonly NamedRecord[]): string[] {
+export function knownOf<T extends { id: string }>(
+  requested: readonly string[],
+  known: readonly T[],
+): T[] {
   const wanted = new Set(requested);
-  return known.filter(({ id }) => wanted.has(id)).map(({ id }) => id);
+  return known.filter(({ id }) => wanted.has(id));
+}
+
+/**
+ * The levels of the requested grades that exist: a book is listed when its
+ * range covers any of them, so the library compares levels, not ids.
+ */
+export function gradeLevelsOf(
+  requested: readonly string[],
+  grades: readonly GradeRecord[],
+): number[] {
+  return knownOf(requested, grades).map(({ level }) => level);
 }
 
 /**
@@ -189,8 +204,8 @@ export class LibraryService {
     const rows = await this.repository.listBooks(
       {
         ...scope,
-        gradeIds: knownIds(query.grade, grades),
-        subjectIds: knownIds(query.subject, subjects),
+        gradeLevels: gradeLevelsOf(query.grade, grades),
+        subjectIds: knownOf(query.subject, subjects).map(({ id }) => id),
       },
       position,
       BOOK_BATCH_SIZE + 1,
@@ -212,8 +227,8 @@ export class LibraryService {
   }
 
   /**
-   * Every grade, and the subjects that have books of the scope in the
-   * grades asked for, both in their set order.
+   * Every grade, by its id and name, and the subjects that have books of
+   * the scope covering any of the grades asked for, both in their set order.
    */
   async filters(familyId: string, query: BookFiltersQuery): Promise<BookFiltersResponse> {
     const [children, grades] = await Promise.all([
@@ -222,9 +237,9 @@ export class LibraryService {
     ]);
     const subjects = await this.repository.listSubjectsWithBooks({
       ...scopeOf(familyId, query, children),
-      gradeIds: knownIds(query.grade, grades),
+      gradeLevels: gradeLevelsOf(query.grade, grades),
     });
-    return { grades, subjects };
+    return { grades: grades.map(({ id, name }) => ({ id, name })), subjects };
   }
 
   /**

@@ -14,13 +14,17 @@ export function coverUrl(bookId: string, sha256: string | null): string | null {
   return sha256 === null ? null : `/api/books/${bookId}/cover?v=${sha256}`;
 }
 
-/** The book as every view of it shows it, with its cover's address. */
+/**
+ * The book as every view of it shows it: the range of grades it is written
+ * for, never the grade it teaches at, and its cover's address.
+ */
 export function toBookSummary(book: BookRecord): BookSummary {
   return {
     id: book.id,
     title: book.title,
     intro: book.intro,
-    grade: book.grade,
+    minGrade: book.minGrade,
+    maxGrade: book.maxGrade,
     subject: book.subject,
     status: book.status,
     coverUrl: coverUrl(book.id, book.coverSha256),

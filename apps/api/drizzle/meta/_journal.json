@@ -57,6 +57,13 @@
       "when": 1795584922934,
       "tag": "0007_child_password_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1795653631778,
+      "tag": "0008_grade_range",
+      "breakpoints": true
     }
   ]
 }
