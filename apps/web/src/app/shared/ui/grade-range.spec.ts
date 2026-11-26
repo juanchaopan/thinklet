@@ -16,6 +16,7 @@ async function renderGrades(grades: GradeSpan): Promise<Element> {
 describe('gradeWords', () => {
   it('writes and says one grade by its name', () => {
     expect(gradeWords({ minGrade: GRADE_1, maxGrade: GRADE_1 })).toEqual({
+      isRange: false,
       shown: '一年级',
       spoken: '一年级',
     });
@@ -23,12 +24,24 @@ describe('gradeWords', () => {
 
   it('writes a range with the full-width tilde and says it with 到', () => {
     expect(gradeWords({ minGrade: GRADE_4, maxGrade: GRADE_8 })).toEqual({
+      isRange: true,
       shown: '四年级～初二',
       spoken: '四年级到初二',
     });
     expect(gradeWords({ minGrade: PRESCHOOL, maxGrade: GRADE_1 })).toEqual({
+      isRange: true,
       shown: '学前～一年级',
       spoken: '学前到一年级',
+    });
+  });
+
+  it('tells one grade from a range by the ids, not the names', () => {
+    const namesake = { id: 'grade-1-namesake', name: '一年级' };
+
+    expect(gradeWords({ minGrade: GRADE_1, maxGrade: namesake })).toEqual({
+      isRange: true,
+      shown: '一年级～一年级',
+      spoken: '一年级到一年级',
     });
   });
 

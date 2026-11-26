@@ -7,8 +7,12 @@ export interface GradeSpan {
   readonly maxGrade: Readonly<GradeRef>;
 }
 
-/** A book's grades as the page writes them and as screen readers say them. */
+/**
+ * A book's grades as the page writes them and as screen readers say them,
+ * and whether they are a range of several grades rather than one grade.
+ */
 export interface GradeWords {
+  readonly isRange: boolean;
   readonly shown: string;
   readonly spoken: string;
 }
@@ -17,13 +21,15 @@ export interface GradeWords {
  * A book's grades in words (rules.md, 年级的写法): one grade is its name,
  * several are “<lowest>～<highest>” with the full-width tilde, since a dash
  * would run into the 一 of 一年级 or 初一. Screen readers read the tilde as
- * a symbol or skip it, so they are given “<lowest>到<highest>”.
+ * a symbol or skip it, so they are given “<lowest>到<highest>”. Whether the
+ * grades are a range follows their ids, which name a grade, not their names.
  */
 export function gradeWords({ minGrade, maxGrade }: GradeSpan): GradeWords {
   if (minGrade.id === maxGrade.id) {
-    return { shown: minGrade.name, spoken: minGrade.name };
+    return { isRange: false, shown: minGrade.name, spoken: minGrade.name };
   }
   return {
+    isRange: true,
     shown: `${minGrade.name}～${maxGrade.name}`,
     spoken: `${minGrade.name}到${maxGrade.name}`,
   };
@@ -39,11 +45,11 @@ export function gradeWords({ minGrade, maxGrade }: GradeSpan): GradeWords {
 @Component({
   selector: 'app-grade-range',
   template: `
-    @if (words().shown === words().spoken) {
-      {{ words().shown }}
-    } @else {
+    @if (words().isRange) {
       <span aria-hidden="true">{{ words().shown }}</span>
       <span class="sr-only">{{ words().spoken }}</span>
+    } @else {
+      {{ words().shown }}
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

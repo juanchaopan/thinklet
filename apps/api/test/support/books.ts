@@ -180,19 +180,28 @@ export async function insertBook(databaseUrl: string, book: NewBook): Promise<st
 /**
  * The SQL condition on `books` of a book whose range of grades covers at
  * least one of the grades, the way the library filters by grades, for
- * tests to find the books they expect.
+ * tests to find the books they expect. The grade ids are not part of the
+ * text: the statement binds them, as an array, to the placeholder
+ * `$<parameter>`.
  */
-export function coversAnyGrade(gradeIds: readonly string[]): string {
-  const ids = gradeIds.map((id) => `'${id}'`).join(', ');
-  return `exists (select 1 from grades g where g.id in (${ids})
+export function coversAnyGrade(parameter: number): string {
+  return `exists (select 1 from grades g where g.id = any($${String(parameter)}::text[])
                   and g.level between books.min_grade_level and books.max_grade_level)`;
 }
 
-/** The ids of the books in the library's order, newest first and then by id, with the condition. */
-export async function bookIdsInOrder(databaseUrl: string, where: string): Promise<string[]> {
+/**
+ * The ids of the books in the library's order, newest first and then by
+ * id, with the condition and the values its placeholders stand for.
+ */
+export async function bookIdsInOrder(
+  databaseUrl: string,
+  where: string,
+  values: unknown[] = [],
+): Promise<string[]> {
   const rows = await query<{ id: string }>(
     databaseUrl,
     `select id from books where ${where} order by created_at desc, id`,
+    values,
   );
   return rows.map((row) => row.id);
 }

@@ -372,12 +372,24 @@ function gradeRef(gradeId: string): GradeRef {
   return grade;
 }
 
-/** The place in the set order of the grade with the id, which ranges are measured by. */
-function gradeLevel(gradeId: string): number {
-  return GRADES.findIndex(({ id }) => id === gradeId);
+/**
+ * The ids asked for that name one of the options. The api leaves a grade
+ * or subject that does not exist out of the filter rather than refusing it
+ * (interfaces.md), so a filter of only such ids takes in every book.
+ */
+function knownIds(
+  ids: readonly string[],
+  options: ReadonlyArray<{ readonly id: string }>,
+): string[] {
+  return ids.filter((id) => options.some((option) => option.id === id));
 }
 
-/** Whether any of the grades asked for lies within the book's range, its ends included. */
+/** The place in the set order of a grade that exists, which ranges are measured by. */
+function gradeLevel(gradeId: string): number {
+  return GRADES.indexOf(gradeRef(gradeId));
+}
+
+/** Whether any of the grades, all of them known, lies within the book's range, its ends included. */
 function coversAnyGrade(book: BookCard, gradeIds: readonly string[]): boolean {
   const lowest = gradeLevel(book.minGrade.id);
   const highest = gradeLevel(book.maxGrade.id);
@@ -439,13 +451,16 @@ export class FakeLibrary {
     };
   }
 
-  /** The answer to a list request with these query parameters. */
+  /**
+   * The answer to a list request with these query parameters; the subjects
+   * that do not exist are no part of the filter, as `knownIds` says.
+   */
   list(search: URLSearchParams): Response {
     const found = this.scoped(search);
     if (!found) {
       return refused('child_not_found', 404);
     }
-    const subjects = search.getAll('subject');
+    const subjects = knownIds(search.getAll('subject'), SUBJECTS);
     const matching = found.filter(
       (book) => subjects.length === 0 || subjects.includes(book.subject.id),
     );
@@ -557,7 +572,8 @@ export class FakeLibrary {
   /**
    * The books of the query's scope and grades, or null for a child who is
    * not the family's. A book is of the grades asked for when any of them
-   * lies within its range.
+   * lies within its range; the grades that do not exist are no part of the
+   * filter, as `knownIds` says.
    */
   private scoped(search: URLSearchParams): BookCard[] | null {
     const scope = search.get('scope') ?? 'library';
@@ -565,7 +581,7 @@ export class FakeLibrary {
     if (scope === 'child' && !this.children.some(({ id }) => id === child)) {
       return null;
     }
-    const grades = search.getAll('grade');
+    const grades = knownIds(search.getAll('grade'), GRADES);
     return this.books
       .map(({ id }) => this.card(id))
       .filter((book) => {

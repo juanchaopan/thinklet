@@ -217,8 +217,8 @@ describe('library', () => {
     it('keeps the books of any of the grades and any of the subjects asked for', async () => {
       const expected = await bookIdsInOrder(
         running.databaseUrl,
-        `status = 'active' and ${coversAnyGrade(['grade-1', 'preschool'])}
-         and subject_id in ('math', 'english')`,
+        `status = 'active' and ${coversAnyGrade(1)} and subject_id in ('math', 'english')`,
+        [['grade-1', 'preschool']],
       );
 
       const { ids } = await everyBatch(family.id, {
@@ -462,8 +462,9 @@ describe('library', () => {
         running.databaseUrl,
         `select s.id, s.name from subjects s
          where exists (select 1 from books where books.subject_id = s.id and books.status = 'active'
-                       and ${coversAnyGrade(['grade-7', 'grade-9'])})
+                       and ${coversAnyGrade(1)})
          order by s.position`,
+        [['grade-7', 'grade-9']],
       );
 
       const filters = await filtersOf(family.id, { grade: ['grade-7', 'grade-9', 'nope'] });
