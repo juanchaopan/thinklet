@@ -1,0 +1,828 @@
+<title>乐谱组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&display=swap">
+<style>
+/* Layout: a lit stage holds the score paper (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the score emits. Then one exam-style grid per notation need. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* Stage theme: warm light (the default). */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --stage-soft: #6b5c4b;
+  --vignette: rgba(80, 52, 24, .14);
+  --paper-a: #fffdf7;
+  --paper-b: #f7efdf;
+  --paper-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 2px 4px rgba(70, 45, 20, .08), 0 18px 40px -12px rgba(70, 45, 20, .30), 0 40px 80px -30px rgba(70, 45, 20, .35);
+  --staff: rgba(58, 46, 34, .62);
+  --notes: #1d1710;
+  --glow: #7b4dff;
+  --glow-soft: rgba(123, 77, 255, .16);
+  --bubble-bg: #2a2118;
+  --bubble-ink: #fff8ec;
+  --bokeh: rgba(255, 190, 120, 0);
+  color-scheme: light;
+}
+body[data-stage="night"] {
+  --stage: radial-gradient(55% 45% at 50% 42%, rgba(255, 170, 90, .30), transparent 70%), radial-gradient(40% 40% at 12% 0%, rgba(180, 90, 60, .35), transparent 70%), radial-gradient(45% 45% at 92% 8%, rgba(120, 70, 160, .35), transparent 70%), linear-gradient(180deg, #24150f 0%, #170d0a 100%);
+  --stage-ink: #fbeedd;
+  --stage-soft: #d8bfa3;
+  --vignette: rgba(0, 0, 0, .55);
+  --paper-a: #fffaf0;
+  --paper-b: #f1e4c8;
+  --paper-shadow: 0 1px 0 rgba(255, 255, 255, .7) inset, 0 0 0 1px rgba(255, 210, 150, .25), 0 20px 50px -10px rgba(0, 0, 0, .6), 0 0 120px -20px rgba(255, 170, 80, .45);
+  --staff: rgba(58, 42, 26, .6);
+  --notes: #1a120b;
+  --glow: #e08a1e;
+  --glow-soft: rgba(240, 160, 50, .20);
+  --bubble-bg: #1a120b;
+  --bubble-ink: #ffe9c7;
+  --bokeh: rgba(255, 190, 120, .5);
+  --boundary: #8fb4ff;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the score) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 16px; min-width: 0; isolation: isolate; transition: background .6s; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.bokeh { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.bokeh i { position: absolute; border-radius: 50%; background: radial-gradient(circle, var(--bokeh), transparent 70%); animation: drift 14s ease-in-out infinite alternate; }
+@keyframes drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(18px, -22px, 0); } }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.themes { display: flex; gap: 6px; }
+.themes button { font: inherit; font-size: 13px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .5); color: var(--stage-ink); cursor: pointer; backdrop-filter: blur(6px); }
+body[data-stage="night"] .themes button { background: rgba(255, 255, 255, .08); }
+.themes button[aria-pressed="true"] { background: var(--stage-ink); color: var(--paper-a); }
+.themes button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-score { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 20px; }
+body[data-boundary="on"] .tl-score::before { content: "乐谱组件"; position: absolute; top: -18px; left: 10px; z-index: 3; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
+
+/* ---------- Score component ---------- */
+.tl-score { position: relative; min-width: 0; display: flex; flex-direction: column; }
+.tl-paper { position: relative; flex: 1; display: flex; align-items: center; border-radius: 18px; padding: 14px 14px 6px; background:
+  radial-gradient(120% 90% at 15% 0%, rgba(255, 255, 255, .9), transparent 55%),
+  linear-gradient(175deg, var(--paper-a), var(--paper-b));
+  box-shadow: var(--paper-shadow); transition: box-shadow .6s; }
+.tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .36  0 0 0 0 .25  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>"); }
+.tl-compact .tl-paper { padding: 8px 8px 4px; border-radius: 14px; min-height: 104px; }
+.tl-svgbox { position: relative; width: 100%; touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.tl-svgbox svg { display: block; overflow: visible; }
+.tl-svgbox svg:focus, .tl-svgbox svg:focus-visible { outline: none; }
+.tl-score.kbd-focus .tl-paper { box-shadow: var(--paper-shadow), 0 0 0 3px var(--glow); }
+.tl-svgbox .abcjs-staff, .tl-svgbox .abcjs-bar, .tl-svgbox .abcjs-ledger { fill: var(--staff); stroke: var(--staff); }
+.tl-svgbox .abcjs-note, .tl-svgbox .abcjs-rest, .tl-svgbox .abcjs-clef, .tl-svgbox .abcjs-key-signature, .tl-svgbox .abcjs-time-signature, .tl-svgbox .abcjs-beam-elem, .tl-svgbox .abcjs-tuplet, .tl-svgbox .abcjs-decoration, .tl-svgbox .abcjs-dynamics, .tl-svgbox .abcjs-slur, .tl-svgbox .abcjs-brace, .tl-svgbox .abcjs-staff-extra, .tl-svgbox .abcjs-measure-number { fill: var(--notes); transition: fill .6s, opacity .35s; }
+.tl-svgbox text.abcjs-tempo, .tl-svgbox .abcjs-tempo text, .tl-svgbox .abcjs-staff-extra text, .tl-svgbox text.abcjs-annotation { font-family: var(--serif) !important; font-style: italic; fill: var(--notes); }
+.tl-svgbox .tl-dim { opacity: .28; }
+.tl-svgbox .tl-lit, .tl-svgbox .tl-lit path, .tl-svgbox .tl-lit text { fill: var(--glow); stroke: var(--glow); transition: fill .15s; }
+.tl-svgbox .tl-spot { fill: url(#tl-spot-grad); stroke: none; opacity: 0; transition: opacity .45s cubic-bezier(.1, .9, .2, 1); }
+.tl-svgbox .tl-spot.on { opacity: 1; }
+.tl-svgbox .tl-ripple { fill: none; stroke: var(--glow); stroke-width: 2; opacity: .8; transform-box: fill-box; transform-origin: center; animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+@keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.4); opacity: 0; } }
+.tl-svgbox .tl-slot { fill: rgba(255, 255, 255, .85); stroke: var(--notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
+/* HTML overlays positioned over the paper. */
+.tl-overlay { position: absolute; inset: 0; pointer-events: none; }
+.tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--serif); color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 70%, #fff), var(--glow)); box-shadow: 0 4px 12px -2px var(--glow-soft), 0 0 0 3px rgba(255, 255, 255, .8); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-count { position: absolute; margin: -12px 0 0 -12px; width: 24px; text-align: center; font: 600 20px/1 var(--serif); color: var(--glow); text-shadow: 0 0 12px var(--glow-soft); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-bubble { position: absolute; z-index: 4; transform: translate(-50%, -100%); margin-top: -10px; white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--bubble-bg); color: var(--bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble.out { opacity: 0; }
+.tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-bubble b { font: 600 20px/1 var(--serif); letter-spacing: .02em; }
+.tl-bubble span { font: italic 500 16px/1 var(--serif); opacity: .8; margin-left: 6px; }
+.tl-playhead { position: absolute; width: 3px; margin-left: -1.5px; border-radius: 3px; background: linear-gradient(var(--glow), color-mix(in srgb, var(--glow) 40%, transparent)); box-shadow: 0 0 14px 2px var(--glow-soft), 0 0 4px var(--glow); opacity: 0; transition: left .12s linear, top .2s, opacity .2s; }
+.tl-playhead.on { opacity: 1; }
+.tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 65%, #fff), var(--glow)); box-shadow: 0 8px 18px -6px var(--glow), 0 0 0 4px rgba(255, 255, 255, .7); transition: transform .1s; }
+.tl-play:active { transform: scale(.94); }
+.tl-play:focus-visible { outline: 3px solid var(--glow); outline-offset: 3px; }
+.tl-play svg { width: 18px; height: 18px; fill: currentColor; }
+.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--serif); color: var(--stage-ink); margin-top: 8px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
+
+/* ---------- Exam-style grids of short staves (layout chosen by the workflow) ---------- */
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); grid-auto-rows: 1fr; gap: 26px 18px; padding-top: 8px; }
+.gallery > .tl-score { height: 100%; }
+.mini-stage { border-radius: 24px; padding: 24px 20px 20px; background: var(--stage); position: relative; overflow: hidden; }
+.mini-stage .tl-caption { color: var(--stage-ink); }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+details { border-top: 1px solid var(--line); padding-top: 10px; }
+summary { cursor: pointer; color: var(--ink-muted); font-size: 14px; min-height: 32px; }
+pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 12px; overflow-x: auto; font: 13px/1.5 var(--mono); color: var(--ink); white-space: pre; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 1 / 10 · 显示类 · 直接画在画面上</span>
+    <h1>乐谱</h1>
+    <p class="lede">讲题和练习里所有的谱都由它来画。蓝色虚线框住的就是一个乐谱组件：纸、纸上的谱、浮在上面的标签和气泡、右上角的播放按钮、短谱下面的名称。框外面的一切（舞台底色、标题、几张谱怎么排、下面的指令按钮）都不属于它，由播放器和流程负责。谱上的术语用英皇考卷上的原文。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" id="hero-stage" aria-label="题目画面">
+    <div class="bokeh" aria-hidden="true"><i style="left:8%;top:12%;width:120px;height:120px"></i><i style="left:78%;top:18%;width:90px;height:90px;animation-delay:-4s"></i><i style="left:62%;top:70%;width:150px;height:150px;animation-delay:-8s"></i><i style="left:20%;top:74%;width:70px;height:70px;animation-delay:-2s"></i></div>
+    <div class="stage-head">
+      <p class="q">第 2 小节一共几拍？</p>
+      <div class="themes" role="group" aria-label="舞台配色（由流程或题目选定）">
+        <button type="button" data-stage-pick="warm" aria-pressed="true">暖光</button>
+        <button type="button" data-stage-pick="night" aria-pressed="false">暖夜</button>
+      </div>
+    </div>
+    <div id="main-score"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给乐谱的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给乐谱的指令。下面的记录框列出乐谱发出的事件：流程只靠这些事件往下走。点音符：音符发亮、发声、上方弹出音名，两秒后自己淡掉；点谱上的空白处马上清掉。</p>
+    <div class="chips">
+      <button class="chip" type="button" data-cmd="spotlight">聚光第 2 小节</button>
+      <button class="chip" type="button" data-cmd="labels">贴 A、B、C 标签</button>
+      <button class="chip" type="button" data-cmd="slots">谱下放作答框</button>
+      <button class="chip" type="button" data-cmd="count">一个一个数</button>
+      <button class="chip" type="button" data-cmd="play">播放第 2 小节</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+    </div>
+    <div class="log" id="log" aria-live="polite" aria-label="乐谱发出的事件"></div>
+    <details><summary>题目文件里这样写</summary><pre id="abc-main"></pre></details>
+  </section>
+
+  <section class="panel">
+    <h2>C 谱号上的加线音</h2>
+    <p class="what">考点 6：和考卷 2.1 一样，一个谱号、一个音一张短谱。点音符听一听、看音名。短谱只有一个音，没有播放按钮，点音符就会发声。</p>
+    <div class="mini-stage"><div class="gallery" id="g-clef"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>时值、连音和临时记号</h2>
+    <p class="what">节奏和音高部分要用。名称不写在谱上：像考卷 2.2 那样，每样一张短谱，名称写在纸的下面。多音的短谱点哪个音就听哪个音。</p>
+    <div class="mini-stage"><div class="gallery" id="g-rare"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>装饰音</h2>
+    <p class="what">考点 22。点音符听到这个装饰音实际弹出来的样子：trill 快速来回，turn 上、本、下、本，mordent 本、邻、本，appoggiatura 占去主音一半的时值，acciaccatura 一碰就过。</p>
+    <div class="mini-stage"><div class="gallery" id="g-orn"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>同一个调号写在四种谱号里</h2>
+    <p class="what">考点 10：F♯ major 的六个升号。</p>
+    <div class="mini-stage"><div class="gallery" id="g-keys"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>三行谱：Violin 加 Piano</h2>
+    <p class="what">考点 24 的谱例：独奏乐器一行、钢琴两行，小节号、速度、力度、渐强渐弱、跳音、重音、Ped.。按右上角播放，光标走过谱面，每个音都会亮。</p>
+    <div class="mini-stage"><div id="trio-score"></div></div>
+    <div class="chips"><button class="chip" type="button" id="trio-spot" aria-pressed="false">聚光第 3 小节（三行一起）</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。颜色从舞台继承，乐谱自己不定颜色。</td></tr>
+          <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”（单独的小模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管。</td></tr>
+          <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张。</td></tr>
+          <tr><td>出现在哪里</td><td>直接画在讲题和练习的画面上。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。原型只带了每隔三个半音一个采样，中间的音由相邻采样变调得到。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script>
+/* ============================================================
+   Sound source: plays MIDI pitches with sampled piano. It knows
+   nothing about scores; anything that wants a sound calls play().
+   ============================================================ */
+var SoundSource = (function () {
+  var ctx = null, raw = null, buffers = {}, loading = null;
+  function context() {
+    if (!ctx) { var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function load() {
+    if (!loading) loading = fetch('piano.json').then(function (r) { return r.json(); }).then(function (j) { raw = j; }).catch(function () { raw = {}; });
+    return loading;
+  }
+  function decode(midi) {
+    if (buffers[midi]) return buffers[midi];
+    var bin = atob(raw[midi]); var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    buffers[midi] = new Promise(function (res, rej) { ctx.decodeAudioData(bytes.buffer, res, rej); });
+    return buffers[midi];
+  }
+  function nearestSample(midi) {
+    var best = null, d = Infinity;
+    Object.keys(raw || {}).forEach(function (k) { var dd = Math.abs(k - midi); if (dd < d) { d = dd; best = Number(k); } });
+    return best;
+  }
+  return {
+    unlock: function () { context(); load(); },
+    play: function (midi, delaySec, durSec, velocity) {
+      var c = context(); if (!c) return;
+      var at = c.currentTime + (delaySec || 0);
+      load().then(function () {
+        var s = nearestSample(midi); if (s === null) return;
+        decode(s).then(function (buf) {
+          var src = c.createBufferSource(); src.buffer = buf; src.playbackRate.value = Math.pow(2, (midi - s) / 12);
+          var g = c.createGain(); var t0 = Math.max(at, c.currentTime); var dur = Math.max(.08, durSec || 1);
+          var v = velocity || .8;
+          g.gain.setValueAtTime(v, t0); g.gain.setValueAtTime(v, t0 + dur); g.gain.exponentialRampToValueAtTime(.001, t0 + dur + .3);
+          src.connect(g); g.connect(c.destination); src.start(t0); src.stop(t0 + dur + .35);
+        });
+      });
+    }
+  };
+})();
+
+/* ============================================================
+   Score component. Inputs: abc, mode ('lecture' | 'practice'),
+   playable, compact, caption. Commands: spotlight, highlight,
+   label, slots, count, caption, play, stop, clear. Events (via
+   onEvent): noteTap, blankTap, countStep, playStart, playEnd.
+   Sound goes through the injected source, and only in lectures.
+   ============================================================ */
+function Score(host, options) {
+  this.host = host;
+  this.o = Object.assign({ mode: 'lecture', playable: false, compact: false, sound: null, onEvent: function () {} }, options);
+  this.notes = [];
+  this.timers = [];
+  this.tapTimers = [];
+  this.build();
+  this.render();
+}
+Score.SVGNS = 'http://www.w3.org/2000/svg';
+Score.LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+Score.ACC = { sharp: '♯', flat: '♭', natural: '♮', dblsharp: '𝄪', dblflat: '𝄫' };
+Score.ACC_EN = { sharp: 'sharp', flat: 'flat', natural: 'natural', dblsharp: 'double sharp', dblflat: 'double flat' };
+Score.STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+Score.SHIFT = { sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 };
+Score.TAP_REACH = 30;
+Score.TAP_FADE_MS = 2000;
+Score.uid = 0;
+
+Score.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
+
+Score.prototype.build = function () {
+  var self = this;
+  this.id = 'tl-score-' + (++Score.uid);
+  this.host.classList.add('tl-score');
+  if (this.o.compact) this.host.classList.add('tl-compact');
+  this.host.innerHTML = '';
+  this.paper = document.createElement('div'); this.paper.className = 'tl-paper';
+  this.box = document.createElement('div'); this.box.className = 'tl-svgbox'; this.box.id = this.id;
+  this.overlay = document.createElement('div'); this.overlay.className = 'tl-overlay';
+  this.playhead = document.createElement('div'); this.playhead.className = 'tl-playhead';
+  this.overlay.appendChild(this.playhead);
+  this.paper.appendChild(this.box); this.paper.appendChild(this.overlay);
+  if (this.o.playable && this.o.mode === 'lecture') {
+    this.playBtn = document.createElement('button');
+    this.playBtn.type = 'button'; this.playBtn.className = 'tl-play'; this.playBtn.setAttribute('aria-label', '播放这段谱');
+    this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
+    this.playBtn.addEventListener('click', function () { if (self.o.sound) self.o.sound.unlock(); if (self.playing) self.stop(); else self.play(); });
+    this.paper.appendChild(this.playBtn);
+  }
+  this.host.appendChild(this.paper);
+  if (this.o.caption) { var c = document.createElement('p'); c.className = 'tl-caption'; c.textContent = this.o.caption; this.host.appendChild(c); }
+};
+
+// Lays the score out for the width it has, then lets the SVG fill that
+// width: a full-size score is laid out narrower than the paper and scaled
+// up, so on wide screens the notes are larger, and on narrow ones it wraps
+// into more lines instead of shrinking.
+Score.prototype.render = function () {
+  var self = this;
+  var width = Math.max(150, this.box.clientWidth || this.host.clientWidth || 300);
+  var scale = this.o.compact ? 1 : (width >= 700 ? 1.45 : 1.15);
+  var reserved = this.playBtn ? 52 : 0;
+  var layoutWidth = width / scale;
+  var opts = {
+    add_classes: true, responsive: 'resize', staffwidth: layoutWidth - 8 - reserved / scale,
+    paddingtop: this.o.compact ? 6 : 34, paddingbottom: this.o.compact ? 4 : 52, paddingleft: 2, paddingright: 2 + reserved / scale,
+    format: { staffsep: this.o.compact ? 40 : 90, annotationfont: 'Cormorant Garamond 15 italic', tempofont: 'Cormorant Garamond 17 italic', voicefont: 'Cormorant Garamond 16 italic' }
+  };
+  if (!this.o.compact) opts.wrap = { minSpacing: 1.6, maxSpacing: 2.7, preferredMeasuresPerLine: layoutWidth < 450 ? 2 : 4 };
+  this.visual = ABCJS.renderAbc(this.id, this.o.abc, opts)[0];
+  this.svg = this.box.querySelector('svg');
+  this.addDefs();
+  this.collect();
+  this.svg.setAttribute('tabindex', '0');
+  this.svg.setAttribute('role', 'group');
+  this.svg.setAttribute('aria-label', '乐谱：方向键换音符，回车听这个音');
+  this.svg.addEventListener('pointerup', function (ev) { self.onPointer(ev); });
+  this.svg.addEventListener('keydown', function (ev) { self.onKey(ev); });
+  this.svg.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd-focus'); });
+  this.svg.addEventListener('blur', function () { self.host.classList.remove('kbd-focus'); });
+  this.svg.addEventListener('pointerdown', function () { self.host.classList.remove('kbd-focus'); });
+  this.paper.addEventListener('pointerup', function (ev) { if (ev.target === self.paper) self.blankTap(); });
+};
+
+Score.prototype.addDefs = function () {
+  var defs = document.createElementNS(Score.SVGNS, 'defs');
+  defs.innerHTML = '<filter id="' + this.id + '-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+    '<radialGradient id="tl-spot-grad" cx="50%" cy="50%" r="60%"><stop offset="0%" style="stop-color:var(--glow);stop-opacity:.24"/><stop offset="70%" style="stop-color:var(--glow);stop-opacity:.08"/><stop offset="100%" style="stop-color:var(--glow);stop-opacity:0"/></radialGradient>';
+  this.svg.insertBefore(defs, this.svg.firstChild);
+};
+
+Score.prototype.pitchInfo = function (p, key, barAcc) {
+  var letter = Score.LETTERS[((p.pitch % 7) + 7) % 7];
+  var slot = letter + p.pitch;
+  if (barAcc && p.accidental) barAcc[slot] = p.accidental;
+  var acc = p.accidental || (barAcc && barAcc[slot]) || key[letter] || null;
+  var midi = 60 + 12 * Math.floor(p.pitch / 7) + Score.STEP[letter] + (acc ? Score.SHIFT[acc] : 0);
+  var octave = 4 + Math.floor(p.pitch / 7);
+  return { pitch: p.pitch, midi: midi, name: letter + (acc ? Score.ACC[acc] : '') + octave, en: acc ? letter + ' ' + Score.ACC_EN[acc] : letter };
+};
+
+// Every pitched note in reading order, with its elements, the heads used for
+// hit testing, the drawn shapes without text (a note's group also holds its
+// text annotation, which can be wider than its neighbours), its bar, pitch,
+// ornament, grace notes and the key it is in.
+Score.prototype.collect = function () {
+  var self = this; var out = [];
+  var keyOf = function (k) { var m = {}; ((k && k.accidentals) || []).forEach(function (a) { m[a.note.toUpperCase()] = a.acc; }); return m; };
+  var baseKey = {}; try { baseKey = keyOf(this.visual.getKeySignature()); } catch (e) { baseKey = {}; }
+  (this.visual.lines || []).forEach(function (line) {
+    (line.staff || []).forEach(function (staff) {
+      var key = staff.key && staff.key.accidentals ? keyOf(staff.key) : baseKey;
+      (staff.voices || []).forEach(function (voice) {
+        var barAcc = {};
+        voice.forEach(function (el) {
+          if (el.el_type === 'bar') { barAcc = {}; return; }
+          if (el.el_type !== 'note' || !el.pitches || !el.abselem) return;
+          var elems = (el.abselem.elemset || []).filter(function (x) { return x && x.getBBox; });
+          if (!elems.length) return;
+          var heads = [], shapes = [];
+          elems.forEach(function (e) {
+            heads = heads.concat(Array.prototype.slice.call(e.querySelectorAll('.abcjs-notehead')));
+            shapes = shapes.concat(e.tagName === 'path' ? [e] : Array.prototype.slice.call(e.querySelectorAll('path')));
+          });
+          var m = /abcjs-mm(\d+)/.exec(elems[0].getAttribute('class') || '');
+          var v = /abcjs-v(\d+)/.exec(elems[0].getAttribute('class') || '');
+          var graces = (el.gracenotes || []).map(function (g) { var info = self.pitchInfo(g, key, null); info.crushed = !!g.acciaccatura; return info; });
+          out.push({
+            index: out.length, bar: m ? Number(m[1]) : 0, voice: v ? v[1] : '0', elems: elems,
+            heads: heads.length ? heads : elems, shapes: shapes.length ? shapes : elems,
+            pitches: el.pitches.map(function (p) { return self.pitchInfo(p, key, barAcc); }),
+            ornament: (el.decoration || []).filter(function (d) { return /trill|turn|mordent|pralltriller/.test(d); })[0] || null,
+            graces: graces, key: key, beats: el.duration || .25
+          });
+        });
+      });
+    });
+  });
+  this.notes = out;
+};
+
+// The diatonic neighbour of a note in its key: one letter up or down.
+Score.prototype.neighbour = function (n, step) {
+  var p = n.pitches[0];
+  return this.pitchInfo({ pitch: p.pitch + step }, n.key, null).midi;
+};
+
+// How a note actually sounds when tapped: ornaments and grace notes are
+// played out, so a child hears what the sign means.
+Score.prototype.realise = function (n) {
+  var main = n.pitches[0].midi; var up = this.neighbour(n, 1); var down = this.neighbour(n, -1);
+  var fast = .085;
+  if (n.ornament === 'trill') {
+    var seq = []; for (var i = 0; i < 12; i++) seq.push([i % 2 ? up : main, fast]);
+    seq.push([main, .7]); return seq;
+  }
+  if (n.ornament === 'turn') return [[up, .14], [main, .14], [down, .14], [main, .8]];
+  if (n.ornament === 'uppermordent' || n.ornament === 'pralltriller') return [[main, fast], [up, fast], [main, .9]];
+  if (n.ornament === 'lowermordent' || n.ornament === 'mordent') return [[main, fast], [down, fast], [main, .9]];
+  if (n.graces.length) {
+    var g = n.graces[0];
+    return g.crushed ? [[g.midi, .06], [main, .9]] : [[g.midi, .45], [main, .45]];
+  }
+  return null;
+};
+
+Score.prototype.boxOf = function (elems) {
+  var x1 = Infinity, x2 = -Infinity, y1 = Infinity, y2 = -Infinity;
+  elems.forEach(function (e) { var b = e.getBBox(); x1 = Math.min(x1, b.x); x2 = Math.max(x2, b.x + b.width); y1 = Math.min(y1, b.y); y2 = Math.max(y2, b.y + b.height); });
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+};
+
+Score.prototype.staffAround = function (b) {
+  var top = Infinity, bottom = -Infinity;
+  this.svg.querySelectorAll('.abcjs-staff').forEach(function (s) {
+    var r = s.getBBox(); if (b.cy < r.y - 60 || b.cy > r.y + r.height + 60) return;
+    top = Math.min(top, r.y); bottom = Math.max(bottom, r.y + r.height);
+  });
+  return { top: top, bottom: bottom };
+};
+
+// Where a mark above a note goes: over the staff and over the note's own
+// stem or flag, centred on its head.
+Score.prototype.above = function (n, gap) {
+  var head = this.boxOf(n.heads); var body = this.boxOf(n.shapes); var st = this.staffAround(head);
+  return this.toPaper(head.cx, Math.min(st.top, body.y) - gap);
+};
+
+// SVG user units to pixels inside the paper, for HTML overlays.
+Score.prototype.toPaper = function (x, y) {
+  var pt = this.svg.createSVGPoint(); pt.x = x; pt.y = y;
+  var p = pt.matrixTransform(this.svg.getScreenCTM());
+  var r = this.paper.getBoundingClientRect();
+  return { x: p.x - r.left, y: p.y - r.top };
+};
+
+Score.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
+
+// The note under a tap: the nearest head within reach (in drawing units) of
+// the tap, on the system under the finger. Taps further away hit nothing.
+Score.prototype.nearest = function (clientX, clientY) {
+  var pt = this.svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+  var m = this.svg.getScreenCTM(); if (!m) return null;
+  var p = pt.matrixTransform(m.inverse());
+  var self = this, best = null, bestD = Infinity;
+  this.notes.forEach(function (n) {
+    var b = self.boxOf(n.heads); var st = self.staffAround(b);
+    if (p.y < Math.min(st.top, b.y) - 36 || p.y > Math.max(st.bottom, b.y + b.h) + 36) return;
+    var dx = Math.max(0, Math.abs(p.x - b.cx) - b.w / 2); var dy = Math.max(0, Math.abs(p.y - b.cy) - b.h / 2);
+    if (dx > Score.TAP_REACH) return;
+    var d = dx * dx + dy * dy * .25; if (d < bestD) { bestD = d; best = n; }
+  });
+  return best;
+};
+
+Score.prototype.onPointer = function (ev) {
+  var n = this.nearest(ev.clientX, ev.clientY);
+  if (!n) { this.blankTap(); return; }
+  this.current = n.index; this.tap(n);
+};
+
+Score.prototype.blankTap = function () {
+  this.clearTap();
+  this.emit('blankTap', {});
+};
+
+Score.prototype.onKey = function (ev) {
+  if (!this.notes.length) return;
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+    ev.preventDefault();
+    var cur = this.current === undefined ? -1 : this.current;
+    this.current = Math.min(this.notes.length - 1, Math.max(0, cur + (ev.key === 'ArrowRight' ? 1 : -1)));
+    this.tap(this.notes[this.current]);
+  } else if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault(); if (this.current !== undefined) this.tap(this.notes[this.current]);
+  } else if (ev.key === 'Escape') {
+    this.blankTap();
+  }
+};
+
+// A tap lights the note, plays it (lectures only) and reports it; the light
+// and any caption fade by themselves after a moment.
+Score.prototype.tap = function (n) {
+  var self = this;
+  this.clearTap();
+  this.tapLit = [n.index];
+  this.lit([n.index]);
+  this.ripple(n);
+  if (this.audible()) {
+    this.o.sound.unlock();
+    var seq = this.realise(n);
+    if (seq) { var t = 0; seq.forEach(function (s) { self.o.sound.play(s[0], t, s[1]); t += s[1]; }); }
+    else n.pitches.forEach(function (p) { self.o.sound.play(p.midi, 0, .9); });
+  }
+  this.emit('noteTap', { index: n.index, bar: n.bar + 1, name: n.pitches[0].name, en: n.pitches[0].en, ornament: n.ornament, midi: n.pitches.map(function (p) { return p.midi; }) });
+  this.tapTimers.push(setTimeout(function () {
+    self.overlay.querySelectorAll('.tl-bubble').forEach(function (b) { b.classList.add('out'); });
+    self.unlitIndices(self.tapLit || []);
+  }, Score.TAP_FADE_MS));
+  this.tapTimers.push(setTimeout(function () { self.overlay.querySelectorAll('.tl-bubble.out').forEach(function (b) { b.remove(); }); }, Score.TAP_FADE_MS + 600));
+};
+
+Score.prototype.clearTap = function () {
+  this.tapTimers.forEach(clearTimeout); this.tapTimers = [];
+  this.unlitIndices(this.tapLit || []); this.tapLit = null;
+  this.overlay.querySelectorAll('.tl-bubble').forEach(function (b) { b.remove(); });
+};
+
+Score.prototype.ripple = function (n) {
+  var b = this.boxOf(n.heads);
+  var c = document.createElementNS(Score.SVGNS, 'circle');
+  c.setAttribute('class', 'tl-mark tl-ripple'); c.setAttribute('cx', b.cx); c.setAttribute('cy', b.cy); c.setAttribute('r', Math.max(8, b.w));
+  this.svg.appendChild(c);
+  setTimeout(function () { c.remove(); }, 600);
+};
+
+Score.prototype.lit = function (indices) {
+  var self = this;
+  indices.forEach(function (i) { var n = self.notes[i]; if (!n) return; n.elems.forEach(function (e) { e.classList.add('tl-lit'); e.setAttribute('filter', 'url(#' + self.id + '-glow)'); }); });
+};
+Score.prototype.unlitIndices = function (indices) {
+  var self = this; var held = this.held || {};
+  indices.forEach(function (i) { var n = self.notes[i]; if (!n || held[i]) return; n.elems.forEach(function (e) { e.classList.remove('tl-lit'); e.removeAttribute('filter'); }); });
+};
+Score.prototype.unlitAll = function () {
+  this.svg.querySelectorAll('.tl-lit').forEach(function (e) { e.classList.remove('tl-lit'); e.removeAttribute('filter'); });
+};
+
+// Notes the workflow asked to keep lit stay lit after a tap fades.
+Score.prototype.highlight = function (indices) {
+  var self = this; this.held = {};
+  this.unlitAll(); indices.forEach(function (i) { self.held[i] = true; }); this.lit(indices);
+};
+
+Score.prototype.notesOfBar = function (bar) { return this.notes.filter(function (n) { return n.bar === bar - 1; }); };
+
+Score.prototype.spotlight = function (bar) {
+  this.svg.querySelectorAll('.tl-spot').forEach(function (s) { s.remove(); });
+  this.svg.querySelectorAll('.tl-dim').forEach(function (e) { e.classList.remove('tl-dim'); });
+  if (!bar) { this.highlight([]); return; }
+  var inBar = this.notesOfBar(bar);
+  if (!inBar.length) return;
+  var keep = new Set(); inBar.forEach(function (n) { n.elems.forEach(function (e) { keep.add(e); }); });
+  this.notes.forEach(function (n) { n.elems.forEach(function (e) { if (!keep.has(e)) e.classList.add('tl-dim'); }); });
+  var b = this.boxOf(inBar.reduce(function (a, n) { return a.concat(n.shapes); }, []));
+  var st = this.staffAround(b);
+  var top = Math.min(b.y, st.top) - 22, bottom = Math.max(b.y + b.h, st.bottom) + 22;
+  var e = document.createElementNS(Score.SVGNS, 'ellipse');
+  e.setAttribute('class', 'tl-mark tl-spot'); e.setAttribute('cx', b.cx); e.setAttribute('cy', (top + bottom) / 2);
+  e.setAttribute('rx', b.w / 2 + 40); e.setAttribute('ry', (bottom - top) / 2 + 10);
+  this.svg.insertBefore(e, this.svg.querySelector('defs').nextSibling);
+  requestAnimationFrame(function () { requestAnimationFrame(function () { e.classList.add('on'); }); });
+  this.highlight(inBar.map(function (n) { return n.index; }));
+};
+
+Score.prototype.label = function (index, text) {
+  var n = this.notes[index]; if (!n) return;
+  var p = this.above(n, 18);
+  var d = document.createElement('div'); d.className = 'tl-badge'; d.textContent = text;
+  d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; d.style.animationDelay = (index % 5) * 60 + 'ms';
+  this.overlay.appendChild(d);
+};
+
+Score.prototype.caption = function (index, html) {
+  this.overlay.querySelectorAll('.tl-bubble').forEach(function (e) { e.remove(); });
+  var n = this.notes[index]; if (!n) return;
+  var p = this.above(n, 4);
+  var d = document.createElement('div'); d.className = 'tl-bubble'; d.innerHTML = html;
+  d.style.left = Math.max(70, Math.min(this.paper.clientWidth - 70, p.x)) + 'px'; d.style.top = p.y + 'px';
+  this.overlay.appendChild(d);
+};
+
+// Returns where each answer box sits, so an answering component can own it.
+Score.prototype.slots = function (indices) {
+  var self = this; var places = [];
+  indices.forEach(function (i, k) {
+    var n = self.notes[i]; if (!n) return;
+    var b = self.boxOf(n.heads); var st = self.staffAround(b); var body = self.boxOf(n.shapes);
+    var y = Math.max(st.bottom, body.y + body.h) + 14;
+    var r = document.createElementNS(Score.SVGNS, 'rect');
+    r.setAttribute('class', 'tl-mark tl-slot'); r.setAttribute('x', b.cx - 16); r.setAttribute('y', y);
+    r.setAttribute('width', 32); r.setAttribute('height', 32); r.setAttribute('rx', 8); r.style.animationDelay = k * 70 + 'ms';
+    self.svg.appendChild(r);
+    places.push(self.toPaper(b.cx, y + 16));
+  });
+  return places;
+};
+
+Score.prototype.count = function (indices) {
+  var self = this; this.clearTimers();
+  var list = indices || this.notes.map(function (n) { return n.index; });
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  list.forEach(function (idx, k) {
+    self.timers.push(setTimeout(function () {
+      var n = self.notes[idx]; self.unlitAll(); self.lit([idx]);
+      if (self.audible()) n.pitches.forEach(function (p) { self.o.sound.play(p.midi, 0, .5, .6); });
+      var p = self.above(n, 14);
+      var d = document.createElement('div'); d.className = 'tl-count'; d.textContent = String(k + 1);
+      d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; self.overlay.appendChild(d);
+      self.emit('countStep', { n: k + 1, index: idx });
+      if (k === list.length - 1) self.timers.push(setTimeout(function () { self.unlitAll(); }, 900));
+    }, k * (reduce ? 150 : 650)));
+  });
+};
+
+Score.prototype.clearTimers = function () { this.timers.forEach(clearTimeout); this.timers = []; };
+
+// Plays the notes (all, or one bar) in time; a glowing playhead walks over
+// the system and each note lights as it sounds.
+Score.prototype.play = function (bar) {
+  var self = this; this.stop();
+  if (!this.audible()) return;
+  var list = bar ? this.notesOfBar(bar) : this.notes;
+  if (!list.length) return;
+  this.o.sound.unlock();
+  var secPerWhole = 4 * 60 / 84;
+  var voices = {};
+  list.forEach(function (n) { (voices[n.voice] = voices[n.voice] || []).push(n); });
+  var schedule = [];
+  Object.keys(voices).forEach(function (v) {
+    var t = 0;
+    voices[v].forEach(function (n) { var dur = n.beats * secPerWhole; schedule.push({ n: n, t: t, dur: dur, lead: v === '0' }); t += dur; });
+  });
+  var end = schedule.reduce(function (m, s) { return Math.max(m, s.t + s.dur); }, 0);
+  this.playing = true;
+  if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg>';
+  this.emit('playStart', { bar: bar || null });
+  schedule.forEach(function (s) {
+    s.n.pitches.forEach(function (p) { self.o.sound.play(p.midi, s.t, s.dur, .75); });
+    self.timers.push(setTimeout(function () {
+      self.lit([s.n.index]);
+      self.timers.push(setTimeout(function () { self.unlitIndices([s.n.index]); }, Math.max(120, s.dur * 1000 - 40)));
+      if (s.lead) {
+        var b = self.boxOf(s.n.heads);
+        var sys = self.systemAround(b);
+        var p1 = self.toPaper(b.cx, sys.top - 10); var p2 = self.toPaper(b.cx, sys.bottom + 10);
+        self.playhead.style.left = p1.x + 'px'; self.playhead.style.top = p1.y + 'px'; self.playhead.style.height = (p2.y - p1.y) + 'px';
+        self.playhead.classList.add('on');
+      }
+    }, s.t * 1000));
+  });
+  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, end * 1000 + 200));
+};
+
+// The whole system (all staves played together) that holds a box, so the
+// playhead spans the violin and both piano staves.
+Score.prototype.systemAround = function (b) {
+  var staves = Array.prototype.map.call(this.svg.querySelectorAll('.abcjs-staff'), function (s) { return s.getBBox(); });
+  staves.sort(function (a, c) { return a.y - c.y; });
+  var groups = []; var cur = null;
+  staves.forEach(function (r) {
+    if (cur && r.y - cur.bottom < 70) { cur.bottom = Math.max(cur.bottom, r.y + r.height); }
+    else { cur = { top: r.y, bottom: r.y + r.height }; groups.push(cur); }
+  });
+  var found = groups.find(function (g) { return b.cy >= g.top - 60 && b.cy <= g.bottom + 60; });
+  return found || { top: b.y, bottom: b.y + b.h };
+};
+
+Score.prototype.stop = function () {
+  this.clearTimers();
+  this.playing = false; this.playhead.classList.remove('on');
+  if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
+  var held = this.held || {};
+  this.unlitIndices(this.notes.map(function (n) { return n.index; }).filter(function (i) { return !held[i]; }));
+};
+
+Score.prototype.clear = function () {
+  this.stop(); this.clearTap(); this.spotlight(null); this.held = {}; this.unlitAll();
+  this.svg.querySelectorAll('.tl-mark').forEach(function (m) { m.remove(); });
+  this.overlay.querySelectorAll('.tl-badge, .tl-count, .tl-bubble').forEach(function (m) { m.remove(); });
+};
+
+/* ============================================================
+   Assembly: this page plays the role of the player. It wires the
+   score's events to a caption and a log; the score never calls
+   anything here directly.
+   ============================================================ */
+(function () {
+  if (!window.ABCJS) { document.querySelector('.lede').textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
+  document.body.setAttribute('data-boundary', 'on');
+
+  var MAIN = 'X:1\nM:3/4\nL:1/8\nK:D\nd2 c2 B2 | A3 G F2 | E2 ^D2 =E2 | D6 |]';
+  document.getElementById('abc-main').textContent = MAIN;
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function log(ev) {
+    var line = document.createElement('div');
+    var t = ((performance.now() - t0) / 1000).toFixed(1);
+    var data = Object.assign({}, ev); delete data.type;
+    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  }
+  function nameBubble(score, ev) {
+    if (ev.type === 'noteTap') score.caption(ev.index, '<b>' + ev.name + '</b><span>' + ev.en + '</span>');
+  }
+
+  var main;
+  main = new Score(document.getElementById('main-score'), { abc: MAIN, playable: true, sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
+
+  var minis = [];
+  function mini(containerId, items) {
+    var holder = document.getElementById(containerId);
+    items.forEach(function (it) {
+      var cell = document.createElement('div'); holder.appendChild(cell);
+      var s; s = new Score(cell, { abc: it.abc, compact: true, caption: it.caption, sound: SoundSource, onEvent: function (ev) { nameBubble(s, ev); } });
+      minis.push(s);
+    });
+  }
+  mini('g-clef', [
+    { abc: 'X:1\nL:1/2\nK:C clef=alto\nd2|]', caption: 'alto clef' },
+    { abc: 'X:1\nL:1/2\nK:C clef=alto\nD,2|]', caption: 'alto clef' },
+    { abc: 'X:1\nL:1/2\nK:C clef=tenor\nf2|]', caption: 'tenor clef' },
+    { abc: 'X:1\nL:1/2\nK:C clef=tenor\nA,,2|]', caption: 'tenor clef' }
+  ]);
+  mini('g-rare', [
+    { abc: 'X:1\nM:4/2\nL:1/4\nK:C\nC8|]', caption: 'breve' },
+    { abc: 'X:1\nM:4/4\nL:1/8\nK:C\nG7 A|]', caption: 'double-dotted minim' },
+    { abc: 'X:1\nM:2/4\nL:1/8\nK:C\n(3cde f2|]', caption: 'triplet' },
+    { abc: 'X:1\nM:6/8\nL:1/8\nK:C\n(2cd (2ef|]', caption: 'duplet' },
+    { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(5:4:5cdefg a4|]', caption: 'quintuplet' },
+    { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(6:4:6gfedcB c4|]', caption: 'sextuplet' },
+    { abc: 'X:1\nL:1/2\nK:C\n^^F2|]', caption: 'double sharp' },
+    { abc: 'X:1\nL:1/2\nK:C\n__B2|]', caption: 'double flat' },
+    { abc: 'X:1\nL:1/2\nK:F\n=B2|]', caption: 'natural' }
+  ]);
+  mini('g-orn', [
+    { abc: 'X:1\nL:1/2\nK:C\n!trill!c2|]', caption: 'trill' },
+    { abc: 'X:1\nL:1/2\nK:C\n!turn!d2|]', caption: 'turn' },
+    { abc: 'X:1\nL:1/2\nK:C\n!uppermordent!e2|]', caption: 'upper mordent' },
+    { abc: 'X:1\nL:1/2\nK:C\n!lowermordent!f2|]', caption: 'lower mordent' },
+    { abc: 'X:1\nL:1/2\nK:C\n{a}g2|]', caption: 'appoggiatura' },
+    { abc: 'X:1\nL:1/2\nK:C\n{/a}g2|]', caption: 'acciaccatura' }
+  ]);
+  mini('g-keys', [
+    { abc: 'X:1\nL:1/4\nK:F# clef=treble\nx4|]', caption: 'treble clef' },
+    { abc: 'X:1\nL:1/4\nK:F# clef=bass\nx4|]', caption: 'bass clef' },
+    { abc: 'X:1\nL:1/4\nK:F# clef=alto\nx4|]', caption: 'alto clef' },
+    { abc: 'X:1\nL:1/4\nK:F# clef=tenor\nx4|]', caption: 'tenor clef' }
+  ]);
+
+  var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin"\nV:RH clef=treble name="Piano"\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
+  var trio; trio = new Score(document.getElementById('trio-score'), { abc: TRIO, playable: true, sound: SoundSource, onEvent: function (ev) { nameBubble(trio, ev); } });
+  var trioSpot = false;
+  document.getElementById('trio-spot').addEventListener('click', function () {
+    trioSpot = !trioSpot; this.setAttribute('aria-pressed', String(trioSpot)); trio.spotlight(trioSpot ? 3 : null);
+  });
+
+  var commands = {
+    spotlight: function () { main.spotlight(2); },
+    labels: function () { main.label(1, 'A'); main.label(4, 'B'); main.label(6, 'C'); },
+    slots: function () { var at = main.slots([0, 3, 5, 7]); log({ type: '(作答框的位置交给作答组件)', boxes: at.length }); },
+    count: function () { main.clear(); main.count(); },
+    play: function () { main.clear(); main.spotlight(2); main.play(2); },
+    clear: function () { main.clear(); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) {
+    b.addEventListener('click', function () { SoundSource.unlock(); commands[b.getAttribute('data-cmd')](); });
+  });
+
+  document.querySelectorAll('[data-stage-pick]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.setAttribute('data-stage', b.getAttribute('data-stage-pick'));
+      document.querySelectorAll('[data-stage-pick]').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+    });
+  });
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  var lastW = window.innerWidth, rt = null;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+    clearTimeout(rt);
+    rt = setTimeout(function () { [main, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
+  });
+})();
+</script>
