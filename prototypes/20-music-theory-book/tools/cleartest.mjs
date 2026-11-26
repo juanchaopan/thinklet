@@ -1,19 +1,11 @@
 // Checks that a tapped note stops being lit: by tapping blank paper, and by
-// waiting for the fade. Also reports the paper heights inside each gallery.
-import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-
-const require = createRequire('C:/Users/juanc/AI Projects/thinklet/package.json');
-const { chromium } = require('@playwright/test');
+// waiting for the fade. Also reports the paper heights inside each gallery
+// and the sound source's state after the taps.
+// Usage: node cleartest.mjs <fragment.html> [width]
+import { openPage } from './serve.mjs';
 
 const [, , file, width = '390'] = process.argv;
-const body = readFileSync(file, 'utf8');
-const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${body}</body></html>`;
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: Number(width), height: 900 } });
-const errors = [];
-page.on('pageerror', (e) => errors.push(e.message));
-await page.setContent(html, { waitUntil: 'networkidle' });
+const { page, errors, close } = await openPage(file, width);
 
 async function tapHead(sel) {
   const pt = await page.$eval(sel, (box) => {
@@ -39,5 +31,6 @@ for (const g of ['#g-clef', '#g-rare', '#g-orn', '#g-keys']) {
   const hs = await page.$$eval(`${g} .tl-paper`, (ps) => ps.map((p) => Math.round(p.getBoundingClientRect().height)));
   console.log(g, 'paper heights', [...new Set(hs)].join(','));
 }
+console.log(await page.$eval('#sound-state', (e) => e.textContent));
 if (errors.length) console.log('errors:', errors.join(' | '));
-await browser.close();
+await close();

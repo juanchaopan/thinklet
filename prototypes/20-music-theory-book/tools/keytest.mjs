@@ -1,22 +1,12 @@
-// Taps every key of every keyboard on the page and checks the keyTap event
-// names that key; then checks blank taps clear, lights fade, commands run
-// without errors, and keyboards in one gallery are the same size.
+// Taps every key of the main keyboard and checks the keyTap event names
+// that key; then checks blank taps clear, lights fade, commands run without
+// errors, keyboards in one gallery are the same size, and the sound source
+// reaches the ready state.
 // Usage: node keytest.mjs <fragment.html> [width]
-import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-
-const require = createRequire('C:/Users/juanc/AI Projects/thinklet/package.json');
-const { chromium } = require('@playwright/test');
+import { openPage } from './serve.mjs';
 
 const [, , file, width = '390'] = process.argv;
-const body = readFileSync(file, 'utf8');
-const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${body}</body></html>`;
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: Number(width), height: 900 } });
-const errors = [];
-page.on('pageerror', (e) => errors.push(e.message));
-await page.setContent(html, { waitUntil: 'networkidle' });
-await page.waitForTimeout(400);
+const { page, errors, close } = await openPage(file, width);
 
 const keys = await page.$$eval('#main-kb .tl-key', (ks) => ks.map((k) => Number(k.dataset.midi)));
 let hit = 0;
@@ -62,5 +52,6 @@ const sizes = await page.$$eval('#g-chords .tl-case', (cs) => cs.map((c) => `${M
 console.log('chord keyboards', [...new Set(sizes)].join(' | '));
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
 console.log('page scrolls sideways', overflow);
+console.log(await page.$eval('#sound-state', (e) => e.textContent));
 if (errors.length) console.log('errors:', errors.join(' | '));
-await browser.close();
+await close();

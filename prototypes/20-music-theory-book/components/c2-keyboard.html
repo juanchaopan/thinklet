@@ -15,33 +15,12 @@
   --violet: #6d3cf0;
   --boundary: #2f6bff;
   --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
-  --serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  /* Stage theme: warm light (the default). */
+  /* The player's warm background behind the components. */
   --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
   --stage-ink: #2a2118;
-  --stage-soft: #6b5c4b;
   --vignette: rgba(80, 52, 24, .14);
-  --case-glow: 0 0 0 transparent;
-  --glow: #7b4dff;
-  --glow-soft: rgba(123, 77, 255, .22);
-  --bubble-bg: #2a2118;
-  --bubble-ink: #fff8ec;
-  --bokeh: rgba(255, 190, 120, 0);
   color-scheme: light;
-}
-body[data-stage="night"] {
-  --stage: radial-gradient(55% 45% at 50% 42%, rgba(255, 170, 90, .30), transparent 70%), radial-gradient(40% 40% at 12% 0%, rgba(180, 90, 60, .35), transparent 70%), radial-gradient(45% 45% at 92% 8%, rgba(120, 70, 160, .35), transparent 70%), linear-gradient(180deg, #24150f 0%, #170d0a 100%);
-  --stage-ink: #fbeedd;
-  --stage-soft: #d8bfa3;
-  --vignette: rgba(0, 0, 0, .55);
-  --case-glow: 0 0 120px -20px rgba(255, 170, 80, .45);
-  --glow: #f0a030;
-  --glow-soft: rgba(240, 160, 50, .30);
-  --bubble-bg: #1a120b;
-  --bubble-ink: #ffe9c7;
-  --bokeh: rgba(255, 190, 120, .5);
-  --boundary: #8fb4ff;
 }
 body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
 .wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
@@ -55,36 +34,35 @@ p { margin: 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* ---------- Stage (owned by the player, not by the keyboard) ---------- */
-.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; transition: background .6s; }
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
 .stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
 .stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
-.bokeh { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.bokeh i { position: absolute; border-radius: 50%; background: radial-gradient(circle, var(--bokeh), transparent 70%); animation: drift 14s ease-in-out infinite alternate; }
-@keyframes drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(18px, -22px, 0); } }
 .stage > * { position: relative; z-index: 1; }
-.stage-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; color: var(--stage-ink); }
+.stage-head { color: var(--stage-ink); }
 .stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
-.stage-head .q i { font-family: var(--serif); font-size: 1.15em; font-weight: 600; }
-.themes { display: flex; gap: 6px; }
-.themes button { font: inherit; font-size: 13px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .35); background: rgba(255, 255, 255, .5); color: var(--stage-ink); cursor: pointer; backdrop-filter: blur(6px); }
-body[data-stage="night"] .themes button { background: rgba(255, 255, 255, .08); }
-.themes button[aria-pressed="true"] { background: var(--stage-ink); color: var(--canvas); }
-.themes button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+.stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
 
 /* Dashed outline that marks exactly what the component is on this demo page. */
 body[data-boundary="on"] .tl-kb { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 22px; }
 body[data-boundary="on"] .tl-kb::before { content: "钢琴键盘组件"; position: absolute; top: -18px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
 
-/* ---------- Keyboard component ---------- */
-.tl-kb { position: relative; min-width: 0; display: flex; flex-direction: column; }
+/* ---------- Keyboard component: it defines its whole look here and takes nothing from the page ---------- */
+.tl-kb {
+  --tl-glow: #7b4dff;
+  --tl-glow-soft: rgba(123, 77, 255, .22);
+  --tl-bubble-bg: #2a2118;
+  --tl-bubble-ink: #fff8ec;
+  --tl-caption: #2a2118;
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+}
 .tl-case { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border-radius: 20px; padding: 0 12px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   background:
     linear-gradient(180deg, rgba(255, 222, 178, .20), transparent 28%),
     repeating-linear-gradient(91deg, rgba(0, 0, 0, .07) 0 2px, transparent 2px 7px, rgba(255, 210, 160, .04) 7px 9px, transparent 9px 15px),
     linear-gradient(180deg, #6e3f23 0%, #4b2918 55%, #321a0e 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 214, 170, .35), inset 0 -3px 8px rgba(0, 0, 0, .45), 0 2px 3px rgba(40, 20, 8, .3), 0 26px 50px -18px rgba(40, 20, 8, .6), var(--case-glow);
-  transition: box-shadow .6s; }
+  box-shadow: inset 0 1px 0 rgba(255, 214, 170, .35), inset 0 -3px 8px rgba(0, 0, 0, .45), 0 2px 3px rgba(40, 20, 8, .3), 0 26px 50px -18px rgba(40, 20, 8, .6); }
 /* Rows start at the same left edge, so a wrapped keyboard reads as one instrument continuing on the next line. */
 .tl-rows { display: flex; flex-direction: column; align-items: flex-start; }
 .tl-row { position: relative; }
@@ -102,41 +80,41 @@ body[data-boundary="on"] .tl-kb::before { content: "钢琴键盘组件"; positio
 .tl-black::after { content: ""; position: absolute; left: 18%; right: 18%; top: 8%; height: 46%; border-radius: 3px; background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0)); pointer-events: none; }
 .tl-white.tl-down { transform: translateY(2px); background: linear-gradient(180deg, #dcd1bd 0%, #f5efe3 12%, #f1e9da 84%, #e6dcc8 100%); box-shadow: inset -1px 0 0 rgba(60, 40, 20, .2), inset 0 -3px 0 #d8cbb2; }
 .tl-black.tl-down { transform: translateY(2px); box-shadow: inset 0 -3px 0 #2f2824, 0 1px 2px rgba(0, 0, 0, .55); }
-.tl-white.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--glow) 30%, #fff) 0%, color-mix(in srgb, var(--glow) 16%, #fff) 40%, color-mix(in srgb, var(--glow) 38%, #fff) 100%); box-shadow: inset 0 0 18px color-mix(in srgb, var(--glow) 45%, transparent), inset 0 -6px 0 color-mix(in srgb, var(--glow) 55%, #fff); }
-.tl-black.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--glow) 55%, #000) 0%, var(--glow) 85%, color-mix(in srgb, var(--glow) 70%, #fff) 100%); box-shadow: inset 0 -6px 0 color-mix(in srgb, var(--glow) 60%, #000), 0 0 16px 2px var(--glow-soft), 0 0 4px var(--glow); }
+.tl-white.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 30%, #fff) 0%, color-mix(in srgb, var(--tl-glow) 16%, #fff) 40%, color-mix(in srgb, var(--tl-glow) 38%, #fff) 100%); box-shadow: inset 0 0 18px color-mix(in srgb, var(--tl-glow) 45%, transparent), inset 0 -6px 0 color-mix(in srgb, var(--tl-glow) 55%, #fff); }
+.tl-black.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 55%, #000) 0%, var(--tl-glow) 85%, color-mix(in srgb, var(--tl-glow) 70%, #fff) 100%); box-shadow: inset 0 -6px 0 color-mix(in srgb, var(--tl-glow) 60%, #000), 0 0 16px 2px var(--tl-glow-soft), 0 0 4px var(--tl-glow); }
 .tl-key.tl-dim { filter: brightness(.42) saturate(.6); }
-.tl-kb.kbd .tl-key:focus-visible { box-shadow: inset 0 0 0 3px var(--glow); }
-.tl-letter { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; font: 600 15px/1 var(--serif); color: rgba(70, 50, 30, .55); pointer-events: none; }
+.tl-kb.kbd .tl-key:focus-visible { box-shadow: inset 0 0 0 3px var(--tl-glow); }
+.tl-letter { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; font: 600 15px/1 var(--tl-serif); color: rgba(70, 50, 30, .55); pointer-events: none; }
 .tl-letter sub { font-size: 11px; vertical-align: baseline; position: relative; top: 2px; margin-left: 1px; }
 .tl-black .tl-letter { color: rgba(255, 240, 220, .55); bottom: 10px; font-size: 13px; }
 .tl-compact .tl-letter { font-size: 13px; bottom: 8px; }
-.tl-badge { position: absolute; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; display: grid; place-items: center; font: 600 16px/1 var(--serif); color: #fff; pointer-events: none;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 65%, #fff), var(--glow)); box-shadow: 0 4px 10px -2px var(--glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-badge { position: absolute; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; display: grid; place-items: center; font: 600 16px/1 var(--tl-serif); color: #fff; pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-white .tl-badge { bottom: 34px; }
 .tl-black .tl-badge { bottom: 12px; width: 22px; height: 22px; margin-left: -11px; font-size: 14px; }
 /* Overlays positioned over the whole keyboard. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 .tl-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.tl-arc { fill: none; stroke: color-mix(in srgb, var(--glow) 55%, #fff); stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--glow)); stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw .55s cubic-bezier(.3, .8, .3, 1) forwards; }
+.tl-arc { fill: none; stroke: color-mix(in srgb, var(--tl-glow) 55%, #fff); stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--tl-glow)); stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw .55s cubic-bezier(.3, .8, .3, 1) forwards; }
 /* A one-letter step mark is a 22px disc, so marks of neighbouring semitones never touch, even with 40px keys. */
-.tl-step { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font: italic 600 14px/1 var(--serif); color: #fff; white-space: nowrap;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 65%, #fff), var(--glow)); box-shadow: 0 0 0 2px rgba(40, 20, 8, .5), 0 0 12px var(--glow-soft); animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-step { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font: italic 600 14px/1 var(--tl-serif); color: #fff; white-space: nowrap;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 0 0 2px rgba(40, 20, 8, .5), 0 0 12px var(--tl-glow-soft); animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-step.wide { width: auto; padding: 0 6px; }
-.tl-count { position: absolute; transform: translate(-50%, -50%); font: 600 22px/1 var(--serif); color: #ffeccc; text-shadow: 0 0 10px var(--glow), 0 0 2px var(--glow); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
-.tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 0%, color-mix(in srgb, var(--glow) 38%, transparent), transparent 75%); mix-blend-mode: screen; opacity: 0; transition: opacity .45s; }
+.tl-count { position: absolute; transform: translate(-50%, -50%); font: 600 22px/1 var(--tl-serif); color: #ffeccc; text-shadow: 0 0 10px var(--tl-glow), 0 0 2px var(--tl-glow); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 0%, color-mix(in srgb, var(--tl-glow) 38%, transparent), transparent 75%); mix-blend-mode: screen; opacity: 0; transition: opacity .45s; }
 .tl-spot.on { opacity: 1; }
-.tl-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
-.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--bubble-bg); color: var(--bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
 .tl-bubble.out { opacity: 0; }
 .tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
-.tl-bubble b { font: 600 20px/1 var(--serif); letter-spacing: .02em; }
-.tl-bubble span { font: italic 500 16px/1 var(--serif); opacity: .8; margin-left: 6px; }
-.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 65%, #fff), var(--glow)); box-shadow: 0 8px 18px -6px var(--glow), 0 0 0 3px rgba(255, 230, 200, .35); transition: transform .1s; }
+.tl-bubble b { font: 600 20px/1 var(--tl-serif); letter-spacing: .02em; }
+.tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
+.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px rgba(255, 230, 200, .35); transition: transform .1s; }
 .tl-play:active { transform: scale(.94); }
 .tl-play:focus { outline: none; }
-.tl-play:focus-visible { outline: 3px solid var(--glow); outline-offset: 3px; }
+.tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
 .tl-play svg { width: 18px; height: 18px; fill: currentColor; }
-.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--serif); color: var(--stage-ink); margin-top: 10px; }
+.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes rise { from { transform: translate(-50%, -20%); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
 @keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
@@ -174,19 +152,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   <header style="display:grid;gap:10px">
     <span class="tagline">组件 2 / 10 · 显示类 · 直接画在画面上</span>
     <h1>钢琴键盘</h1>
-    <p class="lede">讲音程、音阶、等音、和弦时用。蓝色虚线框住的就是一个键盘组件：木头琴身、红色琴毡、琴键，以及画在琴身上方的弧线、数字和琴键上的标记。框外面的舞台、标题、几架键盘怎么排、下面的指令按钮，都不属于它。键盘不知道乐谱的存在：要让谱上的音和键盘一起亮，是流程分别给两个组件发指令。</p>
+    <p class="lede">讲音程、音阶、等音、和弦时用。蓝色虚线框住的就是一个键盘组件：木头琴身、红色琴毡、琴键，以及画在琴身上方的弧线、数字和琴键上的标记。它的外观全由自己定，不随外面变。框外面的暖光背景、标题、几架键盘怎么排、下面的指令按钮，都不属于它。键盘不知道乐谱的存在：要让谱上的音和键盘一起亮，是流程分别给两个组件发指令。</p>
     <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
   </header>
 
   <section class="stage" aria-label="题目画面">
-    <div class="bokeh" aria-hidden="true"><i style="left:8%;top:12%;width:120px;height:120px"></i><i style="left:78%;top:18%;width:90px;height:90px;animation-delay:-4s"></i><i style="left:62%;top:70%;width:150px;height:150px;animation-delay:-8s"></i><i style="left:20%;top:74%;width:70px;height:70px;animation-delay:-2s"></i></div>
-    <div class="stage-head">
-      <p class="q"><i>E♭ major</i> 里哪两处是 <i>semitone</i>？</p>
-      <div class="themes" role="group" aria-label="舞台配色（由流程或题目选定）">
-        <button type="button" data-stage-pick="warm" aria-pressed="true">暖光</button>
-        <button type="button" data-stage-pick="night" aria-pressed="false">暖夜</button>
-      </div>
-    </div>
+    <div class="stage-head"><p class="q"><i>E♭ major</i> 里哪两处是 <i>semitone</i>？</p></div>
     <div id="main-kb"></div>
   </section>
 
@@ -219,7 +190,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <table>
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td>输入</td><td>音域（从哪个键到哪个键）；模式：讲题（点了发声、弹出音名）或练习（只显示流程标好的东西，点了没有反应，不给提示）；白键上写不写音名（不写、只写 C、全写）；要弹的一段（有就出现播放按钮）；下面的名称（原文）。颜色从舞台继承。</td></tr>
+          <tr><td>输入</td><td>音域（从哪个键到哪个键）；模式：讲题（点了发声、弹出音名）或练习（只显示流程标好的东西，点了没有反应，不给提示）；白键上写不写音名（不写、只写 C、全写）；要弹的一段（有就出现播放按钮）；下面的名称（原文）。</td></tr>
+          <tr><td>外观</td><td>琴身、琴毡、琴键、标亮的光都由键盘自己定，不从外面继承；放在哪里都是同一个样子。</td></tr>
           <tr><td>指令</td><td><code>highlight(键)</code> 一直亮着；<code>label(键, 文字)</code> 在琴键上贴标记；<code>steps(相邻的键)</code> 画弧线，标 T（tone）或 S（semitone）；<code>count(从, 到)</code> 一个半音一个半音地数；<code>spotlight(从, 到)</code> 聚光；<code>spelling(写法)</code> 按调决定黑键叫 F♯ 还是 G♭；<code>caption(键, 文字)</code> 弹出说明；<code>play(一段)</code> 弹单音或和弦；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>keyTap</code>（键、音名、所有等音写法）；<code>blankTap</code>；<code>countStep</code>（第几个半音、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”，和乐谱用的是同一个；键盘不知道乐谱、作答组件的存在。</td></tr>
@@ -232,91 +204,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   </section>
 </div>
 
+<script src="sound.js"></script>
 <script>
-/* ============================================================
-   Sound source: plays MIDI pitches with sampled piano. It knows
-   nothing about scores or keyboards; anything that wants a sound
-   calls play(). The player calls unlock() on every touch, because
-   phones only start audio inside a gesture.
-   ============================================================ */
-var SoundSource = (function () {
-  var ctx = null, raw = null, buffers = {}, loading = null, media = null, watchers = [];
-  var state = { phase: 'idle', detail: '' };
-  function report(phase, detail) { state = { phase: phase, detail: detail || '' }; watchers.forEach(function (f) { f(state); }); }
-  // A short silent WAV played through a media element. On iPhones this puts
-  // the page in the playback audio category, so Web Audio is heard even
-  // when the ring/silent switch is on silent.
-  function silentWav() {
-    var n = 441, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
-    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
-    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt ');
-    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 44100, true);
-    v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
-    return new Blob([buf], { type: 'audio/wav' });
-  }
-  function context() {
-    if (!ctx) {
-      var C = window.AudioContext || window.webkitAudioContext;
-      if (!C) { report('failed', '这个浏览器不支持 Web Audio'); return null; }
-      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older browsers have no audio session */ }
-      ctx = new C();
-      ctx.onstatechange = function () { report(state.phase, state.detail); };
-    }
-    if (ctx.state !== 'running') { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); }
-    return ctx;
-  }
-  // Starts output inside the gesture: one silent sample through Web Audio,
-  // and the silent media element once.
-  function wake() {
-    if (ctx.state !== 'running') { var s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0); }
-    if (media === null) {
-      try { media = new Audio(URL.createObjectURL(silentWav())); media.setAttribute('playsinline', ''); var p = media.play(); if (p && p.catch) p.catch(function () {}); } catch (e) { media = false; }
-    }
-  }
-  // The samples sit next to the page, so a relative path works wherever the page is served from.
-  function load() {
-    if (!loading) {
-      report('loading');
-      loading = fetch('piano.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-        .then(function (j) { raw = j; report('ready', Object.keys(j).length + ' 个采样'); })
-        .catch(function (e) { raw = {}; report('failed', '采样没有加载出来（' + (e && e.message || e) + '）'); });
-    }
-    return loading;
-  }
-  function decode(midi) {
-    if (buffers[midi]) return buffers[midi];
-    var bin = atob(raw[midi]); var bytes = new Uint8Array(bin.length);
-    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    buffers[midi] = new Promise(function (res, rej) { ctx.decodeAudioData(bytes.buffer, res, rej); });
-    buffers[midi].catch(function () { report('failed', '采样解码失败'); });
-    return buffers[midi];
-  }
-  function nearestSample(midi) {
-    var best = null, d = Infinity;
-    Object.keys(raw || {}).forEach(function (k) { var dd = Math.abs(k - midi); if (dd < d) { d = dd; best = Number(k); } });
-    return best;
-  }
-  return {
-    unlock: function () { if (context()) { wake(); load(); } },
-    watch: function (f) { watchers.push(f); f(state); },
-    contextState: function () { return ctx ? ctx.state : '还没创建'; },
-    play: function (midi, delaySec, durSec, velocity) {
-      var c = context(); if (!c) return;
-      var at = c.currentTime + (delaySec || 0);
-      load().then(function () {
-        var s = nearestSample(midi); if (s === null) return;
-        decode(s).then(function (buf) {
-          var src = c.createBufferSource(); src.buffer = buf; src.playbackRate.value = Math.pow(2, (midi - s) / 12);
-          var g = c.createGain(); var t0 = Math.max(at, c.currentTime); var dur = Math.max(.08, durSec || 1);
-          var v = velocity || .8;
-          g.gain.setValueAtTime(v, t0); g.gain.setValueAtTime(v, t0 + dur); g.gain.exponentialRampToValueAtTime(.001, t0 + dur + .3);
-          src.connect(g); g.connect(c.destination); src.start(t0); src.stop(t0 + dur + .35);
-        });
-      });
-    }
-  };
-})();
-
 /* ============================================================
    Keyboard component. Inputs: from, to (MIDI), mode ('lecture' |
    'practice'), names ('none' | 'C' | 'all'), tune (what the play
@@ -505,7 +394,7 @@ Keyboard.prototype.tap = function (m) {
   this.press(m, 220);
   this.lit([m]);
   this.ripple(m);
-  if (this.audible()) { this.o.sound.unlock(); this.o.sound.play(m, 0, 1.1); }
+  if (this.audible()) this.o.sound.play(m, 0, 1.1);
   var names = this.namesOf(m);
   this.emit('keyTap', { midi: m, name: names[0], names: names, en: names.map(function (n) { return Keyboard.spoken(n.replace(/\d+$/, '')); }) });
   this.tapTimers.push(setTimeout(function () {
@@ -650,7 +539,6 @@ Keyboard.prototype.caption = function (m, html) {
 Keyboard.prototype.play = function (tune, beat) {
   var self = this; this.stop();
   if (!this.audible() || !tune || !tune.length) return;
-  this.o.sound.unlock();
   var step = beat || .42, t = 0;
   this.playing = true;
   if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg>';
@@ -689,17 +577,16 @@ Keyboard.prototype.clear = function () {
 };
 
 /* ============================================================
-   Assembly: this page plays the role of the player. It unlocks
-   sound on every touch, wires the keyboard's events to a caption
-   and a log, and shows how the sound is doing; the keyboard never
-   calls anything here directly.
+   Assembly: this page plays the role of the player. It wires the
+   keyboard's events to a caption and a log, and shows how the
+   sound is doing; the keyboard never calls anything here directly.
    ============================================================ */
 (function () {
-  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) { document.addEventListener(t, SoundSource.unlock, { capture: true, passive: true }); });
   var stateEl = document.getElementById('sound-state');
   var PHASE = { idle: '还没启用，点一下琴键或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function (s) {
-    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + SoundSource.contextState() + '）';
+  SoundSource.watch(function () {
+    var s = SoundSource.status();
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
   });
 
   document.body.setAttribute('data-boundary', 'on');
@@ -763,13 +650,6 @@ Keyboard.prototype.clear = function () {
     var kb; kb = new Keyboard(cell, { from: 60, to: 76, names: 'C', compact: true, caption: ch.c, tune: ch.tune.concat([ch.tune]), sound: SoundSource, onEvent: function (ev) { nameBubble(kb, ev); } });
     kb.highlight(ch.tune);
     chords.push(kb);
-  });
-
-  document.querySelectorAll('[data-stage-pick]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.body.setAttribute('data-stage', b.getAttribute('data-stage-pick'));
-      document.querySelectorAll('[data-stage-pick]').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
-    });
   });
 
   var boundaryBtn = document.getElementById('toggle-boundary');
