@@ -2,6 +2,8 @@
 // with them. Each book's cover is one solid colour; covers.mjs draws the
 // files, and a book with no colour has no cover yet.
 //
+// - `minGrade`, `maxGrade`: the grades the book is for, lowest and highest;
+//   the same grade twice for a book of one grade.
 // - `acquired`: the family has the book in 我家的书.
 // - `assigned`: the children it is assigned to, as indexes into CHILDREN.
 //   `extraAssigned` counts assigned children beyond those, to show how the
@@ -15,23 +17,28 @@ export const GRADES = ['学前', '一年级', '二年级', '三年级', '四年�
 /** Subject options in the order the filter lists them. */
 export const SUBJECTS = ['语文', '数学', '英语', '科学', '编程'];
 
-const book = (id, title, grade, subject, cover, intro, family = {}) => ({
-  id,
-  title,
-  grade,
-  subject,
-  cover,
-  intro,
-  acquired: false,
-  assigned: [],
-  extraAssigned: 0,
-  retired: false,
-  replacement: null,
-  ...family,
-});
+/** `grades` is one grade, or the lowest and highest of a range. */
+const book = (id, title, grades, subject, cover, intro, family = {}) => {
+  const [minGrade, maxGrade = minGrade] = [grades].flat();
+  return {
+    id,
+    title,
+    minGrade,
+    maxGrade,
+    subject,
+    cover,
+    intro,
+    acquired: false,
+    assigned: [],
+    extraAssigned: 0,
+    retired: false,
+    replacement: null,
+    ...family,
+  };
+};
 
 export const BOOKS = [
-  book('garden-rhymes', '花园里的小儿歌', '学前', '语文', '#f6b27a',
+  book('garden-rhymes', '花园里的小儿歌', ['学前', '一年级'], '语文', '#f6b27a',
     '跟着小兔老师在花园里念儿歌：小草发芽、蝴蝶跳舞、雨点敲门。每首儿歌都配着拍手的节奏，念着念着就记住了常用的字。'),
   book('carrot-counting', '胡萝卜数数大冒险', '一年级', '数学', '#ffcf5c',
     '小兔要把 20 根胡萝卜分给朋友们。一边帮它分，一边学会数到 100、比较多少，还能认识加号和减号。',
@@ -41,16 +48,16 @@ export const BOOKS = [
   book('moon-phases', '月亮为什么会变脸', '三年级', '科学', '#7f8fd6',
     '有时圆圆的像盘子，有时弯弯的像小船。我们用一个手电筒和一个皮球，在家里就能做出月亮的样子变化，弄明白月相是怎么回事。最后还有一张月亮观察表，可以连续画一个月。',
     { acquired: true }),
-  book('robot-maze', '让小机器人走出迷宫', '四年级', '编程', '#5cc2b4',
+  book('robot-maze', '让小机器人走出迷宫', ['四年级', '初二'], '编程', '#5cc2b4',
     '用拖动积木的方式给小机器人下指令：前进、转弯、重复。从一步一步走到学会用循环，一共 12 个关卡。',
     { acquired: true, assigned: [2] }),
-  book('seasons-poems', '四季里的古诗', '五年级', '语文', '#e98a9b',
+  book('seasons-poems', '四季里的古诗', ['四年级', '六年级'], '语文', '#e98a9b',
     '春天读《春晓》，夏天读《小池》，秋天读《山行》，冬天读《江雪》。每首诗都配了一幅画和一个小问题，帮你想一想诗人看到了什么、心里在想什么。',
     { acquired: true, assigned: [0, 2] }),
   book('shape-hide-and-seek', '形状捉迷藏', '学前', '数学', '#9ccf6e',
     '圆形藏在钟表里，三角形躲在屋顶上。跟着小兔在家里找一找，认识身边的形状。',
     { acquired: true, assigned: [0, 1, 2], extraAssigned: 2 }),
-  book('pizza-fractions', '分披萨学分数', '六年级', '数学', '#f08a5d',
+  book('pizza-fractions', '分披萨学分数', ['六年级', '初一'], '数学', '#f08a5d',
     '一张披萨分给四个人，每人能吃几块？两张披萨分给三个人呢？从切披萨开始认识分数，再学会分数的比较、加减和约分。书里有 40 道生活里的小题，做完就能自己算清楚怎么分最公平。'),
   book('my-school-day', 'My School Day 我的一天', '初一', '英语', '#6fa8dc',
     '跟着交换生 Amy 过完学校的一天，学会用英语介绍课程表、时间和喜欢的科目。'),
@@ -105,6 +112,12 @@ export const BOOKS = [
 ];
 
 export const bookById = (id) => BOOKS.find((b) => b.id === id);
+
+/** Whether a grade falls in the book's range, the lowest and highest grades included. */
+export const coversGrade = (book, grade) => {
+  const at = GRADES.indexOf(grade);
+  return GRADES.indexOf(book.minGrade) <= at && at <= GRADES.indexOf(book.maxGrade);
+};
 
 /** 书库: every book still in the library, newest first. */
 export const LIBRARY = BOOKS.filter((b) => !b.retired);

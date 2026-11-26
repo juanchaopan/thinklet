@@ -3,8 +3,19 @@ import { CHECK, CHILDREN, MORE, avatar, bookIcon, btnIcon, btnPrimary, btnSecond
 // Books as the library, the book page and a child's home page show them, and
 // the dialog that chooses which children may read a book.
 
-/** "一年级 · 数学", the line under every book title. */
-export const gradeAndSubject = (book) => `${book.grade} · ${book.subject}`;
+/**
+ * The grades a book is for: one grade, or "四年级～初二" from the lowest to the
+ * highest. The full-width tilde keeps apart grades that start with 一, where
+ * a dash would run into the stroke. Screen readers would read the tilde as a
+ * symbol or skip it, so they hear "四年级到初二" instead of what is drawn.
+ */
+export const gradeRange = (book) =>
+  book.minGrade === book.maxGrade
+    ? book.minGrade
+    : `<span aria-hidden="true">${book.minGrade}～${book.maxGrade}</span><span class="sr-only">${book.minGrade}到${book.maxGrade}</span>`;
+
+/** "四年级～初二 · 数学", the line under every book title. */
+export const gradeAndSubject = (book) => `${gradeRange(book)} · ${book.subject}`;
 
 const SMALL_CHECK = `<svg class="size-4" viewBox="0 0 20 20" aria-hidden="true"><path d="m4.5 10.5 3.6 3.4L15.5 6.5" stroke="currentColor" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
@@ -90,7 +101,7 @@ export const cardMenuSheet = (book) =>
   );
 
 /**
- * A book in a grid: the cover, the title in at most two lines, the grade and
+ * A book in a grid: the cover, the title in at most two lines, the grades and
  * subject, and the introduction in at most two lines. On the parents' pages
  * the whole card leads to the book page, and its footer offers 获取, or shows
  * that the family has the book with the button that chooses which children

@@ -1,5 +1,5 @@
 import { assignDialog, bookCard, bookGrid, cardMenuSheet } from './books.mjs';
-import { BOOKS, GRADES, LIBRARY, SUBJECTS, bookById } from './sample-books.mjs';
+import { BOOKS, GRADES, LIBRARY, SUBJECTS, bookById, coversGrade } from './sample-books.mjs';
 import { ADMIN, CHECK, CHILDREN, appShell, art, avatar, btnPrimary, btnSecondary, btnText, card, chevron, icon, menuSheet, page } from './ui.mjs';
 
 // The library, the home page of the current family at `/`: a short welcome,
@@ -39,6 +39,9 @@ const scopeBooks = (scope) => {
   return BOOKS.filter((b) => b.assigned.includes(child));
 };
 
+/** A book passes the grades when none are chosen, or when any chosen grade falls in its range. */
+const inGrades = (book, chosen) => !chosen.length || chosen.some((g) => coversGrade(book, g));
+
 const inAny = (value, chosen) => !chosen.length || chosen.includes(value);
 
 /**
@@ -47,7 +50,7 @@ const inAny = (value, chosen) => !chosen.length || chosen.includes(value);
  * through: the subjects offered are the ones it holds.
  */
 const filterBooks = ({ scope, grades, subjects }) => {
-  const pool = scopeBooks(scope).filter((b) => inAny(b.grade, grades));
+  const pool = scopeBooks(scope).filter((b) => inGrades(b, grades));
   return { pool, books: pool.filter((b) => inAny(b.subject, subjects)) };
 };
 

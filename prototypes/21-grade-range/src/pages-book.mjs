@@ -1,10 +1,10 @@
-import { acquiredMark, assignDialog, assignLabel, avatarStack, bookCover, dashedPlus } from './books.mjs';
+import { acquiredMark, assignDialog, assignLabel, avatarStack, bookCover, dashedPlus, gradeRange } from './books.mjs';
 import { problem } from './pages-misc.mjs';
 import { bookById } from './sample-books.mjs';
 import { BACK, CHILDREN, appShell, btnDanger, btnPrimary, btnSecondary, btnText, chevron, dialog, page } from './ui.mjs';
 
 // The book page, /books/<id>: the book's own page. A hero band coloured by
-// the cover holds the cover as a book, the grade and subject, the title and
+// the cover holds the cover as a book, the grades and subject, the title and
 // the actions: 获取 while the family does not have the book, and once it
 // does, ✓ 已获取 with the button for choosing which children may read it.
 // What the book is about follows under the hero.
@@ -76,7 +76,7 @@ const removeLine = (book, children) =>
 
 /**
  * The hero spans the content area from edge to edge and from the top. The
- * cover stands at its left as a book, with the grade and subject, the title
+ * cover stands at its left as a book, with the grades and subject, the title
  * in very large type and the actions beside it, lined up with the cover's
  * foot; on phones everything is centred under the cover. A retired book's
  * notice heads the details. The introduction follows as body text under its
@@ -92,7 +92,7 @@ const bookBody = (book, children) => `
         ${bookObject(book, 'w-44 sm:w-52 lg:w-64')}
         <div class="flex min-w-0 flex-1 flex-col items-center text-center sm:items-start sm:pb-2 sm:text-left">
           ${retiredNote(book)}
-          <div class="flex flex-wrap justify-center gap-2 sm:justify-start">${pill(book.grade)}${pill(book.subject)}</div>
+          <div class="flex flex-wrap justify-center gap-2 sm:justify-start">${pill(gradeRange(book))}${pill(book.subject)}</div>
           <h1 class="mt-4 text-4xl leading-tight font-black tracking-tight sm:text-5xl">${book.title}</h1>
           <div class="mt-7 w-full sm:w-auto">${actions(book, children)}</div>
         </div>
