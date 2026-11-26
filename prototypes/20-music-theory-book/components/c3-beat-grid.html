@@ -1,0 +1,1048 @@
+<title>节拍格组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<style>
+/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the beat grid) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-bg { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 20px; }
+body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: absolute; top: -18px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
+
+/* ---------- Beat grid component: it defines its whole look here and takes nothing from the page ---------- */
+.tl-bg {
+  --tl-paper-a: #fffaf1;
+  --tl-paper-b: #f2e6d1;
+  --tl-paper-shadow: rgba(60, 38, 16, .45);
+  --tl-ink: #241a12;
+  --tl-line: rgba(36, 26, 18, .62);
+  --tl-guide: rgba(36, 26, 18, .16);
+  --tl-ribbon: #6b5238;
+  --tl-ribbon-hi: rgba(255, 236, 205, .55);
+  --tl-glow: #7b4dff;
+  --tl-glow-soft: rgba(123, 77, 255, .28);
+  --tl-warn: #c8452f;
+  --tl-warn-soft: rgba(200, 69, 47, .16);
+  --tl-wood-a: #e9c98f;
+  --tl-wood-b: #cfa264;
+  --tl-wood-ink: #4a3016;
+  --tl-bubble-bg: #2a2118;
+  --tl-bubble-ink: #fff8ec;
+  --tl-caption: #2a2118;
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+}
+.tl-card { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 16px; padding: 10px 10px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, .7), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(120, 90, 50, .025) 0 1px, transparent 1px 3px),
+    linear-gradient(170deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 -2px 6px rgba(120, 84, 40, .12) inset, 0 2px 3px rgba(60, 38, 16, .18), 0 24px 44px -20px var(--tl-paper-shadow); }
+.tl-bg.kbd .tl-card:focus-visible { box-shadow: 0 0 0 3px var(--tl-glow), 0 24px 44px -20px var(--tl-paper-shadow); }
+.tl-rows { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.tl-row { position: relative; }
+.tl-row svg { position: absolute; inset: 0; overflow: visible; }
+/* The ruler under each row: light maple with engraved ticks. */
+.tl-ruler { position: absolute; border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 246, 225, .55), transparent 40%, rgba(80, 48, 16, .12)),
+    repeating-linear-gradient(92deg, rgba(120, 70, 20, .08) 0 1px, transparent 1px 5px, rgba(255, 230, 190, .1) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, var(--tl-wood-a), var(--tl-wood-b));
+  box-shadow: inset 0 1px 0 rgba(255, 248, 230, .8), inset 0 -1px 0 rgba(80, 48, 16, .35), 0 2px 4px rgba(60, 36, 12, .25); }
+.tl-bg svg text { font-family: var(--tl-serif); }
+.tl-glyph { fill: var(--tl-ink); transition: fill .2s; }
+.tl-stem { fill: var(--tl-ink); transition: fill .2s; }
+.tl-beam { fill: var(--tl-ink); }
+.tl-tie { fill: none; stroke: var(--tl-ink); stroke-width: 1.3; }
+.tl-staff { stroke: var(--tl-line); stroke-width: 1.2; }
+.tl-barline { stroke: var(--tl-ink); stroke-width: 1.8; }
+.tl-barline.tl-warnline { stroke: var(--tl-warn); stroke-width: 2.4; stroke-dasharray: 5 3; animation: fade .4s ease-out both; }
+.tl-guide { stroke: var(--tl-guide); stroke-width: 1; stroke-dasharray: 2 4; }
+.tl-guide.tl-major { stroke: rgba(36, 26, 18, .26); stroke-dasharray: 3 3; }
+.tl-ribbon { fill: var(--tl-ribbon); opacity: .78; transition: fill .2s, opacity .3s; }
+.tl-ribbon-hi { fill: var(--tl-ribbon-hi); pointer-events: none; }
+.tl-rest .tl-ribbon { fill: transparent; stroke: var(--tl-ribbon); stroke-width: 1.3; stroke-dasharray: 3 3; opacity: .8; }
+.tl-rest .tl-ribbon-hi { display: none; }
+.tl-part { transition: opacity .35s; }
+.tl-part.tl-lit .tl-glyph, .tl-part.tl-lit .tl-stem { fill: var(--tl-glow); }
+.tl-part.tl-lit { filter: drop-shadow(0 0 5px var(--tl-glow-soft)); }
+.tl-part.tl-lit .tl-ribbon { fill: var(--tl-glow); opacity: .9; }
+.tl-rest.tl-lit .tl-ribbon { fill: var(--tl-glow-soft); stroke: var(--tl-glow); }
+.tl-part.tl-over .tl-glyph, .tl-part.tl-over .tl-stem { fill: var(--tl-warn); }
+.tl-part.tl-over .tl-ribbon { fill: var(--tl-warn); opacity: .55; }
+.tl-rest.tl-over .tl-ribbon { fill: var(--tl-warn-soft); stroke: var(--tl-warn); }
+.tl-missing { fill: var(--tl-warn-soft); stroke: var(--tl-warn); stroke-width: 1.3; stroke-dasharray: 4 3; animation: fade .4s ease-out both; }
+.tl-dim { opacity: .22; }
+.tl-cell { fill: rgba(90, 52, 16, .1); }
+.tl-cell.tl-lit { fill: color-mix(in srgb, var(--tl-glow) 35%, transparent); }
+.tl-cell.tl-pulse { animation: pulse .45s ease-out; }
+.tl-tick { stroke: var(--tl-wood-ink); stroke-width: 1; opacity: .5; }
+.tl-tick.tl-beat { stroke-width: 1.6; opacity: .85; }
+.tl-tick.tl-sub { stroke: var(--tl-glow); opacity: .9; stroke-width: 1.4; animation: fade .35s ease-out both; }
+.tl-beatno { font-size: 15px; font-style: italic; font-weight: 600; fill: var(--tl-wood-ink); }
+.tl-sig { font-weight: 700; fill: var(--tl-ink); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+.tl-sig.tl-unknown { fill: var(--tl-glow); }
+.tl-tupno { font-size: 15px; font-style: italic; font-weight: 600; fill: var(--tl-ink); }
+.tl-bracket { fill: none; stroke: var(--tl-ink); stroke-width: 1.1; }
+.tl-unit { fill: color-mix(in srgb, var(--tl-glow) 30%, transparent); stroke: var(--tl-glow); stroke-width: 1.2; animation: fade .3s ease-out both; }
+.tl-countno { font-size: 17px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: var(--tl-glow); stroke-width: 3px; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+/* Overlays positioned over the whole grid. */
+.tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.tl-badge { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 15px/1 var(--tl-serif); color: #fff;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-playhead { position: absolute; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--tl-glow); box-shadow: 0 0 10px 2px var(--tl-glow-soft), 0 0 3px var(--tl-glow); opacity: 0; transition: opacity .2s; }
+.tl-playhead.on { opacity: 1; }
+.tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 40%, color-mix(in srgb, var(--tl-glow) 18%, transparent), transparent 75%); opacity: 0; transition: opacity .45s; }
+.tl-spot.on { opacity: 1; }
+.tl-ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble.out { opacity: 0; }
+.tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-bubble b { font: 600 19px/1 var(--tl-serif); letter-spacing: .02em; }
+.tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
+.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px rgba(255, 230, 200, .35); transition: transform .1s; }
+.tl-play:active { transform: scale(.94); }
+.tl-play:focus { outline: none; }
+.tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
+.tl-play svg { width: 18px; height: 18px; fill: currentColor; }
+.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse { 0% { fill: color-mix(in srgb, var(--tl-glow) 55%, transparent); } 100% { fill: rgba(90, 52, 16, .1); } }
+@keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
+@keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+
+/* ---------- Grids laid out by the workflow ---------- */
+.stack { display: grid; gap: 22px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); grid-auto-rows: 1fr; gap: 26px 18px; padding-top: 8px; }
+.gallery > .tl-bg, .stack > .tl-bg { height: 100%; }
+.mini-stage { border-radius: 24px; padding: 24px 20px 20px; background: var(--stage); position: relative; overflow: hidden; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 3 / 10 · 显示类 · 直接画在画面上</span>
+    <h1>节拍格</h1>
+    <p class="lede">讲节奏时用。蓝色虚线框住的就是一个节拍格组件：一张纸条，上面是一条线上的音符和休止符，每个音占的宽度和它的时值成正比；下面的色条是每个音占多长；最下面的木尺按拍号分成一拍一拍。它的外观全由自己定，不随外面变。框外面的暖光背景、标题、几个节拍格怎么排、下面的指令按钮，都不属于它。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q">这一小节应该是哪个拍号？<i>2/4</i>、<i>3/4</i> 还是 <i>7/8</i>？</p></div>
+    <div id="main-grid"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给节拍格的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给节拍格的指令；记录框列出节拍格发出的事件。点一个音：它亮起、发声、上方弹出时值的名称，两秒后自己淡掉；点木尺上的一拍，那一拍亮起；点纸的空白处马上清掉。换拍号时，木尺重新分拍：多出来的音标成红色，缺的时值用红色虚线框出。窄屏上按拍换行，音符不缩小。</p>
+    <div class="chips">
+      <button class="chip" type="button" data-cmd="m24">试 2/4</button>
+      <button class="chip" type="button" data-cmd="m34">试 3/4</button>
+      <button class="chip" type="button" data-cmd="m78">试 7/8（2+2+3）</button>
+      <button class="chip" type="button" data-cmd="unknown">拍号打问号</button>
+      <button class="chip" type="button" data-cmd="sub">细分到 semiquaver</button>
+      <button class="chip" type="button" data-cmd="count">数：dotted quaver 是几个 semiquaver</button>
+      <button class="chip" type="button" data-cmd="label">标 A、B、C</button>
+      <button class="chip" type="button" data-cmd="spot">聚光第 3 拍</button>
+      <button class="chip" type="button" data-cmd="play">播放（带拍点）</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
+    </div>
+    <div class="log" id="log" aria-live="polite" aria-label="节拍格发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
+  </section>
+
+  <section class="panel">
+    <h2>上下两个节拍格：三连音改写成复拍子</h2>
+    <p class="what">考点 2 讲单拍子和复拍子互换时用。流程把同一段音的两种写法上下排好：<i>3/4</i> 里的 <i>triplet</i> 和 <i>9/8</i> 里的三个 <i>quaver</i> 占的长度一样，一拍对一拍。两个节拍格一样宽，拍子自然对齐。</p>
+    <div class="mini-stage"><div class="stack" id="g-pair"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>一行三个小节拍格：同一小节配三个拍号</h2>
+    <p class="what">流程也可以把三个选项并排放：同一小节配上 <i>2/4</i>、<i>3/4</i>、<i>7/8</i>，哪个正好装满一眼就看出来。三个一样大（窄屏上排成一列）。</p>
+    <div class="mini-stage"><div class="gallery" id="g-three"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>一小节的 ABC 谱（和乐谱组件同一种写法，音高只用来发声）；拍号和拍的分组（可以不给，也可以是问号）；模式：讲题（点了发声、弹出名称）或练习（只显示流程标好的东西，点了没有反应，不给提示）；速度；有没有播放按钮；下面的名称（原文）。</td></tr>
+          <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色都由节拍格自己定，不从外面继承；放在哪里都是同一个样子。</td></tr>
+          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code>；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
+          <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
+          <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里一般不出现，因为它本身就是提示；要出现时只显示，不作答。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="sound.js"></script>
+<script>
+/* ============================================================
+   Beat grid component. Inputs: abc (one bar), meter, group, mode
+   ('lecture' | 'practice'), tempo (crotchets per minute), playable,
+   caption, compact. Commands: meter, subdivide, count, highlight,
+   label, spotlight, caption, play, stop, clear. Events (via
+   onEvent): tileTap, beatTap, blankTap, countStep, playStart,
+   playEnd. Sound goes through the injected source, lectures only.
+   Time is counted in ticks: a semibreve is 6720 ticks, which divides
+   evenly by every note value down to the hemidemisemiquaver and by
+   triplets, quintuplets, sextuplets and septuplets.
+   ============================================================ */
+function BeatGrid(host, options) {
+  this.host = host;
+  this.o = Object.assign({ abc: '', meter: null, group: null, mode: 'lecture', tempo: 72, playable: false, caption: '', compact: false, sound: null, onEvent: function () {} }, options);
+  this.held = {};
+  this.marks = [];
+  this.timers = [];
+  this.tapTimers = [];
+  this.tiles = BeatGrid.parse(this.o.abc);
+  this.notesEnd = this.tiles.reduce(function (a, t) { return Math.max(a, t.t0 + t.dur); }, 0);
+  this.m = BeatGrid.meterOf(this.o.meter, this.o.group);
+  this.build();
+}
+BeatGrid.W = 6720;
+BeatGrid.TAP_FADE_MS = 2000;
+BeatGrid.NAMES = { 0.5: 'breve', 1: 'semibreve', 2: 'minim', 4: 'crotchet', 8: 'quaver', 16: 'semiquaver', 32: 'demisemiquaver', 64: 'hemidemisemiquaver' };
+BeatGrid.STEPS = [0, 2, 4, 5, 7, 9, 11];
+BeatGrid.ACC = { sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 };
+BeatGrid.ICON_PLAY = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
+BeatGrid.ICON_STOP = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg>';
+
+// Splits a written length into a plain note value and its dots.
+BeatGrid.shape = function (written) {
+  var W = BeatGrid.W, f = [1, 1.5, 1.75];
+  for (var d = 0; d < 3; d++) {
+    var base = written / f[d], per = W / base;
+    if (Math.abs(base - Math.round(base)) < 1e-6 && (per === .5 || (per >= 1 && Math.abs(Math.log2(per) - Math.round(Math.log2(per))) < 1e-9))) return { base: Math.round(base), per: per, dots: d };
+  }
+  return { base: written, per: W / written, dots: 0 };
+};
+
+BeatGrid.fraction = function (ticks) {
+  var a = ticks, b = BeatGrid.W; var g = function (x, y) { return y ? g(y, x % y) : x; }; var c = g(a, b);
+  return a / c + '/' + b / c;
+};
+
+BeatGrid.ticksOf = function (unit) {
+  if (typeof unit === 'number') return unit;
+  var p = String(unit).split('/'); return Math.round(BeatGrid.W * Number(p[0]) / Number(p[1] || 1));
+};
+
+// One bar of ABC to tiles: where each note or rest starts, how long it
+// really lasts (tuplets applied), how it is written, its pitches for
+// sound, its beam group, tuplet and tie.
+BeatGrid.parse = function (abc) {
+  var W = BeatGrid.W;
+  var tune = ABCJS.parseOnly(abc)[0];
+  var staff = tune.lines[0].staff[0];
+  var keyAcc = {};
+  ((staff.key && staff.key.accidentals) || []).forEach(function (a) { keyAcc[a.note.toUpperCase()] = BeatGrid.ACC[a.acc] || 0; });
+  var barAcc = {}, tiles = [], t = 0, tup = null, tupId = 0, beam = null, beamId = 0;
+  staff.voices[0].forEach(function (e) {
+    if (e.el_type === 'bar') { barAcc = {}; return; }
+    if (e.el_type !== 'note') return;
+    if (e.startTriplet) tup = { id: tupId++, p: e.startTriplet, mult: e.tripletMultiplier };
+    if (e.startBeam) beam = beamId++;
+    var written = Math.round(e.duration * W);
+    var dur = Math.round(e.duration * (tup ? tup.mult : 1) * W);
+    var s = BeatGrid.shape(written);
+    var tile = { i: tiles.length, t0: t, dur: dur, written: written, base: s.base, per: s.per, dots: s.dots, rest: !!e.rest, midi: [], tuplet: tup ? tup.id : null, tupletP: tup ? tup.p : null, beam: beam, tieNext: false, tiedFrom: false };
+    (e.pitches || []).forEach(function (p) {
+      var step = ((p.pitch % 7) + 7) % 7, oct = Math.floor(p.pitch / 7);
+      var letter = 'CDEFGAB'[step], acc;
+      if (p.accidental && BeatGrid.ACC[p.accidental] !== undefined) { acc = BeatGrid.ACC[p.accidental]; barAcc[p.pitch] = acc; }
+      else if (barAcc[p.pitch] !== undefined) acc = barAcc[p.pitch];
+      else acc = keyAcc[letter] || 0;
+      tile.midi.push(60 + 12 * oct + BeatGrid.STEPS[step] + acc);
+      if (p.startTie) tile.tieNext = true;
+    });
+    if (tiles.length && tiles[tiles.length - 1].tieNext) tile.tiedFrom = true;
+    if (e.endBeam) beam = null;
+    if (e.endTriplet) tup = null;
+    t += dur;
+    tiles.push(tile);
+  });
+  // A beam group with fewer than two notes is drawn with flags.
+  var members = {};
+  tiles.forEach(function (tl) { if (tl.beam !== null && !tl.rest) members[tl.beam] = (members[tl.beam] || 0) + 1; });
+  tiles.forEach(function (tl) { if (tl.beam !== null && !(members[tl.beam] >= 2)) tl.beam = null; });
+  return tiles;
+};
+
+// Time signature to beats. Six, nine and twelve are compound (dotted
+// beats); five, seven, eight, ten and eleven quavers or semiquavers are
+// grouped into twos and threes; everything else is one beat per count.
+BeatGrid.meterOf = function (sig, group) {
+  if (!sig) return null;
+  if (sig === '?') return { sig: '?', unknown: true };
+  var s = sig === 'C' ? '4/4' : (sig === '¢' || sig === 'C|') ? '2/2' : sig;
+  var num = Number(s.split('/')[0]), den = Number(s.split('/')[1]);
+  var unit = BeatGrid.W / den, beats;
+  var DEFAULT = { 5: [3, 2], 7: [2, 2, 3], 8: [3, 3, 2], 10: [3, 3, 2, 2], 11: [3, 3, 3, 2] };
+  if (group && group.length) beats = group.slice();
+  else if (num > 3 && num % 3 === 0) beats = Array(num / 3).fill(3);
+  else if (den >= 8 && DEFAULT[num]) beats = DEFAULT[num];
+  else beats = Array(num).fill(1);
+  var starts = [], t = 0;
+  beats.forEach(function (b) { starts.push(t); t += b * unit; });
+  return { sig: sig, num: num, den: den, unit: unit, beats: beats, starts: starts, total: num * unit, top: sig === 'C' || sig === '¢' || sig === 'C|' ? null : String(num), bottom: String(den) };
+};
+
+// Glyph shapes come from one hidden abcjs drawing of every note value
+// and rest on a one-line staff; each is kept relative to its notehead's
+// left edge (or the rest's left edge) and the staff line.
+BeatGrid.glyphs = function () {
+  if (BeatGrid._g) return BeatGrid._g;
+  var box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:-9999px;top:0;width:1400px;visibility:hidden';
+  document.body.appendChild(box);
+  ABCJS.renderAbc(box, 'X:1\nL:1/64\nK:C clef=none stafflines=1\nV:1 stem=up\nB128 B64 B32 B16 B8 B4 B2 B B24 z128 z64 z32 z16 z8 z4 z2 z|', { add_classes: true, staffwidth: 1300 });
+  var lb = box.querySelector('.abcjs-top-line').getBBox(), lineY = lb.y + lb.height / 2;
+  var notes = box.querySelectorAll('.abcjs-note'), rests = box.querySelectorAll('.abcjs-rest');
+  var PER = [.5, 1, 2, 4, 8, 16, 32, 64];
+  var G = { notes: {}, rests: {}, lineY: lineY };
+  var extras = function (g) { return [].filter.call(g.querySelectorAll('path'), function (p) { return !p.classList.contains('abcjs-notehead') && !p.classList.contains('abcjs-stem'); }); };
+  PER.forEach(function (per, i) {
+    var g = notes[i]; if (!g) return;
+    var h = g.querySelector('.abcjs-notehead'); if (!h) return;
+    var hb = h.getBBox();
+    var e = { head: h.getAttribute('d'), rx: hb.x, w: hb.width };
+    var st = g.querySelector('.abcjs-stem');
+    if (st) { var sb = st.getBBox(); e.stem = st.getAttribute('d'); e.stemX = sb.x - hb.x; e.stemW = sb.width; }
+    var ex = extras(g);
+    if (ex.length) { var fb = ex[0].getBBox(); e.flag = ex[0].getAttribute('d'); e.flagRight = fb.x + fb.width - hb.x; }
+    G.notes[per] = e;
+  });
+  var dg = notes[8];
+  if (dg && dg.querySelector('.abcjs-notehead')) {
+    var dh = dg.querySelector('.abcjs-notehead').getBBox(), dot = extras(dg)[0];
+    if (dot) { var db = dot.getBBox(); G.dot = { d: dot.getAttribute('d'), rx: db.x, ry: lineY, dx: db.x - dh.x - dh.width, w: db.width }; }
+  }
+  // abcjs draws no single glyph for a breve rest, so that one is left out.
+  PER.forEach(function (per, i) {
+    var g = rests[i]; if (!g) return;
+    var p = g.querySelector('path'); if (!p) return;
+    var b = p.getBBox();
+    G.rests[per] = { d: p.getAttribute('d'), rx: b.x, w: b.width };
+  });
+  box.remove();
+  return (BeatGrid._g = G);
+};
+
+BeatGrid.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
+BeatGrid.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
+BeatGrid.prototype.known = function () { return !!this.m && !this.m.unknown; };
+BeatGrid.prototype.extent = function () { return Math.max(this.notesEnd, this.known() ? this.m.total : 0); };
+BeatGrid.prototype.secs = function (ticks) { return ticks / (BeatGrid.W / 4) * 60 / this.o.tempo; };
+
+BeatGrid.prototype.nameOf = function (tl) {
+  var n = BeatGrid.NAMES[tl.per] || '';
+  return (tl.dots === 2 ? 'double-dotted ' : tl.dots === 1 ? 'dotted ' : '') + n + (tl.rest ? ' rest' : '');
+};
+
+// How wide a tile must be for its glyph to stay readable, in pixels.
+// Beamed notes need only their head; flags and rests need a little more.
+BeatGrid.prototype.minWidth = function (tl, k) {
+  var G = BeatGrid.glyphs();
+  if (tl.rest) { var r = G.rests[tl.per] || G.rests[4]; return (r.w + (tl.dots ? 6 : 0)) * k + 10; }
+  var n = G.notes[tl.per] || G.notes[4];
+  var w = n.w + (tl.dots ? 5 * tl.dots + 2 : 0);
+  if (tl.beam === null && n.flag) return Math.max(w, n.flagRight + 2) * k + 10;
+  return w * k + 7;
+};
+
+// Rows: one row when every tile fits its minimum width across the space
+// given; otherwise rows break at beats (at tiles when there is no
+// meter), and only a single beat too wide for the space shrinks.
+BeatGrid.prototype.layout = function (width) {
+  var self = this, ext = this.extent();
+  var k = this.o.compact ? 1.1 : (width < 480 ? 1.25 : 1.5);
+  var gutter = this.m ? (this.o.compact ? 30 : 40) : 12;
+  var avail = Math.max(60, width - gutter - 14);
+  var need = 0;
+  this.tiles.forEach(function (tl) { need = Math.max(need, self.minWidth(tl, k) / tl.dur); });
+  var cuts = [0];
+  if (this.known()) this.m.starts.slice(1).forEach(function (s) { if (s < ext) cuts.push(s); });
+  this.tiles.forEach(function (tl) { if (!self.known() || tl.t0 >= self.m.total) cuts.push(tl.t0); });
+  if (this.known() && this.m.total < ext) cuts.push(this.m.total);
+  cuts = cuts.filter(function (c, i, a) { return a.indexOf(c) === i && c < ext; }).sort(function (a, b) { return a - b; });
+  cuts.push(ext);
+  var per = avail / ext;
+  var rows;
+  if (per >= need) rows = [[0, ext]];
+  else {
+    per = need;
+    var longest = 0;
+    for (var i = 1; i < cuts.length; i++) longest = Math.max(longest, cuts[i] - cuts[i - 1]);
+    if (longest * per > avail) { k = Math.max(.8, k * (avail / (longest * per))); per = avail / longest; }
+    rows = []; var start = 0;
+    for (var j = 1; j < cuts.length; j++) {
+      if ((cuts[j] - start) * per > avail + .5 && cuts[j - 1] > start) { rows.push([start, cuts[j - 1]]); start = cuts[j - 1]; }
+    }
+    rows.push([start, ext]);
+  }
+  return { rows: rows, per: per, k: k, gutter: gutter };
+};
+
+// Vertical positions inside a row, from the glyph scale.
+BeatGrid.prototype.metrics = function (k) {
+  var top = this.o.compact ? 22 : 28;
+  var lineY = top + 20 + 32 * k;
+  var ribbonY = lineY + 19 * k, ribbonH = this.o.compact ? 9 : 12;
+  var rulerY = ribbonY + ribbonH + 8, rulerH = this.o.compact ? 24 : 30;
+  return { top: top, lineY: lineY, beamTop: lineY - 31 * k, ribbonY: ribbonY, ribbonH: ribbonH, rulerY: rulerY, rulerH: rulerH, height: rulerY + rulerH + 2 };
+};
+
+BeatGrid.prototype.build = function () {
+  var self = this;
+  this.stop(); this.clearTap();
+  this.host.classList.add('tl-bg');
+  this.host.innerHTML = '';
+  this.card = document.createElement('div'); this.card.className = 'tl-card'; this.card.tabIndex = 0;
+  this.card.setAttribute('role', 'group'); this.card.setAttribute('aria-label', '节拍格');
+  this.rowsEl = document.createElement('div'); this.rowsEl.className = 'tl-rows';
+  this.card.appendChild(this.rowsEl);
+  this.host.appendChild(this.card);
+  this.overlay = document.createElement('div'); this.overlay.className = 'tl-overlay';
+  this.host.appendChild(this.overlay);
+  if (this.o.caption) { var c = document.createElement('p'); c.className = 'tl-caption'; c.textContent = this.o.caption; this.host.appendChild(c); }
+
+  var playable = this.o.playable && this.o.mode === 'lecture';
+  var width = Math.max(140, (this.host.clientWidth || 300) - 20);
+  var L = this.layout(width);
+  this.L = L; this.M = this.metrics(L.k);
+  this.tiles.forEach(function (tl) { delete tl.row; });
+  this.rows = L.rows.map(function (r, idx) { return self.drawRow(r[0], r[1], idx); });
+  if (playable) {
+    this.card.style.paddingTop = '46px';
+    this.playBtn = document.createElement('button');
+    this.playBtn.type = 'button'; this.playBtn.className = 'tl-play'; this.playBtn.setAttribute('aria-label', '播放');
+    this.playBtn.innerHTML = BeatGrid.ICON_PLAY;
+    this.playBtn.addEventListener('click', function (ev) { ev.stopPropagation(); if (self.playing) self.stop(); else self.play(); });
+    this.playBtn.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+    this.card.appendChild(this.playBtn);
+  } else this.playBtn = null;
+  this.card.addEventListener('pointerdown', function (ev) { self.host.classList.remove('kbd'); self.onPointer(ev); });
+  this.card.addEventListener('keydown', function (ev) { self.onKey(ev); });
+  this.card.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd'); });
+  this.restore();
+};
+
+BeatGrid.prototype.x = function (row, t) { return this.L.gutter + (t - row.t0) * this.L.per; };
+
+BeatGrid.prototype.glyphPath = function (d, rx, ry, x, y, k, cls) {
+  return '<path class="' + cls + '" d="' + d + '" transform="translate(' + x.toFixed(2) + ' ' + y.toFixed(2) + ') scale(' + k.toFixed(3) + ') translate(' + (-rx).toFixed(2) + ' ' + (-ry).toFixed(2) + ')"/>';
+};
+
+BeatGrid.prototype.beamRect = function (x1, x2, y, th) {
+  return '<rect class="tl-beam" x="' + x1.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + Math.max(1, x2 - x1).toFixed(2) + '" height="' + th.toFixed(2) + '"/>';
+};
+
+// Draws one row: guides, the one-line staff, every tile that starts or
+// continues in it (glyph, stem, ribbon), beams, ties, tuplets, barlines,
+// the ruler with its beats, and the time signature on the first row.
+BeatGrid.prototype.drawRow = function (t0, t1, idx) {
+  var self = this, G = BeatGrid.glyphs(), L = this.L, M = this.M, k = L.k;
+  var row = { t0: t0, t1: t1, idx: idx };
+  var w = Math.ceil(this.x(row, t1) + 12);
+  var el = document.createElement('div'); el.className = 'tl-row';
+  el.style.width = w + 'px'; el.style.height = M.height + 'px';
+  var ruler = document.createElement('div'); ruler.className = 'tl-ruler';
+  ruler.style.left = (L.gutter - 4) + 'px'; ruler.style.width = (this.x(row, t1) - L.gutter + 8) + 'px';
+  ruler.style.top = M.rulerY + 'px'; ruler.style.height = M.rulerH + 'px';
+  el.appendChild(ruler);
+  var s = [];
+  var known = this.known(), m = this.m;
+
+  // Beat cells, ticks and numbers on the ruler; dotted guides up through the staff.
+  if (known) {
+    m.starts.forEach(function (bs, bi) {
+      var be = bs + m.beats[bi] * m.unit;
+      if (be <= t0 || bs >= t1) return;
+      var a = self.x(row, Math.max(bs, t0)), b = self.x(row, Math.min(be, t1));
+      s.push('<rect class="tl-cell" data-beat="' + (bi + 1) + '" x="' + a + '" y="' + M.rulerY + '" width="' + (b - a) + '" height="' + M.rulerH + '" opacity="' + (bi % 2 ? .35 : 1) + '"/>');
+      if (bs >= t0) {
+        s.push('<line class="tl-tick tl-beat" x1="' + a + '" x2="' + a + '" y1="' + M.rulerY + '" y2="' + (M.rulerY + M.rulerH) + '"/>');
+        s.push('<text class="tl-beatno" x="' + (a + 5) + '" y="' + (M.rulerY + M.rulerH - 7) + '">' + (bi + 1) + '</text>');
+        s.push('<line class="tl-guide tl-major" x1="' + a + '" x2="' + a + '" y1="' + (M.beamTop - 6) + '" y2="' + (M.ribbonY + M.ribbonH + 4) + '"/>');
+      }
+      for (var u = bs + m.unit; u < be - 1; u += m.unit) {
+        if (u <= t0 || u >= t1) continue;
+        var ux = self.x(row, u);
+        s.push('<line class="tl-tick" x1="' + ux + '" x2="' + ux + '" y1="' + M.rulerY + '" y2="' + (M.rulerY + M.rulerH * .35) + '"/>');
+      }
+    });
+  }
+  s.push('<line class="tl-staff" x1="' + (L.gutter - 6) + '" x2="' + (this.x(row, t1) + 4) + '" y1="' + M.lineY + '" y2="' + M.lineY + '"/>');
+
+  // Time signature, on the first row only.
+  if (idx === 0 && m) {
+    var gx = L.gutter / 2 - 2, fs = this.o.compact ? 20 : 15 + 6 * k;
+    if (m.unknown) s.push('<text class="tl-sig tl-unknown" text-anchor="middle" x="' + gx + '" y="' + (M.lineY + fs * .36) + '" font-size="' + fs * 1.5 + '">?</text>');
+    else if (!m.top) s.push('<text class="tl-sig" text-anchor="middle" x="' + gx + '" y="' + (M.lineY + fs * .38) + '" font-size="' + fs * 1.6 + '">' + (m.sig === 'C' ? 'C' : '¢') + '</text>');
+    else {
+      s.push('<text class="tl-sig" text-anchor="middle" x="' + gx + '" y="' + (M.lineY - 3) + '" font-size="' + fs + '">' + m.top + '</text>');
+      s.push('<text class="tl-sig" text-anchor="middle" x="' + gx + '" y="' + (M.lineY + fs * .78) + '" font-size="' + fs + '">' + m.bottom + '</text>');
+    }
+  }
+
+  // Tiles: the glyph where the tile starts, its ribbon in every row it covers.
+  var overFrom = known && m.total < this.notesEnd ? m.total : Infinity;
+  this.tiles.forEach(function (tl) {
+    var a0 = tl.t0, a1 = tl.t0 + tl.dur;
+    if (a1 <= t0 || a0 >= t1) return;
+    var first = a0 >= t0;
+    var over = a1 > overFrom;
+    var xa = self.x(row, Math.max(a0, t0)), xb = self.x(row, Math.min(a1, t1));
+    var p = ['<g class="tl-part' + (tl.rest ? ' tl-rest' : '') + (over ? ' tl-over' : '') + '" data-i="' + tl.i + '">'];
+    var ribX = xa + (first ? 1 : 0), ribW = Math.max(3, xb - xa - (a1 <= t1 ? 3 : 0) - (first ? 1 : 0));
+    p.push('<rect class="tl-ribbon" x="' + ribX + '" y="' + M.ribbonY + '" width="' + ribW + '" height="' + M.ribbonH + '" rx="' + (first ? M.ribbonH / 2 : 1) + '"/>');
+    p.push('<rect class="tl-ribbon-hi" x="' + (ribX + 3) + '" y="' + (M.ribbonY + 2) + '" width="' + Math.max(0, ribW - 6) + '" height="2" rx="1"/>');
+    if (first) {
+      var hx = xa + 4;
+      tl.row = idx; tl.hx = hx;
+      if (tl.rest) {
+        var r = G.rests[tl.per] || G.rests[4];
+        p.push(self.glyphPath(r.d, r.rx, G.lineY, hx, M.lineY, k, 'tl-glyph'));
+        tl.hw = r.w * k;
+        if (tl.dots && G.dot) for (var dr = 0; dr < tl.dots; dr++) p.push(self.glyphPath(G.dot.d, G.dot.rx, G.dot.ry, hx + (r.w + 3 + dr * 5) * k, M.lineY - 4 * k, k, 'tl-glyph'));
+      } else {
+        var n = G.notes[tl.per] || G.notes[4];
+        p.push(self.glyphPath(n.head, n.rx, G.lineY, hx, M.lineY, k, 'tl-glyph'));
+        tl.hw = n.w * k;
+        if (n.stem) {
+          if (tl.beam === null) {
+            p.push(self.glyphPath(n.stem, n.rx, G.lineY, hx, M.lineY, k, 'tl-stem'));
+            if (n.flag) p.push(self.glyphPath(n.flag, n.rx, G.lineY, hx, M.lineY, k, 'tl-glyph'));
+          } else {
+            var sx = hx + n.stemX * k, sw = Math.max(1.2, n.stemW * k);
+            p.push('<rect class="tl-stem" x="' + sx.toFixed(2) + '" y="' + M.beamTop.toFixed(2) + '" width="' + sw.toFixed(2) + '" height="' + (M.lineY - M.beamTop - 1).toFixed(2) + '"/>');
+            tl.sx = sx; tl.sw = sw;
+          }
+        }
+        if (tl.dots && G.dot) for (var dd = 0; dd < tl.dots; dd++) p.push(self.glyphPath(G.dot.d, G.dot.rx, G.dot.ry, hx + (n.w + G.dot.dx + dd * 5) * k, M.lineY, k, 'tl-glyph'));
+      }
+    }
+    p.push('</g>');
+    s.push(p.join(''));
+  });
+
+  // Beams: the primary beam joins the group; shorter values add beams
+  // between neighbours, or a short stub when a note stands alone.
+  var groups = {};
+  this.tiles.forEach(function (tl) { if (tl.beam !== null && !tl.rest && tl.row === idx && tl.t0 >= t0 && tl.t0 < t1) (groups[tl.beam] = groups[tl.beam] || []).push(tl); });
+  Object.keys(groups).forEach(function (gid) {
+    var g = groups[gid];
+    var th = 3.6 * k, gap = 6 * k;
+    if (g.length < 2) {
+      var only = g[0], lv = Math.max(1, Math.log2(only.per) - 2);
+      for (var q = 0; q < lv; q++) s.push(self.beamRect(only.sx, only.sx + 10 * k, M.beamTop + q * gap, th));
+      return;
+    }
+    var levels = g.map(function (tl) { return Math.max(1, Math.log2(tl.per) - 2); });
+    var maxL = Math.max.apply(null, levels);
+    for (var lvl = 1; lvl <= maxL; lvl++) {
+      var y = M.beamTop + (lvl - 1) * gap;
+      for (var i = 0; i < g.length; i++) {
+        if (levels[i] < lvl) continue;
+        if (i + 1 < g.length && levels[i + 1] >= lvl) { s.push(self.beamRect(g[i].sx, g[i + 1].sx + g[i + 1].sw, y, th)); continue; }
+        if ((i === 0 || levels[i - 1] < lvl) && lvl > 1) {
+          var len = 8 * k;
+          if (i > 0) s.push(self.beamRect(g[i].sx - len, g[i].sx + g[i].sw, y, th));
+          else s.push(self.beamRect(g[i].sx, g[i].sx + len, y, th));
+        }
+      }
+    }
+  });
+
+  // Ties between heads in this row.
+  this.tiles.forEach(function (tl, i) {
+    var nx = self.tiles[i + 1];
+    if (!tl.tieNext || !nx || tl.row !== idx || nx.row !== idx) return;
+    var xa = tl.hx + tl.hw * .7, xb = nx.hx + nx.hw * .3, y = M.lineY + 6 * k;
+    s.push('<path class="tl-tie" d="M' + xa + ' ' + y + ' Q ' + (xa + xb) / 2 + ' ' + (y + 7 * k) + ' ' + xb + ' ' + y + '"/>');
+  });
+
+  // Tuplets: the number alone over a single beamed group, otherwise a bracket.
+  var tups = {};
+  this.tiles.forEach(function (tl) { if (tl.tuplet !== null && tl.row === idx && tl.t0 >= t0 && tl.t0 < t1) (tups[tl.tuplet] = tups[tl.tuplet] || []).push(tl); });
+  Object.keys(tups).forEach(function (id) {
+    var g = tups[id], a = g[0], z = g[g.length - 1];
+    var beamed = g.every(function (tl) { return !tl.rest && tl.beam !== null && tl.beam === a.beam; });
+    var xa = a.hx, xb = z.hx + z.hw, mid = (xa + xb) / 2, y = M.beamTop - 8;
+    if (!beamed) s.push('<path class="tl-bracket" d="M' + xa + ' ' + (y + 5) + ' V ' + y + ' H ' + (mid - 8) + ' M ' + (mid + 8) + ' ' + y + ' H ' + xb + ' V ' + (y + 5) + '"/>');
+    s.push('<text class="tl-tupno" text-anchor="middle" x="' + mid + '" y="' + (y + 5) + '">' + a.tupletP + '</text>');
+  });
+
+  // Barlines: the end of the written bar, the end the meter expects
+  // when it is earlier, and a dashed box for time the bar is missing.
+  if (this.notesEnd > t0 && this.notesEnd <= t1) {
+    var bx = this.x(row, this.notesEnd) - 1;
+    s.push('<line class="tl-barline" x1="' + bx + '" x2="' + bx + '" y1="' + (M.lineY - 13 * k) + '" y2="' + (M.lineY + 13 * k) + '"/>');
+  }
+  if (known && m.total < this.notesEnd && m.total > t0 && m.total <= t1) {
+    var wx = this.x(row, m.total) - 1;
+    s.push('<line class="tl-barline tl-warnline" x1="' + wx + '" x2="' + wx + '" y1="' + (M.beamTop - 4) + '" y2="' + (M.rulerY + M.rulerH) + '"/>');
+  }
+  if (known && m.total > this.notesEnd) {
+    var ma = Math.max(this.notesEnd, t0), mb = Math.min(m.total, t1);
+    if (mb > ma) s.push('<rect class="tl-missing" x="' + (this.x(row, ma) + 2) + '" y="' + (M.lineY - 16 * k) + '" width="' + (this.x(row, mb) - this.x(row, ma) - 4) + '" height="' + (M.ribbonY + M.ribbonH - M.lineY + 16 * k) + '" rx="6"/>');
+  }
+
+  el.insertAdjacentHTML('beforeend', '<svg width="' + w + '" height="' + M.height + '" aria-hidden="true">' + s.join('') + '<g class="tl-marks"></g></svg>');
+  var head = document.createElement('div'); head.className = 'tl-playhead';
+  head.style.top = (M.beamTop - 8) + 'px'; head.style.height = (M.rulerY + M.rulerH - M.beamTop + 8) + 'px';
+  el.appendChild(head);
+  this.rowsEl.appendChild(el);
+  row.el = el; row.marks = el.querySelector('.tl-marks'); row.playhead = head;
+  return row;
+};
+
+BeatGrid.prototype.parts = function (i) { return this.host.querySelectorAll('.tl-part[data-i="' + i + '"]'); };
+BeatGrid.prototype.lit = function (is) { var self = this; is.forEach(function (i) { self.parts(i).forEach(function (p) { p.classList.add('tl-lit'); }); }); };
+BeatGrid.prototype.unlit = function (is) { var self = this; is.forEach(function (i) { self.parts(i).forEach(function (p) { p.classList.remove('tl-lit'); }); }); };
+
+// Which row and time a point inside the card falls on.
+BeatGrid.prototype.locate = function (cx, cy) {
+  for (var r = 0; r < this.rows.length; r++) {
+    var row = this.rows[r], b = row.el.getBoundingClientRect();
+    if (cy < b.top - 5 || cy > b.bottom + 5) continue;
+    var x = cx - b.left, y = cy - b.top;
+    if (x < this.L.gutter - 6 || x > this.x(row, row.t1) + 6) return null;
+    var t = row.t0 + (x - this.L.gutter) / this.L.per;
+    return { row: row, t: Math.max(row.t0, Math.min(row.t1 - 1, t)), x: x, y: y };
+  }
+  return null;
+};
+
+BeatGrid.prototype.tileAt = function (t) {
+  for (var i = 0; i < this.tiles.length; i++) { var tl = this.tiles[i]; if (t >= tl.t0 && t < tl.t0 + tl.dur) return tl; }
+  return null;
+};
+BeatGrid.prototype.beatAt = function (t) {
+  if (!this.known() || t >= this.m.total) return null;
+  for (var i = this.m.starts.length - 1; i >= 0; i--) if (t >= this.m.starts[i]) return i + 1;
+  return null;
+};
+
+BeatGrid.prototype.onPointer = function (ev) {
+  var p = this.locate(ev.clientX, ev.clientY);
+  if (!p || p.y < this.M.top - 6) { this.blankTap(); return; }
+  if (this.o.mode !== 'lecture') { ev.preventDefault(); return; }
+  if (p.y >= this.M.rulerY - 4) {
+    var b = this.beatAt(p.t);
+    if (b) this.tapBeat(b); else this.blankTap();
+    return;
+  }
+  var tl = this.tileAt(p.t);
+  if (tl) this.tap(tl.i); else this.blankTap();
+};
+
+BeatGrid.prototype.onKey = function (ev) {
+  var n = this.tiles.length; if (!n) return;
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') {
+    ev.preventDefault();
+    var cur = this.focusI === undefined ? -1 : this.focusI;
+    var next = Math.max(0, Math.min(n - 1, cur + (ev.key === 'ArrowRight' ? 1 : -1)));
+    this.focusI = next;
+    if (this.o.mode === 'lecture') this.tap(next);
+  } else if ((ev.key === 'Enter' || ev.key === ' ') && this.focusI !== undefined) {
+    ev.preventDefault(); if (this.o.mode === 'lecture') this.tap(this.focusI);
+  } else if (ev.key === 'Escape') this.blankTap();
+};
+
+// A tap lights the tile, plays it for its real length, and reports it;
+// the light and any caption fade by themselves after a moment.
+BeatGrid.prototype.tap = function (i) {
+  var self = this, tl = this.tiles[i]; if (!tl) return;
+  this.clearTap();
+  this.tapLit = i;
+  this.lit([i]);
+  var w = this.where(i); if (w) this.ripple(w.x, w.lineY);
+  if (this.audible() && !tl.rest) { var secs = this.secs(tl.dur); tl.midi.forEach(function (m) { self.o.sound.play(m, 0, Math.max(.25, secs), .75); }); }
+  var beats = this.known() ? Math.round(tl.dur / (this.m.total / this.m.beats.length) * 100) / 100 : null;
+  this.emit('tileTap', { index: i, rest: tl.rest, name: this.nameOf(tl), dur: BeatGrid.fraction(tl.dur), written: BeatGrid.fraction(tl.written), tuplet: tl.tupletP, beats: beats });
+  this.fadeLater(function () { if (!self.held[i]) self.unlit([i]); });
+};
+
+BeatGrid.prototype.tapBeat = function (b) {
+  this.clearTap();
+  var cells = this.host.querySelectorAll('.tl-cell[data-beat="' + b + '"]');
+  cells.forEach(function (c) { c.classList.add('tl-lit'); });
+  this.tapCells = cells;
+  this.emit('beatTap', { beat: b, of: this.m.beats.length });
+  this.fadeLater(function () { cells.forEach(function (c) { c.classList.remove('tl-lit'); }); });
+};
+
+BeatGrid.prototype.fadeLater = function (fn) {
+  var self = this;
+  this.tapTimers.push(setTimeout(function () { fn(); self.overlay.querySelectorAll('.tl-bubble').forEach(function (b) { b.classList.add('out'); }); }, BeatGrid.TAP_FADE_MS));
+  this.tapTimers.push(setTimeout(function () { self.overlay.querySelectorAll('.tl-bubble.out').forEach(function (b) { b.remove(); }); }, BeatGrid.TAP_FADE_MS + 600));
+};
+
+BeatGrid.prototype.blankTap = function () { this.clearTap(); this.emit('blankTap', {}); };
+
+BeatGrid.prototype.clearTap = function () {
+  (this.tapTimers || []).forEach(clearTimeout); this.tapTimers = [];
+  if (this.tapLit !== undefined && this.tapLit !== null && !this.held[this.tapLit]) this.unlit([this.tapLit]);
+  this.tapLit = null;
+  if (this.tapCells) { this.tapCells.forEach(function (c) { c.classList.remove('tl-lit'); }); this.tapCells = null; }
+  if (this.overlay) this.overlay.querySelectorAll('.tl-bubble').forEach(function (b) { b.remove(); });
+};
+
+// Where a tile's glyph sits, in pixels inside the component.
+BeatGrid.prototype.where = function (i) {
+  var tl = this.tiles[i]; if (!tl || tl.row === undefined || !this.rows[tl.row]) return null;
+  var row = this.rows[tl.row], host = this.host.getBoundingClientRect(), b = row.el.getBoundingClientRect();
+  var ox = b.left - host.left, oy = b.top - host.top;
+  return { x: ox + tl.hx + tl.hw / 2, top: oy + this.M.top, lineY: oy + this.M.lineY, beamTop: oy + this.M.beamTop, rulerY: oy + this.M.rulerY };
+};
+
+BeatGrid.prototype.ripple = function (x, y) {
+  var r = document.createElement('div'); r.className = 'tl-ripple';
+  r.style.left = x + 'px'; r.style.top = y + 'px';
+  this.overlay.appendChild(r);
+  setTimeout(function () { r.remove(); }, 600);
+};
+
+// Marks the workflow asked for survive a rebuild (a resize re-lays the
+// rows); they are drawn again at once, without animation or sound.
+BeatGrid.prototype.remember = function (name, args) { this.marks.push([name, args]); };
+BeatGrid.prototype.restore = function () {
+  var self = this, keep = this.marks || [];
+  this.marks = [];
+  this.lit(Object.keys(this.held).map(Number));
+  keep.forEach(function (mk) { self[mk[0]].apply(self, mk[1].concat([true])); });
+};
+
+// A new meter re-lays the grid; labels stay, marks tied to the old beats go.
+BeatGrid.prototype.meter = function (sig, group) {
+  this.m = BeatGrid.meterOf(sig, group);
+  this.marks = this.marks.filter(function (mk) { return mk[0] === 'label'; });
+  this.build();
+};
+
+BeatGrid.prototype.highlight = function (is) {
+  this.unlit(Object.keys(this.held).map(Number));
+  var held = {}; is.forEach(function (i) { held[i] = true; }); this.held = held;
+  this.lit(is);
+};
+
+BeatGrid.prototype.label = function (i, text, quiet) {
+  var w = this.where(i); if (!w) return;
+  this.remember('label', [i, text]);
+  var b = document.createElement('span'); b.className = 'tl-badge tl-mark'; b.textContent = text;
+  b.style.left = w.x + 'px'; b.style.top = (w.top - 12 + (this.o.compact ? 2 : 0)) + 'px';
+  b.style.animationDelay = quiet ? '0ms' : (this.marks.length % 8) * 70 + 'ms';
+  this.overlay.appendChild(b);
+};
+
+// Draws the boundaries of a smaller unit on the ruler, e.g. semiquavers.
+BeatGrid.prototype.subdivide = function (unit) {
+  var self = this, u = BeatGrid.ticksOf(unit); if (!u) return;
+  this.remember('subdivide', [unit]);
+  this.rows.forEach(function (row) {
+    var s = [];
+    for (var t = Math.ceil(row.t0 / u) * u; t <= row.t1 && t <= self.extent(); t += u) {
+      var x = self.x(row, t);
+      s.push('<line class="tl-tick tl-sub" x1="' + x + '" x2="' + x + '" y1="' + (self.M.rulerY - 3) + '" y2="' + (self.M.rulerY + self.M.rulerH * .55) + '"/>');
+    }
+    row.marks.insertAdjacentHTML('beforeend', s.join(''));
+  });
+};
+
+// Counts how many of one unit fit across some tiles: each cell lights
+// on the ruler with its number, in turn, sounding the tile above it.
+BeatGrid.prototype.count = function (unit, from, to, quiet) {
+  var self = this; this.clearTimers();
+  var u = BeatGrid.ticksOf(unit); if (!u) return;
+  from = from === undefined ? 0 : from; to = to === undefined ? this.tiles.length - 1 : to;
+  var ta = this.tiles[from].t0, tb = this.tiles[to].t0 + this.tiles[to].dur;
+  var total = Math.floor((tb - ta) / u + 1e-6);
+  this.remember('count', [unit, from, to]);
+  var instant = quiet || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var range = []; for (var r = from; r <= to; r++) range.push(r);
+  this.highlight(range);
+  for (var n = 1; n <= total; n++) (function (n) {
+    var step = function () {
+      var c0 = ta + (n - 1) * u, c1 = c0 + u;
+      self.rows.forEach(function (row) {
+        if (c1 <= row.t0 || c0 >= row.t1) return;
+        var a = self.x(row, Math.max(c0, row.t0)), b = self.x(row, Math.min(c1, row.t1));
+        row.marks.insertAdjacentHTML('beforeend', '<rect class="tl-unit" x="' + (a + 1) + '" y="' + (self.M.rulerY + 2) + '" width="' + Math.max(2, b - a - 2) + '" height="' + (self.M.rulerH - 4) + '" rx="4"/>' +
+          (c0 >= row.t0 ? '<text class="tl-countno" text-anchor="middle" x="' + (a + b) / 2 + '" y="' + (self.M.rulerY + self.M.rulerH / 2 + 6) + '">' + n + '</text>' : ''));
+      });
+      var under = self.tileAt(c0);
+      if (!quiet && self.audible() && under && !under.rest) under.midi.forEach(function (m) { self.o.sound.play(m, 0, .22, .55); });
+      if (!quiet) self.emit('countStep', { n: n, total: total });
+    };
+    if (instant) step(); else self.timers.push(setTimeout(step, n * 520));
+  })(n);
+};
+
+// Dims everything outside some beats ({beats: [from, to]}) or some
+// tiles ({tiles: [from, to]}) and lays a soft light over the rest.
+BeatGrid.prototype.spotlight = function (range) {
+  var self = this;
+  this.overlay.querySelectorAll('.tl-spot').forEach(function (s) { s.remove(); });
+  this.host.querySelectorAll('.tl-dim').forEach(function (e) { e.classList.remove('tl-dim'); });
+  if (!range) { this.marks = this.marks.filter(function (mk) { return mk[0] !== 'spotlight'; }); return; }
+  var ta, tb;
+  if (range.beats && this.known()) { var b0 = range.beats[0] - 1, b1 = range.beats[1] - 1; ta = this.m.starts[b0]; tb = this.m.starts[b1] + this.m.beats[b1] * this.m.unit; }
+  else if (range.tiles) { ta = this.tiles[range.tiles[0]].t0; var z = this.tiles[range.tiles[1]]; tb = z.t0 + z.dur; }
+  else return;
+  this.remember('spotlight', [range]);
+  this.tiles.forEach(function (tl) { if (tl.t0 + tl.dur <= ta || tl.t0 >= tb) self.parts(tl.i).forEach(function (p) { p.classList.add('tl-dim'); }); });
+  if (this.known()) this.host.querySelectorAll('.tl-cell').forEach(function (c) { var s = self.m.starts[Number(c.dataset.beat) - 1]; if (s < ta || s >= tb) c.classList.add('tl-dim'); });
+  var host = this.host.getBoundingClientRect();
+  this.rows.forEach(function (row) {
+    if (tb <= row.t0 || ta >= row.t1) return;
+    var b = row.el.getBoundingClientRect();
+    var a = self.x(row, Math.max(ta, row.t0)), z2 = self.x(row, Math.min(tb, row.t1));
+    var sp = document.createElement('div'); sp.className = 'tl-spot';
+    sp.style.left = (b.left - host.left + a - 6) + 'px'; sp.style.width = (z2 - a + 12) + 'px';
+    sp.style.top = (b.top - host.top + self.M.beamTop - 14) + 'px'; sp.style.height = (self.M.rulerY + self.M.rulerH - self.M.beamTop + 20) + 'px';
+    self.overlay.appendChild(sp);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { sp.classList.add('on'); }); });
+  });
+};
+
+BeatGrid.prototype.bubbleAt = function (x, y, html) {
+  this.overlay.querySelectorAll('.tl-bubble').forEach(function (e) { e.remove(); });
+  var d = document.createElement('div'); d.className = 'tl-bubble'; d.innerHTML = html;
+  d.style.left = Math.max(90, Math.min(this.host.clientWidth - 90, x)) + 'px'; d.style.top = y + 'px';
+  this.overlay.appendChild(d);
+};
+BeatGrid.prototype.caption = function (i, html) {
+  var w = this.where(i); if (w) this.bubbleAt(w.x, w.beamTop - 12, html);
+};
+BeatGrid.prototype.captionBeat = function (b, html) {
+  var cell = this.host.querySelector('.tl-cell[data-beat="' + b + '"]'); if (!cell) return;
+  var host = this.host.getBoundingClientRect(), r = cell.getBoundingClientRect();
+  this.bubbleAt(r.left - host.left + r.width / 2, r.top - host.top - 6, html);
+};
+
+// Plays the bar at its tempo: notes sound for their real length (tied
+// notes as one), a light playhead sweeps the rows, each beat cell
+// pulses and, with pulse on, a soft low note marks every beat.
+BeatGrid.prototype.play = function (opts) {
+  var self = this; this.stop();
+  if (!this.audible()) return;
+  var pulse = opts && opts.pulse !== undefined ? opts.pulse : this.known();
+  var lead = .15;
+  this.playing = true;
+  if (this.playBtn) this.playBtn.innerHTML = BeatGrid.ICON_STOP;
+  this.emit('playStart', {});
+  this.tiles.forEach(function (tl, i) {
+    if (!tl.rest && !tl.tiedFrom) {
+      var len = tl.dur, j = i;
+      while (self.tiles[j].tieNext && self.tiles[j + 1]) { j++; len += self.tiles[j].dur; }
+      tl.midi.forEach(function (m) { self.o.sound.play(m, lead + self.secs(tl.t0), self.secs(len) * .95, .75); });
+    }
+    self.timers.push(setTimeout(function () { self.lit([tl.i]); }, (lead + self.secs(tl.t0)) * 1000));
+    self.timers.push(setTimeout(function () { if (!self.held[tl.i]) self.unlit([tl.i]); }, (lead + self.secs(tl.t0 + tl.dur)) * 1000 - 30));
+  });
+  if (this.known()) this.m.starts.forEach(function (bs, bi) {
+    if (pulse) self.o.sound.play(bi === 0 ? 43 : 48, lead + self.secs(bs), .18, bi === 0 ? .42 : .3);
+    self.timers.push(setTimeout(function () {
+      self.host.querySelectorAll('.tl-cell[data-beat="' + (bi + 1) + '"]').forEach(function (c) { c.classList.remove('tl-pulse'); void c.getBBox(); c.classList.add('tl-pulse'); });
+    }, (lead + self.secs(bs)) * 1000));
+  });
+  var ext = this.extent(), started = performance.now() + lead * 1000;
+  var frame = function () {
+    if (!self.playing) return;
+    var t = Math.max(0, (performance.now() - started) / 1000) / self.secs(BeatGrid.W) * BeatGrid.W;
+    self.rows.forEach(function (row) {
+      var on = t >= row.t0 && t < row.t1;
+      row.playhead.classList.toggle('on', on);
+      if (on) row.playhead.style.left = self.x(row, t) + 'px';
+    });
+    if (t < ext) self.raf = requestAnimationFrame(frame);
+  };
+  this.raf = requestAnimationFrame(frame);
+  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, (lead + this.secs(ext)) * 1000 + 200));
+};
+
+BeatGrid.prototype.clearTimers = function () { (this.timers || []).forEach(clearTimeout); this.timers = []; };
+
+BeatGrid.prototype.stop = function () {
+  this.clearTimers(); this.playing = false;
+  if (this.raf) cancelAnimationFrame(this.raf);
+  if (this.playBtn) this.playBtn.innerHTML = BeatGrid.ICON_PLAY;
+  if (!this.rows) return;
+  var self = this;
+  this.rows.forEach(function (row) { row.playhead.classList.remove('on'); });
+  this.tiles.forEach(function (tl) { if (!self.held[tl.i] && tl.i !== self.tapLit) self.unlit([tl.i]); });
+};
+
+BeatGrid.prototype.clear = function () {
+  this.stop(); this.clearTap(); this.spotlight(null);
+  this.marks = []; this.held = {};
+  var self = this;
+  this.tiles.forEach(function (tl) { self.unlit([tl.i]); });
+  this.overlay.querySelectorAll('.tl-mark').forEach(function (e) { e.remove(); });
+  this.rows.forEach(function (row) { row.marks.innerHTML = ''; });
+};
+
+/* ============================================================
+   Assembly: this page plays the role of the player. It wires the
+   grid's events to a caption and a log, and shows how the sound is
+   doing; the grid never calls anything here directly.
+   ============================================================ */
+(function () {
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没启用，点一下音符或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function () {
+    var s = SoundSource.status();
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+  });
+
+  document.body.setAttribute('data-boundary', 'on');
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function log(ev) {
+    window.tlEvents.push(ev);
+    var line = document.createElement('div');
+    var t = ((performance.now() - t0) / 1000).toFixed(1);
+    var data = Object.assign({}, ev); delete data.type;
+    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  }
+  function bubble(g, ev) {
+    if (ev.type === 'tileTap') {
+      var extra = ev.tuplet ? ev.tuplet + '-tuplet' : (ev.beats ? (ev.beats === 1 ? '1 beat' : ev.beats + ' beats') : '');
+      g.caption(ev.index, '<b>' + ev.name + '</b>' + (extra ? '<span>' + extra + '</span>' : ''));
+    } else if (ev.type === 'beatTap') g.captionBeat(ev.beat, '<b>beat ' + ev.beat + '</b><span>of ' + ev.of + '</span>');
+  }
+
+  var BAR = 'X:1\nL:1/16\nK:C clef=bass\nG,2A,2 B,2z2 D3C B,2|';
+  var main;
+  main = new BeatGrid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, sound: SoundSource, onEvent: function (ev) {
+    log(ev); bubble(main, ev);
+    if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(4, '<b>' + ev.total + '</b><span>semiquavers</span>'); }, 300);
+  } });
+
+  var commands = {
+    m24: function () { main.meter('2/4'); },
+    m34: function () { main.meter('3/4'); },
+    m78: function () { main.meter('7/8', [2, 2, 3]); },
+    unknown: function () { main.meter('?'); },
+    sub: function () { main.subdivide('1/16'); },
+    count: function () { main.clear(); main.count('1/16', 4, 4); },
+    label: function () { main.label(0, 'A'); main.label(3, 'B'); main.label(4, 'C'); },
+    spot: function () { if (!main.known()) main.meter('7/8', [2, 2, 3]); main.spotlight({ beats: [3, 3] }); },
+    play: function () { main.play(); },
+    clear: function () { main.clear(); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) {
+    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+  });
+
+  var modeBtn = document.getElementById('mode');
+  modeBtn.addEventListener('click', function () {
+    var practice = main.o.mode !== 'practice';
+    main.o.mode = practice ? 'practice' : 'lecture';
+    main.build();
+    modeBtn.setAttribute('aria-pressed', String(practice));
+    modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+    log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+  });
+
+  var others = [];
+  [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
+    var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
+    var g; g = new BeatGrid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+    others.push(g);
+  });
+  [['2/4'], ['3/4'], ['7/8', [2, 2, 3]]].forEach(function (mt, i) {
+    var cell = document.createElement('div'); document.getElementById('g-three').appendChild(cell);
+    var g; g = new BeatGrid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+    others.push(g);
+  });
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  var lastW = window.innerWidth, rt = null;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+    clearTimeout(rt);
+    rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
+})();
+</script>
