@@ -54,7 +54,7 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
 /* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, violet light for whatever is lit, a brass clip holding the slips, dark bubbles. */
-/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. Every move eases in and out. */
+/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. Every move starts very gently, gathers pace and settles gently. */
 .tl-cs {
   --tl-paper-a: #fffaf1;
   --tl-paper-b: #f2e6d1;
@@ -71,7 +71,8 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
   --tl-bubble-bg: #2a2118;
   --tl-bubble-ink: #fff8ec;
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
-  --tl-move: .52s cubic-bezier(.4, 0, .2, 1);
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
+  --tl-move: .52s var(--tl-ease);
   position: relative; min-width: 0; width: 100%; max-width: 560px; margin: 0 auto; padding: 12px 0 18px; min-height: 34px; transition: padding-bottom var(--tl-move);
   touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; color: var(--tl-ink);
 }
@@ -139,7 +140,7 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 .tl-cs-thread.tl-cs-moving { opacity: 0; }
 .tl-cs-thread path { fill: none; stroke: var(--tl-glow); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .tl-cs-thread circle { fill: var(--tl-glow); }
-.tl-cs-thread .tl-cs-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-cs-draw .6s .1s cubic-bezier(.4, 0, .2, 1) forwards; }
+.tl-cs-thread .tl-cs-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-cs-draw .6s .1s var(--tl-ease) forwards; }
 .tl-cs-thread .tl-cs-dot { animation: tl-cs-fade .3s both; }
 .tl-cs-thread .tl-cs-tip { animation: tl-cs-fade .25s .6s both; }
 /* A hidden conclusion lies under a paper slip with a dashed question box: missing by shape, not only by colour. */
@@ -194,7 +195,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   <header style="display:grid;gap:10px">
     <span class="tagline">组件 7 / 10 · 显示类 · 直接画在画面上，放在讲题画面的最上面</span>
     <h1>结论栈</h1>
-    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在画面最上面，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈：新得出的结论是一张大纸条；下一条结论出来时，它在原地慢慢缩小成窄纸条（字、谱、编号和纸的高度一点一点变小，不跳），上面的纸条跟着往上滑，夹在黄铜夹子下面，越早的越窄、纸色越深；同时新的一条纸在它下面慢慢长出来，字稍后浮现，整叠的高度只朝一个方向慢慢变，下面的东西不会上下晃。之前的结论超过三条（手机上超过两条）时，最早的一条慢慢压扁，收进夹子下面的一小叠纸边，点一下展开。一条结论是从前面哪几条得出的，纸条都停稳以后，左边才有一条紫色的线从那几条连下来；最后的答案带一圈紫光和一个 ∴ 印章，可以先遮住，讲完再揭晓。结论里可以有文字、术语、符号（=、→、+）和一小段谱，谱点了会响。框外面的题目、下面的组件位置和字幕，都不属于它。</p>
+    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在画面最上面，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈：新得出的结论是一张大纸条；下一条结论出来时，它在原地慢慢缩小成窄纸条（字、谱、编号和纸的高度一点一点变小，不跳），起步很轻，然后加快，最后慢慢停住；上面的纸条跟着往上滑，夹在黄铜夹子下面，越早的越窄、纸色越深；同时新的一条纸在它下面慢慢长出来，字稍后浮现，整叠的高度只朝一个方向慢慢变，下面的东西不会上下晃。之前的结论超过三条（手机上超过两条）时，最早的一条慢慢压扁，收进夹子下面的一小叠纸边，点一下展开。一条结论是从前面哪几条得出的，纸条都停稳以后，左边才有一条紫色的线从那几条连下来；最后的答案带一圈紫光和一个 ∴ 印章，可以先遮住，讲完再揭晓。结论里可以有文字、术语、符号（=、→、+）和一小段谱，谱点了会响。框外面的题目、下面的组件位置和字幕，都不属于它。</p>
     <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
   </header>
 
@@ -250,7 +251,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>这道讲题的全部结论（题目文件里写）：每条有编号和内容，内容是一串片段：文字、术语（斜体）、符号（<code>=</code>、<code>→</code>、<code>+</code>、<code>≠</code>）或一小段 ABC 谱；可以写它是从前面哪几条得出的、它是不是这道题的答案，可以带一句点了才弹出的说明。模式：讲题（点了发声、弹出说明）或练习（点了没有反应）；速度。</td></tr>
           <tr><td>外观</td><td>纸条的纹理和叠起来的层次、黄铜夹子、紫色的连线、答案的紫光和印章、深色的说明气泡，都写在结论栈自己里面，不从外面继承；颜色和共用部分用 <code>etude</code> 主题的值。谱和文字里的升降号都用乐谱库画出来的字形。</td></tr>
-          <tr><td>动作</td><td>推上一条新结论时，约半秒，开头和结尾都是缓的：最新的那条在原地慢慢缩成窄纸条，字、谱、编号和纸的高度一起连续变小；上面的纸条同时往上滑；新的一条纸同时在它下面长出来，字晚一点浮现，整叠的高度只朝一个方向变。折进纸边的那条同时慢慢压扁、淡出。都停稳以后，紫线再画出来，用到的那几条亮一下。上一幕、下一幕不放这些动作。</td></tr>
+          <tr><td>动作</td><td>推上一条新结论时，约半秒：起步很轻，前 0.15 秒只走一成多，然后加快，最后慢慢停住。最新的那条在原地慢慢缩成窄纸条，字、谱、编号和纸的高度一起连续变小；上面的纸条同时往上滑；新的一条纸同时在它下面长出来，字晚一点浮现，整叠的高度只朝一个方向变。折进纸边的那条同时慢慢压扁、淡出。都停稳以后，紫线再画出来，用到的那几条亮一下。上一幕、下一幕不放这些动作。</td></tr>
           <tr><td>指令</td><td><code>push(结论)</code> 这一幕的结论落到栈上，前面的缩小往上推；写了从哪几条得出的，那几条亮一下，紫线连下来；<code>set(结论…)</code> 直接摆成这几条，不放动画（上一幕、下一幕、重新进入题目时用）；<code>highlight(结论…)</code> 亮起前面的结论（折起来的也会露出来）；<code>spotlight(结论…)</code>；<code>caption(结论, 文字)</code> 在这一条下面弹出说明；<code>mask(结论…)</code> 用纸条遮住，可以在 <code>push</code> 之前遮，结论落下来时就是遮着的；<code>reveal(…)</code> 纸条滑走、写出来；<code>stop()</code> 停下点出来的声音；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>itemTap</code>（哪一条、第几条、是不是答案、文字内容、是否遮着）；<code>pileTap</code>（折起来几条、现在展开没有）；<code>blankTap</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”，和其他组件用的是同一个；结论栈不知道这一幕用了哪些组件。结论的内容、从哪几条得出、哪条是答案都由题目文件给，结论栈只负责画出来。</td></tr>
@@ -313,14 +314,15 @@ ConclusionStack.NARROW_PX = 480;
 ConclusionStack.TAP_FADE_MS = 2000;
 // The choreography of a push: everything glides together for MOVE_MS (the
 // newest slip shrinking, the slips above sliding up, the new slip's paper
-// growing, a folded slip flattening); the new slip's ink appears from
-// INK_DELAY_MS for INK_MS; the thread draws and its sources light once all
-// is still.
+// growing, a folded slip flattening), starting very gently so the eye is
+// on the slip before it moves much; the new slip's ink appears from
+// INK_DELAY_MS for INK_MS, once its paper has opened; the thread draws and
+// its sources light once all is still.
 ConclusionStack.MOVE_MS = 520;
-ConclusionStack.INK_DELAY_MS = 200;
-ConclusionStack.INK_MS = 420;
+ConclusionStack.INK_DELAY_MS = 240;
+ConclusionStack.INK_MS = 400;
 ConclusionStack.SETTLE_MS = 660;
-ConclusionStack.EASE = 'cubic-bezier(.4, 0, .2, 1)';
+ConclusionStack.EASE = 'cubic-bezier(.6, 0, .25, 1)';
 ConclusionStack.STAFF_SCALE = { fresh: .8, strip: .62, narrow: .5 };
 ConclusionStack.LETTERS = 'CDEFGAB';
 ConclusionStack.STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
