@@ -193,7 +193,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给节拍格的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给节拍格的指令；记录框列出节拍格发出的事件。点一个音：它亮起、发声、上方弹出时值的名称，两秒后自己淡掉；点木尺上的一拍，那一拍亮起；点纸的空白处马上清掉。换拍号时，木尺重新分拍：多出来的音标成红色，缺的时值用红色虚线框出。窄屏上按拍换行，音符不缩小。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给节拍格的指令；记录框列出节拍格发出的事件。点一个音：它亮起、发声、上方弹出时值的名称，两秒后自己淡掉；点木尺上的一拍，那一拍亮起；点纸的空白处马上清掉。换拍号时，木尺重新分拍：多出来的音标成红色，缺的时值用红色虚线框出。窄屏上按拍换行，音符不缩小。播放时再按一下右上角的按钮，声音和拍点马上停下。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="m24">试 2/4</button>
       <button class="chip" type="button" data-cmd="m34">试 3/4</button>
@@ -231,7 +231,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>一小节的 ABC 谱（和乐谱组件同一种写法，音高只用来发声）；拍号和拍的分组（可以不给，也可以是问号）；模式：讲题（点了发声、弹出名称）或练习（只显示流程标好的东西，点了没有反应，不给提示）；速度；有没有播放按钮；下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色都由节拍格自己定，不从外面继承；放在哪里都是同一个样子。</td></tr>
-          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code>；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
@@ -264,6 +264,7 @@ function BeatGrid(host, options) {
   this.marks = [];
   this.timers = [];
   this.tapTimers = [];
+  this.voices = [];
   this.tiles = BeatGrid.parse(this.o.abc);
   this.notesEnd = this.tiles.reduce(function (a, t) { return Math.max(a, t.t0 + t.dur); }, 0);
   this.m = BeatGrid.meterOf(this.o.meter, this.o.group);
@@ -403,6 +404,17 @@ BeatGrid.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({
 BeatGrid.prototype.known = function () { return !!this.m && !this.m.unknown; };
 BeatGrid.prototype.extent = function () { return Math.max(this.notesEnd, this.known() ? this.m.total : 0); };
 BeatGrid.prototype.secs = function (ticks) { return ticks / (BeatGrid.W / 4) * 60 / this.o.tempo; };
+
+// Every note the grid sounds goes through here, so stop() can silence
+// the notes and beat clicks already scheduled ahead on the audio clock.
+BeatGrid.prototype.note = function (midi, delay, dur, velocity) {
+  var v = this.o.sound.play(midi, delay, dur, velocity);
+  if (v) this.voices.push(v);
+};
+BeatGrid.prototype.silence = function () {
+  (this.voices || []).forEach(function (v) { v.stop(); });
+  this.voices = [];
+};
 
 BeatGrid.prototype.nameOf = function (tl) {
   var n = BeatGrid.NAMES[tl.per] || '';
@@ -728,7 +740,7 @@ BeatGrid.prototype.tap = function (i) {
   this.tapLit = i;
   this.lit([i]);
   var w = this.where(i); if (w) this.ripple(w.x, w.lineY);
-  if (this.audible() && !tl.rest) { var secs = this.secs(tl.dur); tl.midi.forEach(function (m) { self.o.sound.play(m, 0, Math.max(.25, secs), .75); }); }
+  if (this.audible() && !tl.rest) { var secs = this.secs(tl.dur); tl.midi.forEach(function (m) { self.note(m, 0, Math.max(.25, secs), .75); }); }
   var beats = this.known() ? Math.round(tl.dur / (this.m.total / this.m.beats.length) * 100) / 100 : null;
   this.emit('tileTap', { index: i, rest: tl.rest, name: this.nameOf(tl), dur: BeatGrid.fraction(tl.dur), written: BeatGrid.fraction(tl.written), tuplet: tl.tupletP, beats: beats });
   this.fadeLater(function () { if (!self.held[i]) self.unlit([i]); });
@@ -842,7 +854,7 @@ BeatGrid.prototype.count = function (unit, from, to, quiet) {
           (c0 >= row.t0 ? '<text class="tl-countno" text-anchor="middle" x="' + (a + b) / 2 + '" y="' + (self.M.rulerY + self.M.rulerH / 2 + 6) + '">' + n + '</text>' : ''));
       });
       var under = self.tileAt(c0);
-      if (!quiet && self.audible() && under && !under.rest) under.midi.forEach(function (m) { self.o.sound.play(m, 0, .22, .55); });
+      if (!quiet && self.audible() && under && !under.rest) under.midi.forEach(function (m) { self.note(m, 0, .22, .55); });
       if (!quiet) self.emit('countStep', { n: n, total: total });
     };
     if (instant) step(); else self.timers.push(setTimeout(step, n * 520));
@@ -906,13 +918,13 @@ BeatGrid.prototype.play = function (opts) {
     if (!tl.rest && !tl.tiedFrom) {
       var len = tl.dur, j = i;
       while (self.tiles[j].tieNext && self.tiles[j + 1]) { j++; len += self.tiles[j].dur; }
-      tl.midi.forEach(function (m) { self.o.sound.play(m, lead + self.secs(tl.t0), self.secs(len) * .95, .75); });
+      tl.midi.forEach(function (m) { self.note(m, lead + self.secs(tl.t0), self.secs(len) * .95, .75); });
     }
     self.timers.push(setTimeout(function () { self.lit([tl.i]); }, (lead + self.secs(tl.t0)) * 1000));
     self.timers.push(setTimeout(function () { if (!self.held[tl.i]) self.unlit([tl.i]); }, (lead + self.secs(tl.t0 + tl.dur)) * 1000 - 30));
   });
   if (this.known()) this.m.starts.forEach(function (bs, bi) {
-    if (pulse) self.o.sound.play(bi === 0 ? 43 : 48, lead + self.secs(bs), .18, bi === 0 ? .42 : .3);
+    if (pulse) self.note(bi === 0 ? 43 : 48, lead + self.secs(bs), .18, bi === 0 ? .42 : .3);
     self.timers.push(setTimeout(function () {
       self.host.querySelectorAll('.tl-cell[data-beat="' + (bi + 1) + '"]').forEach(function (c) { c.classList.remove('tl-pulse'); void c.getBBox(); c.classList.add('tl-pulse'); });
     }, (lead + self.secs(bs)) * 1000));
@@ -929,13 +941,15 @@ BeatGrid.prototype.play = function (opts) {
     if (t < ext) self.raf = requestAnimationFrame(frame);
   };
   this.raf = requestAnimationFrame(frame);
-  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, (lead + this.secs(ext)) * 1000 + 200));
+  this.timers.push(setTimeout(function () { self.voices = []; self.stop(); self.emit('playEnd', {}); }, (lead + this.secs(ext)) * 1000 + 200));
 };
 
 BeatGrid.prototype.clearTimers = function () { (this.timers || []).forEach(clearTimeout); this.timers = []; };
 
+// Stops a playback or a count: timers are cleared and every note still
+// queued or sounding is silenced.
 BeatGrid.prototype.stop = function () {
-  this.clearTimers(); this.playing = false;
+  this.clearTimers(); this.silence(); this.playing = false;
   if (this.raf) cancelAnimationFrame(this.raf);
   if (this.playBtn) this.playBtn.innerHTML = BeatGrid.ICON_PLAY;
   if (!this.rows) return;

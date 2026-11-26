@@ -149,7 +149,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
 
   <section class="panel sim">
     <h2>模拟流程：发给乐谱的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给乐谱的指令。下面的记录框列出乐谱发出的事件：流程只靠这些事件往下走。点音符：音符发亮、发声、上方弹出音名，两秒后自己淡掉；点谱上的空白处马上清掉。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给乐谱的指令。下面的记录框列出乐谱发出的事件：流程只靠这些事件往下走。点音符：音符发亮、发声、上方弹出音名，两秒后自己淡掉；点谱上的空白处马上清掉。播放时再按一下右上角的按钮，声音马上停下。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="spotlight">聚光第 2 小节</button>
       <button class="chip" type="button" data-cmd="labels">贴 A、B、C 标签</button>
@@ -202,7 +202,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
         <tbody>
           <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写；乐器的全称和缩写也写在谱里）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>纸、墨色、标亮的光都由乐谱自己定，不从外面继承；放在什么舞台上都是同一个样子。</td></tr>
-          <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”（单独的模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管。</td></tr>
           <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下。</td></tr>
@@ -230,6 +230,7 @@ function Score(host, options) {
   this.notes = [];
   this.timers = [];
   this.tapTimers = [];
+  this.voices = [];
   this.build();
   this.render();
 }
@@ -244,6 +245,17 @@ Score.TAP_FADE_MS = 2000;
 Score.uid = 0;
 
 Score.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
+
+// Every note the score sounds goes through here, so stop() can silence
+// the notes already scheduled ahead on the audio clock.
+Score.prototype.note = function (midi, delay, dur, velocity) {
+  var v = this.o.sound.play(midi, delay, dur, velocity);
+  if (v) this.voices.push(v);
+};
+Score.prototype.silence = function () {
+  this.voices.forEach(function (v) { v.stop(); });
+  this.voices = [];
+};
 
 Score.prototype.build = function () {
   var self = this;
@@ -506,8 +518,8 @@ Score.prototype.tap = function (n) {
   this.ripple(n);
   if (this.audible()) {
     var seq = this.realise(n);
-    if (seq) { var t = 0; seq.forEach(function (s) { self.o.sound.play(s[0], t, s[1]); t += s[1]; }); }
-    else n.pitches.forEach(function (p) { self.o.sound.play(p.midi, 0, .9); });
+    if (seq) { var t = 0; seq.forEach(function (s) { self.note(s[0], t, s[1]); t += s[1]; }); }
+    else n.pitches.forEach(function (p) { self.note(p.midi, 0, .9); });
   }
   this.emit('noteTap', { index: n.index, bar: n.bar + 1, name: n.pitches[0].name, en: n.pitches[0].en, ornament: n.ornament, midi: n.pitches.map(function (p) { return p.midi; }) });
   this.tapTimers.push(setTimeout(function () {
@@ -610,7 +622,7 @@ Score.prototype.count = function (indices) {
   list.forEach(function (idx, k) {
     self.timers.push(setTimeout(function () {
       var n = self.notes[idx]; self.unlitAll(); self.lit([idx]);
-      if (self.audible()) n.pitches.forEach(function (p) { self.o.sound.play(p.midi, 0, .5, .6); });
+      if (self.audible()) n.pitches.forEach(function (p) { self.note(p.midi, 0, .5, .6); });
       var p = self.above(n, 14);
       var d = document.createElement('div'); d.className = 'tl-count'; d.textContent = String(k + 1);
       d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; self.overlay.appendChild(d);
@@ -642,7 +654,7 @@ Score.prototype.play = function (bar) {
   if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 4h4v12H5zM11 4h4v12h-4z"/></svg>';
   this.emit('playStart', { bar: bar || null });
   schedule.forEach(function (s) {
-    s.n.pitches.forEach(function (p) { self.o.sound.play(p.midi, s.t, s.dur, .75); });
+    s.n.pitches.forEach(function (p) { self.note(p.midi, s.t, s.dur, .75); });
     self.timers.push(setTimeout(function () {
       self.lit([s.n.index]);
       self.timers.push(setTimeout(function () { self.unlitIndices([s.n.index]); }, Math.max(120, s.dur * 1000 - 40)));
@@ -655,7 +667,7 @@ Score.prototype.play = function (bar) {
       }
     }, s.t * 1000));
   });
-  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, end * 1000 + 200));
+  this.timers.push(setTimeout(function () { self.voices = []; self.stop(); self.emit('playEnd', {}); }, end * 1000 + 200));
 };
 
 // The whole system (all staves played together) that holds a box, so the
@@ -672,8 +684,11 @@ Score.prototype.systemAround = function (b) {
   return found || { top: b.y, bottom: b.y + b.h };
 };
 
+// Stops a playback or a count: timers are cleared and every note still
+// queued or sounding is silenced.
 Score.prototype.stop = function () {
   this.clearTimers();
+  this.silence();
   this.playing = false; this.playhead.classList.remove('on');
   if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
   var held = this.held || {};

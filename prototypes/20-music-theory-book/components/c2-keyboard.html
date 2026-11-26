@@ -163,11 +163,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给键盘的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给键盘的指令；记录框列出键盘发出的事件。点琴键：琴键按下去、发声、上方弹出音名，两秒后自己淡掉；点木头琴身马上清掉。窄屏上键盘按八度换成两行，琴键不缩小。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给键盘的指令；记录框列出键盘发出的事件。点琴键：琴键按下去、发声、上方弹出音名，两秒后自己淡掉；点木头琴身马上清掉。窄屏上键盘按八度换成两行，琴键不缩小。播放时再按一下播放按钮，声音马上停下。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="scale">标出 E♭ major（1–8）</button>
       <button class="chip" type="button" data-cmd="steps">标 tone 和 semitone</button>
       <button class="chip" type="button" data-cmd="play">弹这条音阶</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
       <button class="chip" type="button" data-cmd="count">数半音：C → A♭</button>
       <button class="chip" type="button" data-cmd="enh">等音：F♯ = G♭</button>
       <button class="chip" type="button" data-cmd="spot">聚光 C4–C5</button>
@@ -180,7 +181,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel">
     <h2>一行三架小键盘：C major 的 I、IV、V</h2>
-    <p class="what">考点 20、21 讲和弦和终止式时用。三架一样大的键盘由流程排成一行（窄屏上排成一列），每架标亮一个和弦。按右上角播放：先由低到高分解，再一起弹。</p>
+    <p class="what">考点 20、21 讲和弦和终止式时用。三架一样大的键盘由流程排成一行（窄屏上排成一列），每架标亮一个和弦。按右上角播放：先由低到高分解，再一起弹；再按一下就停。</p>
     <div class="mini-stage"><div class="gallery" id="g-chords"></div></div>
   </section>
 
@@ -192,7 +193,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>音域（从哪个键到哪个键）；模式：讲题（点了发声、弹出音名）或练习（只显示流程标好的东西，点了没有反应，不给提示）；白键上写不写音名（不写、只写 C、全写）；要弹的一段（有就出现播放按钮）；下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>琴身、琴毡、琴键、标亮的光都由键盘自己定，不从外面继承；放在哪里都是同一个样子。</td></tr>
-          <tr><td>指令</td><td><code>highlight(键)</code> 一直亮着；<code>label(键, 文字)</code> 在琴键上贴标记；<code>steps(相邻的键)</code> 画弧线，标 T（tone）或 S（semitone）；<code>count(从, 到)</code> 一个半音一个半音地数；<code>spotlight(从, 到)</code> 聚光；<code>spelling(写法)</code> 按调决定黑键叫 F♯ 还是 G♭；<code>caption(键, 文字)</code> 弹出说明；<code>play(一段)</code> 弹单音或和弦；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>highlight(键)</code> 一直亮着；<code>label(键, 文字)</code> 在琴键上贴标记；<code>steps(相邻的键)</code> 画弧线，标 T（tone）或 S（semitone）；<code>count(从, 到)</code> 一个半音一个半音地数；<code>spotlight(从, 到)</code> 聚光；<code>spelling(写法)</code> 按调决定黑键叫 F♯ 还是 G♭；<code>caption(键, 文字)</code> 弹出说明；<code>play(一段)</code> 弹单音或和弦；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>keyTap</code>（键、音名、所有等音写法）；<code>blankTap</code>；<code>countStep</code>（第几个半音、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”，和乐谱用的是同一个；键盘不知道乐谱、作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一架大键盘还是一行几架小键盘，由流程决定；键盘只管自己这一架，宽度不够时按八度换行。</td></tr>
@@ -221,6 +222,7 @@ function Keyboard(host, options) {
   this.spell = {};
   this.timers = [];
   this.tapTimers = [];
+  this.voices = [];
   this.build();
 }
 Keyboard.WHITE = { 0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B' };
@@ -235,6 +237,17 @@ Keyboard.spoken = function (n) { return n.replace('♯', ' sharp').replace('♭'
 
 Keyboard.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
 Keyboard.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
+
+// Every note the keyboard sounds goes through here, so stop() can
+// silence the notes already scheduled ahead on the audio clock.
+Keyboard.prototype.note = function (midi, delay, dur, velocity) {
+  var v = this.o.sound.play(midi, delay, dur, velocity);
+  if (v) this.voices.push(v);
+};
+Keyboard.prototype.silence = function () {
+  (this.voices || []).forEach(function (v) { v.stop(); });
+  this.voices = [];
+};
 
 // Every way to write a key, the spelling the workflow chose first.
 Keyboard.prototype.namesOf = function (m) {
@@ -394,7 +407,7 @@ Keyboard.prototype.tap = function (m) {
   this.press(m, 220);
   this.lit([m]);
   this.ripple(m);
-  if (this.audible()) this.o.sound.play(m, 0, 1.1);
+  if (this.audible()) this.note(m, 0, 1.1);
   var names = this.namesOf(m);
   this.emit('keyTap', { midi: m, name: names[0], names: names, en: names.map(function (n) { return Keyboard.spoken(n.replace(/\d+$/, '')); }) });
   this.tapTimers.push(setTimeout(function () {
@@ -487,17 +500,17 @@ Keyboard.prototype.arc = function (x1, x2, base, lift, delay) {
 // Counts semitones from one key to another: each key on the way lights,
 // sounds and gets its number above it. The first and last keys stay lit.
 Keyboard.prototype.count = function (from, to) {
-  var self = this; this.clearTimers();
+  var self = this; this.stop();
   var dir = to >= from ? 1 : -1, total = Math.abs(to - from);
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   this.highlight([from]);
-  if (this.audible()) this.o.sound.play(from, 0, .6, .6);
+  if (this.audible()) this.note(from, 0, .6, .6);
   for (var n = 1; n <= total; n++) (function (n) {
     self.timers.push(setTimeout(function () {
       var m = from + dir * n;
       self.unlit(Object.keys(self.keys).map(Number).filter(function (k) { return !self.held[k]; }));
       self.lit([m]); self.press(m, 160);
-      if (self.audible()) self.o.sound.play(m, 0, .5, .6);
+      if (self.audible()) self.note(m, 0, .5, .6);
       var p = self.where(m);
       if (p) {
         var d = document.createElement('div'); d.className = 'tl-count tl-mark'; d.textContent = String(n);
@@ -546,7 +559,7 @@ Keyboard.prototype.play = function (tune, beat) {
   tune.forEach(function (item) {
     var chord = Array.isArray(item) ? item : [item];
     var dur = chord.length > 1 ? 1.4 : step;
-    chord.forEach(function (m) { self.o.sound.play(m, t, dur * .95, chord.length > 1 ? .55 : .75); });
+    chord.forEach(function (m) { self.note(m, t, dur * .95, chord.length > 1 ? .55 : .75); });
     self.timers.push(setTimeout(function () {
       chord.forEach(function (m) { self.press(m, Math.max(120, dur * 1000 - 60)); });
       self.lit(chord);
@@ -554,13 +567,15 @@ Keyboard.prototype.play = function (tune, beat) {
     }, t * 1000));
     t += dur;
   });
-  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, t * 1000 + 150));
+  this.timers.push(setTimeout(function () { self.voices = []; self.stop(); self.emit('playEnd', {}); }, t * 1000 + 150));
 };
 
 Keyboard.prototype.clearTimers = function () { (this.timers || []).forEach(clearTimeout); this.timers = []; };
 
+// Stops a playback or a count: timers are cleared and every note still
+// queued or sounding is silenced.
 Keyboard.prototype.stop = function () {
-  this.clearTimers(); this.playing = false;
+  this.clearTimers(); this.silence(); this.playing = false;
   if (this.playBtn) this.playBtn.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5v13l11-6.5z"/></svg>';
   if (!this.keys) return;
   var self = this;
@@ -626,6 +641,7 @@ Keyboard.prototype.clear = function () {
       main.steps(EB_MAJOR.slice(1).map(function (m, i) { return [EB_MAJOR[i], m]; }));
     },
     play: function () { if (!main.held[63]) commands.scale(); main.play(EB_MAJOR); },
+    stop: function () { main.stop(); },
     count: function () { main.clear(); main.spelling({ 68: 'A♭' }); main.count(60, 68); },
     enh: function () { main.clear(); main.highlight([66]); main.caption(66, '<b>F♯ = G♭</b><span>enharmonic</span>'); },
     spot: function () { main.spotlight(60, 72); },

@@ -191,7 +191,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给音级梯的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给音级梯的指令；记录框列出音级梯发出的事件。点一级横档：音名牌按下去、发声、旁边弹出音名和名称，两秒后自己淡掉；点梯子上下的空处马上清掉。换调和换小调形式时，横档滑到新的位置，变了的音名重新写一遍。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给音级梯的指令；记录框列出音级梯发出的事件。点一级横档：音名牌按下去、发声、旁边弹出音名和名称，两秒后自己淡掉；点梯子上下的空处马上清掉。换调和换小调形式时，横档滑到新的位置，变了的音名重新写一遍。播放时再按一下右上角的按钮，声音马上停下。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="steps">标 tone 和 semitone</button>
       <button class="chip" type="button" data-cmd="count">从 1 级数到 5 级</button>
@@ -205,6 +205,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="major">换回 E♭ major</button>
       <button class="chip" type="button" data-cmd="play">上行弹一遍</button>
       <button class="chip" type="button" data-cmd="down">下行弹一遍</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
       <button class="chip" type="button" data-cmd="clear">清除</button>
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div>
@@ -226,7 +227,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>主音（比如 E♭）；音阶：major、natural minor、harmonic minor、melodic minor；画哪几级（默认 1–8）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应，不给提示）；是否有播放按钮；小梯子（只挂音名牌，不写罗马数字和音级名称）；下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>纸、木梯、象牙色的音名牌、标亮的紫光、深色的说明气泡，都写在音级梯自己里面，不从外面继承；画风和其他组件一样。升降号用乐谱库画出来的字形，和乐谱组件里的一模一样。</td></tr>
-          <tr><td>指令</td><td><code>highlight(级)</code> 一直亮着；<code>label({级: 文字})</code> 在音名牌左边贴 A、B、C；<code>steps()</code> 在相邻两级之间标 T、S，和声小调的 6–7 级标 T+S，标法和键盘一样；<code>count(从, 到)</code> 一级一级地数，每级发声，数字写在梯子右边；<code>mask(部分, 级)</code> 遮住音名、罗马数字或音级名称；<code>reveal(部分, 级)</code> 写出来；<code>chord(级, {inversion})</code> 标出这一级上的三和弦（root、3rd、5th），先分解再一起弹，转位时罗马数字加 b 或 c、低音那个音的标记填满颜色、下面多一道线；<code>key({主音, 音阶})</code> 换调或换形式，横档滑到新位置；<code>spotlight(级)</code>；<code>caption(级, 文字)</code> 在横档旁边弹出说明；<code>play({direction})</code> 上行、下行或上行再下行；<code>stop()</code>；<code>clear()</code>。左边一栏一次只放一种标记：标 T、S 会换掉和弦的标记，标和弦也会换掉 T、S。</td></tr>
+          <tr><td>指令</td><td><code>highlight(级)</code> 一直亮着；<code>label({级: 文字})</code> 在音名牌左边贴 A、B、C；<code>steps()</code> 在相邻两级之间标 T、S，和声小调的 6–7 级标 T+S，标法和键盘一样；<code>count(从, 到)</code> 一级一级地数，每级发声，数字写在梯子右边；<code>mask(部分, 级)</code> 遮住音名、罗马数字或音级名称；<code>reveal(部分, 级)</code> 写出来；<code>chord(级, {inversion})</code> 标出这一级上的三和弦（root、3rd、5th），先分解再一起弹，转位时罗马数字加 b 或 c、低音那个音的标记填满颜色、下面多一道线；<code>key({主音, 音阶})</code> 换调或换形式，横档滑到新位置；<code>spotlight(级)</code>；<code>caption(级, 文字)</code> 在横档旁边弹出说明；<code>play({direction})</code> 上行、下行或上行再下行；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。左边一栏一次只放一种标记：标 T、S 会换掉和弦的标记，标和弦也会换掉 T、S。</td></tr>
           <tr><td>事件</td><td><code>rungTap</code>（第几级、音名、音级名称、罗马数字、音高、音名是否遮着）；<code>blankTap</code>；<code>countStep</code>（数到第几、一共几级）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”，和乐谱、键盘用的是同一个；音级梯不知道乐谱、键盘和作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一架大梯子放在谱的旁边还是下面，几架小梯子怎么并排，由流程决定；音级梯只管自己这一架，在给它的宽度里居中，高度按半音的个数定。和弦的音超出画出的几级时，标在低八度的同一个音上；要往上叠着看，流程就多画几级。</td></tr>
@@ -262,6 +263,7 @@ function ScaleLadder(host, options) {
   this.descending = false;
   this.timers = [];
   this.tapTimers = [];
+  this.voices = [];
   this.build();
 }
 ScaleLadder.LETTERS = 'CDEFGAB';
@@ -322,6 +324,17 @@ ScaleLadder.nameHtml = function (letter, acc, fontPx) {
 ScaleLadder.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
 ScaleLadder.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
 ScaleLadder.prototype.melodic = function () { return this.o.scale === 'melodic minor'; };
+
+// Every note the ladder sounds goes through here, so stop() can silence
+// the notes already scheduled ahead on the audio clock.
+ScaleLadder.prototype.note = function (midi, delay, dur, velocity) {
+  var v = this.o.sound.play(midi, delay, dur, velocity);
+  if (v) this.voices.push(v);
+};
+ScaleLadder.prototype.silence = function () {
+  (this.voices || []).forEach(function (v) { v.stop(); });
+  this.voices = [];
+};
 
 // The semitone pattern in force: melodic minor coming down is the natural minor.
 ScaleLadder.prototype.pattern = function (descending) {
@@ -519,7 +532,7 @@ ScaleLadder.prototype.tap = function (d) {
   this.press(d, 220);
   this.lit([d]);
   this.ripple(d);
-  if (this.audible()) this.o.sound.play(g.midi, 0, 1.1);
+  if (this.audible()) this.note(g.midi, 0, 1.1);
   this.emit('rungTap', { degree: d, name: g.plain, spoken: g.spoken, technical: g.technical, numeral: g.numeral, midi: g.midi, hidden: !!this.masked.name[d] });
   this.tapTimers.push(setTimeout(function () {
     self.frame.querySelectorAll('.tl-sl-bubble').forEach(function (b) { b.classList.add('out'); });
@@ -613,7 +626,7 @@ ScaleLadder.prototype.clearSteps = function () {
 // intervals are counted. Each rung on the way lights, sounds and keeps
 // its number just outside the right rail; the first and last stay lit.
 ScaleLadder.prototype.count = function (from, to) {
-  var self = this, L = this.L; this.clearTimers();
+  var self = this, L = this.L; this.stop();
   this.frame.querySelectorAll('.tl-sl-count').forEach(function (e) { e.remove(); });
   var dir = to >= from ? 1 : -1, total = Math.abs(to - from) + 1;
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -623,7 +636,7 @@ ScaleLadder.prototype.count = function (from, to) {
       var d = from + dir * (n - 1), g = self.info[d];
       self.unlit(self.range().filter(function (k) { return !self.held[k]; }));
       self.lit([d]); self.press(d, 160);
-      if (self.audible()) self.o.sound.play(g.midi, 0, .5, .65);
+      if (self.audible()) self.note(g.midi, 0, .5, .65);
       var c = document.createElement('span'); c.className = 'tl-sl-count tl-sl-mark'; c.textContent = String(n);
       c.style.left = L.railR + L.railW + 10 + 'px';
       self.rungs[d].appendChild(c);
@@ -662,10 +675,11 @@ ScaleLadder.prototype.chord = function (degree, opts) {
   if (tones[0] !== null) { this.suffix[tones[0]] = ['', 'b', 'c'][inv]; this.place(true); }
   this.highlight(tones.filter(function (t) { return t !== null; }));
   if (this.audible()) {
+    this.stop();
     var voicing = [0, 2, 4].map(function (s) { return self.degree(degree + s, false).midi; });
     for (var k = 0; k < inv; k++) voicing.push(voicing.shift() + 12);
-    voicing.forEach(function (m, i) { self.o.sound.play(m, i * .35, .5, .65); });
-    voicing.forEach(function (m) { self.o.sound.play(m, 1.2, 1.4, .5); });
+    voicing.forEach(function (m, i) { self.note(m, i * .35, .5, .65); });
+    voicing.forEach(function (m) { self.note(m, 1.2, 1.4, .5); });
   }
 };
 ScaleLadder.prototype.clearChord = function () {
@@ -750,7 +764,7 @@ ScaleLadder.prototype.play = function (opts) {
     list.forEach(function (d, i) {
       var g = self.degree(d, descending), last = i === list.length - 1;
       var dur = last ? .9 : step;
-      self.o.sound.play(g.midi, t, dur * .95, .75);
+      self.note(g.midi, t, dur * .95, .75);
       self.timers.push(setTimeout(function () {
         self.press(d, Math.max(120, dur * 1000 - 60)); self.lit([d]);
         self.timers.push(setTimeout(function () { if (!self.held[d]) self.unlit([d]); }, Math.max(120, dur * 1000 - 40)));
@@ -760,7 +774,7 @@ ScaleLadder.prototype.play = function (opts) {
   }
   if (dir === 'up' || dir === 'updown') half(up, false);
   if (dir === 'down' || dir === 'updown') half(dir === 'updown' ? down.slice(1) : down, true);
-  this.timers.push(setTimeout(function () { self.stop(); self.emit('playEnd', {}); }, t * 1000 + 150));
+  this.timers.push(setTimeout(function () { self.voices = []; self.stop(); self.emit('playEnd', {}); }, t * 1000 + 150));
 };
 
 ScaleLadder.prototype.playIcon = function (playing) {
@@ -771,8 +785,10 @@ ScaleLadder.prototype.playIcon = function (playing) {
 
 ScaleLadder.prototype.clearTimers = function () { (this.timers || []).forEach(clearTimeout); this.timers = []; };
 
+// Stops a playback, a count or a chord: timers are cleared and every
+// note still queued or sounding is silenced.
 ScaleLadder.prototype.stop = function () {
-  this.clearTimers(); this.playing = false; this.playIcon(false);
+  this.clearTimers(); this.silence(); this.playing = false; this.playIcon(false);
   if (!this.rungs) return;
   var self = this;
   this.range().forEach(function (d) { self.rungs[d].classList.remove('tl-down'); if (!self.held[d] && d !== self.tapLit) self.rungs[d].classList.remove('tl-lit'); });
@@ -837,6 +853,7 @@ ScaleLadder.prototype.clear = function () {
     major: function () { main.key({ tonic: 'Eb', scale: 'major' }); },
     play: function () { main.play({ direction: 'up' }); },
     down: function () { main.play({ direction: 'down' }); },
+    stop: function () { main.stop(); },
     clear: function () { main.clear(); }
   };
   document.querySelectorAll('[data-cmd]').forEach(function (b) {

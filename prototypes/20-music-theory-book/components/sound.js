@@ -10,6 +10,12 @@
    play() always schedules at once and the first notes keep their
    timing. play() before preload() has finished makes no sound.
 
+   play() schedules a note ahead on the audio clock and returns a voice
+   whose stop() silences it, whether it is sounding or still waiting
+   to start. A component keeps the voices it scheduled and stops them
+   when it is told to stop, so pausing a playback silences the notes
+   already queued, and one component never silences another's.
+
    On iPhones Web Audio stays muted by the ring/silent switch until a
    media element is playing, and phones only start audio inside a
    gesture. So unlock() resumes the audio context and keeps a silent
@@ -19,6 +25,9 @@
 var SoundSource = (function () {
   var ctx = null, buffers = {}, keys = [], preloading = null, media = null, mediaStarting = false, watchers = [];
   var state = { phase: 'idle', detail: '' };
+  var sounding = 0;
+  var SILENT_VOICE = { stop: function () {} };
+  var RELEASE = .3, CUT = .04;
 
   function report(phase, detail) {
     if (phase) state = { phase: phase, detail: detail || '' };
@@ -134,8 +143,36 @@ var SoundSource = (function () {
     return best;
   }
 
+  // Schedules one note and returns its voice. stop() fades it out in a
+  // few milliseconds (a hard cut clicks); a note that has not started yet
+  // never sounds.
+  function play(midi, delaySec, durSec, velocity) {
+    if (!ctx || state.phase !== 'ready') return SILENT_VOICE;
+    var s = nearestSample(midi); if (s === null) return SILENT_VOICE;
+    var t0 = ctx.currentTime + (delaySec || 0), dur = Math.max(.08, durSec || 1), v = velocity || .8;
+    var src = ctx.createBufferSource(); src.buffer = buffers[s]; src.playbackRate.value = Math.pow(2, (midi - s) / 12);
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(v, t0); g.gain.setValueAtTime(v, t0 + dur); g.gain.exponentialRampToValueAtTime(.001, t0 + dur + RELEASE);
+    src.connect(g); g.connect(ctx.destination); src.start(t0); src.stop(t0 + dur + RELEASE + .05);
+    var ended = false;
+    sounding++;
+    src.onended = function () { if (!ended) { ended = true; sounding--; } g.disconnect(); };
+    return {
+      stop: function () {
+        if (ended) return;
+        var now = ctx.currentTime;
+        if (now < t0) { src.stop(now); return; }
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(g.gain.value, now);
+        g.gain.linearRampToValueAtTime(0, now + CUT);
+        src.stop(now + CUT + .01);
+      }
+    };
+  }
+
   return {
     preload: preload,
+    play: play,
     unlock: function () {
       var c = context(); if (!c) return;
       if (c.state !== 'running') {
@@ -147,19 +184,10 @@ var SoundSource = (function () {
     watch: function (f) { watchers.push(f); f(state); },
     status: function () {
       return {
-        phase: state.phase, detail: state.detail,
+        phase: state.phase, detail: state.detail, voices: sounding,
         engine: ctx ? ctx.state : '还没创建',
         media: media ? (media.paused ? '没有播放' : '播放中') : '还没创建'
       };
-    },
-    play: function (midi, delaySec, durSec, velocity) {
-      if (!ctx || state.phase !== 'ready') return;
-      var s = nearestSample(midi); if (s === null) return;
-      var t0 = ctx.currentTime + (delaySec || 0), dur = Math.max(.08, durSec || 1), v = velocity || .8;
-      var src = ctx.createBufferSource(); src.buffer = buffers[s]; src.playbackRate.value = Math.pow(2, (midi - s) / 12);
-      var g = ctx.createGain();
-      g.gain.setValueAtTime(v, t0); g.gain.setValueAtTime(v, t0 + dur); g.gain.exponentialRampToValueAtTime(.001, t0 + dur + .3);
-      src.connect(g); g.connect(ctx.destination); src.start(t0); src.stop(t0 + dur + .35);
     }
   };
 })();

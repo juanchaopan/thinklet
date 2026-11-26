@@ -1,21 +1,11 @@
 // Taps every note of every score component in a prototype where a child
 // would: on the note head, just left of it (where an accidental sits) and
 // just above it. Reports taps that do not light that note, and page errors.
-import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-
-const require = createRequire('C:/Users/juanc/AI Projects/thinklet/package.json');
-const { chromium } = require('@playwright/test');
+// Usage: node taptest.mjs <fragment.html> [width]
+import { openPage } from './serve.mjs';
 
 const [, , file, width = '390'] = process.argv;
-const body = readFileSync(file, 'utf8');
-const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${body}</body></html>`;
-
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: Number(width), height: 900 }, hasTouch: true });
-const errors = [];
-page.on('pageerror', (e) => errors.push(e.message));
-await page.setContent(html, { waitUntil: 'networkidle' });
+const { page, errors, close } = await openPage(file, width);
 const boxes = await page.$$eval('.tl-svgbox', (els) => els.length);
 let misses = 0;
 let total = 0;
@@ -43,4 +33,4 @@ for (let s = 0; s < boxes; s += 1) {
 }
 console.log(`width ${width}: scores ${boxes}, taps ${total}, misses ${misses}`);
 if (errors.length) console.log('errors:', errors.join(' | '));
-await browser.close();
+await close();
