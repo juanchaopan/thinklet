@@ -1,0 +1,943 @@
+<title>结论栈组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<style>
+/* Layout: a lit stage shaped like a lecture screen: the question on top, the conclusion stack (the component, outlined with a dashed boundary) under it, a placeholder for the act's other components and a mock subtitle line. Under it a plain "workflow simulator" panel sends commands and logs the events the stack emits. Then a whole lecture played through at phone width, and the interface table. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the stack) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+/* Where the act's other components (score, keyboard, ladder) would be: not part of this prototype. */
+.act-slot { display: grid; place-items: center; min-height: 150px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; text-align: center; padding: 16px; }
+/* The subtitle line is another component; this is only a mock of where it goes. */
+.subtitle { min-height: 3.2em; padding: 10px 16px; border-radius: 14px; background: rgba(42, 33, 24, .82); color: #fff8ec; font-size: 15px; line-height: 1.5; }
+.subtitle small { display: block; font-size: 11px; color: rgba(255, 248, 236, .6); }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 10px; }
+body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -18px; left: 10px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+
+/* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
+/* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, violet light for whatever is lit, a brass clip holding the slips, dark bubbles. */
+.tl-cs {
+  --tl-paper-a: #fffaf1;
+  --tl-paper-b: #f2e6d1;
+  --tl-paper-back: #dcc8a6;
+  --tl-paper-shadow: rgba(60, 38, 16, .45);
+  --tl-ink: #241a12;
+  --tl-ink-soft: #6b5238;
+  --tl-glow: #7b4dff;
+  --tl-glow-soft: rgba(123, 77, 255, .28);
+  --tl-glow-ink: #4b23c9;
+  --tl-brass-a: #f6dc96;
+  --tl-brass-b: #c99a45;
+  --tl-brass-c: #7d561c;
+  --tl-bubble-bg: #2a2118;
+  --tl-bubble-ink: #fff8ec;
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; width: 100%; max-width: 560px; margin: 0 auto; padding: 12px 0 18px; min-height: 34px; transition: padding-bottom .3s cubic-bezier(.2, .8, .3, 1);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; color: var(--tl-ink);
+}
+/* The brass clip the slips are pushed up under. */
+.tl-cs-clip { position: absolute; top: 0; left: 50%; z-index: 6; width: 132px; height: 18px; margin-left: -66px; border-radius: 5px 5px 7px 7px; pointer-events: none;
+  background: linear-gradient(180deg, var(--tl-brass-a), var(--tl-brass-b) 60%, var(--tl-brass-c)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -1px 0 rgba(60, 36, 8, .4), 0 4px 8px -2px rgba(60, 38, 16, .5); }
+.tl-cs-clip::before, .tl-cs-clip::after { content: ""; position: absolute; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3c8, #a77a2c 60%, #5c3d10); box-shadow: 0 1px 0 rgba(255, 255, 255, .4); }
+.tl-cs-clip::before { left: 12px; }
+.tl-cs-clip::after { right: 12px; }
+.tl-cs-list { position: relative; display: grid; padding-left: 18px; }
+.tl-cs-slip { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; min-height: 44px; margin: -3px calc(var(--d, 0) * 7px) 0; padding: 7px 12px 8px 9px; border-radius: 5px; z-index: 1;
+  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, color-mix(in srgb, var(--tl-paper-a), var(--tl-paper-back) calc(var(--d, 0) * 14%)), color-mix(in srgb, var(--tl-paper-b), var(--tl-paper-back) calc(var(--d, 0) * 14%)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 3px rgba(70, 45, 20, .1), 0 8px 14px -10px var(--tl-paper-shadow);
+  transform-origin: 0 0; transition: box-shadow .35s, opacity .45s, color .3s; }
+.tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.tl-cs-list > .tl-cs-slip:first-child, .tl-cs-pile + .tl-cs-slip { margin-top: 0; }
+.tl-cs-slip:focus { outline: none; }
+.tl-cs.kbd .tl-cs-slip:focus-visible, .tl-cs.kbd .tl-cs-pile:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 2px; }
+.tl-cs-pile:focus { outline: none; }
+/* The newest conclusion: a full-size slip on top of the stack. */
+.tl-cs-slip.tl-cs-fresh { min-height: 60px; margin-top: 6px; padding: 11px 16px 12px 11px; column-gap: 12px; z-index: 2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 4px rgba(70, 45, 20, .1), 0 20px 34px -14px var(--tl-paper-shadow); }
+/* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
+.tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
+.tl-cs-num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 14px/1 var(--tl-serif); color: var(--tl-ink-soft); transition: color .3s, border-color .3s; }
+.tl-cs-fresh .tl-cs-num { width: 30px; height: 30px; font-size: 17px; }
+.tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }
+.tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-cs-seal span { position: relative; margin-top: -3px; }
+.tl-cs-body { position: relative; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 9px; font: 500 17px/1.2 var(--tl-serif); }
+.tl-cs-fresh .tl-cs-body { font-size: 22px; gap: 3px 11px; }
+/* On a narrow stack the earlier conclusions are set smaller, so each stays about one line. */
+.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) .tl-cs-body { font-size: 15px; gap: 2px 7px; }
+.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) { column-gap: 8px; padding-right: 10px; }
+.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) .tl-cs-num { width: 22px; height: 22px; font-size: 13px; }
+.tl-cs-term { font-style: italic; font-weight: 600; }
+.tl-cs-op { display: inline-flex; color: var(--tl-ink-soft); }
+.tl-cs-op svg { width: .9em; height: .9em; stroke: currentColor; fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.tl-cs-text svg, .tl-cs-bubble svg.tl-cs-acc { fill: currentColor; }
+.tl-cs-staff { line-height: 0; color: var(--tl-ink); }
+.tl-cs-staff svg { display: block; overflow: visible; }
+.tl-cs-staff text { font-family: var(--tl-serif); font-style: italic; font-weight: 600; }
+.tl-cs-staff .tl-cs-sounding path, .tl-cs-staff path.tl-cs-sounding { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
+.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 8px 14px -10px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-lit .tl-cs-num { color: var(--tl-glow-ink); border-color: var(--tl-glow); }
+.tl-cs-slip.tl-lit .tl-cs-staff, .tl-cs-slip.tl-lit .tl-cs-op { color: var(--tl-glow-ink); }
+.tl-cs-slip.tl-cs-down { background-color: color-mix(in srgb, var(--tl-glow) 10%, transparent); }
+.tl-cs-slip.tl-dim { opacity: .32; }
+/* Earlier conclusions beyond the last few are folded into a pile of paper edges under the clip; a tap opens it. */
+.tl-cs-pile { position: relative; height: 30px; margin: 0 calc(var(--d, 3) * 7px); display: flex; align-items: flex-end; justify-content: flex-end; padding: 0 12px 4px; z-index: 0; }
+.tl-cs-pile i { position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: linear-gradient(180deg, color-mix(in srgb, var(--tl-paper-a), var(--tl-paper-back) 55%), var(--tl-paper-back)); box-shadow: 0 1px 2px rgba(70, 45, 20, .3); }
+.tl-cs-pile i:nth-child(1) { top: 6px; left: 10px; right: 10px; }
+.tl-cs-pile i:nth-child(2) { top: 12px; left: 5px; right: 5px; }
+.tl-cs-pile i:nth-child(3) { top: 18px; }
+.tl-cs-more { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 9px; background: rgba(255, 250, 241, .92); font: italic 600 14px/1.2 var(--tl-serif); color: var(--tl-ink-soft); box-shadow: 0 1px 3px rgba(70, 45, 20, .25); }
+.tl-cs-more svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transition: transform .3s; }
+.tl-cs-open .tl-cs-more svg { transform: rotate(180deg); }
+/* The thread from the conclusions a new one builds on, in the left margin. */
+.tl-cs-thread { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; }
+.tl-cs-thread path { fill: none; stroke: var(--tl-glow); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tl-cs-thread circle { fill: var(--tl-glow); }
+.tl-cs-thread .tl-cs-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-cs-draw .7s .4s cubic-bezier(.3, .7, .3, 1) forwards; }
+.tl-cs-thread .tl-cs-dot { animation: tl-cs-fade .3s .35s both; }
+.tl-cs-thread .tl-cs-tip { animation: tl-cs-fade .25s 1s both; }
+/* A hidden conclusion lies under a paper slip with a dashed question box: missing by shape, not only by colour. */
+.tl-cs-hidden > :not(.tl-cs-cover) { visibility: hidden; }
+.tl-cs-cover { position: absolute; inset: -3px -6px; z-index: 1; display: flex; align-items: center; padding-left: 6px; border-radius: 4px;
+  background: linear-gradient(180deg, #efe1c6, #e6d4b2); box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 3px 6px -2px rgba(70, 45, 20, .35); transform: rotate(-.6deg); transition: transform .45s cubic-bezier(.3, .8, .3, 1), opacity .45s; }
+.tl-cs-cover.off { transform: translateX(40%) rotate(4deg); opacity: 0; }
+.tl-cs-q { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2em; height: 1.2em; padding: 0 .3em; border: 1.5px dashed var(--tl-ink-soft); border-radius: 5px; font: italic 600 18px/1 var(--tl-serif); color: var(--tl-ink-soft); }
+.tl-cs-ink { animation: tl-cs-ink .55s cubic-bezier(.2, .8, .3, 1) both; }
+.tl-cs-enter { animation: tl-cs-enter .6s .12s cubic-bezier(.15, .8, .3, 1) both; }
+.tl-cs-enter .tl-cs-seal { animation: tl-cs-stamp .5s .55s cubic-bezier(.2, 1.5, .4, 1) both; }
+.tl-cs-reveal { animation: tl-cs-fade .35s both; }
+.tl-cs-over { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+.tl-cs-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-cs-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-cs-bubble { position: absolute; z-index: 6; max-width: calc(100% - 20px); padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: tl-cs-bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-cs-bubble.tl-cs-still { animation: none; }
+.tl-cs-bubble.out { opacity: 0; }
+.tl-cs-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+@keyframes tl-cs-enter { from { opacity: 0; transform: translateY(22px) scale(1.06); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes tl-cs-stamp { from { transform: scale(1.8) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-cs-draw { to { stroke-dashoffset: 0; } }
+@keyframes tl-cs-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tl-cs-ink { from { opacity: 0; filter: blur(4px); transform: scale(1.12); } to { opacity: 1; filter: none; transform: none; } }
+@keyframes tl-cs-bubble { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes tl-cs-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+
+/* ---------- Layouts chosen by the workflow ---------- */
+.mini-stage { border-radius: 24px; padding: 24px 14px 18px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 14px; width: 100%; max-width: 390px; justify-self: center; }
+.mini-stage .q { color: var(--stage-ink); font-weight: 800; }
+.mini-stage .act-slot { min-height: 110px; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.chip-group { display: grid; gap: 6px; }
+.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 7 / 10 · 显示类 · 直接画在画面上，放在讲题画面的最上面</span>
+    <h1>结论栈</h1>
+    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在画面最上面，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈：新得出的结论是一张大纸条，落到栈上；之前的结论缩成窄纸条，往上推，夹在上面的黄铜夹子下面，越早的越窄、纸色越深，像一叠纸。之前的结论超过三条（手机上超过两条）时，最早的折进夹子下面的一小叠纸边，点一下展开。一条结论是从前面哪几条得出的，左边会有一条紫色的线从那几条连下来；最后的答案带一圈紫光和一个 ∴ 印章，可以先遮住，讲完再揭晓。结论里可以有文字、术语、符号（=、→、+）和一小段谱，谱点了会响。框外面的题目、下面的组件位置和字幕，都不属于它。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q">这段旋律是什么调？</p></div>
+    <div id="main-stack"></div>
+    <div class="act-slot">这一幕用的组件（乐谱、五度圈、音级梯……）画在这里<br>不属于结论栈</div>
+    <div class="subtitle" id="subtitle"><small>字幕（另一个组件，这里只是示意）</small><span id="subtitle-text">点下面的「下一幕」开始。</span></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给结论栈的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给结论栈的指令；记录框列出结论栈发出的事件。「下一幕」把这一幕的结论推上去；「上一幕」是播放器的上一幕按钮，结论栈直接回到那一幕结束时的样子，不放动画。点一条结论：它亮起来，有说明的在它下面弹出说明，两秒后自己淡掉；里面有谱的会响。点叠起来的纸边：展开全部；点空白处：收起、清掉。</p>
+    <div class="chip-group"><span>一幕一幕</span><div class="chips">
+      <button class="chip" type="button" data-cmd="next">下一幕</button>
+      <button class="chip" type="button" data-cmd="back">上一幕</button>
+      <button class="chip" type="button" data-cmd="end">跳到最后（答案遮着）</button>
+      <button class="chip" type="button" data-cmd="revealAnswer">揭晓答案</button>
+    </div></div>
+    <div class="chip-group"><span>标记</span><div class="chips">
+      <button class="chip" type="button" data-cmd="recall">亮起第 1 条（又用到它）</button>
+      <button class="chip" type="button" data-cmd="spot">聚光第 2、3 条</button>
+      <button class="chip" type="button" data-cmd="caption">在最新一条下面弹出说明</button>
+      <button class="chip" type="button" data-cmd="maskNewest">遮住最新一条</button>
+      <button class="chip" type="button" data-cmd="revealAll">全部写出来</button>
+    </div></div>
+    <div class="chip-group"><span>其他</span><div class="chips">
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
+    </div></div>
+    <div class="log" id="log" aria-live="polite" aria-label="结论栈发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
+  </section>
+
+  <section class="panel">
+    <h2>放一遍：一道讲题从头到尾（手机宽度）</h2>
+    <p class="what">一道音程讲题的四幕按讲题的节奏自动走一遍：数音名得出“三度”，数半音得出“四个半音”，两条合起来得出“四个半音的三度是大三度”，最后得出答案。每条新结论左边的紫线连着它用到的那几条。</p>
+    <div class="toolbar"><button class="chip" type="button" id="run-btn">从头放一遍</button></div>
+    <div class="mini-stage">
+      <p class="q">E♭ 到 G 是什么音程？</p>
+      <div id="run-stack"></div>
+      <div class="act-slot">这一幕的组件</div>
+      <div class="subtitle"><small>字幕（示意）</small><span id="run-sub">点「从头放一遍」。</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>这道讲题的全部结论（题目文件里写）：每条有编号和内容，内容是一串片段：文字、术语（斜体）、符号（<code>=</code>、<code>→</code>、<code>+</code>、<code>≠</code>）或一小段 ABC 谱；可以写它是从前面哪几条得出的、它是不是这道题的答案，可以带一句点了才弹出的说明。模式：讲题（点了发声、弹出说明）或练习（点了没有反应）；速度。</td></tr>
+          <tr><td>外观</td><td>纸条的纹理和叠起来的层次、黄铜夹子、紫色的连线、答案的紫光和印章、深色的说明气泡，都写在结论栈自己里面，不从外面继承；颜色和共用部分用 <code>etude</code> 主题的值。谱和文字里的升降号都用乐谱库画出来的字形。</td></tr>
+          <tr><td>指令</td><td><code>push(结论)</code> 这一幕的结论落到栈上，前面的缩小往上推；写了从哪几条得出的，那几条亮一下，紫线连下来；<code>set(结论…)</code> 直接摆成这几条，不放动画（上一幕、下一幕、重新进入题目时用）；<code>highlight(结论…)</code> 亮起前面的结论（折起来的也会露出来）；<code>spotlight(结论…)</code>；<code>caption(结论, 文字)</code> 在这一条下面弹出说明；<code>mask(结论…)</code> 用纸条遮住，可以在 <code>push</code> 之前遮，结论落下来时就是遮着的；<code>reveal(…)</code> 纸条滑走、写出来；<code>stop()</code> 停下点出来的声音；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>itemTap</code>（哪一条、第几条、是不是答案、文字内容、是否遮着）；<code>pileTap</code>（折起来几条、现在展开没有）；<code>blankTap</code>。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用的是同一个；结论栈不知道这一幕用了哪些组件。结论的内容、从哪几条得出、哪条是答案都由题目文件给，结论栈只负责画出来。</td></tr>
+          <tr><td>谁决定排版</td><td>流程把它放在讲题画面的最上面，占满给它的宽度，最宽 560；结论多了，最早的折起来，它的高度不会一直长。</td></tr>
+          <tr><td>出现在哪里</td><td>每道讲题都有，直接画在画面上。练习里不出现，因为它就是解题的过程。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="sound.js"></script>
+<script>
+/* ============================================================
+   Conclusion stack component. Keeps the conclusions a lecture has
+   reached, one per act: the newest is a full-size slip on top of the
+   stack, earlier ones shrink into strips pushed up under a clip, and
+   beyond the last few they fold into a pile. A conclusion built on
+   earlier ones is joined to them by a thread; the one that answers the
+   question carries a seal.
+   Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc}], from:
+   [ids], final, note}}), mode ('lecture' | 'practice'), tempo.
+   Commands: push, set, highlight, spotlight, caption, mask, reveal,
+   stop, clear.
+   Events (via onEvent): itemTap, pileTap, blankTap.
+   Sound goes through the injected source, lectures only.
+   ============================================================ */
+function ConclusionStack(host, options) {
+  var self = this;
+  this.host = host;
+  this.o = Object.assign({ items: {}, mode: 'lecture', tempo: 96, sound: null, onEvent: function () {} }, options);
+  this.order = [];
+  this.masked = {};
+  this.held = [];
+  this.spot = null;
+  this.cap = null;
+  this.open = false;
+  this.flash = [];
+  this.entering = null;
+  this.timers = [];
+  this.tapTimers = [];
+  this.voices = [];
+  host.classList.add('tl-cs');
+  host.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
+  host.addEventListener('keydown', function (ev) { self.onKey(ev); });
+  host.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') host.classList.add('kbd'); });
+  this.build();
+}
+// Earlier conclusions shown as strips before the rest fold into the pile:
+// fewer on a narrow stack, where height is scarce.
+ConclusionStack.STRIPS = { wide: 3, narrow: 2 };
+ConclusionStack.NARROW_PX = 480;
+ConclusionStack.TAP_FADE_MS = 2000;
+ConclusionStack.STAFF_SCALE = { fresh: .8, strip: .62, narrow: .5 };
+ConclusionStack.LETTERS = 'CDEFGAB';
+ConclusionStack.STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+ConclusionStack.SHIFT = { sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 };
+ConclusionStack.SVG = 'http://www.w3.org/2000/svg';
+ConclusionStack.OPS = {
+  '=': '<path d="M3 6h10M3 10h10"/>',
+  '≠': '<path d="M3 6h10M3 10h10M10.5 2.5l-5 11"/>',
+  '+': '<path d="M8 3v10M3 8h10"/>',
+  '→': '<path d="M2 8h11M9 4l4 4-4 4"/>'
+};
+ConclusionStack.OP_WORDS = { '=': 'equals', '≠': 'is not', '+': 'and', '→': 'gives' };
+ConclusionStack.CHEVRON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>';
+
+ConclusionStack.esc = function (t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+// Accidental glyphs drawn by the score library, so a flat in a conclusion
+// is the same shape as a flat on the score.
+ConclusionStack.glyphs = function () {
+  if (ConclusionStack._glyphs) return ConclusionStack._glyphs;
+  var box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:-9999px;top:0;width:900px;visibility:hidden';
+  document.body.appendChild(box);
+  ABCJS.renderAbc(box, 'X:1\nL:1/4\nK:C clef=none stafflines=1\nV:1 stem=up\n^B _B =B|', { add_classes: true, staffwidth: 800 });
+  var lb = box.querySelector('.abcjs-top-line').getBBox();
+  var out = { lineY: lb.y + lb.height / 2 }, kinds = [1, -1, 0];
+  box.querySelectorAll('.abcjs-note').forEach(function (g, i) {
+    var p = [].filter.call(g.querySelectorAll('path'), function (q) { return !q.getAttribute('class'); })[0];
+    if (!p) return;
+    var bb = p.getBBox();
+    out[kinds[i]] = { d: p.getAttribute('d'), x: bb.x, w: bb.width };
+  });
+  box.remove();
+  ConclusionStack._glyphs = out;
+  return out;
+};
+
+// Text as HTML in the serif, every ♯ ♭ ♮ swapped for the library glyph,
+// scaled to the text and centred a third of an em above the baseline.
+ConclusionStack.inline = function (text, fontPx) {
+  var G = ConclusionStack.glyphs();
+  return String(text).split(/([♯♭♮])/).map(function (part) {
+    var acc = part === '♯' ? 1 : part === '♭' ? -1 : part === '♮' ? 0 : null;
+    if (acc === null) return ConclusionStack.esc(part);
+    var g = G[acc]; if (!g) return part;
+    var s = fontPx * 0.034, band = 14, w = (g.w + 1) * s, h = band * 2 * s, lift = 0.33 * fontPx - band * s;
+    return '<svg class="tl-cs-acc" viewBox="' + (g.x - .5) + ' ' + (G.lineY - band) + ' ' + (g.w + 1) + ' ' + band * 2 + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" style="vertical-align:' + lift.toFixed(1) + 'px;margin:0 1px" aria-hidden="true"><path d="' + g.d + '"/></svg>';
+  }).join('');
+};
+
+// A part's ABC as a whole tune: header lines from the part (L:, K:, Q:)
+// with defaults, K: last, then the music.
+ConclusionStack.tune = function (abc) {
+  var head = [], body = [], key = 'K:C';
+  String(abc).split('\n').forEach(function (line) {
+    if (/^K:/.test(line)) key = line;
+    else if (/^[A-Za-z]:/.test(line)) head.push(line);
+    else body.push(line);
+  });
+  if (!head.some(function (l) { return /^L:/.test(l); })) head.push('L:1/4');
+  return 'X:1\n' + head.join('\n') + '\n' + key + '\n' + body.join('\n');
+};
+
+// A conclusion in words, for screen readers and for events.
+ConclusionStack.words = function (item) {
+  return (item.parts || []).map(function (p) {
+    if (p.abc) return '♪';
+    if (p.op) return ConclusionStack.OP_WORDS[p.op] || p.op;
+    return p.text || p.term || '';
+  }).join(' ');
+};
+
+ConclusionStack.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
+ConclusionStack.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
+ConclusionStack.prototype.item = function (id) { return this.o.items[id] || { parts: [] }; };
+ConclusionStack.prototype.known = function (list) {
+  var self = this;
+  return [].concat(list || []).filter(function (id) { return self.order.indexOf(id) >= 0; });
+};
+
+// Every note the stack sounds goes through here, so stop() can silence
+// the notes already scheduled ahead on the audio clock.
+ConclusionStack.prototype.note = function (midi, delay, dur, velocity) {
+  var v = this.o.sound.play(midi, delay, dur, velocity);
+  if (v) this.voices.push(v);
+};
+ConclusionStack.prototype.silence = function () {
+  (this.voices || []).forEach(function (v) { v.stop(); });
+  this.voices = [];
+};
+
+// Redraws everything inside the host, e.g. after a change of width or
+// mode; the conclusions and marks are state, so they come back.
+ConclusionStack.prototype.build = function () {
+  this.stop(); this.clearTap();
+  this.host.innerHTML = '<div class="tl-cs-clip" aria-hidden="true"></div>';
+  this.list = document.createElement('div'); this.list.className = 'tl-cs-list'; this.list.setAttribute('role', 'list');
+  this.host.appendChild(this.list);
+  this.over = document.createElement('div'); this.over.className = 'tl-cs-over';
+  this.host.appendChild(this.over);
+  this.slipEls = {};
+  this.render(false);
+};
+
+// Which earlier conclusions are drawn as strips and which are folded:
+// the last few stay out, and so does any the workflow lights or spots.
+ConclusionStack.prototype.layout = function () {
+  var self = this, strips = this.order.slice(0, -1), keep = this.held.concat(this.flash, this.spot || []);
+  var max = ConclusionStack.STRIPS[this.narrow ? 'narrow' : 'wide'];
+  var shown = strips.filter(function (id, i) { return self.open || i >= strips.length - max || keep.indexOf(id) >= 0; });
+  return { strips: shown, folded: strips.length - shown.length, foldable: strips.length > max, fresh: this.order.length ? this.order[this.order.length - 1] : null };
+};
+
+// Draws the stack from its state. Slips that were already on screen glide
+// from where they were to where they are now; only the conclusion just
+// pushed plays its entrance, and only a new thread draws itself.
+ConclusionStack.prototype.render = function (animated) {
+  var self = this, before = {};
+  if (animated) Object.keys(this.slipEls).forEach(function (id) { before[id] = self.slipEls[id].getBoundingClientRect(); });
+  this.narrow = this.host.clientWidth < ConclusionStack.NARROW_PX;
+  this.host.classList.toggle('tl-cs-narrow', this.narrow);
+  this.host.classList.toggle('tl-cs-open', this.open);
+  var L = this.layout();
+  this.list.innerHTML = '';
+  this.slipEls = {}; this.staffs = {}; this.pileEl = null;
+  if (L.foldable) {
+    var pile = document.createElement('div'); pile.className = 'tl-cs-pile'; pile.setAttribute('role', 'button'); pile.tabIndex = -1;
+    pile.style.setProperty('--d', String(Math.min(3, L.strips.length + 1)));
+    pile.innerHTML = (L.folded ? '<i></i><i></i><i></i>' : '') + '<span class="tl-cs-more">' + (L.folded ? '+' + L.folded : '') + ConclusionStack.CHEVRON + '</span>';
+    pile.setAttribute('aria-label', L.folded ? '前面还有 ' + L.folded + ' 条结论，点开' : '收起前面的结论');
+    pile.setAttribute('aria-expanded', String(this.open));
+    this.list.appendChild(pile);
+    this.pileEl = pile;
+  }
+  L.strips.forEach(function (id, k) { self.slip(id, 'strip', Math.min(3, L.strips.length - k)); });
+  if (L.fresh) this.slip(L.fresh, 'fresh', 0);
+  var slips = this.list.querySelectorAll('.tl-cs-slip');
+  if (slips.length) slips[slips.length - 1].tabIndex = 0;
+  this.thread = document.createElementNS(ConclusionStack.SVG, 'svg'); this.thread.setAttribute('class', 'tl-cs-thread'); this.thread.setAttribute('aria-hidden', 'true');
+  this.list.appendChild(this.thread);
+  this.applyMasks(false);
+  this.apply();
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (animated && !reduce) Object.keys(this.slipEls).forEach(function (id) {
+    var el = self.slipEls[id], a = before[id];
+    if (id === self.entering) return;
+    if (!a) { el.classList.add('tl-cs-reveal'); return; }
+    var b = el.getBoundingClientRect(); if (!b.width) return;
+    var dx = a.left - b.left, dy = a.top - b.top, s = a.width / b.width;
+    if (Math.abs(dx) < .5 && Math.abs(dy) < .5 && Math.abs(s - 1) < .005) return;
+    el.style.transition = 'none';
+    el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + s + ')';
+    void el.offsetWidth;
+    el.style.transition = 'transform .5s cubic-bezier(.2, .8, .3, 1), box-shadow .35s, opacity .45s, color .3s';
+    el.style.transform = '';
+  });
+  if (this.entering && this.slipEls[this.entering]) this.slipEls[this.entering].classList.add('tl-cs-enter');
+  this.drawThread(!!this.entering);
+  this.entering = null;
+  this.placeCaption(false);
+};
+
+// One conclusion as a slip: its step number (a seal for the answer), then
+// its parts in a row that wraps by words.
+ConclusionStack.prototype.slip = function (id, kind, depth) {
+  var self = this, it = this.item(id), small = kind !== 'fresh' && this.narrow;
+  var px = kind === 'fresh' ? 22 : small ? 15 : 17, step = this.order.indexOf(id) + 1;
+  var el = document.createElement('div');
+  el.className = 'tl-cs-slip' + (kind === 'fresh' ? ' tl-cs-fresh' : '') + (it.final ? ' tl-cs-final' : '');
+  el.dataset.id = id; el.tabIndex = -1; el.setAttribute('role', 'listitem');
+  el.style.setProperty('--d', String(depth));
+  el.innerHTML = (it.final ? '<span class="tl-cs-seal" aria-hidden="true"><span>∴</span></span>' : '<span class="tl-cs-num" aria-hidden="true">' + step + '</span>') + '<div class="tl-cs-body"></div>';
+  var body = el.querySelector('.tl-cs-body');
+  this.list.appendChild(el);
+  this.slipEls[id] = el;
+  this.staffs[id] = [];
+  (it.parts || []).forEach(function (p) {
+    if (p.abc) { self.drawStaff(id, p.abc, body, kind === 'fresh' ? 'fresh' : small ? 'narrow' : 'strip'); return; }
+    var s = document.createElement('span');
+    if (p.op) { s.className = 'tl-cs-op'; s.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true">' + (ConclusionStack.OPS[p.op] || '') + '</svg>'; }
+    else { s.className = 'tl-cs-text' + (p.term ? ' tl-cs-term' : ''); s.innerHTML = ConclusionStack.inline(p.term || p.text || '', px); }
+    body.appendChild(s);
+  });
+  return el;
+};
+
+// Draws a part's ABC on a short stave cropped to what is drawn (clef, key
+// signature, notes; not the bare stave lines), at one scale per kind of
+// slip, shrunk only when the slip is narrower. Keeps the notes for
+// playback.
+ConclusionStack.prototype.drawStaff = function (id, abc, body, scale) {
+  var holder = document.createElement('span'); holder.className = 'tl-cs-staff';
+  body.appendChild(holder);
+  var box = document.createElement('div');
+  box.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;visibility:hidden';
+  document.body.appendChild(box);
+  var vis = ABCJS.renderAbc(box, ConclusionStack.tune(abc), { add_classes: true, staffwidth: 560, paddingleft: 0, paddingright: 0, paddingtop: 0, paddingbottom: 0 })[0];
+  var svg = box.querySelector('svg');
+  var all = svg.getBBox(), right = 0;
+  svg.querySelectorAll('path, text').forEach(function (p) {
+    var c = ' ' + (p.getAttribute('class') || '') + ' ' + ((p.parentNode && p.parentNode.getAttribute && p.parentNode.getAttribute('class')) || '') + ' ';
+    if (/ abcjs-staff | abcjs-top-line /.test(c)) return;
+    var b = p.getBBox(); if (b.width || b.height) right = Math.max(right, b.x + b.width);
+  });
+  var w = Math.ceil(right + 10), y0 = Math.floor(all.y - 4), h = Math.ceil(all.height + 8);
+  var k = ConclusionStack.STAFF_SCALE[scale];
+  var room = Math.max(100, body.clientWidth || 200);
+  if (w * k > room) k = room / w;
+  svg.setAttribute('viewBox', '0 ' + y0 + ' ' + w + ' ' + h);
+  svg.setAttribute('width', (w * k).toFixed(1)); svg.setAttribute('height', (h * k).toFixed(1));
+  svg.removeAttribute('style'); svg.setAttribute('aria-hidden', 'true');
+  holder.appendChild(svg);
+  box.remove();
+  this.staffs[id].push(this.collect(vis));
+};
+
+// The notes of a snippet in order with their onsets in whole notes,
+// pitches (key signature and accidentals within the bar applied), grace
+// notes and ornament, and the drawn shapes to light while they sound.
+ConclusionStack.prototype.collect = function (vis) {
+  var C = ConclusionStack, out = [], t = 0, bar = {};
+  var keyOf = function (k) { var m = {}; ((k && k.accidentals) || []).forEach(function (a) { m[a.note.toUpperCase()] = a.acc; }); return m; };
+  var key = {}; try { key = keyOf(vis.getKeySignature()); } catch (e) { key = {}; }
+  var info = function (p, within) {
+    var letter = C.LETTERS[((p.pitch % 7) + 7) % 7], slot = letter + p.pitch;
+    if (within && p.accidental) within[slot] = p.accidental;
+    var acc = p.accidental || (within && within[slot]) || key[letter] || null;
+    return 60 + 12 * Math.floor(p.pitch / 7) + C.STEP[letter] + (acc ? C.SHIFT[acc] : 0);
+  };
+  (vis.lines || []).forEach(function (line) {
+    var staff = (line.staff || [])[0]; if (!staff) return;
+    ((staff.voices || [])[0] || []).forEach(function (el) {
+      if (el.el_type === 'bar') { bar = {}; return; }
+      if (el.el_type !== 'note') return;
+      var d = el.duration || 0;
+      if (el.rest || !el.pitches) { t += d; return; }
+      var shapes = ((el.abselem && el.abselem.elemset) || []).filter(function (x) { return x && x.getBBox; });
+      var pitch = el.pitches[0];
+      out.push({
+        t: t, d: d, shapes: shapes,
+        midis: el.pitches.map(function (p) { return info(p, bar); }),
+        up: info({ pitch: pitch.pitch + 1 }, null), down: info({ pitch: pitch.pitch - 1 }, null),
+        graces: (el.gracenotes || []).map(function (g) { return { midi: info(g, null), crushed: !!g.acciaccatura }; }),
+        ornament: (el.decoration || []).filter(function (x) { return /trill|turn|mordent|pralltriller/.test(x); })[0] || null
+      });
+      t += d;
+    });
+  });
+  return out;
+};
+
+// How a snippet sounds, in seconds from its start: each note at the
+// stack's tempo, ornaments and grace notes played out the way the other
+// etude components play them (a semiquaver of the beat each).
+ConclusionStack.prototype.sequence = function (notes) {
+  var q = 60 / this.o.tempo, out = [], end = 0;
+  notes.forEach(function (n) {
+    var at = n.t * 4 * q, len = n.d * 4 * q, unit = Math.min(q / 4, len / 4), main = n.midis;
+    var push = function (midis, s, d) { out.push({ midis: midis, at: s, dur: Math.max(.06, d), shapes: n.shapes }); };
+    if (n.ornament === 'trill') {
+      var u = unit / 2, s = at, i = 0;
+      while (s + u < at + len - unit) { push([i % 2 ? n.up : main[0]], s, u); s += u; i++; }
+      push(main, s, at + len - s);
+    } else if (n.ornament === 'turn') {
+      [n.up, main[0], n.down].forEach(function (m, i) { push([m], at + i * len / 4, len / 4); });
+      push(main, at + 3 * len / 4, len / 4);
+    } else if (/mordent|pralltriller/.test(n.ornament || '')) {
+      var other = /upper|prall/.test(n.ornament) ? n.up : n.down;
+      push([main[0]], at, unit); push([other], at + unit, unit); push(main, at + 2 * unit, len - 2 * unit);
+    } else if (n.graces.length) {
+      var g = n.graces[0];
+      if (g.crushed) { push([g.midi], Math.max(0, at - .06), .06); push(main, at, len); }
+      else { push([g.midi], at, len / 2); push(main, at + len / 2, len / 2); }
+    } else push(main, at, len);
+    end = Math.max(end, at + len);
+  });
+  return { steps: out, length: end };
+};
+
+// The thread from the conclusions the newest one builds on: a dot at each
+// (at the pile for a folded one), down the left margin, into the newest.
+// Positions come from the layout, not the screen, so slips still gliding
+// into place do not bend it.
+ConclusionStack.prototype.drawThread = function (animated) {
+  var self = this, L = this.layout(), svg = this.thread;
+  svg.innerHTML = '';
+  if (!L.fresh) return;
+  var from = this.known(this.item(L.fresh).from).filter(function (id) { return id !== L.fresh; });
+  if (!from.length) return;
+  var mid = function (el) { return el.offsetTop + Math.min(el.offsetHeight / 2, 22); };
+  var to = this.slipEls[L.fresh], ty = to.offsetTop + Math.min(to.offsetHeight / 2, 30), tx = to.offsetLeft, gx = 8;
+  var ends = [], seen = {};
+  from.forEach(function (id) {
+    var el = self.slipEls[id] || self.pileEl, key = self.slipEls[id] ? id : '_pile';
+    if (!el || seen[key]) return;
+    seen[key] = true;
+    ends.push({ y: mid(el), x: el.offsetLeft });
+  });
+  var top = Math.min.apply(null, ends.map(function (e) { return e.y; }));
+  var draw = animated ? ' class="tl-cs-draw"' : '', html = '';
+  ends.forEach(function (e) { html += '<path' + draw + ' pathLength="1" d="M' + (e.x - 1) + ' ' + e.y + 'H' + gx + '"/><circle' + (animated ? ' class="tl-cs-dot"' : '') + ' cx="' + (e.x - 1) + '" cy="' + e.y + '" r="2.8"/>'; });
+  html += '<path' + draw + ' pathLength="1" d="M' + gx + ' ' + top + 'V' + ty + 'H' + (tx - 2) + '"/>';
+  html += '<path' + (animated ? ' class="tl-cs-tip"' : '') + ' d="M' + (tx - 7) + ' ' + (ty - 4) + 'L' + (tx - 2) + ' ' + ty + 'L' + (tx - 7) + ' ' + (ty + 4) + '"/>';
+  svg.innerHTML = html;
+};
+
+ConclusionStack.prototype.applyMasks = function (animated) {
+  var self = this;
+  Object.keys(this.slipEls).forEach(function (id) {
+    var el = self.slipEls[id], body = el.querySelector('.tl-cs-body'), on = !!self.masked[id];
+    var cover = body.querySelector(':scope > .tl-cs-cover');
+    if (on && !cover) {
+      cover = document.createElement('span'); cover.className = 'tl-cs-cover'; cover.innerHTML = '<span class="tl-cs-q">?</span>';
+      body.appendChild(cover); body.classList.add('tl-cs-hidden');
+    } else if (!on && cover) {
+      body.classList.remove('tl-cs-hidden');
+      if (animated) {
+        body.querySelectorAll(':scope > :not(.tl-cs-cover)').forEach(function (c) { c.classList.remove('tl-cs-ink'); void c.offsetWidth; c.classList.add('tl-cs-ink'); });
+        cover.classList.add('off'); setTimeout(function () { cover.remove(); }, 480);
+      } else cover.remove();
+    }
+    el.setAttribute('aria-label', (self.item(id).final ? 'Answer: ' : 'Step ' + (self.order.indexOf(id) + 1) + ': ') + (on ? '未知' : ConclusionStack.words(self.item(id))));
+  });
+};
+
+// Applies the marks held in state to the drawn slips: lit (held, the
+// sources of the conclusion just pushed, the one a tap lit) and the
+// spotlight.
+ConclusionStack.prototype.apply = function () {
+  var self = this, lit = this.held.concat(this.flash); if (this.tapLit) lit.push(this.tapLit);
+  Object.keys(this.slipEls).forEach(function (id) {
+    var el = self.slipEls[id];
+    el.classList.toggle('tl-lit', lit.indexOf(id) >= 0);
+    el.classList.toggle('tl-dim', !!self.spot && self.spot.indexOf(id) < 0);
+  });
+};
+
+// Taps: slips touch each other, so a tap goes to the slip at that height,
+// or the nearest one within a few pixels; the pile is a target too; the
+// clip's sides and the margin under the newest slip are blank.
+ConclusionStack.prototype.onPointer = function (ev) {
+  this.host.classList.remove('kbd');
+  var y = ev.clientY, best = null, dist = Infinity;
+  [].slice.call(this.list.querySelectorAll('.tl-cs-slip, .tl-cs-pile')).forEach(function (el) {
+    var b = el.getBoundingClientRect(), d = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+    if (d <= dist) { dist = d; best = el; }
+  });
+  if (!best || dist > 6) { this.blankTap(); return; }
+  ev.preventDefault();
+  if (this.o.mode !== 'lecture') return;
+  if (best === this.pileEl) this.pileTap(); else this.tap(best.dataset.id, ev);
+};
+
+ConclusionStack.prototype.onKey = function (ev) {
+  var cur = ev.target.closest('.tl-cs-slip, .tl-cs-pile'); if (!cur) return;
+  var list = [].slice.call(this.list.querySelectorAll('.tl-cs-pile, .tl-cs-slip')), i = list.indexOf(cur), next = null;
+  if (ev.key === 'ArrowDown') next = list[Math.min(list.length - 1, i + 1)];
+  else if (ev.key === 'ArrowUp') next = list[Math.max(0, i - 1)];
+  else if (ev.key === 'Enter' || ev.key === ' ') {
+    ev.preventDefault();
+    if (this.o.mode !== 'lecture') return;
+    if (cur === this.pileEl) { this.pileTap(); if (this.pileEl) { this.pileEl.tabIndex = 0; this.pileEl.focus(); } } else this.tap(cur.dataset.id, null);
+    return;
+  } else if (ev.key === 'Escape') { this.blankTap(); return; }
+  if (!next || next === cur) return;
+  ev.preventDefault();
+  cur.tabIndex = -1; next.tabIndex = 0; next.focus();
+};
+
+ConclusionStack.prototype.tap = function (id, ev) {
+  var self = this, el = this.slipEls[id], it = this.item(id); if (!el) return;
+  this.clearTap();
+  this.tapLit = id;
+  el.classList.add('tl-cs-down'); setTimeout(function () { el.classList.remove('tl-cs-down'); }, 200);
+  if (ev) this.ripple(ev);
+  this.apply();
+  var hidden = !!this.masked[id];
+  if (!hidden && this.audible() && this.staffs[id].length) { this.stop(); this.sound(id); }
+  if (!hidden && it.note) { this.cap = { id: id, html: ConclusionStack.inline(it.note, 17), tapped: true }; this.placeCaption(true); }
+  this.emit('itemTap', { id: id, step: this.order.indexOf(id) + 1, final: !!it.final, text: hidden ? null : ConclusionStack.words(it), hidden: hidden });
+  this.tapTimers.push(setTimeout(function () {
+    self.over.querySelectorAll('.tl-cs-bubble.tl-cs-tapped').forEach(function (b) { b.classList.add('out'); });
+    self.tapLit = null; self.apply();
+  }, ConclusionStack.TAP_FADE_MS));
+  this.tapTimers.push(setTimeout(function () {
+    if (self.cap && self.cap.tapped) { self.cap = null; self.placeCaption(false); }
+  }, ConclusionStack.TAP_FADE_MS + 500));
+};
+
+ConclusionStack.prototype.pileTap = function () {
+  this.clearTap();
+  this.open = !this.open;
+  this.render(true);
+  this.emit('pileTap', { folded: this.open ? 0 : this.layout().folded, open: this.open });
+};
+
+ConclusionStack.prototype.blankTap = function () {
+  this.clearTap();
+  if (this.open) { this.open = false; this.render(true); }
+  this.emit('blankTap', {});
+};
+
+ConclusionStack.prototype.clearTap = function () {
+  (this.tapTimers || []).forEach(clearTimeout); this.tapTimers = [];
+  if (this.cap && this.cap.tapped) { this.cap = null; if (this.over) this.placeCaption(false); }
+  if (this.tapLit) { this.tapLit = null; if (this.list) this.apply(); }
+};
+
+ConclusionStack.prototype.ripple = function (ev) {
+  var rect = this.host.getBoundingClientRect(), r = document.createElement('div'); r.className = 'tl-cs-ripple';
+  r.style.left = ev.clientX - rect.left + 'px'; r.style.top = ev.clientY - rect.top + 'px';
+  this.over.appendChild(r);
+  setTimeout(function () { r.remove(); }, 600);
+};
+
+// Sounds the snippets of one conclusion in order, lighting each note as
+// it plays.
+ConclusionStack.prototype.sound = function (id) {
+  var self = this, timers = this.timers, at = 0;
+  var light = function (els, on) { els.forEach(function (e) { e.classList.toggle('tl-cs-sounding', on); }); };
+  this.staffs[id].forEach(function (notes) {
+    var seq = self.sequence(notes), start = at;
+    seq.steps.forEach(function (s) {
+      s.midis.forEach(function (m) { self.note(m, start + s.at, s.dur, .6); });
+      timers.push(setTimeout(function () { light(s.shapes, true); }, (start + s.at) * 1000));
+      timers.push(setTimeout(function () { light(s.shapes, false); }, (start + s.at + s.dur) * 1000 - 20));
+    });
+    at += seq.length + .35;
+  });
+};
+
+// The caption in state as a dark bubble under its slip. Below the newest
+// slip there is no room, so the stack grows under itself while the bubble
+// shows; a bubble never covers another conclusion.
+ConclusionStack.prototype.placeCaption = function (animated) {
+  var c = this.cap, el = c && this.slipEls[c.id];
+  this.over.querySelectorAll('.tl-cs-bubble').forEach(function (e) { e.remove(); });
+  if (!el) { this.host.style.paddingBottom = ''; return; }
+  var b = document.createElement('div'); b.innerHTML = c.html;
+  b.className = 'tl-cs-bubble' + (c.tapped ? ' tl-cs-tapped' : '') + (animated ? '' : ' tl-cs-still');
+  this.over.appendChild(b);
+  var body = el.querySelector('.tl-cs-body');
+  var x0 = this.list.offsetLeft + el.offsetLeft + body.offsetLeft, vx = x0 + Math.min(body.offsetWidth, 160) / 2;
+  var bottom = this.list.offsetTop + el.offsetTop + el.offsetHeight, bw = b.offsetWidth, bh = b.offsetHeight, W = this.host.clientWidth;
+  var listEnd = this.list.offsetTop + this.list.offsetHeight, need = bottom + 6 + bh + 10 - listEnd;
+  this.host.style.paddingBottom = need > 18 ? need + 'px' : '';
+  var left = Math.max(10, Math.min(W - 10 - bw, vx - bw / 2));
+  b.style.left = left + 'px';
+  b.style.top = bottom + 6 + 'px';
+  b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
+};
+
+// The conclusion of this act lands on the stack; the conclusions it is
+// built on light up while its thread draws.
+ConclusionStack.prototype.push = function (id) {
+  var self = this;
+  if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
+  this.stop(); this.clearTap();
+  this.cap = null; this.open = false;
+  this.order.push(id);
+  this.flash = this.known(this.item(id).from).filter(function (f) { return f !== id; });
+  this.entering = id;
+  this.render(true);
+  clearTimeout(this.flashTimer);
+  this.flashTimer = setTimeout(function () { var had = self.flash.length; self.flash = []; if (had) self.render(true); }, ConclusionStack.TAP_FADE_MS + 400);
+};
+
+// Shows exactly these conclusions with no entrance, the way the stack
+// stood at the end of an act; used when the player steps back or forward
+// or a question is opened again.
+ConclusionStack.prototype.set = function (ids) {
+  var self = this, seen = {};
+  this.stop(); this.clearTap();
+  clearTimeout(this.flashTimer); this.flash = [];
+  this.cap = null; this.open = false; this.entering = null;
+  this.order = [].concat(ids || []).filter(function (id) { if (!self.o.items[id] || seen[id]) return false; seen[id] = true; return true; });
+  this.held = this.known(this.held); this.spot = this.spot ? this.known(this.spot) : null;
+  if (this.spot && !this.spot.length) this.spot = null;
+  this.render(false);
+};
+
+ConclusionStack.prototype.highlight = function (ids) { this.held = this.known(ids); this.render(true); };
+ConclusionStack.prototype.spotlight = function (ids) { var f = this.known(ids); this.spot = f.length ? f : null; this.render(true); };
+ConclusionStack.prototype.caption = function (id, html) { if (!this.slipEls[id]) return; this.cap = { id: id, html: html, tapped: false }; this.placeCaption(true); };
+ConclusionStack.prototype.mask = function (ids) { var self = this; [].concat(ids).forEach(function (id) { if (self.o.items[id]) self.masked[id] = true; }); this.applyMasks(false); };
+// With no argument, reveal() uncovers everything.
+ConclusionStack.prototype.reveal = function (ids) {
+  var self = this;
+  if (ids === undefined) this.masked = {};
+  else [].concat(ids).forEach(function (id) { delete self.masked[id]; });
+  this.applyMasks(true);
+};
+
+// Stops the sound of a tapped conclusion: timers are cleared and every
+// note still queued or sounding is silenced.
+ConclusionStack.prototype.stop = function () {
+  (this.timers || []).forEach(clearTimeout); this.timers = [];
+  this.silence();
+  if (this.list) this.list.querySelectorAll('.tl-cs-sounding').forEach(function (e) { e.classList.remove('tl-cs-sounding'); });
+};
+
+ConclusionStack.prototype.clear = function () {
+  this.stop(); this.clearTap();
+  clearTimeout(this.flashTimer);
+  this.order = []; this.masked = {}; this.held = []; this.spot = null; this.cap = null; this.open = false; this.flash = [];
+  this.render(false);
+};
+
+/* ============================================================
+   Assembly: this page plays the role of the player, the workflow and
+   the question file. It holds the conclusions, wires the stack's events
+   to a log, and shows how the sound is doing; the stack calls nothing
+   here directly.
+   ============================================================ */
+(function () {
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function () {
+    var s = SoundSource.status();
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+  });
+
+  // The conclusions question files would hold: adapted examples, not
+  // copied exam items.
+  var keyItems = {
+    k1: { parts: [{ abc: 'K:Eb\nx' }, { op: '=' }, { text: '3 ♭: B♭ E♭ A♭' }] },
+    k2: { parts: [{ text: '3 ♭' }, { op: '→' }, { term: 'E♭ major' }, { text: 'or' }, { term: 'C minor' }], from: ['k1'] },
+    k3: { parts: [{ abc: 'K:Eb\n=B2' }, { op: '=' }, { text: 'B♮, the raised 7th of C minor' }], note: 'harmonic minor raises the 7th' },
+    k4: { parts: [{ abc: 'K:Eb\nG B c2' }, { op: '=' }, { text: 'ends on the tonic C' }] },
+    ans: { parts: [{ term: 'C minor' }, { text: '(harmonic)' }], from: ['k2', 'k3', 'k4'], final: true, note: 'B♮ is its leading note' }
+  };
+  var KEY_STEPS = [
+    { id: 'k1', say: '先看调号：三个降号，B♭、E♭、A♭。' },
+    { id: 'k2', say: '三个降号，可能是 E♭ 大调，也可能是它的关系小调 C 小调。' },
+    { id: 'k3', say: '第二小节出现了 B 还原，这是 C 小调升高的第七级。' },
+    { id: 'k4', say: '旋律最后停在 C 上，C 是主音。' },
+    { id: 'ans', say: '把这三条放在一起，这段旋律是什么调？先想一想。', masked: true }
+  ];
+  var runItems = {
+    i1: { parts: [{ abc: 'L:1/2\n_EG' }, { op: '=' }, { text: 'E♭ F G: a 3rd' }] },
+    i2: { parts: [{ text: 'E♭ → G' }, { op: '=' }, { text: '4 semitones' }] },
+    i3: { parts: [{ text: 'a 3rd' }, { op: '+' }, { text: '4 semitones' }, { op: '=' }, { term: 'major' }], from: ['i1', 'i2'] },
+    ia: { parts: [{ abc: 'L:1/2\n[_EG]' }, { op: '=' }, { term: 'major 3rd' }], from: ['i3'], final: true }
+  };
+  var RUN_STEPS = [
+    { id: 'i1', say: '先数音名：E、F、G，三个音名，是三度。' },
+    { id: 'i2', say: '再到键盘上数半音：从 E♭ 到 G，一共四个半音。' },
+    { id: 'i3', say: '三度，又是四个半音，就是大三度。' },
+    { id: 'ia', say: '所以 E♭ 到 G 是大三度。' }
+  ];
+
+  document.body.setAttribute('data-boundary', 'on');
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function log(ev) {
+    window.tlEvents.push(ev);
+    var line = document.createElement('div');
+    var t = ((performance.now() - t0) / 1000).toFixed(1);
+    var data = Object.assign({}, ev); delete data.type;
+    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  var main = new ConclusionStack(document.getElementById('main-stack'), { items: keyItems, sound: SoundSource, onEvent: log });
+  var sub = document.getElementById('subtitle-text');
+  var act = 0;
+  function say(text) { sub.textContent = text; }
+  function goTo(n, animated) {
+    act = Math.max(0, Math.min(KEY_STEPS.length, n));
+    if (animated) {
+      var s = KEY_STEPS[act - 1];
+      if (s.masked) main.mask(s.id);
+      main.push(s.id);
+    } else main.set(KEY_STEPS.slice(0, act).map(function (s) { return s.id; }));
+    say(act ? KEY_STEPS[act - 1].say : '点下面的「下一幕」开始。');
+  }
+  var newest = function () { return main.order[main.order.length - 1]; };
+  var commands = {
+    next: function () { if (act < KEY_STEPS.length) goTo(act + 1, true); },
+    back: function () { goTo(act - 1, false); },
+    end: function () { main.mask('ans'); goTo(KEY_STEPS.length, false); },
+    revealAnswer: function () { if (main.order.indexOf('ans') < 0) return; main.reveal('ans'); say('是 C 和声小调：调号是三个降号，B 还原是它的导音，旋律停在主音 C 上。'); },
+    recall: function () { main.highlight(['k1']); },
+    spot: function () { main.spotlight(['k2', 'k3']); },
+    caption: function () { var id = newest(); if (id) main.caption(id, ConclusionStack.inline(keyItems[id].note || ConclusionStack.words(keyItems[id]), 17)); },
+    maskNewest: function () { var id = newest(); if (id) main.mask(id); },
+    revealAll: function () { main.reveal(); },
+    stop: function () { main.stop(); },
+    clear: function () { main.clear(); act = 0; say('点下面的「下一幕」开始。'); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) {
+    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+  });
+
+  var modeBtn = document.getElementById('mode');
+  modeBtn.addEventListener('click', function () {
+    var practice = main.o.mode !== 'practice';
+    main.o.mode = practice ? 'practice' : 'lecture';
+    modeBtn.setAttribute('aria-pressed', String(practice));
+    modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+    main.build();
+    log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+  });
+
+  // A whole lecture played through at the pace of its acts.
+  var run = new ConclusionStack(document.getElementById('run-stack'), { items: runItems, sound: SoundSource, onEvent: log });
+  var runSub = document.getElementById('run-sub'), runTimers = [];
+  document.getElementById('run-btn').addEventListener('click', function () {
+    runTimers.forEach(clearTimeout); runTimers = [];
+    run.clear(); runSub.textContent = '';
+    RUN_STEPS.forEach(function (s, i) {
+      runTimers.push(setTimeout(function () { run.push(s.id); runSub.textContent = s.say; }, 400 + i * 2600));
+    });
+  });
+
+  window.tlMain = main; window.tlRun = run;
+  window.tlGoTo = goTo;
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  // A rebuild redraws the stack at its new width; conclusions, marks and
+  // masks are state, so they come back.
+  var all = function () { return [main, run]; };
+  var lastW = window.innerWidth, rt = null;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+    clearTimeout(rt);
+    rt = setTimeout(function () { all().forEach(function (c) { c.build(); }); }, 180);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (c) { c.build(); }); });
+})();
+</script>
