@@ -16,9 +16,10 @@ import { errorBody, LINYUE, LINYUE_FAMILY_ID } from './sample-data';
 // The library the design draws, served by a small fake of the api's book
 // routes: the 13 grades, the 5 subjects and the 31 sample books of the
 // migration, newest first, with the covers of the prototype as solid
-// colours, and what 林悦的家 has done with them. The fake keeps what the
-// tests change, so acquiring, choosing readers and removing a book read
-// back as the api would answer.
+// colours, the grade ranges the prototype gives four of them, and what
+// 林悦的家 has done with them. The fake keeps what the tests change, so
+// acquiring, choosing readers and removing a book read back as the api
+// would answer.
 
 /** The grades in their set order: 学前 is `preschool`, the others `grade-<level>`. */
 export const GRADES: readonly GradeRef[] = [
@@ -46,14 +47,17 @@ export const SUBJECTS: readonly SubjectRef[] = Object.entries({
   coding: '编程',
 }).map(([id, name]) => ({ id, name }));
 
-/** One sample book: id, title, grade, subject, cover colour (null without a cover) and intro. */
-type SampleBook = readonly [string, string, string, string, string | null, string];
+/** The grades of a sample book: one grade's id, or the ids of the lowest and highest. */
+type SampleGrades = string | readonly [string, string];
+
+/** One sample book: id, title, grades, subject, cover colour (null without a cover) and intro. */
+type SampleBook = readonly [string, string, SampleGrades, string, string | null, string];
 
 const SAMPLE_BOOKS: readonly SampleBook[] = [
   [
     'garden-rhymes',
     '花园里的小儿歌',
-    'preschool',
+    ['preschool', 'grade-1'],
     'chinese',
     '#f6b27a',
     '跟着小兔老师在花园里念儿歌：小草发芽、蝴蝶跳舞、雨点敲门。每首儿歌都配着拍手的节奏，念着念着就记住了常用的字。',
@@ -85,7 +89,7 @@ const SAMPLE_BOOKS: readonly SampleBook[] = [
   [
     'robot-maze',
     '让小机器人走出迷宫',
-    'grade-4',
+    ['grade-4', 'grade-8'],
     'coding',
     '#5cc2b4',
     '用拖动积木的方式给小机器人下指令：前进、转弯、重复。从一步一步走到学会用循环，一共 12 个关卡。',
@@ -93,7 +97,7 @@ const SAMPLE_BOOKS: readonly SampleBook[] = [
   [
     'seasons-poems',
     '四季里的古诗',
-    'grade-5',
+    ['grade-4', 'grade-6'],
     'chinese',
     '#e98a9b',
     '春天读《春晓》，夏天读《小池》，秋天读《山行》，冬天读《江雪》。每首诗都配了一幅画和一个小问题，帮你想一想诗人看到了什么、心里在想什么。',
@@ -109,7 +113,7 @@ const SAMPLE_BOOKS: readonly SampleBook[] = [
   [
     'pizza-fractions',
     '分披萨学分数',
-    'grade-6',
+    ['grade-6', 'grade-7'],
     'math',
     '#f08a5d',
     '一张披萨分给四个人，每人能吃几块？两张披萨分给三个人呢？从切披萨开始认识分数，再学会分数的比较、加减和约分。书里有 40 道生活里的小题，做完就能自己算清楚怎么分最公平。',
@@ -359,6 +363,42 @@ function refused(code: Parameters<typeof errorBody>[0], status: number): Respons
   return HttpResponse.json(errorBody(code), { status });
 }
 
+/** The grade with the id. */
+function gradeRef(gradeId: string): GradeRef {
+  const grade = GRADES.find(({ id }) => id === gradeId);
+  if (!grade) {
+    throw new Error(`No grade ${gradeId}`);
+  }
+  return grade;
+}
+
+/**
+ * The ids asked for that name one of the options. The api leaves a grade
+ * or subject that does not exist out of the filter rather than refusing it
+ * (interfaces.md), so a filter of only such ids takes in every book.
+ */
+function knownIds(
+  ids: readonly string[],
+  options: ReadonlyArray<{ readonly id: string }>,
+): string[] {
+  return ids.filter((id) => options.some((option) => option.id === id));
+}
+
+/** The place in the set order of a grade that exists, which ranges are measured by. */
+function gradeLevel(gradeId: string): number {
+  return GRADES.indexOf(gradeRef(gradeId));
+}
+
+/** Whether any of the grades, all of them known, lies within the book's range, its ends included. */
+function coversAnyGrade(book: BookCard, gradeIds: readonly string[]): boolean {
+  const lowest = gradeLevel(book.minGrade.id);
+  const highest = gradeLevel(book.maxGrade.id);
+  return gradeIds.some((gradeId) => {
+    const level = gradeLevel(gradeId);
+    return level >= lowest && level <= highest;
+  });
+}
+
 /** A sample book as the fake keeps it. */
 interface KeptBook extends Omit<BookCard, 'coverUrl' | 'acquired' | 'readers'> {
   readonly color: string | null;
@@ -377,15 +417,19 @@ export class FakeLibrary {
   coversMissing = false;
 
   private readonly books: readonly KeptBook[] = SAMPLE_BOOKS.map(
-    ([id, title, grade, subject, color, intro]) => ({
-      id,
-      title,
-      intro,
-      grade: GRADES.find((known) => known.id === grade) ?? { id: grade, name: grade },
-      subject: SUBJECTS.find((known) => known.id === subject) ?? { id: subject, name: subject },
-      status: id === RETIRED_BOOK_ID ? 'inactive' : 'active',
-      color,
-    }),
+    ([id, title, grades, subject, color, intro]) => {
+      const [lowest, highest] = typeof grades === 'string' ? [grades, grades] : grades;
+      return {
+        id,
+        title,
+        intro,
+        minGrade: gradeRef(lowest),
+        maxGrade: gradeRef(highest),
+        subject: SUBJECTS.find((known) => known.id === subject) ?? { id: subject, name: subject },
+        status: id === RETIRED_BOOK_ID ? 'inactive' : 'active',
+        color,
+      };
+    },
   );
 
   constructor(children: readonly Child[]) {
@@ -407,13 +451,16 @@ export class FakeLibrary {
     };
   }
 
-  /** The answer to a list request with these query parameters. */
+  /**
+   * The answer to a list request with these query parameters; the subjects
+   * that do not exist are no part of the filter, as `knownIds` says.
+   */
   list(search: URLSearchParams): Response {
     const found = this.scoped(search);
     if (!found) {
       return refused('child_not_found', 404);
     }
-    const subjects = search.getAll('subject');
+    const subjects = knownIds(search.getAll('subject'), SUBJECTS);
     const matching = found.filter(
       (book) => subjects.length === 0 || subjects.includes(book.subject.id),
     );
@@ -522,14 +569,19 @@ export class FakeLibrary {
     return { ...this.card(bookId), replacement };
   }
 
-  /** The books of the query's scope and grades, or null for a child who is not the family's. */
+  /**
+   * The books of the query's scope and grades, or null for a child who is
+   * not the family's. A book is of the grades asked for when any of them
+   * lies within its range; the grades that do not exist are no part of the
+   * filter, as `knownIds` says.
+   */
   private scoped(search: URLSearchParams): BookCard[] | null {
     const scope = search.get('scope') ?? 'library';
     const child = search.get('child');
     if (scope === 'child' && !this.children.some(({ id }) => id === child)) {
       return null;
     }
-    const grades = search.getAll('grade');
+    const grades = knownIds(search.getAll('grade'), GRADES);
     return this.books
       .map(({ id }) => this.card(id))
       .filter((book) => {
@@ -540,7 +592,7 @@ export class FakeLibrary {
           ? book.readers.some(({ childId }) => childId === child)
           : book.status === 'active';
       })
-      .filter((book) => grades.length === 0 || grades.includes(book.grade.id));
+      .filter((book) => grades.length === 0 || coversAnyGrade(book, grades));
   }
 }
 

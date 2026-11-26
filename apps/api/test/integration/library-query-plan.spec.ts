@@ -3,7 +3,7 @@ import type { StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
 import * as schema from '../../src/infrastructure/database/schema.js';
-import { BookStore } from '../../src/modules/book/books.repository.js';
+import { BookStore, type BookFilter } from '../../src/modules/book/books.repository.js';
 import { BOOK_BATCH_SIZE } from '../../src/modules/book/library.service.js';
 import { migrate, startDatabase } from '../support/containers.js';
 
@@ -27,13 +27,14 @@ function nodesOf(plan: PlanNode): PlanNode[] {
 
 // The library reads every batch in the order of books_created_at_id_idx:
 // the index has to give the order the repository's statement asks for, so
-// PostgreSQL reads the batch from it instead of sorting every book.
+// PostgreSQL reads the batch from it instead of sorting every book, with
+// or without a filter by the grades.
 describe('library query plan', () => {
   let database: StartedPostgreSqlContainer | undefined;
   let client: Client;
 
-  /** The statement the repository sends for the library's first batch, with no filters. */
-  async function firstLibraryBatch(): Promise<SentQuery> {
+  /** The statement the repository sends for the library's first batch with the grade levels. */
+  async function firstLibraryBatch(gradeLevels: readonly number[]): Promise<SentQuery> {
     const sent: SentQuery[] = [];
     const recording = drizzle({
       client,
@@ -44,11 +45,8 @@ describe('library query plan', () => {
         },
       },
     });
-    await new BookStore(recording).listBooks(
-      { scope: 'library', familyId: randomUUID(), gradeIds: [] },
-      undefined,
-      BOOK_BATCH_SIZE + 1,
-    );
+    const filter: BookFilter = { scope: 'library', familyId: randomUUID(), gradeLevels };
+    await new BookStore(recording).listBooks(filter, undefined, BOOK_BATCH_SIZE + 1);
     const [statement] = sent;
     if (sent.length !== 1 || !statement) {
       throw new Error(`Expected one statement for the batch, got ${String(sent.length)}`);
@@ -93,11 +91,17 @@ describe('library query plan', () => {
     await database?.stop();
   });
 
-  it("reads the library's first batch in its order from books_created_at_id_idx, without sorting", async () => {
-    const nodes = await planWithoutSorting(await firstLibraryBatch());
+  it.each([
+    ['no filter', []],
+    ['a filter by two grades', [1, 4]],
+  ])(
+    "reads the library's first batch with %s in its order from books_created_at_id_idx, without sorting",
+    async (_case, gradeLevels) => {
+      const nodes = await planWithoutSorting(await firstLibraryBatch(gradeLevels));
 
-    const types = nodes.map((node) => node['Node Type']);
-    expect(types.filter((type) => type.includes('Sort'))).toEqual([]);
-    expect(nodes.map((node) => node['Index Name'])).toContain('books_created_at_id_idx');
-  });
+      const types = nodes.map((node) => node['Node Type']);
+      expect(types.filter((type) => type.includes('Sort'))).toEqual([]);
+      expect(nodes.map((node) => node['Index Name'])).toContain('books_created_at_id_idx');
+    },
+  );
 });

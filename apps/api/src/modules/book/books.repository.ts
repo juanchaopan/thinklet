@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { BookStatus } from '@thinklet/contracts';
-import { and, asc, desc, eq, exists, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   DATABASE,
@@ -18,6 +18,10 @@ const { books, grades, subjects, familyBooks, bookAssignments } = schema;
 
 /** The book that takes an inactive book's place, joined under its own name. */
 const replacements = alias(books, 'replacements');
+
+/** The lowest and the highest grade of a book, each joined under its own name. */
+const minGrades = alias(grades, 'min_grades');
+const maxGrades = alias(grades, 'max_grades');
 
 /** The key that ties an assignment to a child of the family. */
 const ASSIGNMENT_CHILD_KEY = 'book_assignments_child_fk';
@@ -47,23 +51,36 @@ export interface NamedRecord {
   name: string;
 }
 
+/** A grade with its level, by which the library compares grades. */
+export interface GradeRecord extends NamedRecord {
+  level: number;
+}
+
 /** Where books are listed from: the active books, the family's books, or those of one child of the family. */
 export type ScopeFilter =
   | { scope: 'library' | 'family'; familyId: string }
   | { scope: 'child'; familyId: string; childId: string };
 
-/** What the library lists: the scope, and the grades and subjects to keep, none meaning all. */
+/**
+ * What the library lists: the scope, the levels of the grades a book has
+ * to cover at least one of, and the subjects to keep; none means all.
+ */
 export type BookFilter = ScopeFilter & {
-  gradeIds: readonly string[];
+  gradeLevels: readonly number[];
   subjectIds?: readonly string[];
 };
 
-/** A book with its grade and subject, as every view of it shows. */
+/**
+ * A book with the lowest and highest grades it is written for and its
+ * subject, as every view of it shows. The grade it teaches at is not read:
+ * no view shows it.
+ */
 export interface BookRecord {
   id: string;
   title: string;
   intro: string;
-  grade: NamedRecord;
+  minGrade: NamedRecord;
+  maxGrade: NamedRecord;
   subject: NamedRecord;
   status: BookStatus;
   coverSha256: string | null;
@@ -98,13 +115,15 @@ export interface CoverRecord {
   sha256: string;
 }
 
-/** The columns every view of a book reads. */
+/** The columns every view of a book reads, from the books joined to their grades and subject. */
 const bookColumns = {
   id: books.id,
   title: books.title,
   intro: books.intro,
-  gradeId: grades.id,
-  gradeName: grades.name,
+  minGradeId: minGrades.id,
+  minGradeName: minGrades.name,
+  maxGradeId: maxGrades.id,
+  maxGradeName: maxGrades.name,
   subjectId: subjects.id,
   subjectName: subjects.name,
   status: books.status,
@@ -116,8 +135,10 @@ interface BookRow {
   id: string;
   title: string;
   intro: string;
-  gradeId: string;
-  gradeName: string;
+  minGradeId: string;
+  minGradeName: string;
+  maxGradeId: string;
+  maxGradeName: string;
   subjectId: string;
   subjectName: string;
   status: BookStatus;
@@ -129,12 +150,18 @@ function toBook(row: BookRow): BookRecord {
     id: row.id,
     title: row.title,
     intro: row.intro,
-    grade: { id: row.gradeId, name: row.gradeName },
+    minGrade: { id: row.minGradeId, name: row.minGradeName },
+    maxGrade: { id: row.maxGradeId, name: row.maxGradeName },
     subject: { id: row.subjectId, name: row.subjectName },
     status: row.status,
     coverSha256: row.coverSha256,
   };
 }
+
+/** The joins of the book columns: a book's lowest and highest grades and its subject. */
+const minGradeOfBook = eq(minGrades.id, books.minGradeId);
+const maxGradeOfBook = eq(maxGrades.id, books.maxGradeId);
+const subjectOfBook = eq(subjects.id, books.subjectId);
 
 /**
  * `created_at` as UTC text to the microsecond, the form a cursor carries;
@@ -158,11 +185,25 @@ function inScope(filter: ScopeFilter): SQL {
   }
 }
 
+/**
+ * The books whose range of grades covers at least one of the levels, both
+ * ends of the range included (`.docs/design/interfaces.md`, "书库和书本");
+ * no levels keeps every book.
+ */
+function coveringAnyOf(levels: readonly number[]): SQL | undefined {
+  if (levels.length === 0) {
+    return undefined;
+  }
+  return or(
+    ...levels.map((level) => and(lte(books.minGradeLevel, level), gte(books.maxGradeLevel, level))),
+  );
+}
+
 /** The books of the filter; a list of grades or subjects that is empty keeps them all. */
 function matching(filter: BookFilter): SQL | undefined {
   return and(
     inScope(filter),
-    filter.gradeIds.length > 0 ? inArray(books.gradeId, [...filter.gradeIds]) : undefined,
+    coveringAnyOf(filter.gradeLevels),
     filter.subjectIds !== undefined && filter.subjectIds.length > 0
       ? inArray(books.subjectId, [...filter.subjectIds])
       : undefined,
@@ -189,10 +230,10 @@ const assignmentsOf = (familyId: string, bookId: string) =>
 export class BookStore {
   constructor(protected readonly executor: Executor) {}
 
-  /** Every grade in its set order. */
-  listGrades(): Promise<NamedRecord[]> {
+  /** Every grade with its level, in its set order. */
+  listGrades(): Promise<GradeRecord[]> {
     return this.executor
-      .select({ id: grades.id, name: grades.name })
+      .select({ id: grades.id, name: grades.name, level: grades.level })
       .from(grades)
       .orderBy(asc(grades.position));
   }
@@ -237,8 +278,9 @@ export class BookStore {
         createdAt: createdAtText,
       })
       .from(books)
-      .innerJoin(grades, eq(grades.id, books.gradeId))
-      .innerJoin(subjects, eq(subjects.id, books.subjectId))
+      .innerJoin(minGrades, minGradeOfBook)
+      .innerJoin(maxGrades, maxGradeOfBook)
+      .innerJoin(subjects, subjectOfBook)
       .where(and(matching(filter), position === undefined ? undefined : after(position)))
       .orderBy(desc(books.createdAt), asc(books.id))
       .limit(limit);
@@ -260,8 +302,9 @@ export class BookStore {
         replacementStatus: replacements.status,
       })
       .from(books)
-      .innerJoin(grades, eq(grades.id, books.gradeId))
-      .innerJoin(subjects, eq(subjects.id, books.subjectId))
+      .innerJoin(minGrades, minGradeOfBook)
+      .innerJoin(maxGrades, maxGradeOfBook)
+      .innerJoin(subjects, subjectOfBook)
       .leftJoin(replacements, eq(replacements.id, books.replacementId))
       .where(eq(books.id, bookId));
     const row = rows.at(0);
@@ -418,8 +461,9 @@ export class BookStore {
       .select({ ...bookColumns, openedAt: bookAssignments.openedAt })
       .from(bookAssignments)
       .innerJoin(books, eq(books.id, bookAssignments.bookId))
-      .innerJoin(grades, eq(grades.id, books.gradeId))
-      .innerJoin(subjects, eq(subjects.id, books.subjectId))
+      .innerJoin(minGrades, minGradeOfBook)
+      .innerJoin(maxGrades, maxGradeOfBook)
+      .innerJoin(subjects, subjectOfBook)
       .where(eq(bookAssignments.childId, childId))
       .orderBy(desc(bookAssignments.assignedAt), asc(books.id));
     return rows.map((row) => ({ ...toBook(row), openedAt: row.openedAt }));

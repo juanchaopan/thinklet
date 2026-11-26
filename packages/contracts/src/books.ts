@@ -35,15 +35,19 @@ export const bookReaderSchema = z.strictObject({
 });
 
 /**
- * What every view of a book shows. `coverUrl` carries the cover's SHA-256,
- * so it changes with the cover; null when the book has no cover yet and
- * the default cover is shown.
+ * What every view of a book shows. `minGrade` and `maxGrade` are the
+ * lowest and highest grades the book is written for, both the same grade
+ * for a book of one grade; the grade the book teaches at stays with the
+ * api and is never shown. `coverUrl` carries the cover's SHA-256, so it
+ * changes with the cover; null when the book has no cover yet and the
+ * default cover is shown.
  */
 const bookSummaryShape = {
   id: bookIdSchema,
   title: z.string(),
   intro: z.string(),
-  grade: gradeRefSchema,
+  minGrade: gradeRefSchema,
+  maxGrade: gradeRefSchema,
   subject: subjectRefSchema,
   status: bookStatusSchema,
   coverUrl: z.string().nullable(),
@@ -126,9 +130,10 @@ const bookFilterShape = {
 
 /**
  * Query of `GET /api/families/{familyId}/books`. `grade` and `subject` may
- * repeat, and a filter left out takes in every grade or subject; `cursor`
- * is the opaque position of the next batch, decoded and checked by the
- * api. Other parameters are ignored.
+ * repeat, and a filter left out takes in every grade or subject; a book
+ * matches the grades when any of them lies within its range. `cursor` is
+ * the opaque position of the next batch, decoded and checked by the api.
+ * Other parameters are ignored.
  */
 export const bookListQuerySchema = z
   .object({

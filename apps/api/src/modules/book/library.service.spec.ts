@@ -9,6 +9,7 @@ import {
   type BookDetailRecord,
   type BookFilter,
   type BooksRepository,
+  type GradeRecord,
   type LibraryBookRecord,
   type NamedRecord,
   type ReaderRecord,
@@ -16,7 +17,8 @@ import {
 import {
   BOOK_BATCH_SIZE,
   LibraryService,
-  knownIds,
+  gradeLevelsOf,
+  knownOf,
   planReaders,
   readersByBook,
   replacementOf,
@@ -27,14 +29,17 @@ const FAMILY_ID = 'family-1';
 const PARENT_ID = 'parent-1';
 const XIAOMI = { id: 'child-1', nickname: '小米', account: 'xiaomi' };
 const DOUDOU = { id: 'child-2', nickname: '豆豆', account: 'doudou' };
-const GRADES = [
-  { id: 'preschool', name: '学前' },
-  { id: 'grade-1', name: '一年级' },
+const PRESCHOOL = { id: 'preschool', name: '学前' };
+const FIRST_GRADE = { id: 'grade-1', name: '一年级' };
+const SECOND_GRADE = { id: 'grade-2', name: '二年级' };
+const GRADES: GradeRecord[] = [
+  { ...PRESCHOOL, level: 0 },
+  { ...FIRST_GRADE, level: 1 },
+  { ...SECOND_GRADE, level: 2 },
 ];
-const SUBJECTS = [
-  { id: 'chinese', name: '语文' },
-  { id: 'math', name: '数学' },
-];
+const CHINESE = { id: 'chinese', name: '语文' };
+const MATH = { id: 'math', name: '数学' };
+const SUBJECTS = [CHINESE, MATH];
 
 /** The transaction the repository double hands its work, which the audit events are written with. */
 const TRANSACTION = { transaction: 'books' };
@@ -65,15 +70,16 @@ function refusalOf(call: Promise<unknown> | (() => unknown)): Promise<ErrorCode>
   );
 }
 
-/** A book of the list, the n-th newest. */
+/** A book of the list, the n-th newest, written for preschool to the first grade. */
 function listed(index: number, acquired = false): LibraryBookRecord {
   const id = `book-${String(index).padStart(2, '0')}`;
   return {
     id,
     title: `书 ${index}`,
     intro: '简介',
-    grade: GRADES[1] ?? { id: '', name: '' },
-    subject: SUBJECTS[1] ?? { id: '', name: '' },
+    minGrade: PRESCHOOL,
+    maxGrade: FIRST_GRADE,
+    subject: MATH,
     status: 'active',
     coverSha256: index % 2 === 0 ? 'a'.repeat(64) : null,
     acquired,
@@ -81,14 +87,15 @@ function listed(index: number, acquired = false): LibraryBookRecord {
   };
 }
 
-/** A book's page as the repository reads it. */
+/** A book's page as the repository reads it, of the first grade alone. */
 function page(overrides: Partial<BookDetailRecord> = {}): BookDetailRecord {
   return {
     id: 'carrot-counting',
     title: '胡萝卜数数大冒险',
     intro: '简介',
-    grade: { id: 'grade-1', name: '一年级' },
-    subject: { id: 'math', name: '数学' },
+    minGrade: FIRST_GRADE,
+    maxGrade: FIRST_GRADE,
+    subject: MATH,
     status: 'active',
     coverSha256: null,
     acquired: true,
@@ -104,16 +111,23 @@ const query = (overrides: Partial<BookListQuery> = {}): BookListQuery => ({
   ...overrides,
 });
 
-describe('knownIds', () => {
-  it('keeps the ids that exist, in the set order, without repeats', () => {
-    expect(knownIds(['grade-1', 'nope', 'preschool', 'grade-1'], GRADES)).toEqual([
-      'preschool',
-      'grade-1',
-    ]);
+describe('knownOf', () => {
+  it('keeps the records whose ids exist, in the set order, without repeats', () => {
+    expect(knownOf(['math', 'nope', 'chinese', 'math'], SUBJECTS)).toEqual(SUBJECTS);
   });
 
-  it('answers no ids, meaning all, when none exists', () => {
-    expect(knownIds(['nope'], GRADES)).toEqual([]);
+  it('answers no records, meaning all, when none exists', () => {
+    expect(knownOf(['nope'], SUBJECTS)).toEqual([]);
+  });
+});
+
+describe('gradeLevelsOf', () => {
+  it('answers the levels of the grades that exist, in the set order, without repeats', () => {
+    expect(gradeLevelsOf(['grade-2', 'nope', 'preschool', 'grade-2'], GRADES)).toEqual([0, 2]);
+  });
+
+  it('answers no levels, meaning all, when no grade exists', () => {
+    expect(gradeLevelsOf(['nope'], GRADES)).toEqual([]);
   });
 });
 
@@ -258,7 +272,7 @@ function createService(
     listGrades: vi.fn(() => Promise.resolve(GRADES)),
     listSubjects: vi.fn(() => Promise.resolve(SUBJECTS)),
     listSubjectsWithBooks: vi.fn<(filter: BookFilter) => Promise<NamedRecord[]>>(() =>
-      Promise.resolve(SUBJECTS.slice(1)),
+      Promise.resolve([MATH]),
     ),
     listBooks: vi.fn((_filter: BookFilter, _position: unknown, limit: number) =>
       Promise.resolve((options.rows ?? []).slice(0, limit)),
@@ -367,12 +381,17 @@ describe('LibraryService', () => {
       expect(store.listBooks).not.toHaveBeenCalled();
     });
 
-    it('filters by the grades and subjects that exist and by the scope', async () => {
+    it('filters by the levels of the grades and the subjects that exist and by the scope', async () => {
       const { service, store } = createService();
 
       await service.list(
         FAMILY_ID,
-        query({ grade: ['grade-1', 'nope'], subject: ['nope'], scope: 'child', child: DOUDOU.id }),
+        query({
+          grade: ['grade-2', 'nope', 'grade-1'],
+          subject: ['nope'],
+          scope: 'child',
+          child: DOUDOU.id,
+        }),
       );
 
       expect(store.listBooks).toHaveBeenCalledWith(
@@ -380,7 +399,7 @@ describe('LibraryService', () => {
           scope: 'child',
           familyId: FAMILY_ID,
           childId: DOUDOU.id,
-          gradeIds: ['grade-1'],
+          gradeLevels: [1, 2],
           subjectIds: [],
         },
         undefined,
@@ -388,7 +407,21 @@ describe('LibraryService', () => {
       );
     });
 
-    it('answers the cards with their covers and the readers of the books the family has', async () => {
+    it('looks up no grades or subjects when the query does not filter by them', async () => {
+      const { service, store } = createService();
+
+      await service.list(FAMILY_ID, query());
+
+      expect(store.listGrades).not.toHaveBeenCalled();
+      expect(store.listSubjects).not.toHaveBeenCalled();
+      expect(store.listBooks).toHaveBeenCalledWith(
+        { scope: 'library', familyId: FAMILY_ID, gradeLevels: [], subjectIds: [] },
+        undefined,
+        BOOK_BATCH_SIZE + 1,
+      );
+    });
+
+    it('answers the cards with their range of grades, covers and the readers of the books the family has', async () => {
       const { service, store } = createService({
         rows: [listed(0, true), listed(1)],
         readers: [DOUDOU.id, XIAOMI.id],
@@ -398,21 +431,27 @@ describe('LibraryService', () => {
 
       expect(store.listReaders).toHaveBeenCalledWith(FAMILY_ID, ['book-00']);
       expect(books).toEqual([
-        expect.objectContaining({
+        {
           id: 'book-00',
+          title: '书 0',
+          intro: '简介',
+          minGrade: PRESCHOOL,
+          maxGrade: FIRST_GRADE,
+          subject: MATH,
+          status: 'active',
           coverUrl: `/api/books/book-00/cover?v=${'a'.repeat(64)}`,
           acquired: true,
           readers: [
             { childId: XIAOMI.id, nickname: '小米' },
             { childId: DOUDOU.id, nickname: '豆豆' },
           ],
-        }),
+        },
         expect.objectContaining({ id: 'book-01', coverUrl: null, acquired: false, readers: [] }),
       ]);
     });
   });
 
-  it('answers every grade and the subjects with books of the grades and scope', async () => {
+  it('answers every grade by its id and name, and the subjects with books covering the grades of the scope', async () => {
     const { service, store } = createService();
 
     const filters = await service.filters(
@@ -420,19 +459,24 @@ describe('LibraryService', () => {
       query({ grade: ['preschool', 'nope'], scope: 'family' }),
     );
 
-    expect(filters).toEqual({ grades: GRADES, subjects: [SUBJECTS[1]] });
+    expect(filters).toEqual({
+      grades: [PRESCHOOL, FIRST_GRADE, SECOND_GRADE],
+      subjects: [MATH],
+    });
     expect(store.listSubjectsWithBooks).toHaveBeenCalledWith({
       scope: 'family',
       familyId: FAMILY_ID,
-      gradeIds: ['preschool'],
+      gradeLevels: [0],
     });
   });
 
   describe('detail', () => {
-    it('answers the book with its readers and its replacement', async () => {
+    it('answers the book with its range of grades, its readers and its replacement', async () => {
       const { service } = createService({ readers: [XIAOMI.id] });
 
       expect(await service.detail(FAMILY_ID, 'carrot-counting')).toMatchObject({
+        minGrade: FIRST_GRADE,
+        maxGrade: FIRST_GRADE,
         acquired: true,
         readers: [{ childId: XIAOMI.id, nickname: '小米' }],
         replacement: null,

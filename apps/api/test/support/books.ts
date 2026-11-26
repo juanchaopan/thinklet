@@ -34,6 +34,10 @@ export const CHILD_BOOKS_PATH = '/api/child/books';
 export const ACTIVE_BOOK = 'carrot-counting';
 export const INACTIVE_BOOK = 'bunny-counts';
 
+/** The name of every grade and every subject a test writes. */
+export const TEST_GRADE_NAME = '测试年级';
+export const TEST_SUBJECT_NAME = '测试学科';
+
 /** A book of a family. */
 export interface FamilyBook {
   familyId: string;
@@ -94,16 +98,17 @@ function uniqueName(prefix: string): string {
 }
 
 /**
- * Writes a grade of the test's own, after every other in the order, so a
- * test can list books that no other test lists.
+ * Writes a grade of the test's own, after every other in the order and
+ * above every other in level, so a test can list books that no other test
+ * lists: a book of the test's grades covers no grade written before them.
  */
 export async function insertGrade(databaseUrl: string): Promise<string> {
   const id = uniqueName('test-grade');
   await query(
     databaseUrl,
     `insert into grades (id, name, level, position)
-     values ($1, '测试年级', (select max(level) + 1 from grades), (select max(position) + 1 from grades))`,
-    [id],
+     values ($1, $2, (select max(level) + 1 from grades), (select max(position) + 1 from grades))`,
+    [id, TEST_GRADE_NAME],
   );
   return id;
 }
@@ -114,16 +119,23 @@ export async function insertSubject(databaseUrl: string): Promise<string> {
   await query(
     databaseUrl,
     `insert into subjects (id, name, position)
-     values ($1, '测试学科', (select max(position) + 1 from subjects))`,
-    [id],
+     values ($1, $2, (select max(position) + 1 from subjects))`,
+    [id, TEST_SUBJECT_NAME],
   );
   return id;
 }
 
-/** A book a test writes; the times are SQL timestamptz literals. */
+/**
+ * A book a test writes; the times are SQL timestamptz literals. The book
+ * is written for `minGradeId` alone unless `maxGradeId` names a higher
+ * grade, and teaches at its lowest grade unless `teachingGradeId` says
+ * otherwise.
+ */
 export interface NewBook {
   id?: string;
-  gradeId: string;
+  minGradeId: string;
+  maxGradeId?: string;
+  teachingGradeId?: string;
   subjectId: string;
   status?: 'active' | 'inactive';
   replacementId?: string;
@@ -131,31 +143,65 @@ export interface NewBook {
   createdAt?: string;
 }
 
-/** Writes a book directly into the database, as a migration script does, and returns its id. */
+/**
+ * Writes a book directly into the database, as a migration script does,
+ * with the levels of its grades from the grades table, and returns its id.
+ */
 export async function insertBook(databaseUrl: string, book: NewBook): Promise<string> {
   const id = book.id ?? uniqueName('test-book');
-  await query(
+  const inserted = await query<{ id: string }>(
     databaseUrl,
-    `insert into books (id, title, intro, grade_id, subject_id, status, replacement_id, created_at)
-     values ($1, $2, '测试用的书。', $3, $4, $5, $6, $7)`,
+    `insert into books
+       (id, title, intro, min_grade_id, min_grade_level, max_grade_id, max_grade_level,
+        teaching_grade_id, teaching_grade_level, subject_id, status, replacement_id, created_at)
+     select $1, $2, '测试用的书。', lowest.id, lowest.level, highest.id, highest.level,
+            teaching.id, teaching.level, $6, $7, $8, $9
+     from grades lowest, grades highest, grades teaching
+     where lowest.id = $3 and highest.id = $4 and teaching.id = $5
+     returning id`,
     [
       id,
       `书 ${id.slice(-8)}`,
-      book.gradeId,
+      book.minGradeId,
+      book.maxGradeId ?? book.minGradeId,
+      book.teachingGradeId ?? book.minGradeId,
       book.subjectId,
       book.status ?? 'active',
       book.replacementId ?? null,
       book.createdAt ?? '2020-01-01 00:00:00+00',
     ],
   );
+  if (inserted.length !== 1) {
+    throw new Error(`The book ${id} was not written: a grade it names does not exist`);
+  }
   return id;
 }
 
-/** The ids of the books in the library's order, newest first and then by id, with the condition. */
-export async function bookIdsInOrder(databaseUrl: string, where: string): Promise<string[]> {
+/**
+ * The SQL condition on `books` of a book whose range of grades covers at
+ * least one of the grades, the way the library filters by grades, for
+ * tests to find the books they expect. The grade ids are not part of the
+ * text: the statement binds them, as an array, to the placeholder
+ * `$<parameter>`.
+ */
+export function coversAnyGrade(parameter: number): string {
+  return `exists (select 1 from grades g where g.id = any($${String(parameter)}::text[])
+                  and g.level between books.min_grade_level and books.max_grade_level)`;
+}
+
+/**
+ * The ids of the books in the library's order, newest first and then by
+ * id, with the condition and the values its placeholders stand for.
+ */
+export async function bookIdsInOrder(
+  databaseUrl: string,
+  where: string,
+  values: unknown[] = [],
+): Promise<string[]> {
   const rows = await query<{ id: string }>(
     databaseUrl,
     `select id from books where ${where} order by created_at desc, id`,
+    values,
   );
   return rows.map((row) => row.id);
 }

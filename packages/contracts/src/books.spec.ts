@@ -20,12 +20,13 @@ function fieldErrorsOf(schema: z.ZodType, value: unknown) {
   return result.success ? [] : toFieldErrors(result.error);
 }
 
-/** What every view shows of a book. */
+/** What every view shows of a book, here one written for a range of grades. */
 const book = {
   id: 'carrot-counting',
   title: '胡萝卜数数大冒险',
   intro: '小兔要把 20 根胡萝卜分给朋友们。',
-  grade: { id: 'grade-1', name: '一年级' },
+  minGrade: { id: 'preschool', name: '学前' },
+  maxGrade: { id: 'grade-1', name: '一年级' },
   subject: { id: 'math', name: '数学' },
   status: 'active',
   coverUrl: `/api/books/carrot-counting/cover?v=${'9f2c'.repeat(16)}`,
@@ -33,6 +34,9 @@ const book = {
 
 /** The book as a family's parents see it in the library. */
 const card = { ...book, acquired: true, readers: [{ childId, nickname: '小米' }] };
+
+/** A list response of the one book. */
+const listOf = (listed: object) => ({ books: [listed], nextCursor: null });
 
 describe('bookIdSchema', () => {
   it('accepts lower-case letters, digits and hyphens up to 60 characters', () => {
@@ -136,27 +140,37 @@ describe('bookListResponseSchema', () => {
   });
 
   it('accepts the last batch and a book without a cover, readers or the family', () => {
-    const body = {
-      books: [{ ...card, coverUrl: null, acquired: false, readers: [] }],
-      nextCursor: null,
-    };
+    const body = listOf({ ...card, coverUrl: null, acquired: false, readers: [] });
 
     expect(bookListResponseSchema.parse(body)).toEqual(body);
   });
 
+  it('accepts a book of one grade, whose lowest and highest grades are the same', () => {
+    const grade = { id: 'grade-1', name: '一年级' };
+    const body = listOf({ ...card, minGrade: grade, maxGrade: grade });
+
+    expect(bookListResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects a book without both ends of its range, with a single grade or with its teaching grade', () => {
+    const { maxGrade, ...withoutMax } = card;
+
+    for (const listed of [
+      withoutMax,
+      { ...withoutMax, grade: maxGrade },
+      { ...card, teachingGrade: maxGrade },
+    ]) {
+      expect(bookListResponseSchema.safeParse(listOf(listed)).success).toBe(false);
+    }
+  });
+
   it('rejects an unknown status and other keys', () => {
-    expect(
-      bookListResponseSchema.safeParse({
-        books: [{ ...card, status: 'retired' }],
-        nextCursor: null,
-      }).success,
-    ).toBe(false);
-    expect(
-      bookListResponseSchema.safeParse({
-        books: [{ ...card, coverSha256: 'ab' }],
-        nextCursor: null,
-      }).success,
-    ).toBe(false);
+    expect(bookListResponseSchema.safeParse(listOf({ ...card, status: 'retired' })).success).toBe(
+      false,
+    );
+    expect(bookListResponseSchema.safeParse(listOf({ ...card, coverSha256: 'ab' })).success).toBe(
+      false,
+    );
   });
 });
 
@@ -177,6 +191,13 @@ describe('bookDetailSchema', () => {
 
   it('needs the replacement, null included', () => {
     expect(bookDetailSchema.safeParse(card).success).toBe(false);
+  });
+
+  it('rejects the teaching grade', () => {
+    expect(
+      bookDetailSchema.safeParse({ ...card, teachingGrade: card.minGrade, replacement: null })
+        .success,
+    ).toBe(false);
   });
 });
 
@@ -222,13 +243,18 @@ describe('childBooksResponseSchema', () => {
     expect(childBooksResponseSchema.parse(body)).toEqual(body);
   });
 
-  it("rejects the family's readers on a child's book and a count that is not a whole number", () => {
-    expect(
-      childBooksResponseSchema.safeParse({
-        books: [{ ...book, readers: card.readers, isNew: true }],
-        newCount: 1,
-      }).success,
-    ).toBe(false);
+  it("rejects the family's readers or the teaching grade on a child's book", () => {
+    for (const extra of [{ readers: card.readers }, { teachingGrade: book.minGrade }]) {
+      expect(
+        childBooksResponseSchema.safeParse({
+          books: [{ ...book, ...extra, isNew: true }],
+          newCount: 1,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('rejects a count that is not a whole number', () => {
     expect(childBooksResponseSchema.safeParse({ books: [], newCount: 0.5 }).success).toBe(false);
     expect(childBooksResponseSchema.safeParse({ books: [], newCount: -1 }).success).toBe(false);
   });

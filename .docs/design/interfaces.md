@@ -319,34 +319,37 @@
 
 `GET /api/families/{familyId}/books` 的查询参数：
 
-| 参数      | 说明                                                                                      |
-| --------- | ----------------------------------------------------------------------------------------- |
-| `grade`   | 年级编号，可以重复，比如 `grade=grade-1&grade=grade-2`；不带就是全部年级                  |
-| `subject` | 学科编号，可以重复；不带就是全部学科                                                      |
-| `scope`   | `library`（默认，全部上架的书）、`family`（家里获取的书）或 `child`（分派给一个孩子的书） |
-| `child`   | `scope` 是 `child` 时必填，孩子编号                                                       |
-| `cursor`  | 下一批的游标                                                                              |
+| 参数      | 说明                                                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `grade`   | 年级编号，可以重复，比如 `grade=grade-1&grade=grade-2`；书的适用年级里有任何一个给出的年级，这本书就列出；不带就是全部年级 |
+| `subject` | 学科编号，可以重复；不带就是全部学科                                                                                       |
+| `scope`   | `library`（默认，全部上架的书）、`family`（家里获取的书）或 `child`（分派给一个孩子的书）                                  |
+| `child`   | `scope` 是 `child` 时必填，孩子编号                                                                                        |
+| `cursor`  | 下一批的游标                                                                                                               |
 
 - 一批 12 本，按书加进书本表的时间从新到旧，相同时按书本编号。
+- 年级按级别数字比：书的最低年级的级别不高于、最高年级的级别不低于某个给出的年级的级别，就算这个年级在书的适用年级里。
 - 不存在的年级和学科编号不报错，不算进筛选。`child` 不是这个家庭的孩子时返回 `404 child_not_found`，前端把范围换回书库。
-- `book-filters` 的 `grades` 是全部年级，按表里定的顺序；`subjects` 是在给出的年级和范围下有书的学科，按表里的顺序。
+- `book-filters` 的 `grades` 是全部年级，按表里定的顺序；`subjects` 是在给出的年级和范围下有书的学科，按表里的顺序，年级的算法和书库列表一样。
 
 书本（列表里的一本）：
 
 ```json
 {
-  "id": "carrot-counting-adventure",
-  "title": "胡萝卜数数大冒险",
-  "intro": "小兔要把 20 根胡萝卜分给朋友们……",
-  "grade": { "id": "grade-1", "name": "一年级" },
-  "subject": { "id": "math", "name": "数学" },
+  "id": "robot-maze",
+  "title": "让小机器人走出迷宫",
+  "intro": "用拖动积木的方式给小机器人下指令……",
+  "minGrade": { "id": "grade-4", "name": "四年级" },
+  "maxGrade": { "id": "grade-8", "name": "初二" },
+  "subject": { "id": "coding", "name": "编程" },
   "status": "active",
-  "coverUrl": "/api/books/carrot-counting-adventure/cover?v=9f2c…",
+  "coverUrl": "/api/books/robot-maze/cover?v=9f2c…",
   "acquired": true,
   "readers": [{ "childId": "3f9b…", "nickname": "小米" }]
 }
 ```
 
+- `minGrade`、`maxGrade` 是书适用的最低和最高年级；只适用一个年级的书两项相同。前端按 `rules.md` 的“年级的写法”显示。书的教学年级不返回。
 - `coverUrl` 没有封面时是 `null`，前端用默认封面。
 - `readers` 是在读这本书的孩子，按添加孩子的时间排；家里没获取时是 `[]`。
 
@@ -432,13 +435,14 @@
 {
   "books": [
     {
-      "id": "carrot-counting-adventure",
-      "title": "胡萝卜数数大冒险",
-      "intro": "小兔要把 20 根胡萝卜分给朋友们……",
-      "grade": { "id": "grade-1", "name": "一年级" },
-      "subject": { "id": "math", "name": "数学" },
+      "id": "seasons-poems",
+      "title": "四季里的古诗",
+      "intro": "春天读《春晓》，夏天读《小池》……",
+      "minGrade": { "id": "grade-4", "name": "四年级" },
+      "maxGrade": { "id": "grade-6", "name": "六年级" },
+      "subject": { "id": "chinese", "name": "语文" },
       "status": "active",
-      "coverUrl": "/api/books/carrot-counting-adventure/cover?v=9f2c…",
+      "coverUrl": "/api/books/seasons-poems/cover?v=9f2c…",
       "isNew": true
     }
   ],
@@ -446,6 +450,7 @@
 }
 ```
 
+- `minGrade`、`maxGrade` 和家长看到的一样；书的教学年级不返回。
 - `isNew` 是孩子还没打开过这本书；`newCount` 是这些书的本数。
 
 ## Authing 的通知
@@ -509,4 +514,4 @@ Authing 在用户被删除后发来的 webhook。不用登录，不查 `Origin`�
 
 - `book_in_use`、`book_not_acquired`、`book_inactive` 都显示在顶部提示条里，然后刷新这本书。
 
-Last changed: #14 (2026-11-25)
+Last changed: #21 (2026-11-25)

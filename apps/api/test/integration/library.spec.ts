@@ -10,10 +10,13 @@ import {
 import {
   ACTIVE_BOOK,
   INACTIVE_BOOK,
+  TEST_GRADE_NAME,
+  TEST_SUBJECT_NAME,
   acquire,
   bookIdsInOrder,
   bookPath,
   booksPath,
+  coversAnyGrade,
   filtersPath,
   insertAssignment,
   insertBook,
@@ -60,9 +63,11 @@ const cursorOf = (value: unknown) => Buffer.from(JSON.stringify(value)).toString
 // books at a time, newest first, and loads the next batch until all are
 // there, without repeats or gaps; filters by several grades and subjects
 // and by the library, the family's books or one child's books, inactive
-// books only in the last two; the subject options follow the grades and
-// the scope; a book's page shows whether the family has it, who reads it
-// in the order the children were added and, for an inactive book, the
+// books only in the last two; a book written for a range of grades is
+// listed for any grade within it, both ends included, and shows the range
+// but never the grade it teaches at; the subject options follow the grades
+// and the scope; a book's page shows whether the family has it, who reads
+// it in the order the children were added and, for an inactive book, the
 // active book that replaces it.
 describe('library', () => {
   const running = useAppWithServices();
@@ -82,7 +87,10 @@ describe('library', () => {
     return created;
   }
 
-  /** One batch of the family's library with the parameters. */
+  /**
+   * One batch of the family's library with the parameters, read through
+   * the strict schema, which refuses any key it does not name.
+   */
   async function batchOf(familyId: string, parameters: Parameters = {}): Promise<BookListResponse> {
     const response = await asMember().get(`${booksPath(familyId)}${queryOf(parameters)}`);
     expect(response.status).toBe(200);
@@ -104,6 +112,13 @@ describe('library', () => {
       cursor = batch.nextCursor ?? undefined;
     } while (cursor !== undefined);
     return { ids, sizes };
+  }
+
+  /** The filter options of the family's library with the parameters. */
+  async function filtersOf(familyId: string, parameters: Parameters = {}) {
+    const response = await asMember().get(`${filtersPath(familyId)}${queryOf(parameters)}`);
+    expect(response.status).toBe(200);
+    return bookFiltersResponseSchema.parse(response.body);
   }
 
   beforeAll(async () => {
@@ -130,7 +145,7 @@ describe('library', () => {
       }
     });
 
-    it('answers a card with the grade, subject and cover of the book table', async () => {
+    it('answers a card with the grades, subject and cover of the book table', async () => {
       const [row] = await query<{ title: string; intro: string; cover_sha256: string }>(
         running.databaseUrl,
         'select title, intro, cover_sha256 from books where id = $1',
@@ -143,7 +158,8 @@ describe('library', () => {
         id: ACTIVE_BOOK,
         title: row?.title,
         intro: row?.intro,
-        grade: { id: 'grade-1', name: '一年级' },
+        minGrade: { id: 'grade-1', name: '一年级' },
+        maxGrade: { id: 'grade-1', name: '一年级' },
         subject: { id: 'math', name: '数学' },
         status: 'active',
         coverUrl: `/api/books/${ACTIVE_BOOK}/cover?v=${row?.cover_sha256}`,
@@ -169,19 +185,19 @@ describe('library', () => {
         Array.from({ length: 14 }, (_, index) =>
           insertBook(running.databaseUrl, {
             id: `tied-${String(index).padStart(2, '0')}-${gradeId}`,
-            gradeId,
+            minGradeId: gradeId,
             subjectId,
             createdAt: '2021-06-01 08:00:00.123456+00',
           }),
         ),
       );
       const later = await insertBook(running.databaseUrl, {
-        gradeId,
+        minGradeId: gradeId,
         subjectId,
         createdAt: '2021-06-01 08:00:00.123457+00',
       });
       const earlier = await insertBook(running.databaseUrl, {
-        gradeId,
+        minGradeId: gradeId,
         subjectId,
         createdAt: '2021-06-01 08:00:00.123455+00',
       });
@@ -201,7 +217,8 @@ describe('library', () => {
     it('keeps the books of any of the grades and any of the subjects asked for', async () => {
       const expected = await bookIdsInOrder(
         running.databaseUrl,
-        "status = 'active' and grade_id in ('grade-1', 'preschool') and subject_id in ('math', 'english')",
+        `status = 'active' and ${coversAnyGrade(1)} and subject_id in ('math', 'english')`,
+        [['grade-1', 'preschool']],
       );
 
       const { ids } = await everyBatch(family.id, {
@@ -353,13 +370,74 @@ describe('library', () => {
     });
   });
 
-  describe('the filter options', () => {
-    async function filtersOf(familyId: string, parameters: Parameters = {}) {
-      const response = await asMember().get(`${filtersPath(familyId)}${queryOf(parameters)}`);
-      expect(response.status).toBe(200);
-      return bookFiltersResponseSchema.parse(response.body);
-    }
+  // A book of the test's own subject written for three grades of the
+  // test's own, from `lowest` to `highest`, and teaching at `middle`;
+  // `above` is a grade of the test's own over the range. Every grade a test
+  // writes is above the sample grades and those written before it, so no
+  // other book covers these grades.
+  describe('a book of a range of grades', () => {
+    let bookId: string;
+    let subjectId: string;
+    const grades = { lowest: '', middle: '', highest: '', above: '' };
 
+    beforeAll(async () => {
+      grades.lowest = await insertGrade(running.databaseUrl);
+      grades.middle = await insertGrade(running.databaseUrl);
+      grades.highest = await insertGrade(running.databaseUrl);
+      grades.above = await insertGrade(running.databaseUrl);
+      subjectId = await insertSubject(running.databaseUrl);
+      bookId = await insertBook(running.databaseUrl, {
+        minGradeId: grades.lowest,
+        maxGradeId: grades.highest,
+        teachingGradeId: grades.middle,
+        subjectId,
+      });
+    });
+
+    it('is listed for any grade within its range, both ends included, alone or with others', async () => {
+      for (const grade of [
+        [grades.lowest],
+        [grades.middle],
+        [grades.highest],
+        [grades.above, grades.middle],
+      ]) {
+        expect((await everyBatch(family.id, { grade })).ids, grade.join(',')).toEqual([bookId]);
+      }
+    });
+
+    it('is left out when every grade asked for lies outside its range', async () => {
+      expect((await everyBatch(family.id, { grade: grades.above })).ids).toEqual([]);
+      expect((await everyBatch(family.id, { grade: ['preschool', 'grade-12'] })).ids).not.toContain(
+        bookId,
+      );
+    });
+
+    // The strict schemas the card and the page are read through refuse the
+    // teaching grade, so reading them is what checks it stays with the api.
+    it('shows its lowest and highest grades on its card and page, never the grade it teaches at', async () => {
+      const range = {
+        minGrade: { id: grades.lowest, name: TEST_GRADE_NAME },
+        maxGrade: { id: grades.highest, name: TEST_GRADE_NAME },
+      };
+
+      const [card] = (await batchOf(family.id, { grade: grades.middle })).books;
+      const response = await asMember().get(bookPath(family.id, bookId));
+
+      expect(card).toMatchObject({ id: bookId, ...range });
+      expect(response.status).toBe(200);
+      expect(bookDetailSchema.parse(response.body)).toMatchObject({ id: bookId, ...range });
+    });
+
+    it('gives its subject as a filter option for a grade within its range only', async () => {
+      const subject = { id: subjectId, name: TEST_SUBJECT_NAME };
+
+      expect((await filtersOf(family.id, { grade: grades.middle })).subjects).toEqual([subject]);
+      expect((await filtersOf(family.id, { grade: grades.highest })).subjects).toEqual([subject]);
+      expect((await filtersOf(family.id, { grade: grades.above })).subjects).toEqual([]);
+    });
+  });
+
+  describe('the filter options', () => {
     it('answers every grade in the set order and the subjects with books', async () => {
       const grades = await query<{ id: string; name: string }>(
         running.databaseUrl,
@@ -383,9 +461,10 @@ describe('library', () => {
       const expected = await query<{ id: string; name: string }>(
         running.databaseUrl,
         `select s.id, s.name from subjects s
-         where exists (select 1 from books b where b.subject_id = s.id and b.status = 'active'
-                       and b.grade_id in ('grade-7', 'grade-9'))
+         where exists (select 1 from books where books.subject_id = s.id and books.status = 'active'
+                       and ${coversAnyGrade(1)})
          order by s.position`,
+        [['grade-7', 'grade-9']],
       );
 
       const filters = await filtersOf(family.id, { grade: ['grade-7', 'grade-9', 'nope'] });
@@ -430,6 +509,8 @@ describe('library', () => {
       expect(response.status).toBe(200);
       expect(bookDetailSchema.parse(response.body)).toMatchObject({
         id: 'abc-songs',
+        minGrade: { id: 'preschool', name: '学前' },
+        maxGrade: { id: 'preschool', name: '学前' },
         status: 'active',
         acquired: false,
         readers: [],
@@ -474,12 +555,12 @@ describe('library', () => {
       const gradeId = await insertGrade(running.databaseUrl);
       const subjectId = await insertSubject(running.databaseUrl);
       const gone = await insertBook(running.databaseUrl, {
-        gradeId,
+        minGradeId: gradeId,
         subjectId,
         status: 'inactive',
       });
       const replacedByGone = await insertBook(running.databaseUrl, {
-        gradeId,
+        minGradeId: gradeId,
         subjectId,
         status: 'inactive',
         replacementId: gone,

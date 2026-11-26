@@ -25,3 +25,22 @@ export async function expectNoAxeViolations(
   );
   expect(violations).toEqual([]);
 }
+
+/** The element's text without the parts that match the selector, spaces collapsed. */
+function textWithout(element: Element, left: string): string {
+  const copy = element.cloneNode(true) as Element;
+  for (const part of copy.querySelectorAll(left)) {
+    part.remove();
+  }
+  return copy.textContent.replace(/\s+/g, ' ').trim();
+}
+
+/** The element's text as it is seen: without what only screen readers get (`sr-only`). */
+export function seenText(element: Element): string {
+  return textWithout(element, '.sr-only');
+}
+
+/** The element's text as screen readers say it: without what is hidden from them. */
+export function heardText(element: Element): string {
+  return textWithout(element, '[aria-hidden="true"]');
+}

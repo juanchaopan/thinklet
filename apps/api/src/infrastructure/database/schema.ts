@@ -18,6 +18,7 @@ import {
   uniqueIndex,
   uuid,
   type AnyPgColumn,
+  type PgColumn,
 } from 'drizzle-orm/pg-core';
 
 /** Every time is stored with its time zone. */
@@ -226,7 +227,9 @@ export type CoverType = 'webp' | 'png';
 /**
  * The grades books are written for. The platform team sets the ids in
  * migration scripts. `level` is the grade's number, 0 for preschool to 12
- * for the last year of senior high; `position` orders them on screen.
+ * for the last year of senior high, by which grades are compared;
+ * `position` orders them on screen. `(id, level)` is unique so that books
+ * can reference a grade together with its level.
  */
 export const grades = pgTable(
   'grades',
@@ -236,7 +239,8 @@ export const grades = pgTable(
     level: integer('level').notNull().unique('grades_level_unique'),
     position: integer('position').notNull().unique('grades_position_unique'),
   },
-  () => [
+  (table) => [
+    unique('grades_id_level_unique').on(table.id, table.level),
     check('grades_id_check', sql`id ~ '^[a-z0-9-]{1,30}$'`),
     check('grades_name_length_check', sql`char_length(name) between 1 and 10`),
   ],
@@ -257,9 +261,28 @@ export const subjects = pgTable(
 );
 
 /**
+ * The key from a grade of a book, its id and level together, to the
+ * grade of that id and level. A grade whose level changes carries its
+ * books' levels along, so they always match the grades table.
+ */
+function gradeKey(name: string, id: PgColumn, level: PgColumn) {
+  return foreignKey({
+    name,
+    columns: [id, level],
+    foreignColumns: [grades.id, grades.level],
+  }).onUpdate('cascade');
+}
+
+/**
  * The books of the library, written by migration scripts only; the
  * database is their one source. The id is also the folder of the book's
- * cover in `content/books/`. An inactive book has left the library and
+ * cover in `content/books/`. A book is written for the grades from its
+ * lowest to its highest, both included, and teaches at its teaching grade
+ * within them; parents and children see the range only, and the teaching
+ * grade picks how lessons and exercises explain. Each grade is kept as the
+ * grade's id and level, so the library compares levels without reading the
+ * grades table, and the checks refuse a range that runs backwards or a
+ * teaching grade outside it. An inactive book has left the library and
  * stays with the families that have it; `replacement_id` names the book
  * that takes its place. The cover import sets `cover_type` and
  * `cover_sha256` together.
@@ -276,9 +299,12 @@ export const books = pgTable(
     id: text('id').primaryKey(),
     title: text('title').notNull(),
     intro: text('intro').notNull(),
-    gradeId: text('grade_id')
-      .notNull()
-      .references(() => grades.id),
+    minGradeId: text('min_grade_id').notNull(),
+    minGradeLevel: integer('min_grade_level').notNull(),
+    maxGradeId: text('max_grade_id').notNull(),
+    maxGradeLevel: integer('max_grade_level').notNull(),
+    teachingGradeId: text('teaching_grade_id').notNull(),
+    teachingGradeLevel: integer('teaching_grade_level').notNull(),
     subjectId: text('subject_id')
       .notNull()
       .references(() => subjects.id),
@@ -290,9 +316,17 @@ export const books = pgTable(
   },
   (table) => [
     index('books_created_at_id_idx').on(table.createdAt.desc().nullsFirst(), table.id),
+    gradeKey('books_min_grade_fk', table.minGradeId, table.minGradeLevel),
+    gradeKey('books_max_grade_fk', table.maxGradeId, table.maxGradeLevel),
+    gradeKey('books_teaching_grade_fk', table.teachingGradeId, table.teachingGradeLevel),
     check('books_id_check', sql`id ~ '^[a-z0-9-]{1,60}$'`),
     check('books_title_length_check', sql`char_length(title) between 1 and 30`),
     check('books_intro_length_check', sql`char_length(intro) between 1 and 200`),
+    check('books_grade_range_check', sql`min_grade_level <= max_grade_level`),
+    check(
+      'books_teaching_grade_check',
+      sql`teaching_grade_level between min_grade_level and max_grade_level`,
+    ),
     check('books_status_check', sql`status in ('active', 'inactive')`),
     check('books_replacement_check', sql`replacement_id <> id`),
     check('books_cover_type_check', sql`cover_type in ('webp', 'png')`),

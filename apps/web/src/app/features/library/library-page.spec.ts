@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/angular';
 import type { MeResponse } from '@thinklet/contracts';
 import { http, HttpResponse } from 'msw';
 import { page, userEvent } from 'vitest/browser';
-import { expectNoAxeViolations } from '../../../testing/accessibility';
+import { expectNoAxeViolations, heardText, seenText } from '../../../testing/accessibility';
 import {
   OPEN,
   addAleWithKeyboard,
@@ -26,6 +26,7 @@ import { ALE, ALE_ID, DOUDOU, XIAOMI_ID } from '../../../testing/children';
 import { useFixedClock } from '../../../testing/clock';
 import { holdOverlaysAt, noDialog } from '../../../testing/families';
 import { dialogGone, expectToast } from '../../../testing/family-page';
+import { gradeHolder } from '../../../testing/grades';
 import { holdNextGet } from '../../../testing/held-answers';
 import {
   BOOKS_PATH,
@@ -52,6 +53,25 @@ const DESKTOP_FIRST: readonly ViewportName[] = ['desktop', 'phone', 'tablet'];
 /** The address of 林悦的家's filter options in the api. */
 const FILTERS_PATH = `/api/families/${LINYUE_FAMILY_ID}/book-filters`;
 
+/** The titles of the first batch of the whole library, newest first. */
+const FIRST_BATCH = [
+  '花园里的小儿歌',
+  '胡萝卜数数大冒险',
+  'Hello，动物朋友',
+  '月亮为什么会变脸',
+  '让小机器人走出迷宫',
+  '四季里的古诗',
+  '形状捉迷藏',
+  '分披萨学分数',
+  'My School Day 我的一天',
+  '拼音小火车',
+  '一颗种子的旅行',
+  '一次函数的故事',
+];
+
+/** The first four titles of the whole library's math books, newest first. */
+const FIRST_MATH_BOOKS = ['胡萝卜数数大冒险', '形状捉迷藏', '分披萨学分数', '一次函数的故事'];
+
 /** Opens the library at the address as 林悦, with the counts the design draws. */
 function renderLibrary(url = '/', me: MeResponse = LINYUE_AS_DRAWN) {
   return renderAsLinyue(url, me);
@@ -73,6 +93,11 @@ function card(title: string): HTMLElement {
   return article;
 }
 
+/** The line of the book's card that gives its grades and subject. */
+function gradeLine(title: string): HTMLElement {
+  return gradeHolder(card(title));
+}
+
 /** The button of a filter, by what it says now. */
 function filter(name: RegExp): HTMLElement {
   return screen.getByRole('button', { name });
@@ -82,6 +107,13 @@ function filter(name: RegExp): HTMLElement {
 async function openFilter(name: RegExp, label: string): Promise<HTMLElement> {
   await userEvent.click(filter(name));
   return screen.findByRole('dialog', { name: label });
+}
+
+/** What the tiles of a filter's options say, in their order. */
+function optionNames(options: HTMLElement): Array<string | undefined> {
+  return within(options)
+    .getAllByRole('checkbox')
+    .map((tile) => tile.textContent?.trim());
 }
 
 /** Closes the filter options on screen, as Escape does, and waits until they have gone. */
@@ -188,26 +220,14 @@ describe('LibraryPage', () => {
       expect(screen.getByRole('heading', { level: 1, name: '欢迎回来，林悦' })).toBeTruthy();
       expect(screen.getByText('挑几本书，分派给孩子吧。')).toBeTruthy();
       expect(screen.getByRole('link', { name: '书库' }).getAttribute('aria-current')).toBe('page');
-      expect(titles()).toEqual([
-        '花园里的小儿歌',
-        '胡萝卜数数大冒险',
-        'Hello，动物朋友',
-        '月亮为什么会变脸',
-        '让小机器人走出迷宫',
-        '四季里的古诗',
-        '形状捉迷藏',
-        '分披萨学分数',
-        'My School Day 我的一天',
-        '拼音小火车',
-        '一颗种子的旅行',
-        '一次函数的故事',
-      ]);
+      expect(titles()).toEqual(FIRST_BATCH);
       const garden = within(card('花园里的小儿歌'));
-      expect(garden.getByText('学前 · 语文')).toBeTruthy();
+      expect(seenText(gradeLine('花园里的小儿歌'))).toBe('学前～一年级 · 语文');
       expect(garden.getByRole('button', { name: '获取' })).toBeTruthy();
       expect(garden.queryByRole('button', { name: '更多操作' })).toBeNull();
       expect(garden.getByRole('link').getAttribute('href')).toBe('/books/garden-rhymes');
       const carrots = within(card('胡萝卜数数大冒险'));
+      expect(seenText(gradeLine('胡萝卜数数大冒险'))).toBe('一年级 · 数学');
       expect(carrots.getByText('已获取')).toBeTruthy();
       expect(carrots.getByText('小米、豆豆可以读')).toBeTruthy();
       expect(carrots.queryByRole('button', { name: '更多操作' })).toBeNull();
@@ -226,6 +246,15 @@ describe('LibraryPage', () => {
       await expectScreenshotsAtEverySize('library', undefined, { sizes: DESKTOP_FIRST });
       await next.reached;
       await next.release();
+    });
+
+    it('writes the grades of a book for several grades as a range, which screen readers hear with 到', async () => {
+      await renderLibrary();
+
+      expect(seenText(gradeLine('让小机器人走出迷宫'))).toBe('四年级～初二 · 编程');
+      expect(heardText(gradeLine('让小机器人走出迷宫'))).toBe('四年级到初二 · 编程');
+      expect(heardText(gradeLine('花园里的小儿歌'))).toBe('学前到一年级 · 语文');
+      expect(heardText(gradeLine('胡萝卜数数大冒险'))).toBe('一年级 · 数学');
     });
 
     it.each([0, 120, 300, 620])('rises into place, at %i ms', async (time) => {
@@ -359,7 +388,12 @@ describe('LibraryPage', () => {
       expect(
         within(grades).getByRole('checkbox', { name: '一年级' }).getAttribute('aria-checked'),
       ).toBe('true');
-      expect(titles()).toEqual(['胡萝卜数数大冒险', '拼音小火车', '箭头卡片编程']);
+      expect(titles()).toEqual([
+        '花园里的小儿歌',
+        '胡萝卜数数大冒险',
+        '拼音小火车',
+        '箭头卡片编程',
+      ]);
 
       await userEvent.click(within(grades).getByRole('checkbox', { name: '二年级' }));
       await settled();
@@ -380,11 +414,23 @@ describe('LibraryPage', () => {
       expect(document.activeElement).toBe(filter(/^年级：全部/));
     });
 
+    it('lets through every book whose range holds a grade chosen', async () => {
+      await renderLibrary('/?grade=grade-5');
+
+      expect(titles()).toEqual([
+        '让小机器人走出迷宫',
+        '四季里的古诗',
+        '家里的电从哪里来',
+        '用 Scratch 做小游戏',
+      ]);
+    });
+
     it('shows the grades chosen in the address, three to a row', async () => {
       await renderLibrary('/?grade=grade-1&grade=grade-2');
 
       expect(filter(/^年级：一年级、二年级/)).toBeTruthy();
       expect(titles()).toEqual([
+        '花园里的小儿歌',
         '胡萝卜数数大冒险',
         'Hello，动物朋友',
         '拼音小火车',
@@ -401,16 +447,30 @@ describe('LibraryPage', () => {
       });
     });
 
+    it('takes a grade and a subject that do not exist in the address as no filter, as the api does', async () => {
+      await renderLibrary('/?grade=no-such-grade&subject=no-such-subject');
+
+      expect(filter(/^年级：全部/)).toBeTruthy();
+      expect(filter(/^学科：全部/)).toBeTruthy();
+      expect(titles()).toEqual(FIRST_BATCH);
+      const subjects = await openFilter(/^学科：全部/, '学科');
+      expect(optionNames(subjects)).toEqual(['语文', '数学', '英语', '科学', '编程']);
+    });
+
+    it('keeps the subject chosen beside a grade that does not exist', async () => {
+      await renderLibrary('/?grade=no-such-grade&subject=math');
+
+      expect(filter(/^年级：全部/)).toBeTruthy();
+      expect(filter(/^学科：数学/)).toBeTruthy();
+      expect(titles().slice(0, 4)).toEqual(FIRST_MATH_BOOKS);
+    });
+
     it('offers only the subjects with books under the other filters', async () => {
       await renderLibrary('/?grade=grade-7');
 
       const subjects = await openFilter(/^学科：全部/, '学科');
 
-      expect(
-        within(subjects)
-          .getAllByRole('checkbox')
-          .map((tile) => tile.textContent?.trim()),
-      ).toEqual(['数学', '英语', '科学']);
+      expect(optionNames(subjects)).toEqual(['数学', '英语', '科学', '编程']);
     });
 
     it('filters by subject, ticking the subject chosen', async () => {
@@ -422,12 +482,7 @@ describe('LibraryPage', () => {
 
       expect(router.url).toBe('/?subject=math');
       expect(filter(/^学科：数学/)).toBeTruthy();
-      expect(titles().slice(0, 4)).toEqual([
-        '胡萝卜数数大冒险',
-        '形状捉迷藏',
-        '分披萨学分数',
-        '一次函数的故事',
-      ]);
+      expect(titles().slice(0, 4)).toEqual(FIRST_MATH_BOOKS);
       await holdOverlaysAt(OPEN);
       await expectNoAxeViolations();
       await expectScreenshotsAtEverySize('library-filter-subject', undefined, {
