@@ -159,6 +159,8 @@ button.chip:focus { outline: none; }
 button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
 .log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
@@ -202,6 +204,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div>
     <div class="log" id="log" aria-live="polite" aria-label="键盘发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
   </section>
 
   <section class="panel">
@@ -233,17 +236,51 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 /* ============================================================
    Sound source: plays MIDI pitches with sampled piano. It knows
    nothing about scores or keyboards; anything that wants a sound
-   calls play().
+   calls play(). The player calls unlock() on every touch, because
+   phones only start audio inside a gesture.
    ============================================================ */
 var SoundSource = (function () {
-  var ctx = null, raw = null, buffers = {}, loading = null;
+  var ctx = null, raw = null, buffers = {}, loading = null, media = null, watchers = [];
+  var state = { phase: 'idle', detail: '' };
+  function report(phase, detail) { state = { phase: phase, detail: detail || '' }; watchers.forEach(function (f) { f(state); }); }
+  // A short silent WAV played through a media element. On iPhones this puts
+  // the page in the playback audio category, so Web Audio is heard even
+  // when the ring/silent switch is on silent.
+  function silentWav() {
+    var n = 441, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 44100, true);
+    v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
   function context() {
-    if (!ctx) { var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); }
-    if (ctx.state === 'suspended') ctx.resume();
+    if (!ctx) {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) { report('failed', '这个浏览器不支持 Web Audio'); return null; }
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older browsers have no audio session */ }
+      ctx = new C();
+      ctx.onstatechange = function () { report(state.phase, state.detail); };
+    }
+    if (ctx.state !== 'running') { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); }
     return ctx;
   }
+  // Starts output inside the gesture: one silent sample through Web Audio,
+  // and the silent media element once.
+  function wake() {
+    if (ctx.state !== 'running') { var s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0); }
+    if (media === null) {
+      try { media = new Audio(URL.createObjectURL(silentWav())); media.setAttribute('playsinline', ''); var p = media.play(); if (p && p.catch) p.catch(function () {}); } catch (e) { media = false; }
+    }
+  }
+  // The samples sit next to the page, so a relative path works wherever the page is served from.
   function load() {
-    if (!loading) loading = fetch('piano.json').then(function (r) { return r.json(); }).then(function (j) { raw = j; }).catch(function () { raw = {}; });
+    if (!loading) {
+      report('loading');
+      loading = fetch('piano.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) { raw = j; report('ready', Object.keys(j).length + ' 个采样'); })
+        .catch(function (e) { raw = {}; report('failed', '采样没有加载出来（' + (e && e.message || e) + '）'); });
+    }
     return loading;
   }
   function decode(midi) {
@@ -251,6 +288,7 @@ var SoundSource = (function () {
     var bin = atob(raw[midi]); var bytes = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     buffers[midi] = new Promise(function (res, rej) { ctx.decodeAudioData(bytes.buffer, res, rej); });
+    buffers[midi].catch(function () { report('failed', '采样解码失败'); });
     return buffers[midi];
   }
   function nearestSample(midi) {
@@ -259,7 +297,9 @@ var SoundSource = (function () {
     return best;
   }
   return {
-    unlock: function () { context(); load(); },
+    unlock: function () { if (context()) { wake(); load(); } },
+    watch: function (f) { watchers.push(f); f(state); },
+    contextState: function () { return ctx ? ctx.state : '还没创建'; },
     play: function (midi, delaySec, durSec, velocity) {
       var c = context(); if (!c) return;
       var at = c.currentTime + (delaySec || 0);
@@ -649,11 +689,19 @@ Keyboard.prototype.clear = function () {
 };
 
 /* ============================================================
-   Assembly: this page plays the role of the player. It wires the
-   keyboard's events to a caption and a log; the keyboard never
+   Assembly: this page plays the role of the player. It unlocks
+   sound on every touch, wires the keyboard's events to a caption
+   and a log, and shows how the sound is doing; the keyboard never
    calls anything here directly.
    ============================================================ */
 (function () {
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) { document.addEventListener(t, SoundSource.unlock, { capture: true, passive: true }); });
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没启用，点一下琴键或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function (s) {
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + SoundSource.contextState() + '）';
+  });
+
   document.body.setAttribute('data-boundary', 'on');
   window.tlEvents = [];
   var logEl = document.getElementById('log');
@@ -697,7 +745,7 @@ Keyboard.prototype.clear = function () {
     clear: function () { main.clear(); }
   };
   document.querySelectorAll('[data-cmd]').forEach(function (b) {
-    b.addEventListener('click', function () { SoundSource.unlock(); commands[b.getAttribute('data-cmd')](); });
+    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
   });
 
   var modeBtn = document.getElementById('mode');

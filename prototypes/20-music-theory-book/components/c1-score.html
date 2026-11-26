@@ -119,6 +119,7 @@ body[data-boundary="on"] .tl-score::before { content: "乐谱组件"; position: 
 .tl-playhead.on { opacity: 1; }
 .tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--glow) 65%, #fff), var(--glow)); box-shadow: 0 8px 18px -6px var(--glow), 0 0 0 4px rgba(255, 255, 255, .7); transition: transform .1s; }
 .tl-play:active { transform: scale(.94); }
+.tl-play:focus { outline: none; }
 .tl-play:focus-visible { outline: 3px solid var(--glow); outline-offset: 3px; }
 .tl-play svg { width: 18px; height: 18px; fill: currentColor; }
 .tl-caption { text-align: center; font: italic 500 18px/1.2 var(--serif); color: var(--stage-ink); margin-top: 8px; }
@@ -139,9 +140,12 @@ button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px;
 button.chip:hover { background: #f4f0fb; }
 button.chip:active { transform: scale(.97); }
 button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
 button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
 .log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
@@ -186,6 +190,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
       <button class="chip" type="button" data-cmd="clear">清除</button>
     </div>
     <div class="log" id="log" aria-live="polite" aria-label="乐谱发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
     <details><summary>题目文件里这样写</summary><pre id="abc-main"></pre></details>
   </section>
 
@@ -215,7 +220,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
 
   <section class="panel">
     <h2>三行谱：Violin 加 Piano</h2>
-    <p class="what">考点 24 的谱例：独奏乐器一行、钢琴两行，小节号、速度、力度、渐强渐弱、跳音、重音、Ped.。按右上角播放，光标走过谱面，每个音都会亮。</p>
+    <p class="what">考点 24 的谱例：独奏乐器一行、钢琴两行，小节号、速度、力度、渐强渐弱、跳音、重音、Ped.。按右上角播放，光标走过谱面，每个音都会亮。乐器名第一行写全称，后面几行写缩写（Vln.、Pno.），和考卷一样；手机上放不下时整张谱自动缩小到刚好放下。</p>
     <div class="mini-stage"><div id="trio-score"></div></div>
     <div class="chips"><button class="chip" type="button" id="trio-spot" aria-pressed="false">聚光第 3 小节（三行一起）</button></div>
   </section>
@@ -226,11 +231,11 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
       <table>
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。颜色从舞台继承，乐谱自己不定颜色。</td></tr>
+          <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写；乐器的全称和缩写也写在谱里）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。颜色从舞台继承，乐谱自己不定颜色。</td></tr>
           <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>发声交给“音源”（单独的小模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管。</td></tr>
-          <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张。</td></tr>
+          <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下。</td></tr>
           <tr><td>出现在哪里</td><td>直接画在讲题和练习的画面上。</td></tr>
         </tbody>
       </table>
@@ -243,17 +248,52 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
 <script>
 /* ============================================================
    Sound source: plays MIDI pitches with sampled piano. It knows
-   nothing about scores; anything that wants a sound calls play().
+   nothing about scores or keyboards; anything that wants a sound
+   calls play(). The player calls unlock() on every touch, because
+   phones only start audio inside a gesture.
    ============================================================ */
 var SoundSource = (function () {
-  var ctx = null, raw = null, buffers = {}, loading = null;
+  var ctx = null, raw = null, buffers = {}, loading = null, media = null, watchers = [];
+  var state = { phase: 'idle', detail: '' };
+  function report(phase, detail) { state = { phase: phase, detail: detail || '' }; watchers.forEach(function (f) { f(state); }); }
+  // A short silent WAV played through a media element. On iPhones this puts
+  // the page in the playback audio category, so Web Audio is heard even
+  // when the ring/silent switch is on silent.
+  function silentWav() {
+    var n = 441, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 44100, true);
+    v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
   function context() {
-    if (!ctx) { var C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); }
-    if (ctx.state === 'suspended') ctx.resume();
+    if (!ctx) {
+      var C = window.AudioContext || window.webkitAudioContext;
+      if (!C) { report('failed', '这个浏览器不支持 Web Audio'); return null; }
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older browsers have no audio session */ }
+      ctx = new C();
+      ctx.onstatechange = function () { report(state.phase, state.detail); };
+    }
+    if (ctx.state !== 'running') { var p = ctx.resume(); if (p && p.catch) p.catch(function () {}); }
     return ctx;
   }
+  // Starts output inside the gesture: one silent sample through Web Audio,
+  // and the silent media element once.
+  function wake() {
+    if (ctx.state !== 'running') { var s = ctx.createBufferSource(); s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0); }
+    if (media === null) {
+      try { media = new Audio(URL.createObjectURL(silentWav())); media.setAttribute('playsinline', ''); var p = media.play(); if (p && p.catch) p.catch(function () {}); } catch (e) { media = false; }
+    }
+  }
+  // The samples sit next to the page, so a relative path works wherever the page is served from.
   function load() {
-    if (!loading) loading = fetch('piano.json').then(function (r) { return r.json(); }).then(function (j) { raw = j; }).catch(function () { raw = {}; });
+    if (!loading) {
+      report('loading');
+      loading = fetch('piano.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function (j) { raw = j; report('ready', Object.keys(j).length + ' 个采样'); })
+        .catch(function (e) { raw = {}; report('failed', '采样没有加载出来（' + (e && e.message || e) + '）'); });
+    }
     return loading;
   }
   function decode(midi) {
@@ -261,6 +301,7 @@ var SoundSource = (function () {
     var bin = atob(raw[midi]); var bytes = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     buffers[midi] = new Promise(function (res, rej) { ctx.decodeAudioData(bytes.buffer, res, rej); });
+    buffers[midi].catch(function () { report('failed', '采样解码失败'); });
     return buffers[midi];
   }
   function nearestSample(midi) {
@@ -269,7 +310,9 @@ var SoundSource = (function () {
     return best;
   }
   return {
-    unlock: function () { context(); load(); },
+    unlock: function () { if (context()) { wake(); load(); } },
+    watch: function (f) { watchers.push(f); f(state); },
+    contextState: function () { return ctx ? ctx.state : '还没创建'; },
     play: function (midi, delaySec, durSec, velocity) {
       var c = context(); if (!c) return;
       var at = c.currentTime + (delaySec || 0);
@@ -341,21 +384,21 @@ Score.prototype.build = function () {
 // Lays the score out for the width it has, then lets the SVG fill that
 // width: a full-size score is laid out narrower than the paper and scaled
 // up, so on wide screens the notes are larger, and on narrow ones it wraps
-// into more lines instead of shrinking.
+// into more lines instead of shrinking. Only when a single bar with its
+// clef, key, time signature and instrument names is still wider than the
+// paper is the score drawn smaller, just enough to fit.
 Score.prototype.render = function () {
   var self = this;
   var width = Math.max(150, this.box.clientWidth || this.host.clientWidth || 300);
   var scale = this.o.compact ? 1 : (width >= 700 ? 1.45 : 1.15);
-  var reserved = this.playBtn ? 52 : 0;
-  var layoutWidth = width / scale;
-  var opts = {
-    add_classes: true, responsive: 'resize', staffwidth: layoutWidth - 8 - reserved / scale,
-    paddingtop: this.o.compact ? 6 : 34, paddingbottom: this.o.compact ? 4 : 52, paddingleft: 2, paddingright: 2 + reserved / scale,
-    format: { staffsep: this.o.compact ? 40 : 90, annotationfont: 'Cormorant Garamond 15 italic', tempofont: 'Cormorant Garamond 17 italic', voicefont: 'Cormorant Garamond 16 italic' }
-  };
-  if (!this.o.compact) opts.wrap = { minSpacing: 1.6, maxSpacing: 2.7, preferredMeasuresPerLine: layoutWidth < 450 ? 2 : 4 };
-  this.visual = ABCJS.renderAbc(this.id, this.o.abc, opts)[0];
+  for (var attempt = 0; attempt < 4; attempt++) {
+    this.draw(width, scale);
+    var over = this.overflow();
+    if (over <= 1.01) break;
+    scale = scale / over;
+  }
   this.svg = this.box.querySelector('svg');
+  this.shortenNames();
   this.addDefs();
   this.collect();
   this.svg.setAttribute('tabindex', '0');
@@ -367,6 +410,47 @@ Score.prototype.render = function () {
   this.svg.addEventListener('blur', function () { self.host.classList.remove('kbd-focus'); });
   this.svg.addEventListener('pointerdown', function () { self.host.classList.remove('kbd-focus'); });
   this.paper.addEventListener('pointerup', function (ev) { if (ev.target === self.paper) self.blankTap(); });
+};
+
+// The play button sits in the top right corner, so a playable score keeps
+// its first line (tempo marking included) below the button and its staves
+// clear of the button's column.
+Score.prototype.draw = function (width, scale) {
+  var reserved = this.playBtn ? 52 : 0;
+  var layoutWidth = width / scale;
+  var top = this.o.compact ? 6 : (this.playBtn ? 62 / scale : 34);
+  var opts = {
+    add_classes: true, responsive: 'resize', staffwidth: layoutWidth - 8 - reserved / scale,
+    paddingtop: top, paddingbottom: this.o.compact ? 4 : 52, paddingleft: 2, paddingright: 2 + reserved / scale,
+    format: { staffsep: this.o.compact ? 40 : 90, annotationfont: 'Cormorant Garamond 15 italic', tempofont: 'Cormorant Garamond 17 italic', voicefont: 'Cormorant Garamond 16 italic' }
+  };
+  if (!this.o.compact) opts.wrap = { minSpacing: 1.6, maxSpacing: 2.7, preferredMeasuresPerLine: layoutWidth < 450 ? 2 : 4 };
+  this.visual = ABCJS.renderAbc(this.id, this.o.abc, opts)[0];
+};
+
+// How much wider the drawn music is than the drawing area (1 = it fits).
+Score.prototype.overflow = function () {
+  var svg = this.box.querySelector('svg'); if (!svg) return 1;
+  var vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+  var w = vb.length === 4 && vb[2] ? vb[2] : svg.getBoundingClientRect().width;
+  var right = 0;
+  svg.querySelectorAll('.abcjs-staff, .abcjs-note, .abcjs-bar, .abcjs-tempo, .abcjs-dynamics, .abcjs-decoration').forEach(function (e) { var b = e.getBBox(); right = Math.max(right, b.x + b.width); });
+  return w ? right / w : 1;
+};
+
+// Exam scores name each instrument in full on the first line and by its
+// short name (the ABC voice's snm) on later lines. abcjs repeats the full
+// name, so later occurrences are replaced here.
+Score.prototype.shortenNames = function () {
+  var short = {}, re = /name="([^"]+)"[^\n]*?snm="([^"]+)"/g, m;
+  while ((m = re.exec(this.o.abc))) short[m[1]] = m[2];
+  var seen = {};
+  this.svg.querySelectorAll('text').forEach(function (t) {
+    var name = t.textContent;
+    if (!short[name]) return;
+    if (seen[name]) t.textContent = short[name];
+    seen[name] = true;
+  });
 };
 
 Score.prototype.addDefs = function () {
@@ -718,11 +802,19 @@ Score.prototype.clear = function () {
 };
 
 /* ============================================================
-   Assembly: this page plays the role of the player. It wires the
-   score's events to a caption and a log; the score never calls
+   Assembly: this page plays the role of the player. It unlocks
+   sound on every touch, wires the score's events to a caption and
+   a log, and shows how the sound is doing; the score never calls
    anything here directly.
    ============================================================ */
 (function () {
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) { document.addEventListener(t, SoundSource.unlock, { capture: true, passive: true }); });
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没启用，点一下谱或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function (s) {
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + SoundSource.contextState() + '）';
+  });
+
   if (!window.ABCJS) { document.querySelector('.lede').textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
   document.body.setAttribute('data-boundary', 'on');
 
@@ -785,7 +877,7 @@ Score.prototype.clear = function () {
     { abc: 'X:1\nL:1/4\nK:F# clef=tenor\nx4|]', caption: 'tenor clef' }
   ]);
 
-  var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin"\nV:RH clef=treble name="Piano"\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
+  var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin" snm="Vln."\nV:RH clef=treble name="Piano" snm="Pno."\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
   var trio; trio = new Score(document.getElementById('trio-score'), { abc: TRIO, playable: true, sound: SoundSource, onEvent: function (ev) { nameBubble(trio, ev); } });
   var trioSpot = false;
   document.getElementById('trio-spot').addEventListener('click', function () {
@@ -801,7 +893,7 @@ Score.prototype.clear = function () {
     clear: function () { main.clear(); }
   };
   document.querySelectorAll('[data-cmd]').forEach(function (b) {
-    b.addEventListener('click', function () { SoundSource.unlock(); commands[b.getAttribute('data-cmd')](); });
+    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
   });
 
   document.querySelectorAll('[data-stage-pick]').forEach(function (b) {
