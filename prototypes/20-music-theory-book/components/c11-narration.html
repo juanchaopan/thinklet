@@ -1,0 +1,998 @@
+<title>旁白字幕条</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<style>
+/* Layout: a lit stage shaped like a lecture screen: the conclusion stack and a component (both mocks) above, the player's mute switch in the corner, and the narration bar along the bottom, outlined with a dashed boundary. A button plays a short lecture through, driven by a small workflow that waits for each line. Under it a plain "workflow simulator" panel sends commands to the bar and logs the events it emits; then the bar in each of its states at phone width, and the interface table. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+/* The player's screen does not let the browser shift the scroll position when a component changes height. */
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+h3 { font-size: 15px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(14px, 4vw, 36px); display: grid; gap: 16px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(17px, 2.6vw, 22px); font-weight: 800; }
+.stage-head .rubric { font: italic 500 19px/1.3 "Cormorant Garamond", serif; }
+/* The player's mute switch: not part of the bar, but the bar shows when it is on. */
+.mute-switch { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1.5px dashed rgba(90, 60, 30, .3); background: rgba(255, 250, 241, .6); color: rgba(70, 48, 26, .8); font: 700 13px/1 var(--font); cursor: pointer; }
+.mute-switch[aria-pressed="true"] { border-style: solid; border-color: #6d3cf0; color: #4b23c9; background: #f4f0fb; }
+.mute-switch svg { width: 18px; height: 18px; }
+#nb-main { margin-top: 10px; }
+
+/* Mocks of the other components on a lecture screen; they only show what the workflow does while the bar speaks. */
+.mock { border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; padding: 10px 14px 12px; background: rgba(255, 250, 241, .45); color: rgba(70, 48, 26, .8); display: grid; gap: 8px; }
+.mock-tag { font-size: 12px; font-weight: 700; }
+.mk-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-height: 30px; }
+.mk-items li { justify-self: start; padding: 4px 12px; border-radius: 6px; background: linear-gradient(175deg, #fffaf1, #f2e6d1); box-shadow: 0 2px 6px -2px rgba(60, 38, 16, .45); color: #241a12; font: italic 600 18px/1.3 "Cormorant Garamond", serif; animation: mk-in .45s cubic-bezier(.6, 0, .25, 1) both; }
+.mk-items li.mk-answer { box-shadow: 0 0 0 2px #7b4dff, 0 0 14px rgba(123, 77, 255, .35); }
+.mk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 44px; }
+.mk-chip { display: inline-grid; place-items: center; min-width: 38px; height: 38px; padding: 0 8px; border-radius: 10px; background: #fffaf1; box-shadow: 0 2px 6px -2px rgba(60, 38, 16, .4); color: #241a12; font: 600 21px/1 "Cormorant Garamond", serif; transition: box-shadow .3s, color .3s; }
+.mk-chip.mk-lit { color: #4b23c9; box-shadow: 0 0 0 2px #7b4dff, 0 0 14px rgba(123, 77, 255, .4); }
+.mk-chip.mk-step { background: rgba(123, 77, 255, .1); color: #4b23c9; box-shadow: none; animation: mk-in .3s ease both; }
+.mk-chip.mk-ans { color: #241a12; animation: mk-in .35s ease both; }
+.mk-arrow { color: rgba(70, 48, 26, .5); font-size: 14px; }
+.mk-tap { justify-self: start; font: 700 14px/1 var(--font); min-height: 44px; padding: 0 16px; border-radius: 999px; border: 0; cursor: pointer; color: #fff; background: radial-gradient(circle at 35% 30%, #a98bff, #7b4dff); box-shadow: 0 0 0 0 rgba(123, 77, 255, .5); animation: mk-call 1.6s ease-in-out infinite; }
+.mk-tap[hidden] { display: none; }
+@keyframes mk-in { from { opacity: 0; transform: translateY(6px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes mk-call { 50% { box-shadow: 0 0 0 8px rgba(123, 77, 255, 0); } }
+
+/* Dashed outline that marks exactly what the bar is on this demo page. */
+body[data-boundary="on"] .pl-nb { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 24px; }
+body[data-boundary="on"] .pl-nb::before { content: "旁白字幕条（播放器的）"; position: absolute; top: -21px; left: 12px; z-index: 30; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+
+/* ---------- Narration bar: part of the player, the same in every theme; it defines its whole look here and takes nothing from the page ---------- */
+/* The look follows the product, not a component theme: a dark glass band along the bottom of the lecture screen, like film subtitles, so it reads on any theme's background. The teacher's portrait sits on the left with a violet halo that swells with the voice; the line being said is in warm white, with a thin violet line showing how far it has played. The buttons are white icons; the middle one is the product's violet. */
+.pl-nb { position: relative; container-type: inline-size; color: #fbf8f3; font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif; -webkit-font-smoothing: antialiased; text-align: left; }
+.pl-nb, .pl-nb * { box-sizing: border-box; }
+.pl-nb-body { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "who say" "ctl ctl"; align-items: start; gap: 6px 10px; padding: 12px 8px 4px 10px; border-radius: 22px;
+  background: linear-gradient(180deg, rgba(36, 40, 66, .94), rgba(20, 23, 38, .96)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), inset 0 0 0 1px rgba(255, 255, 255, .05), 0 22px 40px -20px rgba(14, 16, 30, .7), 0 2px 6px rgba(14, 16, 30, .2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
+.pl-nb-who { grid-area: who; padding-top: 2px; }
+.pl-nb-face { --lv: 0; position: relative; width: 50px; height: 50px; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 30%, #fff3e6, #ffcfa8 68%, #f2a57a);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .18); transition: box-shadow .3s, filter .3s; }
+.pl-nb-face img { position: absolute; width: 150%; left: -25%; top: -6%; max-width: none; pointer-events: none; user-select: none; }
+.pl-nb[data-state="speaking"] .pl-nb-face, .pl-nb[data-state="starting"] .pl-nb-face { transition: filter .3s;
+  box-shadow: 0 0 0 2px rgba(169, 139, 255, calc(.55 + .45 * var(--lv))), 0 0 calc(6px + 20px * var(--lv)) calc(1px + 5px * var(--lv)) rgba(169, 139, 255, calc(.25 + .45 * var(--lv))); }
+.pl-nb[data-state="paused"] .pl-nb-face { filter: saturate(.55) brightness(.85); }
+.pl-nb[data-state="waiting"] .pl-nb-face { animation: pl-nb-breathe 2.4s ease-in-out infinite; }
+.pl-nb[data-state="failed"] .pl-nb-face { box-shadow: 0 0 0 2px #ff8a7a; }
+.pl-nb-say { grid-area: say; min-width: 0; display: grid; gap: 4px; }
+.pl-nb-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 22px; font-size: 12px; line-height: 1.3; color: rgba(251, 248, 243, .62); }
+.pl-nb-name { font-weight: 700; letter-spacing: .04em; }
+.pl-nb-where { font-variant-numeric: tabular-nums lining-nums; }
+.pl-nb-flag { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-weight: 800; animation: pl-nb-pop .3s cubic-bezier(.6, 0, .25, 1) both; }
+.pl-nb-flag[hidden], .pl-nb-mute[hidden], .pl-nb-where[hidden] { display: none; }
+.pl-nb-flag[data-kind="turn"] { background: #ffd9b8; color: #4a2a10; }
+.pl-nb-flag[data-kind="pause"] { background: rgba(255, 255, 255, .16); color: #fbf8f3; }
+.pl-nb-flag[data-kind="fail"] { background: #ff8a7a; color: #3a0d06; }
+.pl-nb-flag[data-kind="back"] { background: rgba(169, 139, 255, .24); color: #e2d8ff; }
+.pl-nb-mute { display: inline-flex; align-items: center; gap: 4px; }
+.pl-nb-mute svg { width: 14px; height: 14px; }
+.pl-nb-lines { position: relative; font-size: 16.5px; line-height: 1.55; transition: height .52s cubic-bezier(.6, 0, .25, 1); }
+.pl-nb-lines.pl-nb-still { transition: none; }
+.pl-nb-line { position: absolute; left: 0; right: 0; top: 0; margin: 0; padding: 0; font-weight: 500; letter-spacing: .01em; text-wrap: pretty; overflow-wrap: anywhere; }
+.pl-nb-line.pl-nb-enter { animation: pl-nb-rise .42s cubic-bezier(.6, 0, .25, 1) .08s both; }
+.pl-nb-line.pl-nb-leave { animation: pl-nb-fall .3s ease both; }
+.pl-nb-track { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; margin-top: 2px; transition: opacity .3s; }
+.pl-nb-fill { display: block; height: 100%; width: 100%; transform-origin: left center; transform: scaleX(0); border-radius: 2px; background: linear-gradient(90deg, #a98bff, #cdbcff); box-shadow: 0 0 8px rgba(169, 139, 255, .7); }
+.pl-nb[data-state="waiting"] .pl-nb-track, .pl-nb[data-state="idle"] .pl-nb-track { opacity: .35; }
+.pl-nb-ctl { grid-area: ctl; display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.pl-nb-scene { flex: none; display: none; gap: 5px; justify-items: start; font-size: 12px; line-height: 1; color: rgba(251, 248, 243, .62); font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+.pl-nb-dots { display: flex; gap: 4px; align-items: center; }
+.pl-nb-dots i { width: 6px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .22); transition: width .52s cubic-bezier(.6, 0, .25, 1), background-color .3s; }
+.pl-nb-dots i.pl-nb-done { background: rgba(255, 255, 255, .55); }
+.pl-nb-dots i.pl-nb-now { width: 16px; background: #a98bff; box-shadow: 0 0 6px rgba(169, 139, 255, .8); }
+.pl-nb-transport { display: flex; align-items: center; gap: 0; }
+.pl-nb button { font: inherit; color: inherit; background: none; border: 0; margin: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pl-nb button:focus { outline: none; }
+.pl-nb button:focus-visible { outline: 2px solid #a98bff; outline-offset: 2px; }
+.pl-nb-btn { position: relative; display: grid; justify-items: center; align-content: center; gap: 3px; width: 44px; height: 44px; border-radius: 14px; color: rgba(251, 248, 243, .92); transition: background-color .15s, transform .1s, opacity .2s; }
+.pl-nb-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+.pl-nb-btn:active:not(:disabled) { transform: scale(.92); }
+.pl-nb-btn:disabled { opacity: .28; cursor: default; }
+.pl-nb-btn svg { width: 22px; height: 22px; }
+.pl-nb-btn > span { display: none; font-size: 11px; line-height: 1; font-weight: 600; color: rgba(251, 248, 243, .7); white-space: nowrap; }
+.pl-nb svg .f { fill: currentColor; }
+.pl-nb svg .s { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pl-nb-main { width: 50px; }
+.pl-nb-main:hover:not(:disabled) { background: none; }
+.pl-nb-disc { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; color: #fff; background: radial-gradient(circle at 35% 28%, #9c7cff, #6d3cf0 72%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 6px 16px -6px rgba(109, 60, 240, .9), 0 0 0 0 rgba(169, 139, 255, .5); }
+.pl-nb[data-state="failed"] .pl-nb-disc { animation: pl-nb-call 1.6s ease-in-out infinite; }
+.pl-nb-ratebox { position: relative; flex: none; }
+.pl-nb-rate b { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums lining-nums; letter-spacing: -.01em; }
+.pl-nb-rate[aria-expanded="true"] { background: rgba(255, 255, 255, .12); }
+.pl-nb-menu { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20; min-width: 150px; padding: 6px; border-radius: 16px; display: grid; gap: 2px;
+  background: linear-gradient(180deg, #2c3050, #1c1f33); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 16px 30px -12px rgba(10, 12, 24, .8); animation: pl-nb-pop .26s cubic-bezier(.6, 0, .25, 1) both; transform-origin: bottom right; }
+.pl-nb-menu[hidden] { display: none; }
+.pl-nb-opt { display: grid; grid-template-columns: 18px auto 1fr; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px 0 8px; border-radius: 11px; text-align: left; color: #fbf8f3; }
+.pl-nb-opt:hover { background: rgba(255, 255, 255, .08); }
+.pl-nb-opt b { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums lining-nums; min-width: 46px; }
+.pl-nb-opt small { font-size: 13px; color: rgba(251, 248, 243, .62); }
+.pl-nb-opt svg { width: 18px; height: 18px; color: #a98bff; visibility: hidden; }
+.pl-nb-opt[aria-checked="true"] svg { visibility: visible; }
+.pl-nb-opt[aria-checked="true"] b { color: #cdbcff; }
+/* set() lays out a state without its transitions and entrances. */
+.pl-nb.pl-nb-hold, .pl-nb.pl-nb-hold * { transition: none !important; }
+@container (min-width: 560px) {
+  .pl-nb-body { padding: 14px 14px 8px 16px; gap: 8px 14px; }
+  .pl-nb-face { width: 60px; height: 60px; }
+  .pl-nb-lines { font-size: 18px; }
+  .pl-nb-btn { width: 54px; height: 54px; }
+  .pl-nb-btn > span { display: block; }
+  .pl-nb-main { width: 60px; }
+  .pl-nb-main > span { display: none; }
+  .pl-nb-disc { width: 50px; height: 50px; }
+  .pl-nb-scene { display: grid; }
+  .pl-nb-where { display: none; }
+}
+@container (min-width: 820px) {
+  .pl-nb-body { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "who say ctl"; align-items: center; padding: 12px 12px 12px 16px; }
+  .pl-nb-lines { font-size: 19px; }
+  .pl-nb-ctl { gap: 8px; }
+}
+@keyframes pl-nb-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes pl-nb-fall { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-8px); } }
+@keyframes pl-nb-pop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+@keyframes pl-nb-breathe { 0%, 100% { box-shadow: 0 0 0 2px rgba(255, 217, 184, .55), 0 0 4px 1px rgba(255, 217, 184, .2); } 50% { box-shadow: 0 0 0 2px rgba(255, 217, 184, .95), 0 0 18px 5px rgba(255, 217, 184, .45); } }
+@keyframes pl-nb-call { 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 6px 16px -6px rgba(109, 60, 240, .9), 0 0 0 9px rgba(169, 139, 255, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .pl-nb *, .pl-nb *::before, .pl-nb *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .1s !important; }
+}
+
+/* ---------- Workflow simulator and gallery (not part of the bar) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:disabled { opacity: .5; cursor: default; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.chip-group { display: grid; gap: 6px; }
+.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 18px; }
+.phone { border-radius: 26px; padding: 22px 10px 10px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 12px; align-content: end; min-width: 0; max-width: 390px; width: 100%; justify-self: center; min-height: 230px; }
+.phone h3 { color: var(--stage-ink); padding: 0 6px; }
+.phone .mini-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px; }
+.phone > div[id] { margin-top: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { .mk-items li, .mk-chip, .mk-tap { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 11 / 11 · 播放器自带 · 讲题画面最下面，所有主题共用</span>
+    <h1>旁白字幕条</h1>
+    <p class="lede">讲题画面最下面的一条，蓝色虚线框住的就是它：左边是老师的头像，老师说话时头像周围的紫光跟着声音一起一伏；中间是老师正在说的这句话（字幕），下面一条细细的紫线表示这句话说到哪儿了；再下面一排按钮：上一幕、上一句、暂停或继续、下一句、下一幕和语速。它是播放器自带的，所有主题、所有讲题都一样，题目不用挑它。流程只告诉它说哪一句、轮到孩子了、换到第几幕；一句说完、孩子按了按钮，它就发出事件，流程靠这些事件往下走。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button><button class="chip" type="button" id="run-btn" disabled>准备中…</button></div>
+  </header>
+
+  <section class="stage" id="lesson" aria-label="讲题画面">
+    <div class="stage-head">
+      <div><p class="q">讲题 · 写出音程</p><p class="rubric">Write a minor 6th above this note.</p></div>
+      <button class="mute-switch" type="button" id="mute-switch" aria-pressed="false" title="静音开关是播放器的，不属于字幕条"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M15 9.2l5 5.6M20 9.2l-5 5.6"/></svg>静音（播放器的）</button>
+    </div>
+    <div class="mock" id="mk-stack"><span class="mock-tag">结论栈（示意）</span><ol class="mk-items" id="mk-items"></ol></div>
+    <div class="mock" id="mk-comp"><span class="mock-tag">在谱上放音符（示意）</span>
+      <div class="mk-row"><span class="mk-chip" id="mk-given">E♭</span><span class="mk-arrow" aria-hidden="true">→</span><span class="mk-row" id="mk-steps" style="gap:6px"></span><span class="mk-row" id="mk-answer"></span></div>
+      <button class="mk-tap" type="button" id="mk-tap" hidden>（孩子）在谱上点 C 的位置</button>
+    </div>
+    <div id="nb-main"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给字幕条的指令</h2>
+    <p class="what">这些按钮不属于字幕条，是在模拟流程发给它的指令；记录框列出它发出的事件。直接按字幕条上的按钮，就是孩子在操作。上面「从头放一遍」时，一个小流程一句一句地等字幕条说完再往下走：孩子按「上一句」会回听，按「下一句」会跳过这一句，按「上一幕」「下一幕」时流程把画面直接摆成那一幕开始的样子再讲。</p>
+    <div class="chip-group"><span>说话</span><div class="chips">
+      <button class="chip" type="button" data-cmd="say">说下一句台词</button>
+      <button class="chip" type="button" data-cmd="say-long">说一句很长的</button>
+      <button class="chip" type="button" data-cmd="say-broken">说一句录音坏了的</button>
+      <button class="chip" type="button" data-cmd="wait">轮到孩子了</button>
+      <button class="chip" type="button" data-cmd="unwait">孩子做完了</button>
+    </div></div>
+    <div class="chip-group"><span>播放器</span><div class="chips">
+      <button class="chip" type="button" data-cmd="scene">换到下一幕</button>
+      <button class="chip" type="button" data-cmd="pause">暂停</button>
+      <button class="chip" type="button" data-cmd="resume">继续</button>
+      <button class="chip" type="button" data-cmd="rate">语速设成 1.25×</button>
+      <button class="chip" type="button" data-cmd="set">直接摆成第 2 幕“轮到孩子”</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+    </div></div>
+    <div class="log" id="log" aria-live="polite" aria-label="字幕条发出的事件"></div>
+  </section>
+
+  <section class="panel">
+    <h2>手机宽度上的几种样子</h2>
+    <p class="what">都是同一个字幕条。窄的时候按钮只留图标（读屏会念出名字），第几幕写在老师名字旁边；宽的时候图标下面写字，幕数画成小圆点；再宽时字幕和按钮排成一行。</p>
+    <div class="gallery">
+      <div class="phone"><h3>正在说一句很长的话：字幕排成三行，条慢慢长高</h3><div class="mini-tools"><button class="chip" type="button" data-g="long">再说一遍</button></div><div id="g-long"></div></div>
+      <div class="phone"><h3>孩子按了暂停：头像变暗，写着“暂停了”，中间的按钮变成继续</h3><div id="g-pause"></div></div>
+      <div class="phone"><h3>轮到孩子动手：头像周围慢慢地一亮一暗，写着“轮到你了”，不能按下一句</h3><div id="g-turn"></div></div>
+      <div class="phone"><h3>这一句没放出来：停在这一句，不跳过；中间的按钮变成“再听”，一闪一闪等孩子点</h3><div class="mini-tools"><button class="chip" type="button" data-g="broken">再弄坏一次</button></div><div id="g-fail"></div></div>
+      <div class="phone"><h3>开着静音：照常一句一句往下走，写着“静音，看字幕”</h3><div id="g-mute"></div></div>
+      <div class="phone"><h3>调语速：点右边的 1×，选慢一点、正常、快一点</h3><div id="g-rate"></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>老师（名字和头像，由播放器给）；这道讲题的全部台词（编号、字幕的文字、录音）；语速；静音开关的状态。</td></tr>
+          <tr><td>外观</td><td>播放器自己的样子，不跟主题走：深色的玻璃条，暖白的字，紫色的进度线和中间的按钮。老师说话时头像周围的紫光跟着声音的大小起伏；暂停时头像变暗；轮到孩子时头像周围慢慢一亮一暗，写着“轮到你了”；一句没放出来时写着“没放出来”，中间的按钮变成“再听”一闪一闪。</td></tr>
+          <tr><td>排法</td><td>字幕条自己按自己的宽度排：手机上头像和字幕一行，按钮一行，按钮只留图标，第几幕写在老师名字旁边；宽一些时图标下面写字，幕数画成小圆点；再宽时字幕和按钮排在同一行。字幕至少留两行高，一句话要三行时条慢慢长高，按钮不会跳。放在讲题画面的最下面，由播放器决定，题目和流程都不管。</td></tr>
+          <tr><td>动作</td><td>换一句话时，旧的一句往上淡出，新的一句从下面浮上来（0.4 秒）；条的高度跟着慢慢变。进度线随着录音一点一点走。</td></tr>
+          <tr><td>孩子的按钮</td><td><b>上一句</b>：这一句说了 2 秒以上时从头再说这一句；刚开始说时退回这一幕里的上一句，说完以后接着往下说，一直说到原来那一句，画面不动；没有在说话时（流程在做动画、在等孩子），重说刚才那一句。<b>下一句</b>：跳过这一句剩下的部分，流程马上往下走；轮到孩子动手时不能按，免得跳过孩子要做的事。<b>暂停、继续</b>：停下声音，也让流程停在原地。<b>上一幕、下一幕</b>：告诉播放器，播放器把画面直接摆成那一幕开始的样子再讲；在第一幕按上一幕就是从头讲这一幕。<b>语速</b>：0.75×、1×、1.25×，音高不变。</td></tr>
+          <tr><td>指令</td><td><code>say(台词)</code> 说这一句，说完（或孩子按了下一句）时交回结果；<code>wait(是/否)</code> 轮到孩子动手了；<code>scene(第几幕, 共几幕)</code>；<code>pause()</code>、<code>resume()</code>；<code>rate(语速)</code>；<code>mute(是/否)</code>；<code>set(状态)</code> 直接摆成某一幕里的样子（第几幕、显示哪一句、是不是轮到孩子、暂停没有），不放动画；<code>stop()</code> 停下这一句，正在等的流程收到“停了”；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>lineStart</code>（哪一句，是不是回听）；<code>lineEnd</code>（哪一句，说完了还是孩子跳过的）；<code>lineFail</code>（哪一句，为什么：被浏览器拦住、录音坏了、8 秒还没开始、被系统打断如来电）；<code>lineBack</code>（孩子按了上一句，现在说哪一句）；<code>lineRetry</code>；<code>pause</code>、<code>resume</code>；<code>prevScene</code>、<code>nextScene</code>（从第几幕）；<code>rate</code>（选的语速）。</td></tr>
+          <tr><td>依赖</td><td>录音由播放器在加载页里下载好交给它，它不自己下载；每句录音的长短和声音大小的起伏在加载时量好，头像的光照着起伏走，所以不用把声音接进别的音频处理，手机上更稳。</td></tr>
+          <tr><td>声音</td><td>旁白用一个网页自带的音频播放器放，和组件的钢琴声分开：调语速时音高不变，静音键打开的手机上也照样有声音。手机上它在孩子点「开始」时解锁。开着静音时照常走，只是不出声。</td></tr>
+          <tr><td>出现在哪里</td><td>只在讲题里，画面最下面，从第一幕到最后一幕一直在；练习没有老师说话，不出现。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">原型里的录音还是和每句台词一样长的静音占位，所以听不到老师的声音，头像的光也不起伏；用 edge-tts 的晓晓录好以后换上即可，字幕条的代码不用改。小兔老师的图来自好奇星球自己的插画。打开页面时的加载页是播放器的，和其他组件的原型共用。</p>
+  </section>
+</div>
+
+<script src="sound.js"></script>
+<script>
+/* ============================================================
+   Narration bar. The player's own strip along the bottom of a lecture:
+   the teacher's portrait, the line being said as a subtitle with a thin
+   line showing how far it has played, and the child's buttons (previous
+   scene, previous line, pause or continue, next line, next scene, speed).
+   It is the same in every theme and every lecture.
+
+   The workflow tells it which line to say (say returns a promise that
+   settles when the line is over), when the child is to act (wait), and
+   which scene the lecture is in (scene). The child's buttons only move
+   within the lines already said, or end the current one; going to
+   another scene is reported to the player, which owns the stage.
+
+   Each line is a recording played by one HTMLAudioElement, so a slower
+   or faster speed keeps the pitch, and the phone's silent switch does
+   not mute it. The portrait's halo follows a loudness envelope measured
+   when the recordings are prepared, so the voice never has to go
+   through Web Audio.
+
+   Commands: say, wait, scene, pause, resume, rate, mute, set, stop,
+   clear, unlock (the player calls it on the child's touches).
+   Events (via onEvent): lineStart, lineEnd, lineFail, lineBack,
+   lineRetry, pause, resume, prevScene, nextScene, rate.
+   ============================================================ */
+var NarrationBar = (function () {
+  var RATES = [0.75, 1, 1.25];
+  var RATE_NAMES = { '0.75': '慢一点', '1': '正常', '1.25': '快一点' };
+  var START_TIMEOUT_MS = 8000;
+  var RESTART_AFTER_S = 2;
+  var ENV_STEP_S = 0.04;
+  var INTERRUPT_CHECK_MS = 300;
+  var FADE_OUT_MS = 340;
+  var LINE_HEIGHT = 1.55;
+  var MIN_LINES = 2;
+  var SILENT = null;
+
+  var ICON = {
+    prevScene: '<path class="s" d="M5 6.5v11"/><path class="f" d="M12.4 6.6v10.8L7.2 12z"/><path class="f" d="M19.2 6.6v10.8L14 12z"/>',
+    prevLine: '<path class="s" d="M7 6.5v11"/><path class="f" d="M18 6.6v10.8L9.6 12z"/>',
+    nextLine: '<path class="s" d="M17 6.5v11"/><path class="f" d="M6 6.6v10.8l8.4-5.4z"/>',
+    nextScene: '<path class="s" d="M19 6.5v11"/><path class="f" d="M4.8 6.6v10.8L10 12z"/><path class="f" d="M11.6 6.6v10.8l5.2-5.4z"/>',
+    play: '<path class="f" d="M8.5 5.6v12.8l10-6.4z"/>',
+    pause: '<rect class="f" x="6.8" y="5.6" width="3.6" height="12.8" rx="1"/><rect class="f" x="13.6" y="5.6" width="3.6" height="12.8" rx="1"/>',
+    replay: '<path class="s" d="M6 12.4a6.2 6.2 0 1 0 1.9-4.6"/><path class="s" d="M5.6 4.6v4.2h4.2"/>',
+    muted: '<path class="f" d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path class="s" d="M15 9.2l5 5.6M20 9.2l-5 5.6"/>',
+    check: '<path class="s" d="M5 12.5l4.5 4.5L19 7.5"/>'
+  };
+  function svg(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[name] + '</svg>'; }
+  function rateText(r) { return String(r) + '×'; }
+
+  function silentUrl() {
+    if (SILENT) return SILENT;
+    var n = 400, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    SILENT = URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+    return SILENT;
+  }
+
+  // Loudness of a recording every ENV_STEP_S seconds, 0..1, scaled so the
+  // loud parts of this line reach about 1.
+  function envelope(buffer) {
+    var data = buffer.getChannelData(0), step = Math.max(1, Math.round(buffer.sampleRate * ENV_STEP_S)), out = [];
+    for (var i = 0; i < data.length; i += step) {
+      var sum = 0, end = Math.min(data.length, i + step);
+      for (var j = i; j < end; j++) sum += data[j] * data[j];
+      out.push(Math.sqrt(sum / (end - i)));
+    }
+    var sorted = out.slice().sort(function (a, b) { return a - b; });
+    var top = sorted[Math.floor(sorted.length * 0.95)] || 0;
+    return out.map(function (x) { return top < 1e-4 ? 0 : Math.min(1, x / top); });
+  }
+
+  // Downloads every line's recording and measures its length and
+  // loudness, as the player's loading screen does before a lecture starts.
+  function prepare(lines, base, onProgress) {
+    var C = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    var ctx = new C(1, 2, 44100);
+    var done = 0;
+    return Promise.all(lines.map(function (l) {
+      var src = l.src || (l.id + '.mp3');
+      return fetch(base + src).then(function (r) {
+        if (!r.ok) throw new Error('narration ' + src + ' ' + r.status);
+        return r.arrayBuffer();
+      }).then(function (buf) {
+        var url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+        return new Promise(function (res, rej) { ctx.decodeAudioData(buf.slice(0), res, rej); }).then(function (ab) {
+          done++; if (onProgress) onProgress(done / lines.length);
+          return { id: l.id, text: l.text, url: url, duration: ab.duration, env: envelope(ab) };
+        });
+      });
+    }));
+  }
+
+  function Bar(host, options) {
+    this.host = host;
+    this.o = Object.assign({ teacher: { name: '', portrait: '' }, lines: [], rate: 1, muted: false, onEvent: function () {} }, options);
+    this.lines = {};
+    var self = this;
+    this.o.lines.forEach(function (l) { self.lines[l.id] = l; });
+    this.history = []; this.cursor = -1; this.pending = null;
+    this.active = false; this.started = false; this.deferred = false; this.failed = null;
+    this.paused = false; this.waiting = false; this.index = -1; this.total = 0;
+    this.rateValue = this.o.rate; this.muted = !!this.o.muted;
+    this.playToken = 0; this.timer = 0; this.raf = 0; this.lv = 0; this.unlocked = false; this.currentUrl = '';
+    this.audio = new Audio();
+    this.audio.preload = 'auto';
+    this.audio.preservesPitch = true; this.audio.webkitPreservesPitch = true;
+    this.build();
+    this.bindAudio();
+    this.render();
+  }
+
+  Bar.prepare = prepare;
+  Bar.RATES = RATES;
+
+  Bar.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
+
+  Bar.prototype.build = function () {
+    var self = this, t = this.o.teacher;
+    var el = document.createElement('div');
+    el.className = 'pl-nb';
+    el.setAttribute('role', 'region');
+    el.setAttribute('aria-label', '老师的话');
+    el.innerHTML =
+      '<div class="pl-nb-body">' +
+        '<div class="pl-nb-who"><div class="pl-nb-face"><img alt="" draggable="false"></div></div>' +
+        '<div class="pl-nb-say">' +
+          '<div class="pl-nb-meta"><span class="pl-nb-name"></span><span class="pl-nb-where" hidden></span><span class="pl-nb-flag" hidden></span><span class="pl-nb-mute" hidden>' + svg('muted') + '静音，看字幕</span></div>' +
+          '<div class="pl-nb-lines"></div>' +
+          '<div class="pl-nb-track"><i class="pl-nb-fill"></i></div>' +
+        '</div>' +
+        '<div class="pl-nb-ctl">' +
+          '<div class="pl-nb-scene" role="img"><span class="pl-nb-dots"></span><span class="pl-nb-num"></span></div>' +
+          '<div class="pl-nb-transport">' +
+            '<button type="button" class="pl-nb-btn" data-act="prevScene" aria-label="上一幕">' + svg('prevScene') + '<span>上一幕</span></button>' +
+            '<button type="button" class="pl-nb-btn" data-act="prevLine" aria-label="上一句">' + svg('prevLine') + '<span>上一句</span></button>' +
+            '<button type="button" class="pl-nb-btn pl-nb-main" data-act="toggle"><i class="pl-nb-disc"></i><span></span></button>' +
+            '<button type="button" class="pl-nb-btn" data-act="nextLine" aria-label="下一句">' + svg('nextLine') + '<span>下一句</span></button>' +
+            '<button type="button" class="pl-nb-btn" data-act="nextScene" aria-label="下一幕">' + svg('nextScene') + '<span>下一幕</span></button>' +
+          '</div>' +
+          '<div class="pl-nb-ratebox">' +
+            '<button type="button" class="pl-nb-btn pl-nb-rate" data-act="rate" aria-haspopup="menu" aria-expanded="false"><b></b><span>语速</span></button>' +
+            '<div class="pl-nb-menu" role="menu" aria-label="语速" hidden>' +
+              RATES.map(function (r) { return '<button type="button" class="pl-nb-opt" role="menuitemradio" data-rate="' + r + '">' + svg('check') + '<b>' + rateText(r) + '</b><small>' + RATE_NAMES[String(r)] + '</small></button>'; }).join('') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    this.host.innerHTML = '';
+    this.host.appendChild(el);
+    this.el = el;
+    var q = function (s) { return el.querySelector(s); };
+    this.face = q('.pl-nb-face'); this.nameEl = q('.pl-nb-name'); this.whereEl = q('.pl-nb-where'); this.flagEl = q('.pl-nb-flag'); this.muteEl = q('.pl-nb-mute');
+    this.linesBox = q('.pl-nb-lines'); this.fillEl = q('.pl-nb-fill'); this.sceneEl = q('.pl-nb-scene'); this.dotsEl = q('.pl-nb-dots'); this.numEl = q('.pl-nb-num');
+    this.btn = {}; Array.prototype.forEach.call(el.querySelectorAll('[data-act]'), function (b) { self.btn[b.getAttribute('data-act')] = b; });
+    this.menu = q('.pl-nb-menu'); this.rateBox = q('.pl-nb-ratebox');
+    q('.pl-nb-face img').src = t.portrait || '';
+    this.nameEl.textContent = t.name || '';
+    this.linesBox.classList.add('pl-nb-still');
+    this.linesBox.style.height = this.minHeight() + 'px';
+
+    el.addEventListener('click', function (e) {
+      var opt = e.target.closest('.pl-nb-opt');
+      if (opt) { self.chooseRate(Number(opt.getAttribute('data-rate'))); return; }
+      var b = e.target.closest('[data-act]');
+      if (!b || b.disabled) return;
+      self.press(b.getAttribute('data-act'));
+    });
+    el.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !self.menu.hidden) { self.openMenu(false); self.btn.rate.focus(); } });
+    document.addEventListener('pointerdown', function (e) { if (!self.menu.hidden && !self.rateBox.contains(e.target)) self.openMenu(false); }, true);
+    if (window.ResizeObserver) {
+      var w = 0;
+      new ResizeObserver(function () { var nw = el.getBoundingClientRect().width; if (nw !== w) { w = nw; self.fitLines(); } }).observe(el);
+    }
+  };
+
+  Bar.prototype.minHeight = function () {
+    return Math.ceil(parseFloat(getComputedStyle(this.linesBox).fontSize) * LINE_HEIGHT * MIN_LINES);
+  };
+  Bar.prototype.currentLineEl = function () {
+    var all = this.linesBox.querySelectorAll('.pl-nb-line:not(.pl-nb-leave)');
+    return all[all.length - 1] || null;
+  };
+  // Sets the subtitle box to fit its line at once (after a width change).
+  Bar.prototype.fitLines = function () {
+    var p = this.currentLineEl();
+    this.linesBox.classList.add('pl-nb-still');
+    this.linesBox.style.height = Math.max(this.minHeight(), p ? p.offsetHeight : 0) + 'px';
+  };
+  Bar.prototype.showLine = function (text, animate) {
+    var box = this.linesBox, cur = this.currentLineEl();
+    if (cur && cur.textContent === text) return;
+    var olds = box.querySelectorAll('.pl-nb-line');
+    var p = document.createElement('p');
+    p.className = 'pl-nb-line';
+    p.textContent = text;
+    box.appendChild(p);
+    var h = Math.max(this.minHeight(), p.offsetHeight);
+    if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      box.style.height = box.getBoundingClientRect().height + 'px';
+      void box.offsetHeight;
+      box.classList.remove('pl-nb-still');
+      box.style.height = h + 'px';
+      Array.prototype.forEach.call(olds, function (o) { o.classList.remove('pl-nb-enter'); o.classList.add('pl-nb-leave'); setTimeout(function () { o.remove(); }, FADE_OUT_MS); });
+      p.classList.add('pl-nb-enter');
+    } else {
+      Array.prototype.forEach.call(olds, function (o) { o.remove(); });
+      box.classList.add('pl-nb-still');
+      box.style.height = h + 'px';
+    }
+  };
+  Bar.prototype.fill = function (f) { this.fillEl.style.transform = 'scaleX(' + Math.max(0, Math.min(1, f)).toFixed(4) + ')'; };
+
+  Bar.prototype.bindAudio = function () {
+    var self = this, a = this.audio;
+    a.addEventListener('playing', function () {
+      if (!self.active || a.getAttribute('src') !== self.currentUrl) return;
+      self.started = true; clearTimeout(self.timer); self.render();
+    });
+    a.addEventListener('ended', function () {
+      if (!self.active || self.failed || a.getAttribute('src') !== self.currentUrl) return;
+      self.onEnded();
+    });
+    a.addEventListener('error', function () {
+      if (!self.active || a.getAttribute('src') !== self.currentUrl) return;
+      self.fail('error');
+    });
+    // A pause nobody asked for (a phone call, the system taking the audio
+    // away) stops the line where it is, like a failed line.
+    a.addEventListener('pause', function () {
+      var token = self.playToken;
+      setTimeout(function () {
+        if (token === self.playToken && self.active && !self.paused && !self.failed && self.started && a.paused && !a.ended) self.fail('interrupted');
+      }, INTERRUPT_CHECK_MS);
+    });
+  };
+
+  // Plays a silent clip inside the child's touch so later lines may start
+  // on their own on phones.
+  Bar.prototype.unlock = function () {
+    if (this.unlocked || this.active) return;
+    var self = this, a = this.audio;
+    this.unlocked = true;
+    a.src = silentUrl();
+    var p = a.play();
+    if (p && p.then) p.then(function () { if (!self.active) a.pause(); }, function () { self.unlocked = false; });
+  };
+
+  Bar.prototype.isReplay = function () {
+    return !(this.pending && this.cursor === this.history.length - 1 && this.history[this.cursor] === this.pending.id);
+  };
+
+  Bar.prototype.kick = function () {
+    var self = this, a = this.audio, token = this.playToken;
+    var p = a.play();
+    if (p && p.catch) p.catch(function (e) {
+      if (token !== self.playToken || !self.active || self.paused || (e && e.name === 'AbortError')) return;
+      self.fail(e && e.name === 'NotAllowedError' ? 'blocked' : 'error');
+    });
+    if (!this.started) {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(function () { if (token === self.playToken && self.active && !self.started && !self.paused && !self.failed) self.fail('timeout'); }, START_TIMEOUT_MS);
+    }
+    this.loop();
+  };
+
+  // Starts the line under the cursor from its beginning.
+  Bar.prototype.startLine = function (animate) {
+    var id = this.history[this.cursor], l = this.lines[id];
+    clearTimeout(this.timer);
+    this.playToken++;
+    this.failed = null; this.started = false; this.active = true;
+    this.showLine(l ? l.text : '', animate);
+    this.fill(0);
+    if (!l || !l.url) { this.fail('missing'); return; }
+    if (this.paused) { this.deferred = true; this.audio.pause(); this.render(); return; }
+    this.deferred = false;
+    var a = this.audio;
+    this.currentUrl = l.url;
+    if (a.getAttribute('src') !== l.url) a.src = l.url;
+    try { a.currentTime = 0; } catch (e) { /* not seekable before metadata; it starts at 0 anyway */ }
+    a.defaultPlaybackRate = this.rateValue; a.playbackRate = this.rateValue; a.muted = this.muted;
+    this.kick();
+    this.emit('lineStart', { id: id, replay: this.isReplay() });
+    this.render();
+  };
+
+  // Stops whatever is playing without settling anything.
+  Bar.prototype.halt = function () {
+    clearTimeout(this.timer);
+    this.playToken++;
+    this.active = false; this.started = false; this.deferred = false; this.failed = null;
+    this.audio.pause();
+  };
+
+  Bar.prototype.settle = function (id, by) {
+    if (!this.pending || this.pending.id !== id) return;
+    var resolve = this.pending.resolve;
+    this.pending = null;
+    if (by === 'end' || by === 'skip') this.emit('lineEnd', { id: id, by: by });
+    resolve({ id: id, by: by });
+  };
+
+  Bar.prototype.onEnded = function () {
+    this.fill(1);
+    if (this.cursor < this.history.length - 1) { this.cursor++; this.startLine(true); return; }
+    var id = this.history[this.cursor];
+    this.active = false; this.started = false;
+    this.settle(id, 'end');
+    this.render();
+  };
+
+  Bar.prototype.fail = function (reason) {
+    if (this.failed) return;
+    clearTimeout(this.timer);
+    this.playToken++;
+    this.failed = { id: this.history[this.cursor], reason: reason };
+    this.audio.pause();
+    this.emit('lineFail', { id: this.failed.id, reason: reason });
+    this.render();
+  };
+
+  Bar.prototype.loop = function () {
+    if (this.raf) return;
+    var self = this;
+    var step = function () {
+      self.raf = 0;
+      if (!self.active) { self.lv = 0; self.face.style.setProperty('--lv', '0'); return; }
+      var a = self.audio, l = self.lines[self.history[self.cursor]];
+      var d = (isFinite(a.duration) && a.duration) || (l && l.duration) || 0;
+      if (d && self.started) self.fill(a.currentTime / d);
+      var target = 0;
+      if (!a.paused && !self.muted && l && l.env && l.env.length) target = l.env[Math.min(l.env.length - 1, Math.floor(a.currentTime / ENV_STEP_S))] || 0;
+      self.lv += (target - self.lv) * 0.35;
+      self.face.style.setProperty('--lv', self.lv.toFixed(3));
+      self.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  };
+
+  // ---------- the child's buttons ----------
+  Bar.prototype.press = function (act) {
+    if (act === 'rate') { this.openMenu(this.menu.hidden); return; }
+    this.openMenu(false);
+    if (act === 'toggle') {
+      if (this.failed) { this.emit('lineRetry', { id: this.failed.id }); this.startLine(false); return; }
+      if (this.paused) { this.resume(); this.emit('resume', {}); } else { this.pause(); this.emit('pause', {}); }
+      return;
+    }
+    if (act === 'prevLine') { this.back(); return; }
+    if (act === 'nextLine') { this.skip(); return; }
+    if (act === 'prevScene' || act === 'nextScene') {
+      var from = this.index;
+      this.halt();
+      if (this.paused) { this.paused = false; this.emit('resume', {}); }
+      this.render();
+      this.emit(act, { scene: from });
+    }
+  };
+
+  Bar.prototype.back = function () {
+    if (!this.history.length) return;
+    if (this.paused) { this.paused = false; this.emit('resume', {}); }
+    var a = this.audio;
+    var restart = this.active && !this.failed && this.started && a.currentTime > RESTART_AFTER_S;
+    if (this.active && !restart && this.cursor > 0) this.cursor--;
+    this.emit('lineBack', { id: this.history[this.cursor] });
+    this.startLine(true);
+  };
+
+  Bar.prototype.skip = function () {
+    if (!(this.active || this.failed) || this.waiting) return;
+    if (this.paused) { this.paused = false; this.emit('resume', {}); }
+    if (this.cursor < this.history.length - 1) { this.cursor++; this.startLine(true); return; }
+    var id = this.history[this.cursor];
+    this.halt();
+    this.fill(1);
+    this.settle(id, 'skip');
+    this.render();
+  };
+
+  Bar.prototype.openMenu = function (open) {
+    this.menu.hidden = !open;
+    this.btn.rate.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) { var cur = this.menu.querySelector('[aria-checked="true"]'); if (cur) cur.focus({ preventScroll: true }); }
+  };
+  Bar.prototype.chooseRate = function (r) {
+    this.rate(r);
+    this.openMenu(false);
+    this.emit('rate', { value: r });
+  };
+
+  // ---------- commands ----------
+  Bar.prototype.say = function (id) {
+    var self = this;
+    if (this.pending) this.settle(this.pending.id, 'cut');
+    this.waiting = false;
+    var replaying = this.active && !this.failed && this.isReplay();
+    this.history.push(id);
+    var done = new Promise(function (res) { self.pending = { id: id, resolve: res }; });
+    if (replaying) this.render();
+    else { this.cursor = this.history.length - 1; this.startLine(true); }
+    return done;
+  };
+  Bar.prototype.wait = function (on) { this.waiting = !!on; this.render(); };
+  Bar.prototype.scene = function (index, total) {
+    this.index = index; this.total = total;
+    if (this.active) { this.history = [this.history[this.cursor]]; this.cursor = 0; } else { this.history = []; this.cursor = -1; }
+    this.render();
+  };
+  Bar.prototype.pause = function () {
+    if (this.paused) return;
+    this.paused = true;
+    if (this.active && !this.failed) this.audio.pause();
+    this.render();
+  };
+  Bar.prototype.resume = function () {
+    if (!this.paused) return;
+    this.paused = false;
+    if (this.active && !this.failed) { if (this.deferred) this.startLine(false); else this.kick(); }
+    this.render();
+  };
+  Bar.prototype.rate = function (r) {
+    this.rateValue = r;
+    this.audio.defaultPlaybackRate = r; this.audio.playbackRate = r;
+    this.render();
+  };
+  Bar.prototype.mute = function (on) { this.muted = !!on; this.audio.muted = this.muted; this.render(); };
+  Bar.prototype.set = function (s) {
+    s = s || {};
+    var el = this.el;
+    el.classList.add('pl-nb-hold');
+    this.halt();
+    if (this.pending) this.settle(this.pending.id, 'stop');
+    if (s.scene) { this.index = s.scene[0]; this.total = s.scene[1]; }
+    this.history = s.line ? [s.line] : []; this.cursor = this.history.length - 1;
+    this.waiting = !!s.waiting; this.paused = !!s.paused;
+    if (s.rate) this.rateValue = s.rate;
+    if ('muted' in s) this.muted = !!s.muted;
+    this.audio.defaultPlaybackRate = this.rateValue; this.audio.playbackRate = this.rateValue; this.audio.muted = this.muted;
+    var l = s.line && this.lines[s.line];
+    this.showLine(l ? l.text : '', false);
+    this.fill(l ? 1 : 0);
+    this.render(true);
+    void el.offsetWidth;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.remove('pl-nb-hold'); }); });
+  };
+  Bar.prototype.stop = function () {
+    this.halt();
+    this.waiting = false;
+    if (this.pending) this.settle(this.pending.id, 'stop');
+    this.render();
+  };
+  Bar.prototype.clear = function () {
+    this.stop();
+    this.history = []; this.cursor = -1; this.paused = false; this.index = -1; this.total = 0;
+    this.openMenu(false);
+    this.showLine('', false); this.fill(0);
+    this.render();
+  };
+
+  // Draws the state. With `still`, a flag that appears is drawn in place
+  // without its pop-in, as set() needs.
+  Bar.prototype.render = function (still) {
+    var st = this.failed ? 'failed' : this.paused ? 'paused' : this.waiting ? 'waiting' : this.active ? (this.started ? 'speaking' : 'starting') : 'idle';
+    this.el.setAttribute('data-state', st);
+    var flag = this.failed ? ['fail', '没放出来，点 ↻ 再听'] : this.paused ? ['pause', '暂停了'] : this.waiting ? ['turn', '轮到你了'] : (this.active && this.isReplay()) ? ['back', '回听'] : null;
+    var f = this.flagEl;
+    if (flag) {
+      if (f.hidden || f.getAttribute('data-kind') !== flag[0]) {
+        f.hidden = false;
+        f.setAttribute('data-kind', flag[0]);
+        f.style.animation = 'none';
+        if (!still) { void f.offsetWidth; f.style.animation = ''; }
+      }
+      f.textContent = flag[1];
+    } else f.hidden = true;
+    this.muteEl.hidden = !this.muted;
+
+    var b = this.btn;
+    b.prevScene.disabled = this.total <= 0;
+    b.nextScene.disabled = !(this.total > 0 && this.index < this.total - 1);
+    b.prevLine.disabled = !this.history.length;
+    b.nextLine.disabled = !(this.active || this.failed) || this.waiting;
+    var main = this.failed ? ['replay', '再听', '再听这一句'] : this.paused ? ['play', '继续', '继续'] : ['pause', '暂停', '暂停'];
+    if (b.toggle.getAttribute('data-icon') !== main[0]) {
+      b.toggle.setAttribute('data-icon', main[0]);
+      b.toggle.querySelector('.pl-nb-disc').innerHTML = svg(main[0]);
+      b.toggle.querySelector('span').textContent = main[1];
+    }
+    b.toggle.setAttribute('aria-label', main[2]);
+
+    var total = this.total, idx = this.index;
+    if (this.dotsEl.children.length !== total) this.dotsEl.innerHTML = new Array(total + 1).join('<i></i>');
+    Array.prototype.forEach.call(this.dotsEl.children, function (d, i) { d.className = i < idx ? 'pl-nb-done' : i === idx ? 'pl-nb-now' : ''; });
+    var where = total > 0 ? (idx + 1) + '/' + total + ' 幕' : '';
+    this.numEl.textContent = where;
+    this.whereEl.textContent = where;
+    this.whereEl.hidden = !where;
+    this.sceneEl.setAttribute('aria-label', total > 0 ? '第 ' + (idx + 1) + ' 幕，共 ' + total + ' 幕' : '');
+
+    b.rate.querySelector('b').textContent = rateText(this.rateValue);
+    b.rate.setAttribute('aria-label', '语速 ' + rateText(this.rateValue));
+    var rv = this.rateValue;
+    Array.prototype.forEach.call(this.menu.children, function (o) { o.setAttribute('aria-checked', Number(o.getAttribute('data-rate')) === rv ? 'true' : 'false'); });
+    if (this.active) this.loop();
+  };
+
+  return Bar;
+})();
+
+/* ============================================================
+   Demo page: the lecture screen, a small workflow that waits for each
+   line, the workflow simulator and the gallery. None of this is part of
+   the bar.
+   ============================================================ */
+(function () {
+  document.body.setAttribute('data-boundary', 'on');
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+
+  window.tlEvents = [];
+  window.tlBars = {};
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  var listeners = [];
+  function logger(name) {
+    return function (ev) {
+      ev = Object.assign({ from: name }, ev);
+      window.tlEvents.push(ev);
+      listeners.forEach(function (f) { f(ev); });
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type; delete data.from;
+      line.innerHTML = '<span class="t">' + t + 's [' + name + ']</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    };
+  }
+
+  // The player unlocks narration on every touch, as it does for sound.
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) {
+    document.addEventListener(t, function () { Object.keys(window.tlBars).forEach(function (k) { window.tlBars[k].unlock(); }); }, { capture: true, passive: true });
+  });
+
+  var runBtn = document.getElementById('run-btn');
+  fetch('narration/lines.json').then(function (r) { return r.json(); }).then(function (cfg) {
+    return NarrationBar.prepare(cfg.lines, 'narration/').then(function (lines) {
+      lines.push({ id: 'broken', text: '（这一句的录音坏了，用来看放不出来时的样子。）', url: 'narration/missing.mp3', duration: 0, env: [] });
+      start({ name: cfg.teacher.name, portrait: 'narration/' + cfg.teacher.portrait }, lines);
+    });
+  }).catch(function (e) {
+    document.querySelector('.lede').textContent = '旁白录音没有准备好，请刷新页面再试。（' + e.message + '）';
+  });
+
+  function start(teacher, lines) {
+    function make(name, hostId, extra) {
+      var b = new NarrationBar(document.getElementById(hostId), Object.assign({ teacher: teacher, lines: lines, onEvent: logger(name) }, extra || {}));
+      window.tlBars[name] = b;
+      return b;
+    }
+    var bar = make('main', 'nb-main');
+
+    // ---------- gallery ----------
+    var g = {
+      long: make('long', 'g-long'), pause: make('pause', 'g-pause'), turn: make('turn', 'g-turn'),
+      fail: make('fail', 'g-fail'), mute: make('mute', 'g-mute'), rate: make('rate', 'g-rate')
+    };
+    g.long.set({ scene: [1, 3], line: 'long' });
+    g.pause.set({ scene: [1, 3], line: 's2-1', paused: true });
+    g.turn.set({ scene: [1, 3], line: 's2-3', waiting: true });
+    g.fail.set({ scene: [0, 3] });
+    g.mute.set({ scene: [2, 3], line: 's3-1', muted: true });
+    g.rate.set({ scene: [0, 3], line: 's1-2', rate: 1.25 });
+    var galleryStarted = false;
+    function startGallery() {
+      if (galleryStarted) return;
+      galleryStarted = true;
+      g.fail.say('broken');
+      g.mute.say('s3-1');
+    }
+    document.querySelector('[data-g="long"]').addEventListener('click', function () { g.long.say('long'); });
+    document.querySelector('[data-g="broken"]').addEventListener('click', function () { g.fail.stop(); g.fail.say('broken'); });
+
+    // ---------- mocks of the other components ----------
+    var items = document.getElementById('mk-items'), given = document.getElementById('mk-given');
+    var stepsEl = document.getElementById('mk-steps'), answerEl = document.getElementById('mk-answer'), tapBtn = document.getElementById('mk-tap');
+    var CONCLUSIONS = [['minor 6th above E♭', false], ['6th: E → C', false], ['C♭', true]];
+    var mk = {
+      push: function (k) { var li = document.createElement('li'); li.textContent = CONCLUSIONS[k][0]; if (CONCLUSIONS[k][1]) li.className = 'mk-answer'; items.appendChild(li); },
+      lit: function (on) { given.classList.toggle('mk-lit', on); },
+      step: function (letter) { var s = document.createElement('span'); s.className = 'mk-chip mk-step'; s.textContent = letter; stepsEl.appendChild(s); },
+      answer: function (text) { answerEl.innerHTML = ''; var s = document.createElement('span'); s.className = 'mk-chip mk-ans'; s.textContent = text; answerEl.appendChild(s); },
+      ask: function (on) { tapBtn.hidden = !on; },
+      // How the screen looks when scene k has ended (-1: before the first).
+      apply: function (k) {
+        items.innerHTML = ''; stepsEl.innerHTML = ''; answerEl.innerHTML = ''; mk.ask(false);
+        mk.lit(k >= 0);
+        for (var i = 0; i <= k && i < CONCLUSIONS.length; i++) mk.push(i);
+        if (k >= 1) { 'EFGABC'.split('').forEach(mk.step); mk.answer(k >= 2 ? 'C♭' : 'C'); }
+        Array.prototype.forEach.call(document.querySelectorAll('#mk-items li, #mk-comp .mk-chip'), function (c) { c.style.animation = 'none'; });
+      }
+    };
+
+    // ---------- a small lecture workflow ----------
+    // It waits for each line to be over before going on, holds still while
+    // the child has paused, and on a scene change lays the screen out as
+    // that scene starts and tells it again from there.
+    var run = { token: 0, scene: -1, paused: false, done: false };
+    window.tlRun = run;
+    function hold(ms, my) {
+      return new Promise(function (res) {
+        var left = ms, last = performance.now();
+        (function tick() {
+          if (my !== run.token) return res(false);
+          var now = performance.now();
+          if (!run.paused) left -= now - last;
+          last = now;
+          if (left <= 0 && !run.paused) return res(true);
+          setTimeout(tick, 30);
+        })();
+      });
+    }
+    function childTap(my) {
+      return new Promise(function (res) {
+        tapBtn.onclick = function () { tapBtn.onclick = null; res(true); };
+        (function poll() { if (my !== run.token) { tapBtn.onclick = null; return res(false); } setTimeout(poll, 100); })();
+      });
+    }
+    function count(my) {
+      return 'EFGABC'.split('').reduce(function (p, letter) {
+        return p.then(function (go) { if (!go) return false; mk.step(letter); return hold(560, my); });
+      }, hold(300, my));
+    }
+    var SCENES = [
+      [{ act: function () { mk.lit(true); }, ms: 500 }, { say: 's1-1' }, { say: 's1-2' }, { act: function () { mk.push(0); }, ms: 900 }],
+      [{ say: 's2-1', with: count }, { say: 's2-2' }, { act: function () { mk.answer('C'); }, ms: 600 }, { act: function () { mk.push(1); }, ms: 900 }, { say: 's2-3' }, { wait: true }, { say: 's2-4' }],
+      [{ say: 's3-1' }, { say: 's3-2', with: function (my) { return hold(2200, my).then(function (go) { if (go) mk.answer('C♭'); }); } }, { act: function () { mk.push(2); }, ms: 900 }]
+    ];
+    function playScene(i) {
+      var my = ++run.token;
+      run.scene = i; run.paused = false; run.done = false;
+      bar.stop();
+      bar.scene(i, SCENES.length);
+      mk.apply(i - 1);
+      (async function () {
+        for (var k = 0; k < SCENES[i].length; k++) {
+          var step = SCENES[i][k];
+          if (!await hold(0, my)) return;
+          if (step.act) { step.act(); if (!await hold(step.ms, my)) return; }
+          else if (step.say) {
+            var side = step.with ? step.with(my) : null;
+            await bar.say(step.say);
+            if (side) await side;
+            if (my !== run.token || !await hold(350, my)) return;
+          } else if (step.wait) {
+            bar.wait(true); mk.ask(true);
+            if (!await childTap(my)) return;
+            mk.ask(false); bar.wait(false);
+            if (!await hold(300, my)) return;
+          }
+        }
+        if (my !== run.token) return;
+        if (i + 1 < SCENES.length) playScene(i + 1);
+        else run.done = true;
+      })();
+    }
+    listeners.push(function (ev) {
+      if (ev.from !== 'main') return;
+      if (ev.type === 'pause') run.paused = true;
+      if (ev.type === 'resume') run.paused = false;
+      if (run.scene < 0) return;
+      if (ev.type === 'prevScene') playScene(Math.max(0, run.scene - 1));
+      if (ev.type === 'nextScene' && run.scene + 1 < SCENES.length) playScene(run.scene + 1);
+    });
+    runBtn.disabled = false;
+    runBtn.textContent = '从头放一遍';
+    runBtn.addEventListener('click', function () { startGallery(); playScene(0); });
+
+    // ---------- the player's mute switch ----------
+    var muteBtn = document.getElementById('mute-switch');
+    muteBtn.addEventListener('click', function () {
+      var on = muteBtn.getAttribute('aria-pressed') !== 'true';
+      muteBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      bar.mute(on);
+    });
+
+    // ---------- workflow simulator ----------
+    var order = ['s1-1', 's1-2', 's2-1', 's2-2', 's2-3', 's2-4', 's3-1', 's3-2'], next = 0;
+    function leaveRun() { run.token++; run.scene = -1; run.paused = false; }
+    var CMDS = {
+      say: function () { bar.say(order[next % order.length]); next++; },
+      'say-long': function () { bar.say('long'); },
+      'say-broken': function () { bar.say('broken'); },
+      wait: function () { bar.wait(true); },
+      unwait: function () { bar.wait(false); },
+      scene: function () { bar.scene((bar.index + 1) % 3, 3); },
+      pause: function () { bar.pause(); run.paused = true; },
+      resume: function () { bar.resume(); run.paused = false; },
+      rate: function () { bar.rate(1.25); },
+      set: function () { leaveRun(); mk.apply(1); mk.ask(true); bar.set({ scene: [1, 3], line: 's2-3', waiting: true }); },
+      stop: function () { leaveRun(); bar.stop(); },
+      clear: function () { leaveRun(); bar.clear(); mk.apply(-1); }
+    };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cmd]'), function (b) {
+      b.addEventListener('click', function () { startGallery(); CMDS[b.getAttribute('data-cmd')](); });
+    });
+    document.addEventListener('click', function (e) { if (e.target.closest('.pl-nb')) startGallery(); });
+    document.body.setAttribute('data-ready', 'yes');
+  }
+})();
+</script>
