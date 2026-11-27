@@ -9,6 +9,9 @@
    glide, so a slip that becomes a strip shrinks where it is instead of
    being drawn again; slips that join or leave grow in or flatten out,
    all in the same stretch of time, so the stack's height changes one way.
+   A conclusion pushed with the place on screen it was reached flies from
+   there: a lifted copy of its slip crosses to the room opening for it,
+   and the slip shows once the copy lands on it.
    Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc}], from:
    [ids], final, note}}), mode ('lecture' | 'practice'), tempo.
    Commands: push, set, highlight, spotlight, caption, mask, reveal,
@@ -29,6 +32,8 @@ function ConclusionStack(host, options) {
   this.flash = [];
   this.flashOn = false;
   this.entering = null;
+  this.flyFrom = null;
+  this.flight = null;
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
@@ -48,11 +53,17 @@ ConclusionStack.TAP_FADE_MS = 2000;
 // growing, a folded slip flattening), starting very gently so the eye is
 // on the slip before it moves much; the new slip's ink appears from
 // INK_DELAY_MS for INK_MS, once its paper has opened; the thread draws and
-// its sources light once all is still.
+// its sources light once all is still. A slip flying in takes FLY_MS, the
+// room for it opening while it travels; it appears over FLY_FADE of its
+// flight and bows sideways by ARC of the distance (at most ARC_MAX px).
 ConclusionStack.MOVE_MS = 520;
 ConclusionStack.INK_DELAY_MS = 240;
 ConclusionStack.INK_MS = 400;
 ConclusionStack.SETTLE_MS = 660;
+ConclusionStack.FLY_MS = 800;
+ConclusionStack.FLY_FADE = .14;
+ConclusionStack.ARC = .16;
+ConclusionStack.ARC_MAX = 64;
 ConclusionStack.EASE = 'cubic-bezier(.6, 0, .25, 1)';
 ConclusionStack.STAFF_SCALE = { fresh: .8, strip: .62, narrow: .5 };
 ConclusionStack.LETTERS = 'CDEFGAB';
@@ -70,6 +81,17 @@ ConclusionStack.CHEVRON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="
 
 ConclusionStack.esc = function (t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 ConclusionStack.still = function () { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
+
+// The theme's easing curve, cubic-bezier(.6, 0, .25, 1), for the flight,
+// which is moved frame by frame toward a place that is itself gliding.
+ConclusionStack.ease = function (t) {
+  var x1 = .6, y1 = 0, x2 = .25, y2 = 1;
+  var bx = function (u) { return 3 * u * (1 - u) * (1 - u) * x1 + 3 * u * u * (1 - u) * x2 + u * u * u; };
+  var by = function (u) { return 3 * u * (1 - u) * (1 - u) * y1 + 3 * u * u * (1 - u) * y2 + u * u * u; };
+  var lo = 0, hi = 1, u = t;
+  for (var i = 0; i < 26; i++) { u = (lo + hi) / 2; if (bx(u) < t) lo = u; else hi = u; }
+  return by(u);
+};
 
 // Accidental glyphs drawn by the score library, so a flat in a conclusion
 // is the same shape as a flat on the score.
@@ -149,6 +171,7 @@ ConclusionStack.prototype.silence = function () {
 // Redraws everything inside the host, e.g. after a change of width or
 // mode; the conclusions and marks are state, so they come back.
 ConclusionStack.prototype.build = function () {
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.settleTimer);
   this.host.innerHTML = '<div class="tl-cs-clip" aria-hidden="true"></div>';
@@ -190,7 +213,8 @@ ConclusionStack.prototype.measure = function (el) {
 // Brings the drawing to the state. Slips already on screen are kept and
 // restyled, so their sizes and places glide (the height of the paper too,
 // toward the height it will end with); new ones grow in, removed ones
-// flatten out. Unanimated, it simply draws the state.
+// flatten out; the one just pushed flies in when the push said where it
+// comes from. Unanimated, it simply draws the state.
 ConclusionStack.prototype.render = function (animated) {
   var self = this, C = ConclusionStack, move = animated && !C.still();
   var before = {};
@@ -228,6 +252,7 @@ ConclusionStack.prototype.render = function (animated) {
   this.applyMasks(false);
   this.apply();
   var entering = this.entering; this.entering = null;
+  var flyFrom = move ? this.flyFrom : null; this.flyFrom = null;
   var shape = want.map(function (el) { return (el.dataset.id || 'pile') + ':' + el.className + ':' + el.style.getPropertyValue('--d'); }).join('|') + '|' + this.narrow;
   var changed = shape !== this.shape; this.shape = shape;
   if (move) {
@@ -237,12 +262,15 @@ ConclusionStack.prototype.render = function (animated) {
       var h = self.measure(el);
       if (Math.abs(h - b.h) > .5) el.animate([{ height: b.h + 'px' }, { height: h + 'px' }], { duration: C.MOVE_MS, easing: C.EASE });
     });
-    grown.forEach(function (el) { self.grow(el, el.dataset.id === entering && !!entering); });
+    grown.forEach(function (el) {
+      var isNew = !!entering && el.dataset.id === entering;
+      self.grow(el, isNew, isNew ? flyFrom : null);
+    });
   }
   clearTimeout(this.settleTimer);
   if (move && changed) {
     this.thread.classList.add('tl-cs-moving');
-    this.settleTimer = setTimeout(function () { self.drawThread(!!entering); self.thread.classList.remove('tl-cs-moving'); self.placeCaption(false); }, C.SETTLE_MS);
+    this.settleTimer = setTimeout(function () { self.drawThread(!!entering); self.thread.classList.remove('tl-cs-moving'); self.placeCaption(false); }, flyFrom ? C.FLY_MS + 60 : C.SETTLE_MS);
   } else {
     this.drawThread(false); this.thread.classList.remove('tl-cs-moving');
     this.placeCaption(false);
@@ -279,20 +307,81 @@ ConclusionStack.prototype.leave = function (el, move) {
 
 // A slip or the pile joining: its paper grows from nothing to its own
 // height over the same time as everything else moves. The conclusion just
-// pushed then has its ink settle in a moment later, and the answer's seal
-// stamps last.
-ConclusionStack.prototype.grow = function (el, isNew) {
+// pushed then either flies in from where it was reached, or has its ink
+// settle in a moment later; the answer's seal stamps last.
+ConclusionStack.prototype.grow = function (el, isNew, from) {
   var C = ConclusionStack, cs = getComputedStyle(el);
   var to = { height: el.offsetHeight + 'px', minHeight: cs.minHeight, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, opacity: 1 };
-  var from = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 };
+  var fromFrame = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 };
   el.style.overflow = 'hidden';
-  el._anim = el.animate([from, to], { duration: C.MOVE_MS, easing: C.EASE, fill: 'backwards' });
+  el._anim = el.animate([fromFrame, to], { duration: C.MOVE_MS, easing: C.EASE, fill: 'backwards' });
   el._anim.onfinish = function () { el.style.overflow = ''; };
   if (!isNew) return;
+  if (from) { this.fly(el, from); return; }
   var body = el.querySelector('.tl-cs-body');
   if (body) body.animate([{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: C.INK_MS, delay: C.INK_DELAY_MS, easing: C.EASE, fill: 'backwards' });
+  this.stamp(el, C.INK_DELAY_MS + C.INK_MS - 120);
+};
+
+// The answer's seal stamps onto its slip.
+ConclusionStack.prototype.stamp = function (el, delay) {
   var seal = el.querySelector('.tl-cs-seal');
-  if (seal) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: C.INK_DELAY_MS + C.INK_MS - 120, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
+  if (seal) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: delay, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
+};
+
+// The slip just pushed flies in from a place on screen (a rect in screen
+// pixels, where the act reached it). The slip itself stays unseen while a
+// lifted copy rises from the middle of that place and travels on a
+// shallow bow to the slip's own place, which may still be moving as the
+// stack makes room; positions are worked out in the stack's own pixels, so
+// a stage that is scaled to fit the screen does not throw the flight off.
+ConclusionStack.prototype.fly = function (el, from) {
+  var self = this, C = ConclusionStack, host = this.host;
+  this.land(false);
+  var hr = host.getBoundingClientRect(), k = hr.width / (host.offsetWidth || 1) || 1;
+  var sx = (from.left + from.width / 2 - hr.left) / k, sy = (from.top + from.height / 2 - hr.top) / k;
+  el.classList.add('tl-cs-landing');
+  var flyer = el.cloneNode(true);
+  flyer.classList.remove('tl-cs-landing'); flyer.classList.add('tl-cs-flyer');
+  flyer.removeAttribute('role'); flyer.removeAttribute('tabindex'); flyer.removeAttribute('data-id');
+  flyer.setAttribute('aria-hidden', 'true');
+  var fw = el.offsetWidth;
+  flyer.style.width = fw + 'px';
+  flyer.style.opacity = '0';
+  this.over.appendChild(flyer);
+  var fh = flyer.offsetHeight, t0 = performance.now();
+  var f = { el: el, flyer: flyer, raf: 0 };
+  this.flight = f;
+  var at = function (t) {
+    var e = C.ease(t);
+    var tx = self.list.offsetLeft + el.offsetLeft + fw / 2, ty = self.list.offsetTop + el.offsetTop + fh / 2;
+    var dx = tx - sx, dy = ty - sy, dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / dist, ny = dx / dist;
+    if (nx < 0) { nx = -nx; ny = -ny; }
+    var bow = Math.min(C.ARC_MAX, dist * C.ARC) * Math.sin(Math.PI * e);
+    var cx = sx + dx * e + nx * bow, cy = sy + dy * e + ny * bow;
+    flyer.style.transform = 'translate(' + (cx - fw / 2).toFixed(1) + 'px,' + (cy - fh / 2).toFixed(1) + 'px) scale(' + (.9 + .1 * e).toFixed(4) + ')';
+    flyer.style.opacity = String(Math.min(1, t / C.FLY_FADE));
+  };
+  at(0);
+  var frame = function (now) {
+    if (self.flight !== f) return;
+    var t = Math.min(1, (now - t0) / C.FLY_MS);
+    at(t);
+    if (t < 1) f.raf = requestAnimationFrame(frame); else self.land(true);
+  };
+  f.raf = requestAnimationFrame(frame);
+};
+
+// Ends a flight: the copy goes and the slip shows where it landed; on a
+// real landing the answer's seal stamps now.
+ConclusionStack.prototype.land = function (landed) {
+  var f = this.flight; if (!f) return;
+  this.flight = null;
+  cancelAnimationFrame(f.raf);
+  f.flyer.remove();
+  f.el.classList.remove('tl-cs-landing');
+  if (landed) this.stamp(f.el, 0);
 };
 
 // One conclusion as a slip: its step number (a seal for the answer), then
@@ -549,8 +638,8 @@ ConclusionStack.prototype.clearTap = function () {
 };
 
 ConclusionStack.prototype.ripple = function (ev) {
-  var rect = this.host.getBoundingClientRect(), r = document.createElement('div'); r.className = 'tl-cs-ripple';
-  r.style.left = ev.clientX - rect.left + 'px'; r.style.top = ev.clientY - rect.top + 'px';
+  var rect = this.host.getBoundingClientRect(), k = rect.width / (this.host.offsetWidth || 1) || 1, r = document.createElement('div'); r.className = 'tl-cs-ripple';
+  r.style.left = (ev.clientX - rect.left) / k + 'px'; r.style.top = (ev.clientY - rect.top) / k + 'px';
   this.over.appendChild(r);
   setTimeout(function () { r.remove(); }, 600);
 };
@@ -592,12 +681,13 @@ ConclusionStack.prototype.placeCaption = function (animated) {
   b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
 };
 
-// The conclusion of this act lands on the stack. Once everything has
-// settled, the conclusions it is built on light up for a moment while
-// its thread draws.
-ConclusionStack.prototype.push = function (id) {
-  var self = this, C = ConclusionStack;
+// The conclusion of this act lands on the stack. With opts.from (a rect
+// on screen), it flies up from there. Once everything has settled, the
+// conclusions it is built on light up for a moment while its thread draws.
+ConclusionStack.prototype.push = function (id, opts) {
+  var self = this, C = ConclusionStack, from = opts && opts.from;
   if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
+  this.land(false);
   this.stop(); this.clearTap();
   this.cap = null; this.open = false;
   this.order.push(id);
@@ -605,20 +695,28 @@ ConclusionStack.prototype.push = function (id) {
   this.flash = this.known(this.item(id).from).filter(function (f) { return f !== id; });
   this.flashOn = false;
   this.entering = id;
+  this.flyFrom = from && from.width >= 0 ? from : null;
   this.render(true);
-  var settle = C.still() ? 0 : C.SETTLE_MS;
+  var settle = C.still() ? 0 : from ? C.FLY_MS + 60 : C.SETTLE_MS;
   this.flashTimer = setTimeout(function () { self.flashOn = true; self.apply(); }, settle);
   this.flashEnd = setTimeout(function () { self.flash = []; self.flashOn = false; self.apply(); }, settle + C.TAP_FADE_MS);
 };
 
+// How long a push takes to come to rest, so whoever pushed can wait for it.
+ConclusionStack.prototype.pushMs = function (opts) {
+  if (ConclusionStack.still()) return 0;
+  return opts && opts.from ? ConclusionStack.FLY_MS + 60 : ConclusionStack.SETTLE_MS;
+};
+
 // Shows exactly these conclusions with no entrance, the way the stack
-// stood at the end of an act; used when the player steps back or forward
-// or a question is opened again.
+// stood at the end of an act; used for review, when a lecture is opened
+// again at an act, or a question is opened again.
 ConclusionStack.prototype.set = function (ids) {
   var self = this, seen = {};
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.flashTimer); clearTimeout(this.flashEnd); this.flash = []; this.flashOn = false;
-  this.cap = null; this.open = false; this.entering = null;
+  this.cap = null; this.open = false; this.entering = null; this.flyFrom = null;
   this.order = [].concat(ids || []).filter(function (id) { if (!self.o.items[id] || seen[id]) return false; seen[id] = true; return true; });
   this.held = this.known(this.held); this.spot = this.spot ? this.known(this.spot) : null;
   if (this.spot && !this.spot.length) this.spot = null;
@@ -646,6 +744,7 @@ ConclusionStack.prototype.stop = function () {
 };
 
 ConclusionStack.prototype.clear = function () {
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.flashTimer); clearTimeout(this.flashEnd);
   this.order = []; this.masked = {}; this.held = []; this.spot = null; this.cap = null; this.open = false; this.flash = []; this.flashOn = false;

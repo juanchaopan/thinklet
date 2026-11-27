@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="lib/choice.css">
 <link rel="stylesheet" href="lib/fill.css">
 <style>
-/* Layout: the lecture fills the whole screen, as it will in the product: the player's stage with the components the question binds to the workflow's roles, the narration bar and 下一步. A drawer that only this prototype has (opened from the dashed button at the top right) shows what the workflow file says and what the player is doing, and switches between the sample questions. */
+/* Layout: the lecture is the player's full-screen stage (its look comes with the player): the components the question binds to the workflow's roles, all on screen at once with nothing to scroll, the narration bar and 下一步. A drawer that only this prototype has (opened from the dashed button at the top right) shows what the workflow file says and what the player is doing, and switches between the sample questions. */
 :root {
   /* Prototype chrome (thinklet look.md). */
   --surface: #ffffff;
@@ -19,23 +19,11 @@
   --boundary: #2f6bff;
   --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  /* The player's warm background behind the components. */
-  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
-  --vignette: rgba(80, 52, 24, .14);
   color-scheme: light;
 }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { background: #f6efe4; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
-
-/* ---------- The lecture screen: the player's own, full screen ---------- */
-.lx-stage { position: fixed; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--stage); isolation: isolate; }
-.lx-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 160px 24px var(--vignette); z-index: 0; }
-.lx-stage > * { position: relative; z-index: 1; }
-.lx-scroll { overflow-y: auto; overflow-anchor: none; padding: max(18px, env(safe-area-inset-top, 0px)) max(clamp(12px, 3vw, 28px), env(safe-area-inset-right, 0px)) 90px max(clamp(12px, 3vw, 28px), env(safe-area-inset-left, 0px)); display: grid; gap: 18px; align-content: start; }
-.lx-region { display: grid; gap: 16px; min-width: 0; }
-.lx-role { position: relative; min-width: 0; width: 100%; max-width: 760px; justify-self: center; }
-.lx-role[hidden] { display: none; }
-.lx-dock { position: relative; width: 100%; max-width: 880px; justify-self: center; box-sizing: border-box; padding: 0 max(clamp(8px, 2vw, 16px), env(safe-area-inset-right, 0px)) max(clamp(8px, 2vw, 14px), env(safe-area-inset-bottom, 0px)) max(clamp(8px, 2vw, 16px), env(safe-area-inset-left, 0px)); }
+#stage { position: fixed; inset: 0; }
 .lx-curtain { display: grid; place-items: center; height: 100%; color: #6a5a48; font-weight: 700; }
 body[data-boundary="on"] .lx-role { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 18px; }
 body[data-boundary="on"] .lx-role::before { content: attr(data-label); position: absolute; top: -16px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 7px; border-radius: 6px; }
@@ -66,29 +54,38 @@ th { color: var(--ink-muted); font-weight: 700; }
 .log .t { color: var(--ink-muted); }
 .log [data-k="part"], .log [data-k="scene"] { color: #4b23c9; font-weight: 700; }
 .log [data-k="say"] { color: #6b5238; }
-.log [data-k="act"], .log [data-k="next"], .log [data-k="review"] { color: #1f6bd6; font-weight: 700; }
+.log [data-k="act"], .log [data-k="next"], .log [data-k="review"], .log [data-k="screen"] { color: #1f6bd6; font-weight: 700; }
 .log [data-k="error"] { color: #c8452f; font-weight: 700; }
 .problems { color: #c8452f; font-weight: 700; }
 .try { margin: 0; padding-left: 1.2em; color: var(--ink-soft); font-size: 14px; display: grid; gap: 4px; }
 code { font-family: var(--mono); font-size: 12px; }
 </style>
 
-<div class="lx-stage" id="stage"><div class="lx-curtain">正在准备</div></div>
+<div id="stage"><div class="lx-curtain">正在准备</div></div>
 
 <button type="button" class="proto-open" id="proto-open" aria-controls="proto-drawer" aria-expanded="false">原型说明</button>
 <aside class="proto-drawer" id="proto-drawer" aria-label="原型说明">
   <div class="proto-head"><span class="tagline">只有原型有 · 节奏拆拍流程</span><button type="button" class="btn" id="proto-close">收起</button></div>
-  <p class="lede">这是在确认<b>节奏拆拍这个流程</b>：怎么分小题、分幕、孩子在哪里动手、做错了怎么办、回看。讲题画面（全屏、字幕条、「下一步」、各角色从上往下排）是播放器的样子，以后每道讲题都这样。两道示例题只是拿来走流程的，素材和台词不是书里的内容；书里每道题以后先给分镜再做。两道示例题用同一个流程文件 <code>workflows/rhythm-beats/workflow.yaml</code>。</p>
+  <p class="lede">这是在确认<b>节奏拆拍这个流程</b>和<b>讲题画面怎么动</b>：全屏、不滚动、所有角色一起放进屏幕，结论从得出它的组件飞到结论栈，换小题时各部分渐变过去。两道示例题只是拿来走流程的，素材和台词不是书里的内容；这个流程的第一道真题先给分镜，确认后放进来替换它们。两道示例题用同一个流程文件 <code>workflows/rhythm-beats/workflow.yaml</code>。</p>
   <div class="toolbar tabs" role="tablist" id="tabs"></div>
   <ul class="try">
+    <li>每一幕的结论从拍尺或作答的地方飞上结论栈，眼睛跟着它走。</li>
     <li>点结论栈上已经出来的一条：回看那一幕，讲完回到原处。</li>
     <li>故意选错或写错：第一次说提示，第二次老师演示。</li>
-    <li>字幕条：拖动字幕下面的进度线，重听这一句的某一段；暂停；重听这一句；语速（竖着的滑动条）。</li>
+    <li>换小题时：结论栈收起，拍尺和选项渐变成新的。</li>
+    <li>把窗口拉宽拉窄、横过来竖过去：画面整个缩放，始终放得下，不出滚动条；宽屏横放时结论栈和素材在左边一栏。</li>
   </ul>
   <div class="toolbar">
     <button type="button" class="btn" id="restart">从头再讲</button>
     <button type="button" class="btn" id="boundary" aria-pressed="false">显示组件边界</button>
   </div>
+  <h2>画面</h2>
+  <dl class="kv">
+    <dt>全屏</dt><dd id="now-full">—</dd>
+    <dt>排法</dt><dd id="now-cols">—</dd>
+    <dt>缩放</dt><dd id="now-scale">—</dd>
+    <dt>动画</dt><dd id="now-motion">—</dd>
+  </dl>
   <h2>现在讲到</h2>
   <dl class="kv">
     <dt>小题</dt><dd id="now-part">—</dd>
@@ -118,15 +115,16 @@ code { font-family: var(--mono); font-size: 12px; }
 /* ============================================================
    Demo page: plays the role of the app around the player. It loads the
    workflow file and the sample questions during the loading screen,
-   runs the chosen one full screen, and shows what the player traces in
-   a drawer that only the prototype has. None of this is the player.
+   runs the chosen one full screen when 开始 is tapped, and shows what the
+   player traces, and how the screen is doing, in a drawer that only the
+   prototype has. None of this is the player.
    ============================================================ */
 (function () {
   var WORKFLOW = 'workflows/rhythm-beats/workflow.yaml';
   var QUESTIONS = [{ id: 'meter-demo', title: '判断拍号 · 打勾' }, { id: 'count-demo', title: '数有几个 · 写数' }];
   var IFACE = { point: '指点', count: '数', meter: '量拍', play: '播放', mask: '遮住', set: '摆成', answer: '作答', strike: '排除', positions: '给位置', conclude: '结论' };
   var data = { questions: {}, lines: {} };
-  var player = null, currentId = QUESTIONS[0].id;
+  var player = null, currentId = QUESTIONS[0].id, screenNote = '还没开始';
 
   function fileOf(id) { return id.replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
   // The same line ids as the recording tool: p<part>.<key>, p<part>.<item>.<key>.
@@ -156,7 +154,7 @@ code { font-family: var(--mono); font-size: 12px; }
   PlayerLoading.onStart(function () { run(currentId); });
 
   var logEl = document.getElementById('log'), t0 = performance.now();
-  var KIND = { part: '小题', scene: '幕', say: '说', call: '指令', event: '事件', act: '动手', next: '下一步', review: '回看', bar: '字幕条', done: '完', error: '出错' };
+  var KIND = { part: '小题', scene: '幕', say: '说', call: '指令', event: '事件', act: '动手', next: '下一步', review: '回看', bar: '字幕条', screen: '画面', done: '完', error: '出错' };
   function trace(kind, text) {
     var line = document.createElement('div');
     line.setAttribute('data-k', kind);
@@ -166,8 +164,22 @@ code { font-family: var(--mono); font-size: 12px; }
     if (kind === 'part') { document.getElementById('now-part').textContent = text; document.getElementById('now-scene').textContent = '—'; }
     if (kind === 'scene') document.getElementById('now-scene').textContent = text.replace(/^幕：/, '');
     if (kind === 'say' || kind === 'act' || kind === 'next' || kind === 'done' || kind === 'review') document.getElementById('now-step').textContent = text;
+    if (kind === 'screen') { screenNote = text; showScreen(); }
     window.lxTrace = window.lxTrace || []; window.lxTrace.push({ kind: kind, text: text, t: performance.now() - t0 });
   }
+
+  // How the screen is doing: full screen or not, one or two columns, how
+  // far the picture is scaled to fit, and whether the system asks for less
+  // motion (then every move finishes almost at once).
+  function showScreen() {
+    var full = document.fullscreenElement || document.webkitFullscreenElement;
+    document.getElementById('now-full').textContent = full ? '全屏了' : screenNote;
+    document.getElementById('now-cols').textContent = player && player.cols === 2 ? '两栏（宽屏横放）' : '一栏';
+    document.getElementById('now-scale').textContent = player ? Math.round(player.scale * 100) + '%' : '—';
+    document.getElementById('now-motion').textContent = matchMedia('(prefers-reduced-motion: reduce)').matches ? '系统设置了“减少动态效果”，动画几乎一下子就做完' : '正常';
+  }
+  document.addEventListener('fullscreenchange', showScreen);
+  setInterval(function () { if (drawer.classList.contains('open')) showScreen(); }, 500);
 
   function renderRules(wf) {
     var p = wf.player, el = document.getElementById('rules');
@@ -214,11 +226,12 @@ code { font-family: var(--mono); font-size: 12px; }
     if (player.problems.length) { stage.innerHTML = '<div class="lx-curtain">题目文件对不上流程，见原型说明</div>'; return; }
     player.bar.unlock();
     player.start();
+    showScreen();
   }
   window.lxRun = function (qid) { if (data.workflow) run(qid); };
 
   var drawer = document.getElementById('proto-drawer'), opener = document.getElementById('proto-open');
-  function openDrawer(on) { drawer.classList.toggle('open', on); opener.setAttribute('aria-expanded', String(on)); opener.hidden = on; }
+  function openDrawer(on) { drawer.classList.toggle('open', on); opener.setAttribute('aria-expanded', String(on)); opener.hidden = on; if (on) showScreen(); }
   opener.addEventListener('click', function () { openDrawer(true); });
   document.getElementById('proto-close').addEventListener('click', function () { openDrawer(false); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer.classList.contains('open')) openDrawer(false); });

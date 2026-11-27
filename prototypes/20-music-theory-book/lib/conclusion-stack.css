@@ -1,6 +1,6 @@
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
 /* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, violet light for whatever is lit, a brass clip holding the slips, dark bubbles. */
-/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. Every move starts very gently, gathers pace and settles gently. */
+/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. A conclusion reached somewhere else on the screen flies from there: a lifted copy of its slip rises from that place and lands in the room opening for it, so the eye follows it up. Every move starts very gently, gathers pace and settles gently. */
 .tl-cs {
   --tl-paper-a: #fffaf1;
   --tl-paper-b: #f2e6d1;
@@ -48,6 +48,11 @@
 /* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
 .tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
+/* A conclusion flying in: the slip waits unseen in the room opening for it, while a lifted copy of it, with a soft violet glow, crosses the screen to it. The answer's seal stamps only once it has landed. */
+.tl-cs-slip.tl-cs-landing { visibility: hidden; }
+.tl-cs-slip.tl-cs-flyer { position: absolute; left: 0; top: 0; margin: 0; z-index: 9; transform-origin: 50% 50%; will-change: transform, opacity; transition: none; pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
+.tl-cs-flyer .tl-cs-seal { visibility: hidden; }
 .tl-cs-num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 14px/1 var(--tl-serif); color: var(--tl-ink-soft); transition: width var(--tl-move), height var(--tl-move), font-size var(--tl-move), color .3s, border-color .3s; }
 .tl-cs-fresh .tl-cs-num { width: 30px; height: 30px; font-size: 17px; }
 .tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }

@@ -40,6 +40,8 @@ p { margin: 0; }
 .stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
 .stage > * { position: relative; z-index: 1; }
+/* The stack paints above the act's other components, so a conclusion flying up from them passes over them. */
+.stage > .stack-slot { z-index: 2; }
 .stage-head { color: var(--stage-ink); }
 .stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
 /* Where the act's other components (score, keyboard, ladder) would be: not part of this prototype. */
@@ -54,7 +56,7 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
 /* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, violet light for whatever is lit, a brass clip holding the slips, dark bubbles. */
-/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. Every move starts very gently, gathers pace and settles gently. */
+/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; slips above slide up as it shrinks; at the same time the new slip's paper grows in under it, so the stack's height changes in one direction only, and its ink appears a moment later. A conclusion reached somewhere else on the screen flies from there: a lifted copy of its slip rises from that place and lands in the room opening for it, so the eye follows it up. Every move starts very gently, gathers pace and settles gently. */
 .tl-cs {
   --tl-paper-a: #fffaf1;
   --tl-paper-b: #f2e6d1;
@@ -102,6 +104,11 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 /* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
 .tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
+/* A conclusion flying in: the slip waits unseen in the room opening for it, while a lifted copy of it, with a soft violet glow, crosses the screen to it. The answer's seal stamps only once it has landed. */
+.tl-cs-slip.tl-cs-landing { visibility: hidden; }
+.tl-cs-slip.tl-cs-flyer { position: absolute; left: 0; top: 0; margin: 0; z-index: 9; transform-origin: 50% 50%; will-change: transform, opacity; transition: none; pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
+.tl-cs-flyer .tl-cs-seal { visibility: hidden; }
 .tl-cs-num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 14px/1 var(--tl-serif); color: var(--tl-ink-soft); transition: width var(--tl-move), height var(--tl-move), font-size var(--tl-move), color .3s, border-color .3s; }
 .tl-cs-fresh .tl-cs-num { width: 30px; height: 30px; font-size: 17px; }
 .tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }
@@ -164,6 +171,8 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 
 /* ---------- Layouts chosen by the workflow ---------- */
 .mini-stage { border-radius: 24px; padding: 24px 14px 18px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 14px; width: 100%; max-width: 390px; justify-self: center; }
+.mini-stage > * { position: relative; z-index: 1; }
+.mini-stage > .stack-slot { z-index: 2; }
 .mini-stage .q { color: var(--stage-ink); font-weight: 800; }
 .mini-stage .act-slot { min-height: 110px; }
 
@@ -195,22 +204,23 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   <header style="display:grid;gap:10px">
     <span class="tagline">组件 7 / 10 · 显示类 · 直接画在画面上，放在讲题画面的最上面</span>
     <h1>结论栈</h1>
-    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在画面最上面，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈：新得出的结论是一张大纸条；下一条结论出来时，它在原地慢慢缩小成窄纸条（字、谱、编号和纸的高度一点一点变小，不跳），起步很轻，然后加快，最后慢慢停住；上面的纸条跟着往上滑，夹在黄铜夹子下面，越早的越窄、纸色越深；同时新的一条纸在它下面慢慢长出来，字稍后浮现，整叠的高度只朝一个方向慢慢变，下面的东西不会上下晃。之前的结论超过三条（手机上超过两条）时，最早的一条慢慢压扁，收进夹子下面的一小叠纸边，点一下展开。一条结论是从前面哪几条得出的，纸条都停稳以后，左边才有一条紫色的线从那几条连下来；最后的答案带一圈紫光和一个 ∴ 印章，可以先遮住，讲完再揭晓。结论里可以有文字、术语、符号（=、→、+）和一小段谱，谱点了会响。框外面的题目、下面的组件位置和字幕，都不属于它。</p>
+    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在画面最上面，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈。一幕的结论是在画面上别的地方得出的（比如拍尺上数出来的），新的一条纸条就从那里浮起来，带着一点紫光飞上去，落进栈上为它让出来的位置，眼睛跟着它走，看得出它去了哪里。同时原来最新的那条在原地慢慢缩小成窄纸条（字、谱、编号和纸的高度一点一点变小，不跳），起步很轻，然后加快，最后慢慢停住；上面的纸条跟着往上滑，夹在黄铜夹子下面，越早的越窄、纸色越深；新的一条的位置在它下面慢慢让出来，整叠的高度只朝一个方向慢慢变，下面的东西不会上下晃。之前的结论超过三条（手机上超过两条）时，最早的一条慢慢压扁，收进夹子下面的一小叠纸边，点一下展开。一条结论是从前面哪几条得出的，纸条落稳以后，左边才有一条紫色的线从那几条连下来；最后的答案带一圈紫光，落稳后盖上 ∴ 印章，可以先遮住，讲完再揭晓。结论里可以有文字、术语、符号（=、→、+）和一小段谱，谱点了会响。框外面的题目、下面的组件位置和字幕，都不属于它。</p>
     <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
   </header>
 
   <section class="stage" aria-label="题目画面">
     <div class="stage-head"><p class="q">这段旋律是什么调？</p></div>
-    <div id="main-stack"></div>
-    <div class="act-slot">这一幕用的组件（乐谱、五度圈、音级梯……）画在这里<br>不属于结论栈</div>
+    <div class="stack-slot" id="main-stack"></div>
+    <div class="act-slot" id="main-act">这一幕用的组件（乐谱、五度圈、音级梯……）画在这里<br>不属于结论栈；结论从这里飞上去</div>
     <div class="subtitle" id="subtitle"><small>字幕（另一个组件，这里只是示意）</small><span id="subtitle-text">点下面的「下一幕」开始。</span></div>
   </section>
 
   <section class="panel sim">
     <h2>模拟流程：发给结论栈的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给结论栈的指令；记录框列出结论栈发出的事件。「下一幕」把这一幕的结论推上去；「上一幕」是播放器的上一幕按钮，结论栈直接回到那一幕结束时的样子，不放动画。点一条结论：它亮起来，有说明的在它下面弹出说明，两秒后自己淡掉；里面有谱的会响。点叠起来的纸边：展开全部；点空白处：收起、清掉。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给结论栈的指令；记录框列出结论栈发出的事件。「下一幕」把这一幕的结论推上去，并告诉结论栈它是在下面那块地方得出的，纸条从那里飞上来；「下一幕（原地长出来）」不给地方，纸条在栈上原地长出来。「上一幕」是播放器回看时用的，结论栈直接回到那一幕结束时的样子，不放动画。点一条结论：它亮起来，有说明的在它下面弹出说明，两秒后自己淡掉；里面有谱的会响。点叠起来的纸边：展开全部；点空白处：收起、清掉。</p>
     <div class="chip-group"><span>一幕一幕</span><div class="chips">
       <button class="chip" type="button" data-cmd="next">下一幕</button>
+      <button class="chip" type="button" data-cmd="nextHere">下一幕（原地长出来）</button>
       <button class="chip" type="button" data-cmd="back">上一幕</button>
       <button class="chip" type="button" data-cmd="end">跳到最后（答案遮着）</button>
       <button class="chip" type="button" data-cmd="revealAnswer">揭晓答案</button>
@@ -233,12 +243,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel">
     <h2>放一遍：一道讲题从头到尾（手机宽度）</h2>
-    <p class="what">一道音程讲题的四幕按讲题的节奏自动走一遍：数音名得出“三度”，数半音得出“四个半音”，两条合起来得出“四个半音的三度是大三度”，最后得出答案。每条新结论左边的紫线连着它用到的那几条。</p>
+    <p class="what">一道音程讲题的四幕按讲题的节奏自动走一遍：数音名得出“三度”，数半音得出“四个半音”，两条合起来得出“四个半音的三度是大三度”，最后得出答案。每条结论都从下面这一幕的组件那里飞上去；新结论左边的紫线连着它用到的那几条。</p>
     <div class="toolbar"><button class="chip" type="button" id="run-btn">从头放一遍</button></div>
     <div class="mini-stage">
       <p class="q">E♭ 到 G 是什么音程？</p>
-      <div id="run-stack"></div>
-      <div class="act-slot">这一幕的组件</div>
+      <div class="stack-slot" id="run-stack"></div>
+      <div class="act-slot" id="run-act">这一幕的组件</div>
       <div class="subtitle"><small>字幕（示意）</small><span id="run-sub">点「从头放一遍」。</span></div>
     </div>
   </section>
@@ -250,12 +260,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
           <tr><td>输入</td><td>这道讲题的全部结论（题目文件里写）：每条有编号和内容，内容是一串片段：文字、术语（斜体）、符号（<code>=</code>、<code>→</code>、<code>+</code>、<code>≠</code>）或一小段 ABC 谱；可以写它是从前面哪几条得出的、它是不是这道题的答案，可以带一句点了才弹出的说明。模式：讲题（点了发声、弹出说明）或练习（点了没有反应）；速度。</td></tr>
-          <tr><td>外观</td><td>纸条的纹理和叠起来的层次、黄铜夹子、紫色的连线、答案的紫光和印章、深色的说明气泡，都写在结论栈自己里面，不从外面继承；颜色和共用部分用 <code>etude</code> 主题的值。谱和文字里的升降号都用乐谱库画出来的字形。</td></tr>
-          <tr><td>动作</td><td>推上一条新结论时，约半秒：起步很轻，前 0.15 秒只走一成多，然后加快，最后慢慢停住。最新的那条在原地慢慢缩成窄纸条，字、谱、编号和纸的高度一起连续变小；上面的纸条同时往上滑；新的一条纸同时在它下面长出来，字晚一点浮现，整叠的高度只朝一个方向变。折进纸边的那条同时慢慢压扁、淡出。都停稳以后，紫线再画出来，用到的那几条亮一下。上一幕、下一幕不放这些动作。</td></tr>
-          <tr><td>指令</td><td><code>push(结论)</code> 这一幕的结论落到栈上，前面的缩小往上推；写了从哪几条得出的，那几条亮一下，紫线连下来；<code>set(结论…)</code> 直接摆成这几条，不放动画（上一幕、下一幕、重新进入题目时用）；<code>highlight(结论…)</code> 亮起前面的结论（折起来的也会露出来）；<code>spotlight(结论…)</code>；<code>caption(结论, 文字)</code> 在这一条下面弹出说明；<code>mask(结论…)</code> 用纸条遮住，可以在 <code>push</code> 之前遮，结论落下来时就是遮着的；<code>reveal(…)</code> 纸条滑走、写出来；<code>stop()</code> 停下点出来的声音；<code>clear()</code>。</td></tr>
+          <tr><td>外观</td><td>纸条的纹理和叠起来的层次、黄铜夹子、紫色的连线、答案的紫光和印章、飞上来时的紫光、深色的说明气泡，都写在结论栈自己里面，不从外面继承；颜色和共用部分用 <code>etude</code> 主题的值。谱和文字里的升降号都用乐谱库画出来的字形。</td></tr>
+          <tr><td>动作</td><td>推上一条新结论时，最新的那条在原地慢慢缩成窄纸条，字、谱、编号和纸的高度一起连续变小；上面的纸条同时往上滑；新的一条的位置同时在它下面让出来，整叠的高度只朝一个方向变，约半秒，起步很轻，前 0.15 秒只走一成多，然后加快，最后慢慢停住。给了“从哪里来”时，新的纸条从那块地方的中间浮起来（先略小、带紫光，0.1 秒内显出来），沿一条微弯的线飞到让出来的位置，约 0.8 秒，同样起步很轻、最后慢慢停住，落下时正好盖在自己的位置上；没给时字在原地晚一点浮现。折进纸边的那条同时慢慢压扁、淡出。都落稳以后，答案盖上印章，紫线再画出来，用到的那几条亮一下。回看和从某一幕接着讲时直接摆好，不放这些动作。</td></tr>
+          <tr><td>指令</td><td><code>push(结论, 从哪里)</code> 这一幕的结论落到栈上，前面的缩小往上推；“从哪里”是屏幕上的一块地方（播放器给的这一幕得出结论的那个角色的位置），可以不给；写了从哪几条得出的，那几条亮一下，紫线连下来；<code>set(结论…)</code> 直接摆成这几条，不放动画（回看、从某一幕接着讲、重新进入题目时用）；<code>highlight(结论…)</code> 亮起前面的结论（折起来的也会露出来）；<code>spotlight(结论…)</code>；<code>caption(结论, 文字)</code> 在这一条下面弹出说明；<code>mask(结论…)</code> 用纸条遮住，可以在 <code>push</code> 之前遮，结论飞上来时就是遮着的；<code>reveal(…)</code> 纸条滑走、写出来；<code>stop()</code> 停下点出来的声音；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>itemTap</code>（哪一条、第几条、是不是答案、文字内容、是否遮着）；<code>pileTap</code>（折起来几条、现在展开没有）；<code>blankTap</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用的是同一个；结论栈不知道这一幕用了哪些组件。结论的内容、从哪几条得出、哪条是答案都由题目文件给，结论栈只负责画出来。</td></tr>
-          <tr><td>谁决定排版</td><td>流程把它放在讲题画面的最上面，占满给它的宽度，最宽 560；结论多了，最早的折起来，它的高度不会一直长。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用的是同一个；结论栈不知道这一幕用了哪些组件，只知道屏幕上的一块地方。结论的内容、从哪几条得出、哪条是答案都由题目文件给，结论栈只负责画出来。</td></tr>
+          <tr><td>谁决定排版</td><td>流程把它放在讲题画面的最上面（宽屏横放时在左边一栏），占满给它的宽度，最宽 560；结论多了，最早的折起来，它的高度不会一直长。飞上来的纸条要从别的组件上面经过，所以播放器让结论栈画在其他组件上面一层。</td></tr>
           <tr><td>出现在哪里</td><td>每道讲题都有，直接画在画面上。练习里不出现，因为它就是解题的过程。</td></tr>
         </tbody>
       </table>
@@ -278,6 +288,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
    glide, so a slip that becomes a strip shrinks where it is instead of
    being drawn again; slips that join or leave grow in or flatten out,
    all in the same stretch of time, so the stack's height changes one way.
+   A conclusion pushed with the place on screen it was reached flies from
+   there: a lifted copy of its slip crosses to the room opening for it,
+   and the slip shows once the copy lands on it.
    Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc}], from:
    [ids], final, note}}), mode ('lecture' | 'practice'), tempo.
    Commands: push, set, highlight, spotlight, caption, mask, reveal,
@@ -298,6 +311,8 @@ function ConclusionStack(host, options) {
   this.flash = [];
   this.flashOn = false;
   this.entering = null;
+  this.flyFrom = null;
+  this.flight = null;
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
@@ -317,11 +332,17 @@ ConclusionStack.TAP_FADE_MS = 2000;
 // growing, a folded slip flattening), starting very gently so the eye is
 // on the slip before it moves much; the new slip's ink appears from
 // INK_DELAY_MS for INK_MS, once its paper has opened; the thread draws and
-// its sources light once all is still.
+// its sources light once all is still. A slip flying in takes FLY_MS, the
+// room for it opening while it travels; it appears over FLY_FADE of its
+// flight and bows sideways by ARC of the distance (at most ARC_MAX px).
 ConclusionStack.MOVE_MS = 520;
 ConclusionStack.INK_DELAY_MS = 240;
 ConclusionStack.INK_MS = 400;
 ConclusionStack.SETTLE_MS = 660;
+ConclusionStack.FLY_MS = 800;
+ConclusionStack.FLY_FADE = .14;
+ConclusionStack.ARC = .16;
+ConclusionStack.ARC_MAX = 64;
 ConclusionStack.EASE = 'cubic-bezier(.6, 0, .25, 1)';
 ConclusionStack.STAFF_SCALE = { fresh: .8, strip: .62, narrow: .5 };
 ConclusionStack.LETTERS = 'CDEFGAB';
@@ -339,6 +360,17 @@ ConclusionStack.CHEVRON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="
 
 ConclusionStack.esc = function (t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 ConclusionStack.still = function () { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
+
+// The theme's easing curve, cubic-bezier(.6, 0, .25, 1), for the flight,
+// which is moved frame by frame toward a place that is itself gliding.
+ConclusionStack.ease = function (t) {
+  var x1 = .6, y1 = 0, x2 = .25, y2 = 1;
+  var bx = function (u) { return 3 * u * (1 - u) * (1 - u) * x1 + 3 * u * u * (1 - u) * x2 + u * u * u; };
+  var by = function (u) { return 3 * u * (1 - u) * (1 - u) * y1 + 3 * u * u * (1 - u) * y2 + u * u * u; };
+  var lo = 0, hi = 1, u = t;
+  for (var i = 0; i < 26; i++) { u = (lo + hi) / 2; if (bx(u) < t) lo = u; else hi = u; }
+  return by(u);
+};
 
 // Accidental glyphs drawn by the score library, so a flat in a conclusion
 // is the same shape as a flat on the score.
@@ -418,6 +450,7 @@ ConclusionStack.prototype.silence = function () {
 // Redraws everything inside the host, e.g. after a change of width or
 // mode; the conclusions and marks are state, so they come back.
 ConclusionStack.prototype.build = function () {
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.settleTimer);
   this.host.innerHTML = '<div class="tl-cs-clip" aria-hidden="true"></div>';
@@ -459,7 +492,8 @@ ConclusionStack.prototype.measure = function (el) {
 // Brings the drawing to the state. Slips already on screen are kept and
 // restyled, so their sizes and places glide (the height of the paper too,
 // toward the height it will end with); new ones grow in, removed ones
-// flatten out. Unanimated, it simply draws the state.
+// flatten out; the one just pushed flies in when the push said where it
+// comes from. Unanimated, it simply draws the state.
 ConclusionStack.prototype.render = function (animated) {
   var self = this, C = ConclusionStack, move = animated && !C.still();
   var before = {};
@@ -497,6 +531,7 @@ ConclusionStack.prototype.render = function (animated) {
   this.applyMasks(false);
   this.apply();
   var entering = this.entering; this.entering = null;
+  var flyFrom = move ? this.flyFrom : null; this.flyFrom = null;
   var shape = want.map(function (el) { return (el.dataset.id || 'pile') + ':' + el.className + ':' + el.style.getPropertyValue('--d'); }).join('|') + '|' + this.narrow;
   var changed = shape !== this.shape; this.shape = shape;
   if (move) {
@@ -506,12 +541,15 @@ ConclusionStack.prototype.render = function (animated) {
       var h = self.measure(el);
       if (Math.abs(h - b.h) > .5) el.animate([{ height: b.h + 'px' }, { height: h + 'px' }], { duration: C.MOVE_MS, easing: C.EASE });
     });
-    grown.forEach(function (el) { self.grow(el, el.dataset.id === entering && !!entering); });
+    grown.forEach(function (el) {
+      var isNew = !!entering && el.dataset.id === entering;
+      self.grow(el, isNew, isNew ? flyFrom : null);
+    });
   }
   clearTimeout(this.settleTimer);
   if (move && changed) {
     this.thread.classList.add('tl-cs-moving');
-    this.settleTimer = setTimeout(function () { self.drawThread(!!entering); self.thread.classList.remove('tl-cs-moving'); self.placeCaption(false); }, C.SETTLE_MS);
+    this.settleTimer = setTimeout(function () { self.drawThread(!!entering); self.thread.classList.remove('tl-cs-moving'); self.placeCaption(false); }, flyFrom ? C.FLY_MS + 60 : C.SETTLE_MS);
   } else {
     this.drawThread(false); this.thread.classList.remove('tl-cs-moving');
     this.placeCaption(false);
@@ -548,20 +586,81 @@ ConclusionStack.prototype.leave = function (el, move) {
 
 // A slip or the pile joining: its paper grows from nothing to its own
 // height over the same time as everything else moves. The conclusion just
-// pushed then has its ink settle in a moment later, and the answer's seal
-// stamps last.
-ConclusionStack.prototype.grow = function (el, isNew) {
+// pushed then either flies in from where it was reached, or has its ink
+// settle in a moment later; the answer's seal stamps last.
+ConclusionStack.prototype.grow = function (el, isNew, from) {
   var C = ConclusionStack, cs = getComputedStyle(el);
   var to = { height: el.offsetHeight + 'px', minHeight: cs.minHeight, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, opacity: 1 };
-  var from = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 };
+  var fromFrame = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 };
   el.style.overflow = 'hidden';
-  el._anim = el.animate([from, to], { duration: C.MOVE_MS, easing: C.EASE, fill: 'backwards' });
+  el._anim = el.animate([fromFrame, to], { duration: C.MOVE_MS, easing: C.EASE, fill: 'backwards' });
   el._anim.onfinish = function () { el.style.overflow = ''; };
   if (!isNew) return;
+  if (from) { this.fly(el, from); return; }
   var body = el.querySelector('.tl-cs-body');
   if (body) body.animate([{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: C.INK_MS, delay: C.INK_DELAY_MS, easing: C.EASE, fill: 'backwards' });
+  this.stamp(el, C.INK_DELAY_MS + C.INK_MS - 120);
+};
+
+// The answer's seal stamps onto its slip.
+ConclusionStack.prototype.stamp = function (el, delay) {
   var seal = el.querySelector('.tl-cs-seal');
-  if (seal) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: C.INK_DELAY_MS + C.INK_MS - 120, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
+  if (seal) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: delay, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
+};
+
+// The slip just pushed flies in from a place on screen (a rect in screen
+// pixels, where the act reached it). The slip itself stays unseen while a
+// lifted copy rises from the middle of that place and travels on a
+// shallow bow to the slip's own place, which may still be moving as the
+// stack makes room; positions are worked out in the stack's own pixels, so
+// a stage that is scaled to fit the screen does not throw the flight off.
+ConclusionStack.prototype.fly = function (el, from) {
+  var self = this, C = ConclusionStack, host = this.host;
+  this.land(false);
+  var hr = host.getBoundingClientRect(), k = hr.width / (host.offsetWidth || 1) || 1;
+  var sx = (from.left + from.width / 2 - hr.left) / k, sy = (from.top + from.height / 2 - hr.top) / k;
+  el.classList.add('tl-cs-landing');
+  var flyer = el.cloneNode(true);
+  flyer.classList.remove('tl-cs-landing'); flyer.classList.add('tl-cs-flyer');
+  flyer.removeAttribute('role'); flyer.removeAttribute('tabindex'); flyer.removeAttribute('data-id');
+  flyer.setAttribute('aria-hidden', 'true');
+  var fw = el.offsetWidth;
+  flyer.style.width = fw + 'px';
+  flyer.style.opacity = '0';
+  this.over.appendChild(flyer);
+  var fh = flyer.offsetHeight, t0 = performance.now();
+  var f = { el: el, flyer: flyer, raf: 0 };
+  this.flight = f;
+  var at = function (t) {
+    var e = C.ease(t);
+    var tx = self.list.offsetLeft + el.offsetLeft + fw / 2, ty = self.list.offsetTop + el.offsetTop + fh / 2;
+    var dx = tx - sx, dy = ty - sy, dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = -dy / dist, ny = dx / dist;
+    if (nx < 0) { nx = -nx; ny = -ny; }
+    var bow = Math.min(C.ARC_MAX, dist * C.ARC) * Math.sin(Math.PI * e);
+    var cx = sx + dx * e + nx * bow, cy = sy + dy * e + ny * bow;
+    flyer.style.transform = 'translate(' + (cx - fw / 2).toFixed(1) + 'px,' + (cy - fh / 2).toFixed(1) + 'px) scale(' + (.9 + .1 * e).toFixed(4) + ')';
+    flyer.style.opacity = String(Math.min(1, t / C.FLY_FADE));
+  };
+  at(0);
+  var frame = function (now) {
+    if (self.flight !== f) return;
+    var t = Math.min(1, (now - t0) / C.FLY_MS);
+    at(t);
+    if (t < 1) f.raf = requestAnimationFrame(frame); else self.land(true);
+  };
+  f.raf = requestAnimationFrame(frame);
+};
+
+// Ends a flight: the copy goes and the slip shows where it landed; on a
+// real landing the answer's seal stamps now.
+ConclusionStack.prototype.land = function (landed) {
+  var f = this.flight; if (!f) return;
+  this.flight = null;
+  cancelAnimationFrame(f.raf);
+  f.flyer.remove();
+  f.el.classList.remove('tl-cs-landing');
+  if (landed) this.stamp(f.el, 0);
 };
 
 // One conclusion as a slip: its step number (a seal for the answer), then
@@ -818,8 +917,8 @@ ConclusionStack.prototype.clearTap = function () {
 };
 
 ConclusionStack.prototype.ripple = function (ev) {
-  var rect = this.host.getBoundingClientRect(), r = document.createElement('div'); r.className = 'tl-cs-ripple';
-  r.style.left = ev.clientX - rect.left + 'px'; r.style.top = ev.clientY - rect.top + 'px';
+  var rect = this.host.getBoundingClientRect(), k = rect.width / (this.host.offsetWidth || 1) || 1, r = document.createElement('div'); r.className = 'tl-cs-ripple';
+  r.style.left = (ev.clientX - rect.left) / k + 'px'; r.style.top = (ev.clientY - rect.top) / k + 'px';
   this.over.appendChild(r);
   setTimeout(function () { r.remove(); }, 600);
 };
@@ -861,12 +960,13 @@ ConclusionStack.prototype.placeCaption = function (animated) {
   b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
 };
 
-// The conclusion of this act lands on the stack. Once everything has
-// settled, the conclusions it is built on light up for a moment while
-// its thread draws.
-ConclusionStack.prototype.push = function (id) {
-  var self = this, C = ConclusionStack;
+// The conclusion of this act lands on the stack. With opts.from (a rect
+// on screen), it flies up from there. Once everything has settled, the
+// conclusions it is built on light up for a moment while its thread draws.
+ConclusionStack.prototype.push = function (id, opts) {
+  var self = this, C = ConclusionStack, from = opts && opts.from;
   if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
+  this.land(false);
   this.stop(); this.clearTap();
   this.cap = null; this.open = false;
   this.order.push(id);
@@ -874,20 +974,28 @@ ConclusionStack.prototype.push = function (id) {
   this.flash = this.known(this.item(id).from).filter(function (f) { return f !== id; });
   this.flashOn = false;
   this.entering = id;
+  this.flyFrom = from && from.width >= 0 ? from : null;
   this.render(true);
-  var settle = C.still() ? 0 : C.SETTLE_MS;
+  var settle = C.still() ? 0 : from ? C.FLY_MS + 60 : C.SETTLE_MS;
   this.flashTimer = setTimeout(function () { self.flashOn = true; self.apply(); }, settle);
   this.flashEnd = setTimeout(function () { self.flash = []; self.flashOn = false; self.apply(); }, settle + C.TAP_FADE_MS);
 };
 
+// How long a push takes to come to rest, so whoever pushed can wait for it.
+ConclusionStack.prototype.pushMs = function (opts) {
+  if (ConclusionStack.still()) return 0;
+  return opts && opts.from ? ConclusionStack.FLY_MS + 60 : ConclusionStack.SETTLE_MS;
+};
+
 // Shows exactly these conclusions with no entrance, the way the stack
-// stood at the end of an act; used when the player steps back or forward
-// or a question is opened again.
+// stood at the end of an act; used for review, when a lecture is opened
+// again at an act, or a question is opened again.
 ConclusionStack.prototype.set = function (ids) {
   var self = this, seen = {};
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.flashTimer); clearTimeout(this.flashEnd); this.flash = []; this.flashOn = false;
-  this.cap = null; this.open = false; this.entering = null;
+  this.cap = null; this.open = false; this.entering = null; this.flyFrom = null;
   this.order = [].concat(ids || []).filter(function (id) { if (!self.o.items[id] || seen[id]) return false; seen[id] = true; return true; });
   this.held = this.known(this.held); this.spot = this.spot ? this.known(this.spot) : null;
   if (this.spot && !this.spot.length) this.spot = null;
@@ -915,6 +1023,7 @@ ConclusionStack.prototype.stop = function () {
 };
 
 ConclusionStack.prototype.clear = function () {
+  this.land(false);
   this.stop(); this.clearTap();
   clearTimeout(this.flashTimer); clearTimeout(this.flashEnd);
   this.order = []; this.masked = {}; this.held = []; this.spot = null; this.cap = null; this.open = false; this.flash = []; this.flashOn = false;
@@ -925,7 +1034,8 @@ ConclusionStack.prototype.clear = function () {
    Assembly: this page plays the role of the player, the workflow and
    the question file. It holds the conclusions, wires the stack's events
    to a log, and shows how the sound is doing; the stack calls nothing
-   here directly.
+   here directly. A push passes the place of the act's component on the
+   page, the way the player passes the place of the role an act used.
    ============================================================ */
 (function () {
   var stateEl = document.getElementById('sound-state');
@@ -976,25 +1086,28 @@ ConclusionStack.prototype.clear = function () {
     line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
     logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
   }
+  // Where the act reached its conclusion, as the player would pass it.
+  function placeOf(id) { var r = document.getElementById(id).getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
 
   var main = new ConclusionStack(document.getElementById('main-stack'), { items: keyItems, sound: SoundSource, onEvent: log });
   var sub = document.getElementById('subtitle-text');
   var act = 0;
   function say(text) { sub.textContent = text; }
-  function goTo(n, animated) {
+  function goTo(n, how) {
     act = Math.max(0, Math.min(KEY_STEPS.length, n));
-    if (animated) {
+    if (how === 'fly' || how === 'here') {
       var s = KEY_STEPS[act - 1];
       if (s.masked) main.mask(s.id);
-      main.push(s.id);
+      main.push(s.id, how === 'fly' ? { from: placeOf('main-act') } : null);
     } else main.set(KEY_STEPS.slice(0, act).map(function (s) { return s.id; }));
     say(act ? KEY_STEPS[act - 1].say : '点下面的「下一幕」开始。');
   }
   var newest = function () { return main.order[main.order.length - 1]; };
   var commands = {
-    next: function () { if (act < KEY_STEPS.length) goTo(act + 1, true); },
-    back: function () { goTo(act - 1, false); },
-    end: function () { main.mask('ans'); goTo(KEY_STEPS.length, false); },
+    next: function () { if (act < KEY_STEPS.length) goTo(act + 1, 'fly'); },
+    nextHere: function () { if (act < KEY_STEPS.length) goTo(act + 1, 'here'); },
+    back: function () { goTo(act - 1, 'set'); },
+    end: function () { main.mask('ans'); goTo(KEY_STEPS.length, 'set'); },
     revealAnswer: function () { if (main.order.indexOf('ans') < 0) return; main.reveal('ans'); say('是 C 和声小调：调号是三个降号，B 还原是它的导音，旋律停在主音 C 上。'); },
     recall: function () { main.highlight(['k1']); },
     spot: function () { main.spotlight(['k2', 'k3']); },
@@ -1018,14 +1131,15 @@ ConclusionStack.prototype.clear = function () {
     log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
   });
 
-  // A whole lecture played through at the pace of its acts.
+  // A whole lecture played through at the pace of its acts, every
+  // conclusion flying up from the act's component.
   var run = new ConclusionStack(document.getElementById('run-stack'), { items: runItems, sound: SoundSource, onEvent: log });
   var runSub = document.getElementById('run-sub'), runTimers = [];
   document.getElementById('run-btn').addEventListener('click', function () {
     runTimers.forEach(clearTimeout); runTimers = [];
     run.clear(); runSub.textContent = '';
     RUN_STEPS.forEach(function (s, i) {
-      runTimers.push(setTimeout(function () { run.push(s.id); runSub.textContent = s.say; }, 400 + i * 2600));
+      runTimers.push(setTimeout(function () { run.push(s.id, { from: placeOf('run-act') }); runSub.textContent = s.say; }, 400 + i * 2800));
     });
   });
 
