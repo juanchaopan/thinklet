@@ -194,10 +194,12 @@ var SoundSource = (function () {
 
 /* ============================================================
    The player's loading screen. Before a question starts it covers the
-   page, downloads and prepares everything the question needs (here
-   the piano samples and the fonts), shows how far it is, and ends with
-   a "开始" button. That tap is the gesture that lets phones play sound,
-   so the first note after it plays on time.
+   page, downloads and prepares everything the question needs (the
+   piano samples, the fonts, and whatever the page adds with need(),
+   such as the question's files and narration), shows how far it is, and
+   ends with a "开始" button. That tap is the gesture that lets phones
+   play sound, so the first note and the first line after it play on
+   time; onStart() hands that tap to the page.
    ============================================================ */
 var PlayerLoading = (function () {
   var CSS = [
@@ -219,6 +221,13 @@ var PlayerLoading = (function () {
     '@keyframes pl-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}',
     '@media (prefers-reduced-motion:reduce){.pl-curtain,.pl-fill,.pl-start{transition-duration:.01ms;animation-duration:.01ms}.pl-fill.pl-unknown{animation:none}}'
   ].join('');
+  var PIANO_SHARE = .7;
+  var tasks = [], starters = [];
+
+  // Adds something to prepare before 开始: task(progress) returns a
+  // promise; progress(fraction 0..1, text) reports how far it is.
+  function need(task) { tasks.push(task); }
+  function onStart(fn) { starters.push(fn); }
 
   function show() {
     var style = document.createElement('style'); style.textContent = CSS; document.head.appendChild(style);
@@ -234,16 +243,31 @@ var PlayerLoading = (function () {
       if (text) note.textContent = text;
     }
 
+    // The piano takes most of the bar; the page's own tasks share the rest.
     function run() {
       action.innerHTML = '';
       title.textContent = '正在准备这道题';
       progress(null, '');
+      var parts = [0].concat(tasks.map(function () { return 0; }));
+      var share = tasks.length ? PIANO_SHARE : 1;
+      function part(i, weight) {
+        return function (f, text) {
+          if (f === null || f === undefined) { if (text) note.textContent = text; return; }
+          parts[i] = f * weight;
+          progress(parts.reduce(function (a, b) { return a + b; }, 0), text);
+        };
+      }
       var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-      Promise.all([SoundSource.preload(progress), fonts]).then(function () {
+      var jobs = [SoundSource.preload(part(0, share)), fonts].concat(tasks.map(function (t, i) { return t(part(i + 1, (1 - share) / tasks.length)); }));
+      Promise.all(jobs).then(function () {
         progress(1, '准备好了');
         title.textContent = '准备好了';
         var b = document.createElement('button'); b.type = 'button'; b.className = 'pl-start'; b.textContent = '开始';
-        b.addEventListener('click', function () { SoundSource.unlock(); el.classList.add('pl-gone'); });
+        b.addEventListener('click', function () {
+          SoundSource.unlock();
+          el.classList.add('pl-gone');
+          starters.forEach(function (fn) { fn(); });
+        });
         action.appendChild(b);
         b.focus({ preventScroll: true });
       }, function () {
@@ -257,8 +281,8 @@ var PlayerLoading = (function () {
     run();
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
-  return { show: show };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else setTimeout(show, 0);
+  return { show: show, need: need, onStart: onStart };
 })();
 
 // The player's part: unlock on every touch, click or key press. Only

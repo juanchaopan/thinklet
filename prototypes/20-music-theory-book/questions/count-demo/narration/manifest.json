@@ -1,0 +1,72 @@
+{
+  "p0-beat-unit.mp3": {
+    "id": "p0.beat.unit",
+    "text": "先看拍号，十六分之九拍：一小节有九个十六分音符，三个一组。",
+    "hash": "a58a40b029919700"
+  },
+  "p0-beat-split.mp3": {
+    "id": "p0.beat.split",
+    "text": "每三个十六分音符就是一个附点八分音符，我们按它把一小节分开。",
+    "hash": "018c7734192650ef"
+  },
+  "p0-measure-unit.mp3": {
+    "id": "p0.measure.unit",
+    "text": "用附点八分音符当尺子来量。",
+    "hash": "db4f03fa3ef8991d"
+  },
+  "p0-measure-total.mp3": {
+    "id": "p0.measure.total",
+    "text": "一共是三个附点八分音符，也就是三拍。",
+    "hash": "c263e8549f00f574"
+  },
+  "p0-fill-ask.mp3": {
+    "id": "p0.fill.ask",
+    "text": "请你在格子里写上这个数。",
+    "hash": "7038445ed80c17bc"
+  },
+  "p0-fill-right.mp3": {
+    "id": "p0.fill.right",
+    "text": "写对了！",
+    "hash": "1963162501ccd23f"
+  },
+  "p0-fill-hint.mp3": {
+    "id": "p0.fill.hint",
+    "text": "数一数尺子上一共亮了几格。",
+    "hash": "cca16a7ef807b1c7"
+  },
+  "p0-fill-demo.mp3": {
+    "id": "p0.fill.demo",
+    "text": "是三，我来写给你看。",
+    "hash": "0fb234d66c6f4827"
+  },
+  "p1-measure-unit.mp3": {
+    "id": "p1.measure.unit",
+    "text": "再看 (b)：一个附点四分音符，等于几个十六分音符？用十六分音符当尺子来量。",
+    "hash": "69bad03eacac716c"
+  },
+  "p1-measure-total.mp3": {
+    "id": "p1.measure.total",
+    "text": "附点四分音符一共是六个十六分音符那么长。",
+    "hash": "b00882e17541ea22"
+  },
+  "p1-fill-ask.mp3": {
+    "id": "p1.fill.ask",
+    "text": "把这个数写进格子里。",
+    "hash": "a6b3669156bdce7f"
+  },
+  "p1-fill-right.mp3": {
+    "id": "p1.fill.right",
+    "text": "对了！",
+    "hash": "edcce87dc574fe75"
+  },
+  "p1-fill-hint.mp3": {
+    "id": "p1.fill.hint",
+    "text": "数一数尺子上亮了几格。",
+    "hash": "b5eb767edc15e080"
+  },
+  "p1-fill-demo.mp3": {
+    "id": "p1.fill.demo",
+    "text": "是六，我来写给你看。",
+    "hash": "255819c9b55ed5ab"
+  }
+}

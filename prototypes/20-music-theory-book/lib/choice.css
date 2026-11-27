@@ -1,0 +1,108 @@
+/* ---------- Choice component: it defines its whole look here and takes nothing from the page ---------- */
+/* The look follows the etude theme: options are tiles of warm paper with grain, each with an ivory tick box the child marks in dark ink, as on an exam paper; terms in italic serif; violet light for whatever the workflow lights or confirms, brick red with a dashed edge and a cross for what is wrong, a red rule drawn through an option ruled out. */
+.tl-ch {
+  --tl-paper-a: #fffaf1;
+  --tl-paper-b: #f2e6d1;
+  --tl-paper-back: #dcc8a6;
+  --tl-paper-shadow: rgba(60, 38, 16, .45);
+  --tl-ink: #241a12;
+  --tl-ink-soft: #6b5238;
+  --tl-glow: #7b4dff;
+  --tl-glow-soft: rgba(123, 77, 255, .28);
+  --tl-glow-ink: #4b23c9;
+  --tl-wrong: #c8452f;
+  --tl-ivory: #fffdf8;
+  --tl-bubble-bg: #2a2118;
+  --tl-bubble-ink: #fff8ec;
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
+  --tl-move: .52s var(--tl-ease);
+  --tl-pen: cubic-bezier(.35, .1, .3, 1);
+  position: relative; min-width: 0; width: 100%; margin: 0 auto; color: var(--tl-ink);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+/* A choice of options is something to read: it has a maximum width. A row of boxes under a score spans the score. */
+.tl-ch.tl-ch-is-list { max-width: 640px; }
+/* Drawing a state directly (a step back, a rebuild): nothing glides or draws itself. */
+.tl-ch.tl-ch-still, .tl-ch.tl-ch-still *, .tl-ch-probe, .tl-ch-probe * { transition: none !important; animation: none !important; }
+.tl-ch-probe { position: absolute !important; left: 0; top: 0; width: max-content !important; min-height: 0 !important; visibility: hidden; pointer-events: none; }
+.tl-ch-stem { display: flex; align-items: baseline; gap: 8px; margin: 0 2px 12px; font: 500 20px/1.3 var(--tl-serif); color: var(--tl-ink); }
+.tl-ch-tag { flex: none; font: italic 600 19px/1.3 var(--tl-serif); color: var(--tl-ink-soft); }
+.tl-ch-ask .tl-ch-term { font-style: italic; font-weight: 600; }
+.tl-ch-stem svg.tl-ch-acc, .tl-ch-body svg.tl-ch-acc, .tl-ch-bubble svg.tl-ch-acc { fill: currentColor; }
+.tl-ch-opts { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+.tl-ch-opt { position: relative; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 56px; padding: 10px 16px 10px 13px; border-radius: 8px; cursor: pointer;
+  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 3px rgba(70, 45, 20, .1), 0 12px 20px -12px var(--tl-paper-shadow);
+  transition: transform .32s var(--tl-ease), box-shadow .35s, opacity .45s, filter .45s, color .3s; }
+.tl-ch-opt::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.tl-ch-opt:focus, .tl-ch-mark:focus { outline: none; }
+.tl-ch.kbd .tl-ch-opt:focus-visible, .tl-ch.kbd .tl-ch-mark:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 3px; }
+/* Options drawn as staves stand up: the stave on top, the tick box under it, as on an exam paper. */
+.tl-ch-tall .tl-ch-opt { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; justify-items: center; row-gap: 10px; padding: 14px 12px 12px; }
+.tl-ch-tall .tl-ch-box { grid-row: 2; }
+.tl-ch-tall .tl-ch-body { grid-row: 1; justify-self: center; justify-content: center; }
+/* The option the child picked lifts a little and its edge darkens; the tick in its box is theirs, in dark ink. */
+.tl-ch-opt.tl-ch-on { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1.5px color-mix(in srgb, var(--tl-ink) 55%, transparent), 0 3px 5px rgba(70, 45, 20, .14), 0 18px 28px -14px var(--tl-paper-shadow); }
+.tl-ch-opt.tl-ch-down { transform: translateY(1px) scale(.985); }
+.tl-ch-box { position: relative; flex: none; width: 28px; height: 28px; box-sizing: border-box; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--tl-ink-soft) 75%, transparent); background: var(--tl-ivory); box-shadow: inset 0 1px 2px rgba(60, 38, 16, .22); transition: border-color .3s, box-shadow .35s, transform .15s; }
+.tl-ch-box svg { position: absolute; left: -5px; top: -6px; width: 36px; height: 36px; overflow: visible; fill: none; stroke: var(--tl-ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transition: opacity .18s; }
+.tl-ch-box svg.tl-ch-erase { opacity: 0; }
+.tl-ch-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-ch-draw .3s var(--tl-pen) forwards; }
+.tl-ch-draw + .tl-ch-draw { animation-delay: .17s; }
+/* The option's content is as wide as what it says, so a rule through it crosses the words and no more. */
+.tl-ch-body { position: relative; justify-self: start; max-width: 100%; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font: 500 21px/1.2 var(--tl-serif); transition: opacity .45s, filter .45s; }
+.tl-ch-term { font-style: italic; font-weight: 600; }
+.tl-ch-staff { flex: 0 1 auto; min-width: 0; max-width: 100%; line-height: 0; color: var(--tl-ink); }
+/* A stave is cropped to what is drawn on it, so its lines stop where the crop ends. */
+.tl-ch-staff svg { display: block; overflow: hidden; max-width: 100%; height: auto; }
+.tl-ch-probe .tl-ch-staff svg { max-width: none; }
+.tl-ch-staff text { font-family: var(--tl-serif); font-style: italic; font-weight: 600; }
+.tl-ch-staff .tl-ch-sounding path, .tl-ch-staff path.tl-ch-sounding { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
+/* Lit by the workflow: a violet ring and glow. */
+.tl-ch-opt.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 22px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
+.tl-ch-opt.tl-lit .tl-ch-staff { color: var(--tl-glow-ink); }
+.tl-ch-opt.tl-dim, .tl-ch-mark.tl-dim { opacity: .32; }
+/* Ruled out: a brick-red rule drawn through the option, the option faded; the box can no longer be ticked. */
+.tl-ch-strike { position: absolute; left: -6px; right: -6px; top: 52%; height: 2.5px; margin-top: -1px; border-radius: 2px; background: var(--tl-wrong); transform: rotate(-2deg) scaleX(0); transform-origin: 0 50%; pointer-events: none; transition: transform .42s var(--tl-pen); }
+.tl-ch-out .tl-ch-strike { transform: rotate(-2deg) scaleX(1); }
+.tl-ch-out .tl-ch-body > :not(.tl-ch-strike) { opacity: .42; filter: saturate(.4); transition: opacity .45s, filter .45s; }
+.tl-ch-out .tl-ch-box { border-style: dashed; background: color-mix(in srgb, var(--tl-ivory), var(--tl-paper-back) 30%); }
+/* Confirmed by the workflow: violet ring and a violet seal with a tick; or brick red, a dashed edge and a seal with a cross. */
+.tl-ch-opt.tl-ch-right { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 2px var(--tl-glow), 0 0 28px -4px var(--tl-glow-soft), 0 14px 24px -12px var(--tl-paper-shadow); }
+.tl-ch-opt.tl-ch-wrong { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1.5px var(--tl-wrong), 0 8px 16px -12px var(--tl-paper-shadow); outline: 1.5px dashed color-mix(in srgb, var(--tl-wrong) 60%, transparent); outline-offset: 3px; }
+.tl-ch-seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; pointer-events: none; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .9); }
+.tl-ch-seal svg { width: 15px; height: 15px; fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.tl-ch-seal.tl-ch-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); }
+.tl-ch-seal.tl-ch-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, #fff), var(--tl-wrong)); box-shadow: 0 4px 10px -2px rgba(200, 69, 47, .35), 0 0 0 2px rgba(255, 255, 255, .9); }
+.tl-ch-seal.tl-ch-pop { animation: tl-ch-pop .45s cubic-bezier(.2, 1.5, .4, 1) both; }
+/* A letter the workflow sticks on an option sits on the tile's corner, covering nothing. */
+.tl-ch-badge { position: absolute; top: -9px; left: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); color: #fff; pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-ch-badge.tl-ch-pop { animation: tl-ch-pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+/* A row of boxes under a score: each box stands under the note or bar it answers. */
+.tl-ch-strip { position: relative; height: 54px; }
+.tl-ch-mark { position: absolute; top: 5px; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; cursor: pointer; border-radius: 10px; transition: opacity .45s; }
+.tl-ch-mark .tl-ch-box { width: 32px; height: 32px; box-shadow: inset 0 1px 2px rgba(60, 38, 16, .22), 0 6px 12px -8px var(--tl-paper-shadow); }
+.tl-ch-mark .tl-ch-box svg { left: -3px; top: -4px; }
+.tl-ch-mark.tl-ch-down .tl-ch-box { transform: scale(.94); }
+.tl-ch-mark.tl-lit .tl-ch-box { border-color: var(--tl-glow); box-shadow: 0 0 0 1.5px var(--tl-glow), 0 0 18px -2px var(--tl-glow-soft); }
+.tl-ch-mark.tl-ch-right .tl-ch-box { border-color: var(--tl-glow); box-shadow: 0 0 0 2px var(--tl-glow), 0 0 20px -2px var(--tl-glow-soft); }
+.tl-ch-mark.tl-ch-wrong .tl-ch-box { border-color: var(--tl-wrong); outline: 1.5px dashed color-mix(in srgb, var(--tl-wrong) 60%, transparent); outline-offset: 3px; }
+.tl-ch-mark .tl-ch-seal { top: -6px; right: -6px; width: 20px; height: 20px; }
+.tl-ch-mark .tl-ch-seal svg { width: 12px; height: 12px; }
+.tl-ch-mark .tl-ch-badge { top: -6px; left: -6px; width: 18px; height: 18px; font-size: 12px; }
+/* After the answer is handed in the choice is locked: taps change nothing. */
+.tl-ch-locked .tl-ch-opt, .tl-ch-locked .tl-ch-mark { cursor: default; }
+/* Room the choice makes under a row for a bubble, so a bubble never covers another option. */
+.tl-ch-room { grid-column: 1 / -1; position: relative; height: 0; }
+.tl-ch-strip + .tl-ch-room { margin-top: 4px; }
+.tl-ch-bubble { position: absolute; top: 2px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); transition: opacity .2s; }
+.tl-ch-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-ch-over { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+.tl-ch-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-ch-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+@keyframes tl-ch-draw { to { stroke-dashoffset: 0; } }
+@keyframes tl-ch-pop { from { transform: scale(.3); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-ch-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+

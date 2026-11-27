@@ -1,0 +1,172 @@
+{
+  "p0-measure-unit.mp3": {
+    "id": "p0.measure.unit",
+    "text": "先看 (a) 这一小节。我们用最短的八分音符当尺子，量一量它有多长。",
+    "hash": "2f53bec56c6ac5a3"
+  },
+  "p0-measure-total.mp3": {
+    "id": "p0.measure.total",
+    "text": "一共是六个八分音符那么长。",
+    "hash": "6d6cfb6fce106d54"
+  },
+  "p0-grouping-look.mp3": {
+    "id": "p0.grouping.look",
+    "text": "再看符尾是怎么连的。",
+    "hash": "1889048a8f715321"
+  },
+  "p0-grouping-kind.mp3": {
+    "id": "p0.grouping.kind",
+    "text": "前三个八分音符连成一组，后面的附点四分音符也正好是三个八分音符长。三个一组，一共两组。",
+    "hash": "16361c981e60cbf5"
+  },
+  "p0-choose-ask.mp3": {
+    "id": "p0.choose.ask",
+    "text": "现在请你在正确的拍号旁边打勾。",
+    "hash": "8d776a419da967c2"
+  },
+  "p0-choose-right.mp3": {
+    "id": "p0.choose.right",
+    "text": "对了，就是八分之六拍。",
+    "hash": "5df13c2e08828e87"
+  },
+  "p0-choose-hint.mp3": {
+    "id": "p0.choose.hint",
+    "text": "再想一想：哪个拍号长度对，又是三个八分音符一组？",
+    "hash": "755396108b0cd79b"
+  },
+  "p0-choose-demo.mp3": {
+    "id": "p0.choose.demo",
+    "text": "我们一起来看，是八分之六拍。",
+    "hash": "6e8a73b5a43375bd"
+  },
+  "p0-34-item-look.mp3": {
+    "id": "p0.34.item.look",
+    "text": "第一个是四分之三拍。",
+    "hash": "00be61019c064546"
+  },
+  "p0-34-item-check.mp3": {
+    "id": "p0.34.item.check",
+    "text": "放进去，长度正好是六个八分音符。",
+    "hash": "5c3f24f33e69b877"
+  },
+  "p0-34-item-verdict.mp3": {
+    "id": "p0.34.item.verdict",
+    "text": "可是四分之三拍的一拍是四分音符，两个八分音符一组；这里是三个一组，对不上。",
+    "hash": "a5cc70a3743940c8"
+  },
+  "p0-68-item-look.mp3": {
+    "id": "p0.68.item.look",
+    "text": "第二个是八分之六拍。",
+    "hash": "ee2ea7f5efeb5138"
+  },
+  "p0-68-item-check.mp3": {
+    "id": "p0.68.item.check",
+    "text": "长度也是六个八分音符。",
+    "hash": "991bc4346f910a12"
+  },
+  "p0-68-item-verdict.mp3": {
+    "id": "p0.68.item.verdict",
+    "text": "它的一拍是附点四分音符，正好三个八分音符一组，一共两拍。长度和分组都对上了。",
+    "hash": "afbb2e20bb11bdee"
+  },
+  "p0-58-item-look.mp3": {
+    "id": "p0.58.item.look",
+    "text": "第三个是八分之五拍。",
+    "hash": "ca820fa58db143d1"
+  },
+  "p0-58-item-check.mp3": {
+    "id": "p0.58.item.check",
+    "text": "它只有五个八分音符那么长，这一小节多出来一个，放不下。",
+    "hash": "2c0fe486154f8b4f"
+  },
+  "p0-58-item-verdict.mp3": {
+    "id": "p0.58.item.verdict",
+    "text": "所以八分之五拍也不对。",
+    "hash": "21a1085134313875"
+  },
+  "p1-measure-unit.mp3": {
+    "id": "p1.measure.unit",
+    "text": "再看 (b)。还是用八分音符来量。",
+    "hash": "9cf4f9ac039c1c9c"
+  },
+  "p1-measure-total.mp3": {
+    "id": "p1.measure.total",
+    "text": "三连音的三个音只占两个八分音符的长度，所以一共也是六个八分音符。",
+    "hash": "2e6760808d6ce086"
+  },
+  "p1-grouping-look.mp3": {
+    "id": "p1.grouping.look",
+    "text": "这次看三连音和后面两个四分音符。",
+    "hash": "bcb21f26bc0bdff8"
+  },
+  "p1-grouping-kind.mp3": {
+    "id": "p1.grouping.kind",
+    "text": "三连音正好占一拍，后面两个四分音符各是一拍。每一拍分成两份，一共三拍。",
+    "hash": "c7822ade62e98645"
+  },
+  "p1-choose-ask.mp3": {
+    "id": "p1.choose.ask",
+    "text": "请你选出 (b) 的拍号。",
+    "hash": "b6356f152fd94baf"
+  },
+  "p1-choose-right.mp3": {
+    "id": "p1.choose.right",
+    "text": "对了，是四分之三拍。",
+    "hash": "785a489cf303d8b2"
+  },
+  "p1-choose-hint.mp3": {
+    "id": "p1.choose.hint",
+    "text": "提示：三连音告诉我们，每拍本来分成两份。",
+    "hash": "151f4a704419131e"
+  },
+  "p1-choose-demo.mp3": {
+    "id": "p1.choose.demo",
+    "text": "我们一起来看，是四分之三拍。",
+    "hash": "58253c4837b1f81b"
+  },
+  "p1-68-item-look.mp3": {
+    "id": "p1.68.item.look",
+    "text": "第一个是八分之六拍。",
+    "hash": "3bc1fbbdd8293930"
+  },
+  "p1-68-item-check.mp3": {
+    "id": "p1.68.item.check",
+    "text": "长度正好。",
+    "hash": "ddce75f3e5e6f4a3"
+  },
+  "p1-68-item-verdict.mp3": {
+    "id": "p1.68.item.verdict",
+    "text": "可是八分之六拍每拍分成三份；这里有三连音，说明本来每拍只分两份，所以不对。",
+    "hash": "bcd46b0041f46639"
+  },
+  "p1-34-item-look.mp3": {
+    "id": "p1.34.item.look",
+    "text": "第二个是四分之三拍。",
+    "hash": "ee375748f6f8d441"
+  },
+  "p1-34-item-check.mp3": {
+    "id": "p1.34.item.check",
+    "text": "长度正好，三拍。",
+    "hash": "fc9835d23bf9f415"
+  },
+  "p1-34-item-verdict.mp3": {
+    "id": "p1.34.item.verdict",
+    "text": "每拍一个四分音符，三连音挤进一拍里，分组也对上了。",
+    "hash": "0b8754eaf637d8d8"
+  },
+  "p1-24-item-look.mp3": {
+    "id": "p1.24.item.look",
+    "text": "第三个是四分之二拍。",
+    "hash": "2070c445af46674a"
+  },
+  "p1-24-item-check.mp3": {
+    "id": "p1.24.item.check",
+    "text": "它只有四个八分音符那么长，放不下。",
+    "hash": "e008456de3494d86"
+  },
+  "p1-24-item-verdict.mp3": {
+    "id": "p1.24.item.verdict",
+    "text": "所以四分之二拍不对。",
+    "hash": "66aef59b65221262"
+  }
+}

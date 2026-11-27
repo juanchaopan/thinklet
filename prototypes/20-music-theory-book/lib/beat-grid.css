@@ -1,0 +1,103 @@
+/* ---------- Beat grid component: it defines its whole look here and takes nothing from the page ---------- */
+.tl-bg {
+  --tl-paper-a: #fffaf1;
+  --tl-paper-b: #f2e6d1;
+  --tl-paper-shadow: rgba(60, 38, 16, .45);
+  --tl-ink: #241a12;
+  --tl-line: rgba(36, 26, 18, .62);
+  --tl-guide: rgba(36, 26, 18, .16);
+  --tl-ribbon: #6b5238;
+  --tl-ribbon-hi: rgba(255, 236, 205, .55);
+  --tl-glow: #7b4dff;
+  --tl-glow-soft: rgba(123, 77, 255, .28);
+  --tl-warn: #c8452f;
+  --tl-warn-soft: rgba(200, 69, 47, .16);
+  --tl-wood-a: #e9c98f;
+  --tl-wood-b: #cfa264;
+  --tl-wood-ink: #4a3016;
+  --tl-bubble-bg: #2a2118;
+  --tl-bubble-ink: #fff8ec;
+  --tl-caption: #2a2118;
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+}
+.tl-card { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 16px; padding: 10px 10px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
+  background:
+    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, .7), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(120, 90, 50, .025) 0 1px, transparent 1px 3px),
+    linear-gradient(170deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 -2px 6px rgba(120, 84, 40, .12) inset, 0 2px 3px rgba(60, 38, 16, .18), 0 24px 44px -20px var(--tl-paper-shadow); }
+.tl-bg.kbd .tl-card:focus-visible { box-shadow: 0 0 0 3px var(--tl-glow), 0 24px 44px -20px var(--tl-paper-shadow); }
+.tl-rows { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.tl-row { position: relative; }
+.tl-row svg { position: absolute; inset: 0; overflow: visible; }
+/* The ruler under each row: light maple with engraved ticks. */
+.tl-ruler { position: absolute; border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255, 246, 225, .55), transparent 40%, rgba(80, 48, 16, .12)),
+    repeating-linear-gradient(92deg, rgba(120, 70, 20, .08) 0 1px, transparent 1px 5px, rgba(255, 230, 190, .1) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, var(--tl-wood-a), var(--tl-wood-b));
+  box-shadow: inset 0 1px 0 rgba(255, 248, 230, .8), inset 0 -1px 0 rgba(80, 48, 16, .35), 0 2px 4px rgba(60, 36, 12, .25); }
+.tl-bg svg text { font-family: var(--tl-serif); }
+.tl-glyph { fill: var(--tl-ink); transition: fill .2s; }
+.tl-stem { fill: var(--tl-ink); transition: fill .2s; }
+.tl-beam { fill: var(--tl-ink); }
+.tl-tie { fill: none; stroke: var(--tl-ink); stroke-width: 1.3; }
+.tl-staff { stroke: var(--tl-line); stroke-width: 1.2; }
+.tl-barline { stroke: var(--tl-ink); stroke-width: 1.8; }
+.tl-barline.tl-warnline { stroke: var(--tl-warn); stroke-width: 2.4; stroke-dasharray: 5 3; animation: fade .4s ease-out both; }
+.tl-guide { stroke: var(--tl-guide); stroke-width: 1; stroke-dasharray: 2 4; }
+.tl-guide.tl-major { stroke: rgba(36, 26, 18, .26); stroke-dasharray: 3 3; }
+.tl-ribbon { fill: var(--tl-ribbon); opacity: .78; transition: fill .2s, opacity .3s; }
+.tl-ribbon-hi { fill: var(--tl-ribbon-hi); pointer-events: none; }
+.tl-rest .tl-ribbon { fill: transparent; stroke: var(--tl-ribbon); stroke-width: 1.3; stroke-dasharray: 3 3; opacity: .8; }
+.tl-rest .tl-ribbon-hi { display: none; }
+.tl-part { transition: opacity .35s; }
+.tl-part.tl-lit .tl-glyph, .tl-part.tl-lit .tl-stem { fill: var(--tl-glow); }
+.tl-part.tl-lit { filter: drop-shadow(0 0 5px var(--tl-glow-soft)); }
+.tl-part.tl-lit .tl-ribbon { fill: var(--tl-glow); opacity: .9; }
+.tl-rest.tl-lit .tl-ribbon { fill: var(--tl-glow-soft); stroke: var(--tl-glow); }
+.tl-part.tl-over .tl-glyph, .tl-part.tl-over .tl-stem { fill: var(--tl-warn); }
+.tl-part.tl-over .tl-ribbon { fill: var(--tl-warn); opacity: .55; }
+.tl-rest.tl-over .tl-ribbon { fill: var(--tl-warn-soft); stroke: var(--tl-warn); }
+.tl-missing { fill: var(--tl-warn-soft); stroke: var(--tl-warn); stroke-width: 1.3; stroke-dasharray: 4 3; animation: fade .4s ease-out both; }
+.tl-dim { opacity: .22; }
+.tl-cell { fill: rgba(90, 52, 16, .1); }
+.tl-cell.tl-lit { fill: color-mix(in srgb, var(--tl-glow) 35%, transparent); }
+.tl-cell.tl-pulse { animation: pulse .45s ease-out; }
+.tl-tick { stroke: var(--tl-wood-ink); stroke-width: 1; opacity: .5; }
+.tl-tick.tl-beat { stroke-width: 1.6; opacity: .85; }
+.tl-tick.tl-sub { stroke: var(--tl-glow); opacity: .9; stroke-width: 1.4; animation: fade .35s ease-out both; }
+.tl-beatno { font-size: 15px; font-style: italic; font-weight: 600; fill: var(--tl-wood-ink); }
+.tl-sig { font-weight: 700; fill: var(--tl-ink); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+.tl-sig.tl-unknown { fill: var(--tl-glow); }
+.tl-tupno { font-size: 15px; font-style: italic; font-weight: 600; fill: var(--tl-ink); }
+.tl-bracket { fill: none; stroke: var(--tl-ink); stroke-width: 1.1; }
+.tl-unit { fill: color-mix(in srgb, var(--tl-glow) 30%, transparent); stroke: var(--tl-glow); stroke-width: 1.2; animation: fade .3s ease-out both; }
+.tl-countno { font-size: 17px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: var(--tl-glow); stroke-width: 3px; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+/* Overlays positioned over the whole grid. */
+.tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.tl-badge { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 15px/1 var(--tl-serif); color: #fff;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-playhead { position: absolute; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--tl-glow); box-shadow: 0 0 10px 2px var(--tl-glow-soft), 0 0 3px var(--tl-glow); opacity: 0; transition: opacity .2s; }
+.tl-playhead.on { opacity: 1; }
+.tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 40%, color-mix(in srgb, var(--tl-glow) 18%, transparent), transparent 75%); opacity: 0; transition: opacity .45s; }
+.tl-spot.on { opacity: 1; }
+.tl-ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble.out { opacity: 0; }
+.tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-bubble b { font: 600 19px/1 var(--tl-serif); letter-spacing: .02em; }
+.tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
+.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px rgba(255, 230, 200, .35); transition: transform .1s; }
+.tl-play:active { transform: scale(.94); }
+.tl-play:focus { outline: none; }
+.tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
+.tl-play svg { width: 18px; height: 18px; fill: currentColor; }
+.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse { 0% { fill: color-mix(in srgb, var(--tl-glow) 55%, transparent); } 100% { fill: rgba(90, 52, 16, .1); } }
+@keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
+@keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+

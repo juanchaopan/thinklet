@@ -1,0 +1,63 @@
+id: count-demo
+title: 数有几个（示例）
+workflow: rhythm-beats
+theme: etude
+prompt: Write the missing numbers.
+
+bind:
+  ruler: beat-grid
+  answer: fill
+  stack: conclusion-stack
+
+parts:
+  - kind: count
+    tag: (a)
+    meter: 9/16
+    unit: 3/16
+    inputs:
+      ruler: { abc: "X:1\nL:1/16\nK:C\nGAB cBA GAB|", meter: '?' }
+      answer:
+        shape: line
+        tag: (a)
+        prompt: [{ text: 'In ' }, { term: '9/16' }, { text: ' there are ' }, { field: { id: n, size: 1, name: number of beats } }, { text: ' dotted-quaver beats in a bar.' }]
+        keys: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    items:
+      - id: n
+        answer: ['3']
+    lines:
+      beat.unit: 先看拍号，十六分之九拍：一小节有九个十六分音符，三个一组。
+      beat.split: 每三个十六分音符就是一个附点八分音符，我们按它把一小节分开。
+      measure.unit: 用附点八分音符当尺子来量。
+      measure.total: 一共是三个附点八分音符，也就是三拍。
+      fill.ask: 请你在格子里写上这个数。
+      fill.right: 写对了！
+      fill.hint: 数一数尺子上一共亮了几格。
+      fill.demo: 是三，我来写给你看。
+    conclusions:
+      beat: { parts: [{ term: '9/16' }, { op: '=' }, { text: ' 3 + 3 + 3 semiquavers' }] }
+      measure: { parts: [{ text: 'counted ' }, { term: '3' }, { text: ' dotted quavers' }] }
+      answer: { parts: [{ term: '3' }, { text: ' beats' }], from: [beat, measure], final: true }
+
+  - kind: count
+    tag: (b)
+    unit: 1/16
+    inputs:
+      ruler: { abc: "X:1\nL:1/16\nK:C\nc6|", meter: '?' }
+      answer:
+        shape: line
+        tag: (b)
+        prompt: [{ text: 'A dotted crotchet lasts as long as ' }, { field: { id: n, size: 1, name: number of semiquavers } }, { text: ' semiquavers.' }]
+        keys: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+    items:
+      - id: n
+        answer: ['6']
+    lines:
+      measure.unit: 再看 (b)：一个附点四分音符，等于几个十六分音符？用十六分音符当尺子来量。
+      measure.total: 附点四分音符一共是六个十六分音符那么长。
+      fill.ask: 把这个数写进格子里。
+      fill.right: 对了！
+      fill.hint: 数一数尺子上亮了几格。
+      fill.demo: 是六，我来写给你看。
+    conclusions:
+      measure: { parts: [{ text: 'dotted crotchet' }, { op: '=' }, { term: '6' }, { text: ' semiquavers' }] }
+      answer: { parts: [{ term: '6' }], from: [measure], final: true }

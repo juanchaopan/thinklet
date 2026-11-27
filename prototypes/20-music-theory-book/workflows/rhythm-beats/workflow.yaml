@@ -14,6 +14,10 @@ player:
   wrong: [hint, demo]
 
 roles:
+  stack:
+    title: 结论
+    needs: [conclude]
+    place: top
   material:
     title: 素材
     note: 题目上印的那一段；只有一句文字的题没有这个角色。
@@ -30,11 +34,11 @@ roles:
     title: 对照拍尺
     note: 改写的小题里放改写后的那一段，和拍尺一拍对一拍。
     optional: true
-    needs: [meter, point, set]
+    needs: [meter, count, point, set]
     place: main
   answer:
     title: 作答
-    needs: [answer]
+    needs: [answer, point]
     uses: [strike, positions]
     place: bottom
   rule:
@@ -43,10 +47,6 @@ roles:
     optional: true
     needs: [point, mask]
     place: popup
-  stack:
-    title: 结论
-    needs: [conclude]
-    place: top
 
 properties:
   answering:
@@ -66,14 +66,14 @@ properties:
     title: 用什么时值来量
     note: 判断拍号时一般是这一小节最短的音符；数有几个时就是题目问的单位，比如附点四分音符。
     type: duration
-  rhythm:
-    title: 拍尺上一开始放的节奏
-    note: 不给就用素材里这个小题指着的那一小节；只有文字的题由题目写出要量的那一段。
-    type: rhythm
+  beat:
+    title: 一拍的时值
+    note: 按拍切开时一拍一拍地数，比如八分之六拍的一拍是附点四分音符。
+    type: duration
   groups:
     title: 能看出拍子怎么分组的地方
-    note: 符尾连成的组、三连音、二连音，用来判断是单拍子还是复拍子。
-    type: spots
+    note: 符尾连成的组、三连音、二连音；每组是这一小节里的哪几个音，以及贴在旁边的字。
+    type: groups
   items:
     title: 作答点
     type: list
@@ -84,50 +84,47 @@ properties:
       rhythm: { title: 这一项放到拍尺上的节奏, type: rhythm }
       meter: { title: 这一项的拍号, note: 判断拍号时是这个选项的拍号；改写时是这个选项写的拍号, type: meter }
       spot: { title: 对这一项时拍尺上亮哪里, type: spot }
-      fits: { title: 这一项对不对, type: boolean, required: true }
+      fits: { title: 这一项对不对, note: answering 是 pick 时必填, type: boolean }
       answer: { title: 算对的答案, note: answering 是 each 时必填, type: answers }
-      hint: { title: 第一次答错时的提示, type: line }
       demo: { title: 演示时替孩子答的, note: 不给就用第一个算对的答案, type: answer }
   answer:
     title: 这个小题算对的答案
     note: answering 是 pick 时必填，可以有几种都算对。
     type: answers
-  hint:
-    title: 选错第一次时的提示
-    type: line
   lines:
     title: 台词
-    note: 按下面各幕每一步的编号写；逐项的那一幕每一项各写一份。
+    note: 按下面各幕每一步的编号写；逐项的那一幕每个作答点各写一份。答对、提示和演示时说的话也是台词。
     type: lines
   conclusions:
     title: 结论
+    note: 按下面各幕的编号写；逐项的那一幕每个作答点可以各写一条。
     type: conclusions
 
 parts:
   meter:
     title: 判断拍号
     note: 一小节节奏没有拍号，从几个拍号里选装得下、分组也对的那个。
-    required: [answering, unit, items, lines, conclusions]
-    optional: [at, rhythm, groups, answer, hint]
+    required: [answering, unit, groups, items, answer, lines, conclusions]
+    optional: [at]
     scenes: [measure, grouping, each-item, choose]
   count:
     title: 数有几个
     note: 一小节里有几拍，或者一个时值等于几个另一个时值；可以没有素材，只有一句话。
     required: [unit, items, lines, conclusions]
-    optional: [at, meter, rhythm]
+    optional: [at, meter]
     fixed: { answering: each }
     scenes: [beat, measure, fill]
   notation:
     title: 写法对不对
     note: 符尾的连法、休止符的写法，按拍切开以后一项一项地对。
-    required: [answering, meter, items, lines, conclusions]
-    optional: [at, rhythm, answer, hint]
+    required: [answering, meter, beat, items, lines, conclusions]
+    optional: [at, unit, answer]
     scenes: [beat, rule, cut, each-item, choose]
   rewrite:
     title: 单复拍改写
     note: 同一段节奏换成另一种拍子，一拍对一拍：单拍子的三连音对复拍子的三个音，两个音对二连音。
-    required: [answering, meter, targetMeter, items, lines, conclusions]
-    optional: [at, rhythm, answer, hint]
+    required: [answering, meter, targetMeter, beat, items, lines, conclusions]
+    optional: [at, unit, answer]
     scenes: [beat, target-beat, cut, { scene: each-item, with: { on: compare } }, choose]
 
 scenes:
@@ -140,7 +137,7 @@ scenes:
       - say: beat.unit
         do: { role: ruler, call: meter.show, with: $meter }
       - say: beat.split
-        do: { role: ruler, call: meter.subdivide, with: $meter.subdivision }
+        do: { role: ruler, call: meter.subdivide, with: $unit, optional: true }
       - conclude: beat
 
   target-beat:
@@ -149,14 +146,13 @@ scenes:
       - say: target.unit
         do: { role: compare, call: meter.show, with: $targetMeter }
       - say: target.match
-        do: { role: compare, call: point.highlight, with: $targetMeter.beats }
       - conclude: target
 
   measure:
     title: 量一共多长
     steps:
       - say: measure.unit
-        do: { role: ruler, call: point.highlight, with: $unit.first }
+        do: { role: material, call: point.spotlight, with: $at, optional: true }
       - show: { role: ruler, call: count.run, with: $unit }
       - say: measure.total
       - conclude: measure
@@ -175,14 +171,14 @@ scenes:
     when: { has: conclusions.rule }
     steps:
       - say: rule.open
-        do: { role: rule, call: point.highlight, with: $conclusions.rule.rows, optional: true }
+        do: { role: rule, call: point.highlight, with: $at, optional: true }
       - conclude: rule
 
   cut:
     title: 按拍切开
     steps:
       - say: cut.lines
-        do: { role: ruler, call: point.highlight, with: $meter.beats }
+      - show: { role: ruler, call: count.run, with: $beat }
       - conclude: cut
 
   each-item:
@@ -192,7 +188,7 @@ scenes:
     steps:
       - do: { role: $on, call: set, with: $item.rhythm, optional: true }
       - say: item.look
-        do: { role: material, call: point.spotlight, with: $item.at, optional: true }
+        do: { role: answer, call: point.spotlight, with: $item.id }
       - say: item.check
         do: { role: $on, call: meter.show, with: $item.meter, optional: true }
       - say: item.verdict
@@ -203,9 +199,9 @@ scenes:
         act:
           wait: { role: answer, event: answer.given, item: $item.id }
           accept: $item.answer
-          hint: $item.hint
           demo: $item.demo
-      - conclude: $item.id
+          lines: { right: item.right, hint: item.hint, demo: item.demo }
+      - conclude: item
         optional: true
 
   choose:
@@ -213,11 +209,11 @@ scenes:
     when: { answering: pick }
     steps:
       - say: choose.ask
-        do: { role: answer, call: answer.focus }
+        do: { role: answer, call: point.spotlight }
       - act:
           wait: { role: answer, event: answer.given }
           accept: $answer
-          hint: $hint
+          lines: { right: choose.right, hint: choose.hint, demo: choose.demo }
       - conclude: answer
 
   fill:
@@ -229,6 +225,6 @@ scenes:
       - act:
           wait: { role: answer, event: answer.given, item: $item.id }
           accept: $item.answer
-          hint: $item.hint
           demo: $item.demo
+          lines: { right: fill.right, hint: fill.hint, demo: fill.demo }
       - conclude: answer
