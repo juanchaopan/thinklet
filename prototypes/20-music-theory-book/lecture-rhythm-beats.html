@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="lib/choice.css">
 <link rel="stylesheet" href="lib/fill.css">
 <style>
-/* Layout: the lecture is the player's full-screen stage (its look comes with the player): the components the question binds to the workflow's roles, all on screen at once with nothing to scroll, the narration bar and 下一步. A drawer that only this prototype has (opened from the dashed button at the top right) shows what the workflow file says and what the player is doing, and switches between the sample questions. */
+/* Layout: the lecture is the player's full-screen stage (its look comes with the player): a lit frame on a dark backdrop with its top bar, the conclusion board, the question's text and material, the roles of the current scene in the centre, the narration and the scene buttons. A drawer that only this prototype has (opened from the dashed button at the bottom left) shows what the workflow file says and what the player is doing; a stand-in for the book's page shows where the close button leads. */
 :root {
   /* Prototype chrome (thinklet look.md). */
   --surface: #ffffff;
@@ -22,14 +22,14 @@
   color-scheme: light;
 }
 html, body { margin: 0; height: 100%; overflow: hidden; }
-body { background: #f6efe4; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+body { background: #1c140f; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
 #stage { position: fixed; inset: 0; }
-.lx-curtain { display: grid; place-items: center; height: 100%; color: #6a5a48; font-weight: 700; }
-body[data-boundary="on"] .lx-role { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 18px; }
-body[data-boundary="on"] .lx-role::before { content: attr(data-label); position: absolute; top: -16px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 7px; border-radius: 6px; }
+.lx-curtain { display: grid; place-items: center; height: 100%; color: #e8d9c4; font-weight: 700; }
+body[data-boundary="on"] .lx-role { outline: 1.5px dashed var(--boundary); outline-offset: 4px; border-radius: 14px; }
+body[data-boundary="on"] .lx-role::before { content: attr(data-label); position: absolute; top: -14px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 7px; border-radius: 6px; }
 
 /* ---------- Prototype only: the drawer with the workflow log ---------- */
-.proto-open { position: fixed; z-index: 50; top: max(10px, env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); font: 700 13px/1 var(--font); min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1.5px dashed var(--boundary); background: rgba(255, 255, 255, .85); color: var(--boundary); cursor: pointer; }
+.proto-open { position: fixed; z-index: 50; left: max(4px, env(safe-area-inset-left, 0px)); bottom: max(4px, env(safe-area-inset-bottom, 0px)); font: 700 12px/1 var(--font); min-height: 30px; padding: 0 10px; border-radius: 9px; border: 1.5px dashed var(--boundary); background: rgba(255, 255, 255, .9); color: var(--boundary); cursor: pointer; }
 .proto-drawer { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); box-sizing: border-box; overflow-y: auto; background: var(--surface); border-left: 1.5px dashed var(--boundary); box-shadow: -20px 0 40px -20px rgba(0, 0, 0, .3); padding: max(16px, env(safe-area-inset-top, 0px)) 18px 24px; display: grid; gap: 14px; align-content: start; transform: translateX(105%); transition: transform .45s cubic-bezier(.6, 0, .25, 1); }
 .proto-drawer.open { transform: none; }
 .proto-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
@@ -54,26 +54,33 @@ th { color: var(--ink-muted); font-weight: 700; }
 .log .t { color: var(--ink-muted); }
 .log [data-k="part"], .log [data-k="scene"] { color: #4b23c9; font-weight: 700; }
 .log [data-k="say"] { color: #6b5238; }
-.log [data-k="act"], .log [data-k="next"], .log [data-k="review"], .log [data-k="screen"] { color: #1f6bd6; font-weight: 700; }
+.log [data-k="act"], .log [data-k="next"], .log [data-k="nav"], .log [data-k="screen"] { color: #1f6bd6; font-weight: 700; }
 .log [data-k="error"] { color: #c8452f; font-weight: 700; }
 .problems { color: #c8452f; font-weight: 700; }
 .try { margin: 0; padding-left: 1.2em; color: var(--ink-soft); font-size: 14px; display: grid; gap: 4px; }
 code { font-family: var(--mono); font-size: 12px; }
+/* A stand-in for the book's page, where the close button leads. */
+.book-mock { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: rgba(28, 20, 15, .92); color: #f6efe4; text-align: center; }
+.book-mock[hidden] { display: none; }
+.book-mock div { display: grid; gap: 14px; justify-items: center; max-width: 360px; }
+.book-mock b { font-size: 20px; }
 </style>
 
 <div id="stage"><div class="lx-curtain">正在准备</div></div>
 
+<div class="book-mock" id="book-mock" hidden><div><b>这里是书本的主页</b><p>原型里只是示意：真实的产品会回到《英皇乐理五级精讲》的目录。</p><button type="button" class="btn" id="book-back">回到这道题</button></div></div>
+
 <button type="button" class="proto-open" id="proto-open" aria-controls="proto-drawer" aria-expanded="false">原型说明</button>
 <aside class="proto-drawer" id="proto-drawer" aria-label="原型说明">
   <div class="proto-head"><span class="tagline">只有原型有 · 节奏拆拍流程</span><button type="button" class="btn" id="proto-close">收起</button></div>
-  <p class="lede">这是在确认<b>节奏拆拍这个流程</b>和<b>讲题画面怎么动</b>：全屏、不滚动、所有角色一起放进屏幕，结论从得出它的组件飞到结论栈，换小题时各部分渐变过去。两道示例题只是拿来走流程的，素材和台词不是书里的内容；这个流程的第一道真题先给分镜，确认后放进来替换它们。两道示例题用同一个流程文件 <code>workflows/rhythm-beats/workflow.yaml</code>。</p>
+  <p class="lede">这是在确认<b>节奏拆拍这个流程和它的第一道真题</b>（第 1 题 · 判断拍号），以及<b>讲题的舞台</b>：顶栏、结论板、每一幕的主角在中间、上一幕和下一幕、开头读题、讲完的提示。“数有几个”是示例题，只是拿来证明换一种小题不用改流程，不是书里的内容。</p>
   <div class="toolbar tabs" role="tablist" id="tabs"></div>
   <ul class="try">
-    <li>每一幕的结论从拍尺或作答的地方飞上结论栈，眼睛跟着它走。</li>
-    <li>点结论栈上已经出来的一条：回看那一幕，讲完回到原处。</li>
-    <li>故意选错或写错：第一次说提示，第二次老师演示。</li>
-    <li>换小题时：结论栈收起，拍尺和选项渐变成新的。</li>
-    <li>把窗口拉宽拉窄、横过来竖过去：画面整个缩放，始终放得下，不出滚动条；宽屏横放时结论栈和素材在左边一栏。</li>
+    <li>每一幕只有这一幕的主角站在中间；选项到对选项的那一幕才出来，问你的时候才能点。</li>
+    <li>每条结论从中间的组件飞到结论板；在结论板上滑动、滚轮或按住拖，能翻看前面的结论；点一条只是亮起，不跳。</li>
+    <li>上一幕、下一幕：没讲完也能跳过；轮到你作答时不能跳。</li>
+    <li>标题下拉：跳到某个小题，或者换书里的另一道题。左上角 ✕ 回书本。</li>
+    <li>故意选错：第一次说提示，第二次老师演示。</li>
   </ul>
   <div class="toolbar">
     <button type="button" class="btn" id="restart">从头再讲</button>
@@ -96,7 +103,7 @@ code { font-family: var(--mono); font-size: 12px; }
   <dl class="kv" id="rules"></dl>
   <h2>角色和组件</h2>
   <p class="problems" id="problems" hidden></p>
-  <table><thead><tr><th>角色</th><th>必须有</th><th>有了就用</th><th>题目指定</th><th></th></tr></thead><tbody id="binds"></tbody></table>
+  <table><thead><tr><th>角色</th><th>位置</th><th>必须有</th><th>题目指定</th><th></th></tr></thead><tbody id="binds"></tbody></table>
   <h2>播放器做了什么</h2>
   <div class="log" id="log" aria-live="off"></div>
 </aside>
@@ -114,23 +121,26 @@ code { font-family: var(--mono); font-size: 12px; }
 <script>
 /* ============================================================
    Demo page: plays the role of the app around the player. It loads the
-   workflow file and the sample questions during the loading screen,
-   runs the chosen one full screen when 开始 is tapped, and shows what the
-   player traces, and how the screen is doing, in a drawer that only the
-   prototype has. None of this is the player.
+   workflow file and the questions during the loading screen, runs the
+   chosen one full screen when 开始 is tapped, stands in for the book's
+   page the close button leads to, and shows what the player traces, and
+   how the screen is doing, in a drawer that only the prototype has.
+   None of this is the player.
    ============================================================ */
 (function () {
   var WORKFLOW = 'workflows/rhythm-beats/workflow.yaml';
-  var QUESTIONS = [{ id: 'meter-demo', title: '判断拍号 · 打勾' }, { id: 'count-demo', title: '数有几个 · 写数' }];
+  var QUESTIONS = [{ id: 'q01-time-signatures', tab: '第 1 题 · 判断拍号' }, { id: 'count-demo', tab: '示例 · 数有几个' }];
   var IFACE = { point: '指点', count: '数', meter: '量拍', play: '播放', mask: '遮住', set: '摆成', answer: '作答', strike: '排除', positions: '给位置', conclude: '结论' };
+  var PLACE = { board: '结论板', strip: '题目条', center: '中间', popup: '点了弹出' };
   var data = { questions: {}, lines: {} };
   var player = null, currentId = QUESTIONS[0].id, screenNote = '还没开始';
 
   function fileOf(id) { return id.replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
-  // The same line ids as the recording tool: p<part>.<key>, p<part>.<item>.<key>.
+  // The same line ids as the recording tool: q.<key>, p<part>.<key>, p<part>.<item>.<key>.
   function linesOf(qid, q) {
     var out = [];
     function add(id, l) { out.push({ id: id, text: typeof l === 'string' ? l : l.text, url: 'questions/' + qid + '/narration/' + fileOf(id) }); }
+    Object.keys(q.lines || {}).forEach(function (k) { add('q.' + k, q.lines[k]); });
     (q.parts || []).forEach(function (p, pi) {
       Object.keys(p.lines || {}).forEach(function (k) { add('p' + pi + '.' + k, p.lines[k]); });
       (p.items || []).forEach(function (it) { Object.keys(it.lines || {}).forEach(function (k) { add('p' + pi + '.' + it.id + '.' + k, it.lines[k]); }); });
@@ -154,7 +164,7 @@ code { font-family: var(--mono); font-size: 12px; }
   PlayerLoading.onStart(function () { run(currentId); });
 
   var logEl = document.getElementById('log'), t0 = performance.now();
-  var KIND = { part: '小题', scene: '幕', say: '说', call: '指令', event: '事件', act: '动手', next: '下一步', review: '回看', bar: '字幕条', screen: '画面', done: '完', error: '出错' };
+  var KIND = { part: '小题', scene: '幕', say: '说', call: '指令', event: '事件', act: '动手', next: '下一幕', nav: '切换', bar: '字幕条', screen: '画面', done: '完', error: '出错' };
   function trace(kind, text) {
     var line = document.createElement('div');
     line.setAttribute('data-k', kind);
@@ -163,18 +173,18 @@ code { font-family: var(--mono); font-size: 12px; }
     logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
     if (kind === 'part') { document.getElementById('now-part').textContent = text; document.getElementById('now-scene').textContent = '—'; }
     if (kind === 'scene') document.getElementById('now-scene').textContent = text.replace(/^幕：/, '');
-    if (kind === 'say' || kind === 'act' || kind === 'next' || kind === 'done' || kind === 'review') document.getElementById('now-step').textContent = text;
+    if (kind === 'say' || kind === 'act' || kind === 'next' || kind === 'done' || kind === 'nav') document.getElementById('now-step').textContent = text;
     if (kind === 'screen') { screenNote = text; showScreen(); }
     window.lxTrace = window.lxTrace || []; window.lxTrace.push({ kind: kind, text: text, t: performance.now() - t0 });
   }
 
-  // How the screen is doing: full screen or not, one or two columns, how
-  // far the picture is scaled to fit, and whether the system asks for less
-  // motion (then every move finishes almost at once).
+  // How the screen is doing: full screen or not, board beside or above,
+  // how far the middle is scaled to fit, and whether the system asks for
+  // less motion (then every move finishes almost at once).
   function showScreen() {
     var full = document.fullscreenElement || document.webkitFullscreenElement;
     document.getElementById('now-full').textContent = full ? '全屏了' : screenNote;
-    document.getElementById('now-cols').textContent = player && player.cols === 2 ? '两栏（宽屏横放）' : '一栏';
+    document.getElementById('now-cols').textContent = player && player.cols === 2 ? '结论板在左边（宽屏）' : '结论板在上面（窄屏）';
     document.getElementById('now-scale').textContent = player ? Math.round(player.scale * 100) + '%' : '—';
     document.getElementById('now-motion').textContent = matchMedia('(prefers-reduced-motion: reduce)').matches ? '系统设置了“减少动态效果”，动画几乎一下子就做完' : '正常';
   }
@@ -184,9 +194,11 @@ code { font-family: var(--mono); font-size: 12px; }
   function renderRules(wf) {
     var p = wf.player, el = document.getElementById('rules');
     var rows = [
-      ['一幕讲完', p.sceneEnd === 'wait-next' ? '停下，等孩子点「下一步」' : '接着讲'],
-      ['一个小题讲完', p.partEnd === 'clear-stack' ? '清空结论栈，素材留着' : '—'],
-      ['回看', p.review ? '点结论栈上的一条，重讲那一幕，再回原处' : '不能'],
+      ['开头', p.opening ? '先读题（' + wf.scenes[p.opening].title + '）' : '直接讲'],
+      ['一幕讲完', p.sceneEnd === 'wait-next' ? '停下，「下一幕」亮起来等孩子点' : '接着讲'],
+      ['一个小题讲完', p.partEnd === 'clear-stack' ? '清空结论板，题目条留着' : '—'],
+      ['跳过', p.skip ? '没讲完也能点「下一幕」跳过；写了 skip: false 的幕和等孩子作答时不能' : '不能'],
+      ['上一幕', p.back ? '能' : '不能'],
       ['做错了', (p.wrong || []).map(function (w, i) { return '第 ' + (i + 1) + ' 次' + (w === 'hint' ? '说提示' : '演示'); }).join('，') + '，然后往下走'],
       ['字幕条按钮', (p.narration || []).map(function (c) { return { pause: '暂停', replay: '重听这一句', rate: '语速' }[c]; }).join('、')]
     ];
@@ -203,7 +215,7 @@ code { font-family: var(--mono); font-size: 12px; }
       var A = binds.length && LecturePlayer.ADAPTERS[binds[0]];
       var ok = !binds.length ? r.optional : (r.needs || []).every(function (i) { return A && A.interfaces.indexOf(i) >= 0; });
       var tr = document.createElement('tr');
-      [r.title + (r.optional ? '（可以没有）' : ''), names(r.needs), names(r.uses), binds.length ? binds.join('、') : '没有'].forEach(function (t) { var td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+      [r.title + (r.optional ? '（可以没有）' : ''), PLACE[r.place] || r.place, names(r.needs), binds.length ? binds.join('、') : '没有'].forEach(function (t) { var td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
       var td = document.createElement('td'); td.className = ok ? 'ok' : 'bad'; td.textContent = ok ? '✓' : '✗'; tr.appendChild(td);
       tb.appendChild(tr);
     });
@@ -218,7 +230,12 @@ code { font-family: var(--mono); font-size: 12px; }
     var q = data.questions[qid];
     renderRules(data.workflow); renderBinds(data.workflow, q);
     var stage = document.getElementById('stage');
-    player = new LecturePlayer({ workflow: data.workflow, question: q, stage: stage, sound: SoundSource, lines: data.lines[qid], portrait: 'player/teacher.webp', onTrace: trace });
+    player = new LecturePlayer({
+      workflow: data.workflow, question: q, stage: stage, sound: SoundSource, lines: data.lines[qid], portrait: 'player/teacher.webp', onTrace: trace,
+      book: QUESTIONS.map(function (b) { return { id: b.id, title: data.questions[b.id].title }; }),
+      onLeave: function () { document.getElementById('book-mock').hidden = false; },
+      onPick: function (id) { window.lxRun(id); }
+    });
     window.lxPlayer = player;
     var pr = document.getElementById('problems');
     pr.hidden = !player.problems.length;
@@ -230,6 +247,7 @@ code { font-family: var(--mono); font-size: 12px; }
   }
   window.lxRun = function (qid) { if (data.workflow) run(qid); };
 
+  document.getElementById('book-back').addEventListener('click', function () { document.getElementById('book-mock').hidden = true; });
   var drawer = document.getElementById('proto-drawer'), opener = document.getElementById('proto-open');
   function openDrawer(on) { drawer.classList.toggle('open', on); opener.setAttribute('aria-expanded', String(on)); opener.hidden = on; if (on) showScreen(); }
   opener.addEventListener('click', function () { openDrawer(true); });
@@ -238,7 +256,7 @@ code { font-family: var(--mono); font-size: 12px; }
 
   var tabs = document.getElementById('tabs');
   QUESTIONS.forEach(function (q) {
-    var b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('role', 'tab'); b.setAttribute('data-q', q.id); b.textContent = q.title;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('role', 'tab'); b.setAttribute('data-q', q.id); b.textContent = q.tab;
     b.addEventListener('click', function () { window.lxRun(q.id); });
     tabs.appendChild(b);
   });

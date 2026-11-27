@@ -1,13 +1,15 @@
 // Records a question's narration the way `task narrate` will: collects
-// every line of the question file (each part's lines, and each answer
-// point's lines), records with edge-tts (Xiaoxiao, default rate and pitch)
-// only the lines whose text or pronunciation changed, and keeps a manifest
-// of what each recording says in the question's narration/ folder.
+// every line of the question file (the whole question's lines, each
+// part's lines, and each answer point's lines), records with edge-tts
+// (Xiaoxiao, default rate and pitch) only the lines whose text or
+// pronunciation changed, and keeps a manifest of what each recording says
+// in the question's narration/ folder. Recordings of lines the question no
+// longer has are deleted.
 // A line may be a string, or {text, say} when the voice should read `say`.
-// Line ids are p<part>.<key> and p<part>.<item>.<key>, the same ids the
-// lecture player asks the narration bar for.
+// Line ids are q.<key>, p<part>.<key> and p<part>.<item>.<key>, the same
+// ids the lecture player asks the narration bar for.
 // Usage: node narrate-question.mjs <question folder>
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -27,6 +29,7 @@ export function collect(question) {
     const l = typeof line === 'string' ? { text: line } : line;
     out.push({ id, text: l.text, say: l.say, file: fileOf(id) });
   };
+  Object.entries(question.lines || {}).forEach(([k, v]) => add(`q.${k}`, v));
   (question.parts || []).forEach((part, p) => {
     Object.entries(part.lines || {}).forEach(([k, v]) => add(`p${p}.${k}`, v));
     (part.items || []).forEach((item) => Object.entries(item.lines || {}).forEach(([k, v]) => add(`p${p}.${item.id}.${k}`, v)));
@@ -50,6 +53,7 @@ if (folder) {
     execFileSync('uvx', ['--python', '3.12', PACKAGE, '--voice', VOICE, '--text', spoken, '--write-media', join(dir, line.file)], { stdio: ['ignore', 'ignore', 'inherit'] });
     console.log(`recorded ${line.file}  ${line.text}`);
   }
+  for (const f of readdirSync(dir)) if (f.endsWith('.mp3') && !manifest[f]) { unlinkSync(join(dir, f)); console.log(`removed ${f}`); }
   writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
   console.log(`${Object.keys(manifest).length} lines in ${manifestFile}`);
 }

@@ -1,13 +1,19 @@
 id: count-demo
-title: 数有几个（示例）
+title: 数有几个（示例，不是书里的题）
 workflow: rhythm-beats
 theme: etude
-prompt: Write the missing numbers.
+prompt:
+  text: 在格子里写上缺的数。
+  gloss: Write the missing numbers.
 
 bind:
   ruler: beat-grid
   answer: fill
   stack: conclusion-stack
+
+lines:
+  read.question: 这是一道示例题：两句话里各缺一个数。
+  read.ask: 我们用拍尺量一量，再把数写进去。
 
 parts:
   - kind: count
@@ -19,7 +25,7 @@ parts:
       answer:
         shape: line
         tag: (a)
-        prompt: [{ text: 'In ' }, { term: '9/16' }, { text: ' there are ' }, { field: { id: n, size: 1, name: number of beats } }, { text: ' dotted-quaver beats in a bar.' }]
+        prompt: [{ term: '9/16' }, { text: ' 拍一小节有 ' }, { field: { id: n, size: 1, name: 附点八分音符拍的个数 } }, { text: ' 个附点八分音符拍。' }]
         keys: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
     items:
       - id: n
@@ -34,9 +40,9 @@ parts:
       fill.hint: 数一数尺子上一共亮了几格。
       fill.demo: 是三，我来写给你看。
     conclusions:
-      beat: { parts: [{ term: '9/16' }, { op: '=' }, { text: ' 3 + 3 + 3 semiquavers' }] }
-      measure: { parts: [{ text: 'counted ' }, { term: '3' }, { text: ' dotted quavers' }] }
-      answer: { parts: [{ term: '3' }, { text: ' beats' }], from: [beat, measure], final: true }
+      beat: { parts: [{ term: '9/16' }, { op: '=' }, { text: 3 + 3 + 3 个十六分音符 }, { gloss: 3 + 3 + 3 semiquavers }] }
+      measure: { parts: [{ text: 量出 3 个附点八分音符 }, { gloss: 3 dotted quavers }] }
+      answer: { parts: [{ text: 3 拍 }, { gloss: 3 beats }], from: [beat, measure], final: true }
 
   - kind: count
     tag: (b)
@@ -46,7 +52,7 @@ parts:
       answer:
         shape: line
         tag: (b)
-        prompt: [{ text: 'A dotted crotchet lasts as long as ' }, { field: { id: n, size: 1, name: number of semiquavers } }, { text: ' semiquavers.' }]
+        prompt: [{ text: 一个附点四分音符等于 }, { field: { id: n, size: 1, name: 十六分音符的个数 } }, { text: 个十六分音符。 }]
         keys: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
     items:
       - id: n
@@ -59,5 +65,5 @@ parts:
       fill.hint: 数一数尺子上亮了几格。
       fill.demo: 是六，我来写给你看。
     conclusions:
-      measure: { parts: [{ text: 'dotted crotchet' }, { op: '=' }, { term: '6' }, { text: ' semiquavers' }] }
-      answer: { parts: [{ term: '6' }], from: [measure], final: true }
+      measure: { parts: [{ text: 附点四分音符 }, { op: '=' }, { text: 6 个十六分音符 }, { gloss: 6 semiquavers }] }
+      answer: { parts: [{ text: '6' }], from: [measure], final: true }

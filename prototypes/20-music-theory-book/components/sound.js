@@ -16,6 +16,10 @@
    when it is told to stop, so pausing a playback silences the notes
    already queued, and one component never silences another's.
 
+   tap() is the player's touch sound: a short, soft wooden "dup" made on
+   the spot (no sample, no pitch of the music), played when the child
+   presses something, so a press feels like pressing a real key.
+
    On iPhones Web Audio stays muted by the ring/silent switch until a
    media element is playing, and phones only start audio inside a
    gesture. So unlock() resumes the audio context and keeps a silent
@@ -28,6 +32,10 @@ var SoundSource = (function () {
   var sounding = 0;
   var SILENT_VOICE = { stop: function () {} };
   var RELEASE = .3, CUT = .04;
+  // The touch sound: a pitch falling from TAP_HZ to TAP_TO_HZ over
+  // TAP_FALL s, with a hollow overtone, rising in TAP_ATTACK s and dying
+  // away by TAP_LEN s; quiet, so it never covers the narration.
+  var TAP_HZ = 760, TAP_TO_HZ = 520, TAP_FALL = .06, TAP_ATTACK = .004, TAP_LEN = .16, TAP_GAIN = .14, TAP_LOWPASS = 2600;
 
   function report(phase, detail) {
     if (phase) state = { phase: phase, detail: detail || '' };
@@ -170,9 +178,34 @@ var SoundSource = (function () {
     };
   }
 
+  // The touch sound, made now: a sine and a softer triangle an octave and
+  // a fifth up, both falling a little in pitch, through a gentle low-pass.
+  function tap() {
+    var c = context();
+    if (!c || c.state !== 'running') return;
+    var t0 = c.currentTime + .005, out = c.createGain(), lp = c.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = TAP_LOWPASS;
+    out.gain.setValueAtTime(0, t0);
+    out.gain.linearRampToValueAtTime(TAP_GAIN, t0 + TAP_ATTACK);
+    out.gain.exponentialRampToValueAtTime(.0008, t0 + TAP_LEN);
+    out.connect(lp); lp.connect(c.destination);
+    [[1, 'sine', 1], [3, 'triangle', .18]].forEach(function (p) {
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = p[1];
+      o.frequency.setValueAtTime(TAP_HZ * p[0], t0);
+      o.frequency.exponentialRampToValueAtTime(TAP_TO_HZ * p[0], t0 + TAP_FALL);
+      g.gain.value = p[2];
+      o.connect(g); g.connect(out);
+      o.start(t0); o.stop(t0 + TAP_LEN + .02);
+      o.onended = function () { g.disconnect(); };
+    });
+    setTimeout(function () { out.disconnect(); lp.disconnect(); }, (TAP_LEN + .1) * 1000);
+  }
+
   return {
     preload: preload,
     play: play,
+    tap: tap,
     unlock: function () {
       var c = context(); if (!c) return;
       if (c.state !== 'running') {
@@ -265,6 +298,7 @@ var PlayerLoading = (function () {
         var b = document.createElement('button'); b.type = 'button'; b.className = 'pl-start'; b.textContent = '开始';
         b.addEventListener('click', function () {
           SoundSource.unlock();
+          SoundSource.tap();
           el.classList.add('pl-gone');
           starters.forEach(function (fn) { fn(); });
         });

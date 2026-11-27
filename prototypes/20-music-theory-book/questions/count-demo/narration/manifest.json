@@ -1,4 +1,14 @@
 {
+  "q-read-question.mp3": {
+    "id": "q.read.question",
+    "text": "这是一道示例题：两句话里各缺一个数。",
+    "hash": "89a181d63ac2d392"
+  },
+  "q-read-ask.mp3": {
+    "id": "q.read.ask",
+    "text": "我们用拍尺量一量，再把数写进去。",
+    "hash": "99918408bb17e245"
+  },
   "p0-beat-unit.mp3": {
     "id": "p0.beat.unit",
     "text": "先看拍号，十六分之九拍：一小节有九个十六分音符，三个一组。",
