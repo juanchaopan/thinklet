@@ -1,15 +1,18 @@
 /* ============================================================
    Narration bar. The player's own strip along the bottom of a lecture:
    the teacher's portrait (no name), the line being said as a subtitle
-   with a thin line showing how far it has played, and the child's
-   buttons for this line only: pause or continue, replay this line, and
-   the speed on a vertical slider. Which buttons show is set by the
-   workflow file. There is no way to step to another line or scene: the
-   workflow owns the steps.
+   with a progress line the child can drag to hear part of this line
+   again, and the child's buttons for this line only: pause or continue,
+   replay this line, and the speed on a vertical slider. Which buttons
+   show is set by the workflow file. There is no way to step to another
+   line or scene: the workflow owns the steps.
 
    The player tells it which line to say (say returns a promise that
    settles when the line is over), when it is the child's turn (turn),
    and while the bar is paused the player waits (whenRunning).
+   Dragging the progress line moves within the current line only: while
+   the line is still being said the lecture waits for it to end; after
+   it ended, the line is heard again from there and nothing moves on.
    A line that cannot play (blocked, broken, not started in 8 seconds,
    taken away by the system) stays on screen and waits for the child to
    tap continue; it is never skipped. Muted, lines still play silently
@@ -20,13 +23,14 @@
    not mute it. The portrait's halo follows a loudness envelope measured
    when the recordings are prepared.
 
-   Commands: say, turn, flag, pause, resume, replay, rate, mute, set,
-   stop, clear, unlock (the player calls it on the child's touches).
+   Commands: say, turn, flag, pause, resume, replay, seek, rate, mute,
+   set, stop, clear, unlock (the player calls it on the child's touches).
    Events (via onEvent): lineStart, lineEnd, lineFail, lineRetry,
-   replay, pause, resume, rate.
+   replay, seek, pause, resume, rate.
    ============================================================ */
 var NarrationBar = (function () {
   var RATE_MIN = 0.6, RATE_MAX = 1.4, RATE_STEP = 0.05, RATE_SNAP = 0.03;
+  var SEEK_KEY_S = 2;
   var START_TIMEOUT_MS = 8000;
   var ENV_STEP_S = 0.04;
   var INTERRUPT_CHECK_MS = 300;
@@ -60,8 +64,14 @@ var NarrationBar = (function () {
     '.pl-nb-line.pl-nb-leave{position:absolute;left:0;right:0;top:0;animation:pl-nb-out .34s ease-in both}',
     '@keyframes pl-nb-up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}',
     '@keyframes pl-nb-out{to{transform:translateY(-12px);opacity:0}}',
-    '.pl-nb-track{height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}',
+    '.pl-nb-seek{position:relative;display:flex;align-items:center;height:36px;margin:-14px 0 -12px;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent}',
+    '.pl-nb-seek:focus{outline:none}.pl-nb-seek:focus-visible{outline:2px solid var(--nb-glow);outline-offset:-6px;border-radius:8px}',
+    '.pl-nb-seek[aria-disabled="true"]{pointer-events:none;opacity:.45}',
+    '.pl-nb-track{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;transition:height .2s}',
+    '.pl-nb-seek:hover .pl-nb-track,.pl-nb-seek.pl-nb-drag .pl-nb-track{height:6px}',
     '.pl-nb-fill{display:block;height:100%;background:var(--nb-glow);box-shadow:0 0 8px var(--nb-glow);transform-origin:left;transform:scaleX(0)}',
+    '.pl-nb-knob{position:absolute;top:50%;left:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fbf8f3;box-shadow:0 0 0 3px rgba(169,139,255,.45),0 2px 6px rgba(0,0,0,.4);transition:transform .2s}',
+    '.pl-nb-seek:hover .pl-nb-knob,.pl-nb-seek.pl-nb-drag .pl-nb-knob{transform:scale(1.35)}',
     '.pl-nb-ctl{display:flex;align-items:center;gap:6px}',
     '.pl-nb-btn{position:relative;display:grid;justify-items:center;align-content:center;gap:2px;min-width:48px;min-height:52px;padding:4px 6px;border:0;border-radius:14px;background:transparent;color:var(--nb-text);font:inherit;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}',
     '.pl-nb-btn:hover{background:rgba(255,255,255,.08)}',
@@ -106,6 +116,7 @@ var NarrationBar = (function () {
     if (Math.abs(r - 1) < RATE_SNAP) r = 1;
     return Math.round(r * 100) / 100;
   }
+  function clamp01(f) { return Math.max(0, Math.min(1, f)); }
 
   function injectStyle() {
     if (document.getElementById('pl-nb-style')) return;
@@ -165,7 +176,7 @@ var NarrationBar = (function () {
     this.o.lines.forEach(function (l) { self.lines[l.id] = l; });
     this.current = null; this.pending = null; this.last = null;
     this.active = false; this.started = false; this.failed = null; this.deferred = false;
-    this.paused = false; this.turnOn = false; this.flagText = null;
+    this.paused = false; this.turnOn = false; this.flagText = null; this.dragging = false;
     this.rateValue = clampRate(this.o.rate); this.muted = !!this.o.muted;
     this.runWaiters = [];
     this.playToken = 0; this.timer = 0; this.raf = 0; this.lv = 0; this.unlocked = false; this.currentUrl = '';
@@ -195,7 +206,7 @@ var NarrationBar = (function () {
         '<div class="pl-nb-say">' +
           '<div class="pl-nb-meta"><span class="pl-nb-flag" hidden></span><span class="pl-nb-mute" hidden>' + svg('muted') + '静音，看字幕</span></div>' +
           '<div class="pl-nb-lines" aria-live="polite"></div>' +
-          '<div class="pl-nb-track"><i class="pl-nb-fill"></i></div>' +
+          '<div class="pl-nb-seek" role="slider" tabindex="0" aria-label="这一句播到哪里" aria-valuemin="0" aria-valuemax="100"><div class="pl-nb-track"><i class="pl-nb-fill"></i></div><i class="pl-nb-knob"></i></div>' +
         '</div>' +
         '<div class="pl-nb-ctl">' +
           (this.has('replay') ? '<button type="button" class="pl-nb-btn" data-act="replay" aria-label="重听这一句">' + svg('replay') + '<span>重听</span></button>' : '') +
@@ -219,7 +230,7 @@ var NarrationBar = (function () {
     this.el = el;
     var q = function (s) { return el.querySelector(s); };
     this.face = q('.pl-nb-face'); this.flagEl = q('.pl-nb-flag'); this.muteEl = q('.pl-nb-mute');
-    this.linesBox = q('.pl-nb-lines'); this.fillEl = q('.pl-nb-fill');
+    this.linesBox = q('.pl-nb-lines'); this.fillEl = q('.pl-nb-fill'); this.seekEl = q('.pl-nb-seek'); this.knobEl = q('.pl-nb-knob');
     this.btn = {}; Array.prototype.forEach.call(el.querySelectorAll('[data-act]'), function (b) { self.btn[b.getAttribute('data-act')] = b; });
     this.pop = q('.pl-nb-pop'); this.slider = q('.pl-nb-slider'); this.rateBox = q('.pl-nb-ratebox');
     q('.pl-nb-face img').src = this.o.portrait || '';
@@ -231,6 +242,7 @@ var NarrationBar = (function () {
       if (!b || b.disabled) return;
       self.press(b.getAttribute('data-act'));
     });
+    this.bindSeek();
     if (this.slider) this.bindSlider();
     document.addEventListener('pointerdown', function (e) { if (self.pop && !self.pop.hidden && !self.rateBox.contains(e.target)) self.openPop(false); }, true);
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && self.pop && !self.pop.hidden) { self.openPop(false); self.btn.rate.focus(); } });
@@ -238,6 +250,33 @@ var NarrationBar = (function () {
       var w = 0;
       new ResizeObserver(function () { var nw = el.getBoundingClientRect().width; if (nw !== w) { w = nw; self.fitLines(); } }).observe(el);
     }
+  };
+
+  // The progress line: pressing or dragging shows where the line will
+  // play from; letting go plays it from there. Left and right arrows move
+  // two seconds.
+  Bar.prototype.bindSeek = function () {
+    var self = this, s = this.seekEl;
+    function at(clientX) { var r = self.el.querySelector('.pl-nb-track').getBoundingClientRect(); return clamp01((clientX - r.left) / r.width); }
+    s.addEventListener('pointerdown', function (e) {
+      if (!self.line()) return;
+      self.dragging = true; s.classList.add('pl-nb-drag'); s.setPointerCapture(e.pointerId);
+      self.fill(at(e.clientX)); e.preventDefault();
+    });
+    s.addEventListener('pointermove', function (e) { if (self.dragging) self.fill(at(e.clientX)); });
+    s.addEventListener('pointerup', function (e) {
+      if (!self.dragging) return;
+      self.dragging = false; s.classList.remove('pl-nb-drag');
+      self.seek(at(e.clientX), true);
+    });
+    s.addEventListener('pointercancel', function () { self.dragging = false; s.classList.remove('pl-nb-drag'); });
+    s.addEventListener('keydown', function (e) {
+      var d = { ArrowRight: SEEK_KEY_S, ArrowUp: SEEK_KEY_S, ArrowLeft: -SEEK_KEY_S, ArrowDown: -SEEK_KEY_S }[e.key];
+      var l = self.line(); if (!d || !l) return;
+      e.preventDefault();
+      var now = self.active ? self.audio.currentTime : l.duration;
+      self.seek((now + d) / l.duration, true);
+    });
   };
 
   // The speed slider: top is faster, bottom slower; dragging, tapping the
@@ -261,6 +300,7 @@ var NarrationBar = (function () {
     });
   };
 
+  Bar.prototype.line = function () { var id = this.failed ? this.failed.id : (this.current || this.last); return id ? this.lines[id] : null; };
   Bar.prototype.minHeight = function () {
     return Math.ceil(parseFloat(getComputedStyle(this.linesBox).fontSize || '17') * LINE_HEIGHT * MIN_LINES);
   };
@@ -295,7 +335,12 @@ var NarrationBar = (function () {
       box.style.height = h + 'px';
     }
   };
-  Bar.prototype.fill = function (f) { this.fillEl.style.transform = 'scaleX(' + Math.max(0, Math.min(1, f)).toFixed(4) + ')'; };
+  Bar.prototype.fill = function (f) {
+    f = clamp01(f);
+    this.fillEl.style.transform = 'scaleX(' + f.toFixed(4) + ')';
+    this.knobEl.style.left = (f * 100).toFixed(2) + '%';
+    this.seekEl.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+  };
 
   Bar.prototype.bindAudio = function () {
     var self = this, a = this.audio;
@@ -346,23 +391,23 @@ var NarrationBar = (function () {
     this.loop();
   };
 
-  // Plays `id` from its beginning; the subtitle changes only when the
-  // line is a different one.
-  Bar.prototype.startLine = function (id, animate) {
+  // Plays `id` from `from` seconds (its beginning when not given); the
+  // subtitle changes only when the line is a different one.
+  Bar.prototype.startLine = function (id, animate, from) {
     var l = this.lines[id];
     clearTimeout(this.timer);
     this.playToken++;
     this.current = id;
     this.failed = null; this.started = false; this.active = true;
     this.showLine(l ? l.text : '', animate);
-    this.fill(0);
+    this.fill(l && from ? from / l.duration : 0);
     if (!l || !l.url) { this.fail('missing'); return; }
-    if (this.paused) { this.deferred = true; this.audio.pause(); this.render(); return; }
-    this.deferred = false;
     var a = this.audio;
     this.currentUrl = l.url;
     if (a.getAttribute('src') !== l.url) a.src = l.url;
-    try { a.currentTime = 0; } catch (e) { /* not seekable before metadata; it starts at 0 anyway */ }
+    try { a.currentTime = from || 0; } catch (e) { /* not seekable before metadata; it starts at 0 anyway */ }
+    if (this.paused) { this.deferred = true; a.pause(); this.render(); return; }
+    this.deferred = false;
     a.defaultPlaybackRate = this.rateValue; a.playbackRate = this.rateValue; a.muted = this.muted;
     this.kick();
     this.emit('lineStart', { id: id, replay: !this.pending || this.pending.id !== id });
@@ -409,7 +454,7 @@ var NarrationBar = (function () {
       if (!self.active) { self.lv = 0; self.face.style.setProperty('--lv', '0'); return; }
       var a = self.audio, l = self.lines[self.current];
       var d = (isFinite(a.duration) && a.duration) || (l && l.duration) || 0;
-      if (d && self.started) self.fill(a.currentTime / d);
+      if (d && self.started && !self.dragging) self.fill(a.currentTime / d);
       var target = 0;
       if (!a.paused && !self.muted && l && l.env && l.env.length) target = l.env[Math.min(l.env.length - 1, Math.floor(a.currentTime / ENV_STEP_S))] || 0;
       self.lv += (target - self.lv) * 0.35;
@@ -456,11 +501,21 @@ var NarrationBar = (function () {
   // the lecture is waiting for, the lecture simply waits a little longer;
   // after it ended (the child's turn, or 下一步), it is said once more and
   // nothing moves on.
-  Bar.prototype.replay = function () {
-    var id = this.failed ? this.failed.id : (this.current || this.last);
-    if (!id) return;
-    if (this.paused) { this.paused = false; this.emit('resume', {}); this.wake(); }
-    this.startLine(id, false);
+  Bar.prototype.replay = function () { this.seek(0, false); };
+  // Plays the current line from a point (0..1 of its length). While it is
+  // playing it jumps there; after it ended, or when it failed, it plays
+  // again from there. A pause stays a pause.
+  Bar.prototype.seek = function (f, byChild) {
+    var l = this.line(); if (!l) return;
+    var t = clamp01(f) * l.duration;
+    if (t >= l.duration - 0.05) t = Math.max(0, l.duration - 0.05);
+    if (this.active && !this.failed && this.current === l.id && this.audio.getAttribute('src') === l.url) {
+      try { this.audio.currentTime = t; } catch (e) { /* metadata not ready; the line goes on from where it was */ }
+      this.fill(t / l.duration);
+    } else {
+      this.startLine(l.id, false, t);
+    }
+    if (byChild) this.emit('seek', { id: l.id, at: Math.round(t * 100) / 100 });
   };
   Bar.prototype.turn = function (on) { this.turnOn = !!on; this.render(); };
   Bar.prototype.flag = function (text) { this.flagText = text || null; this.render(); };
@@ -473,7 +528,10 @@ var NarrationBar = (function () {
   Bar.prototype.resume = function () {
     if (!this.paused) return;
     this.paused = false;
-    if (this.active && !this.failed) { if (this.deferred) this.startLine(this.current, false); else this.kick(); }
+    if (this.active && !this.failed) {
+      if (this.deferred) { this.deferred = false; this.audio.defaultPlaybackRate = this.rateValue; this.audio.playbackRate = this.rateValue; this.audio.muted = this.muted; this.kick(); }
+      else this.kick();
+    }
     this.render();
     this.wake();
   };
@@ -535,6 +593,7 @@ var NarrationBar = (function () {
       f.textContent = flag[1];
     } else f.hidden = true;
     this.muteEl.hidden = !this.muted;
+    this.seekEl.setAttribute('aria-disabled', this.line() ? 'false' : 'true');
     var b = this.btn;
     if (b.replay) b.replay.disabled = !(this.current || this.last);
     if (b.toggle) {

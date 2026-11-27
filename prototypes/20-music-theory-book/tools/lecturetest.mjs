@@ -3,7 +3,7 @@
 // where the script says so), taps a conclusion once to review, and checks
 // the trace: the lecture finished, review came back to where it left,
 // wrong attempts gave the hint and then the demonstration, and there were
-// no errors. Saves a screenshot of the stage at every stop.
+// no errors. Saves a screenshot of the full-screen lecture at every stop.
 // Usage: node lecturetest.mjs <width> <out dir> [question id]
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,6 +11,7 @@ import { openLecture } from './lecture-serve.mjs';
 
 const [width = '1280', out = 'shots', only] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
+const HEIGHT = Number(width) < 600 ? 844 : 900;
 
 // Each turn lists the answers tried in order; the last one is repeated.
 const SCRIPTS = {
@@ -19,9 +20,9 @@ const SCRIPTS = {
 };
 
 async function runOne(qid) {
-  const { page, errors, close } = await openLecture('lecture-rhythm-beats.html', width, 900);
+  const { page, errors, close } = await openLecture('lecture-rhythm-beats.html', width, HEIGHT);
   const fails = [];
-  await page.click(`#tabs [data-q="${qid}"]`);
+  await page.evaluate((q) => window.lxRun(q), qid);
   await page.waitForTimeout(300);
   await page.evaluate(() => window.lxPlayer.bar.rate(1.4));
   const script = SCRIPTS[qid];
@@ -49,12 +50,12 @@ async function runOne(qid) {
     if (await page.$('.pl-next.pl-next-on')) {
       stops++;
       await page.waitForTimeout(700);
-      await page.locator('#stage').screenshot({ path: join(out, `${qid}-${width}-${String(stops).padStart(2, '0')}.png`) });
+      await page.screenshot({ path: join(out, `${qid}-${width}-${String(stops).padStart(2, '0')}.png`) });
       if (script.review && !reviewed && stops === script.review.atStop) {
         reviewed = true;
         await page.click(`.lx-role[data-role="stack"] [data-id="${script.review.id}"]`, { force: true });
         await page.waitForTimeout(1500);
-        await page.locator('#stage').screenshot({ path: join(out, `${qid}-${width}-review.png`) });
+        await page.screenshot({ path: join(out, `${qid}-${width}-review.png`) });
         await page.waitForFunction(() => window.lxTrace.some((x) => x.kind === 'review' && x.text === '回到原处'), null, { timeout: 120000 });
         await page.waitForSelector('.pl-next.pl-next-on', { timeout: 10000 }).catch(() => fails.push('review did not come back to 下一步'));
         continue;
@@ -66,7 +67,7 @@ async function runOne(qid) {
     await page.waitForTimeout(250);
   }
   const trace = await page.evaluate(() => window.lxTrace);
-  await page.locator('#stage').screenshot({ path: join(out, `${qid}-${width}-end.png`) });
+  await page.screenshot({ path: join(out, `${qid}-${width}-end.png`) });
   const kinds = (k) => trace.filter((x) => x.kind === k).map((x) => x.text);
   if (!trace.some((x) => x.kind === 'done')) fails.push('lecture did not finish');
   if (qid === 'count-demo') {
@@ -75,6 +76,8 @@ async function runOne(qid) {
     if (!acts.some((a) => a.includes('第 2 次答错') && a.includes('演示'))) fails.push('no demo after the second wrong answer');
   }
   if (script.review && !kinds('review').some((r) => r === '回到原处')) fails.push('review did not return');
+  const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  if (sideways) fails.push('page scrolls sideways');
   console.log(`${qid} @${width}: ${stops} stops, ${kinds('scene').length} scenes, ${kinds('say').length} lines, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   console.log('  scenes: ' + kinds('scene').join(' | '));
   console.log('  acts: ' + kinds('act').join(' | '));
