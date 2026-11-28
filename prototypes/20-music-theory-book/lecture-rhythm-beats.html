@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="lib/choice.css">
 <link rel="stylesheet" href="lib/fill.css">
 <style>
-/* Layout: the lecture is the player's full-screen stage (its look comes with the player): a lit frame on a dark backdrop with its top bar, the conclusion board, the question's text and material, the roles of the current scene in the centre, the narration and the scene buttons. A drawer that only this prototype has (opened from the dashed button at the bottom left) shows what the workflow file says and what the player is doing; a stand-in for the book's page shows where the close button leads. */
+/* Layout: the lecture is the player's full-screen stage: a lit frame on a dark backdrop, the controls the workflow lays out (stage theme components), the conclusion board, the question's title, the question's material and the roles of the current scene in the centre. A drawer that only this prototype has (opened from the dashed button at the bottom left) shows what the files say and what the player is doing; a stand-in for the book's page shows where the close button leads. */
 :root {
   /* Prototype chrome (thinklet look.md). */
   --surface: #ffffff;
@@ -25,12 +25,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 body { background: #1c140f; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
 #stage { position: fixed; inset: 0; }
 .lx-curtain { display: grid; place-items: center; height: 100%; color: #e8d9c4; font-weight: 700; }
-body[data-boundary="on"] .lx-role { outline: 1.5px dashed var(--boundary); outline-offset: 4px; border-radius: 14px; }
-body[data-boundary="on"] .lx-role::before { content: attr(data-label); position: absolute; top: -14px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 7px; border-radius: 6px; }
+body[data-boundary="on"] .lx-role, body[data-boundary="on"] .lx-ctl { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 14px; }
+body[data-boundary="on"] .lx-role::before, body[data-boundary="on"] .lx-ctl::before { content: attr(data-label); position: absolute; top: -14px; left: 6px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 7px; border-radius: 6px; white-space: nowrap; }
 
 /* ---------- Prototype only: the drawer with the workflow log ---------- */
-.proto-open { position: fixed; z-index: 50; left: max(4px, env(safe-area-inset-left, 0px)); bottom: max(4px, env(safe-area-inset-bottom, 0px)); font: 700 12px/1 var(--font); min-height: 30px; padding: 0 10px; border-radius: 9px; border: 1.5px dashed var(--boundary); background: rgba(255, 255, 255, .9); color: var(--boundary); cursor: pointer; }
-.proto-drawer { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); box-sizing: border-box; overflow-y: auto; background: var(--surface); border-left: 1.5px dashed var(--boundary); box-shadow: -20px 0 40px -20px rgba(0, 0, 0, .3); padding: max(16px, env(safe-area-inset-top, 0px)) 18px 24px; display: grid; gap: 14px; align-content: start; transform: translateX(105%); transition: transform .45s cubic-bezier(.6, 0, .25, 1); }
+.proto-open { position: fixed; z-index: 50; left: max(4px, env(safe-area-inset-left, 0px)); bottom: max(4px, env(safe-area-inset-bottom, 0px)); font: 700 12px/1 var(--font); min-height: 26px; padding: 0 8px; border-radius: 8px; border: 1.5px dashed var(--boundary); background: rgba(255, 255, 255, .9); color: var(--boundary); cursor: pointer; }
+.proto-drawer { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); box-sizing: border-box; overflow-y: auto; background: var(--surface); border-left: 1.5px dashed var(--boundary); box-shadow: -20px 0 40px -20px rgba(0, 0, 0, .3); padding: max(16px, env(safe-area-inset-top, 0px)) 18px 24px; display: grid; gap: 14px; align-content: start; transform: translateX(105%); transition: transform .45s cubic-bezier(.6, 0, .25, 1); }
 .proto-drawer.open { transform: none; }
 .proto-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .tagline { font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #e8efff; color: var(--boundary); }
@@ -40,7 +40,6 @@ p { margin: 0; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
 .btn[aria-pressed="true"] { background: #efe8ff; border-color: #cbbcff; color: #4b23c9; }
-.tabs .btn[aria-selected="true"] { background: var(--violet); border-color: var(--violet); color: #fff; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; margin: 0; }
 .kv dt { color: var(--ink-muted); }
 .kv dd { margin: 0; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
@@ -68,18 +67,18 @@ code { font-family: var(--mono); font-size: 12px; }
 
 <div id="stage"><div class="lx-curtain">正在准备</div></div>
 
-<div class="book-mock" id="book-mock" hidden><div><b>这里是书本的主页</b><p>原型里只是示意：真实的产品会回到《英皇乐理五级精讲》的目录。</p><button type="button" class="btn" id="book-back">回到这道题</button></div></div>
+<div class="book-mock" id="book-mock" hidden><div><b>这里是书本的主页</b><p>原型里只是示意：真实的产品会回到这本书的目录。</p><button type="button" class="btn" id="book-back">回到这道题</button></div></div>
 
 <button type="button" class="proto-open" id="proto-open" aria-controls="proto-drawer" aria-expanded="false">原型说明</button>
 <aside class="proto-drawer" id="proto-drawer" aria-label="原型说明">
   <div class="proto-head"><span class="tagline">只有原型有 · 节奏拆拍流程</span><button type="button" class="btn" id="proto-close">收起</button></div>
-  <p class="lede">这是在确认<b>节奏拆拍这个流程和它的第一道真题</b>（第 1 题 · 判断拍号），以及<b>讲题的舞台</b>：顶栏、结论板、每一幕的主角在中间、上一幕和下一幕、开头读题、讲完的提示。“数有几个”是示例题，只是拿来证明换一种小题不用改流程，不是书里的内容。</p>
-  <div class="toolbar tabs" role="tablist" id="tabs"></div>
+  <p class="lede">这是在确认<b>节奏拆拍这个流程和它的第一道真题</b>（第 1 题 · 判断拍号），以及<b>舞台主题的公共组件</b>（关闭、换题、小题切换、题目标题、上一幕、字幕、下一幕、重播）和流程文件里写的舞台排法。“数有几个”是示例题，只是拿来证明换一种小题不用改流程，不是书里的内容。</p>
   <ul class="try">
     <li>每一幕只有这一幕的主角站在中间；选项到对选项的那一幕才出来，问你的时候才能点。</li>
-    <li>每条结论从中间的组件飞到结论板；在结论板上滑动、滚轮或按住拖，能翻看前面的结论；点一条只是亮起，不跳。</li>
-    <li>上一幕、下一幕：没讲完也能跳过；轮到你作答时不能跳。</li>
-    <li>标题下拉：跳到某个小题，或者换书里的另一道题。左上角 ✕ 回书本。</li>
+    <li>结论板是个转盘：滑、滚轮或按住拖着转，焦点上的那条最大；点一条，回到得出它的那一幕。</li>
+    <li>往回总是可以：上一幕、点结论、小题切换都能回去。往前只能越过讲过的或能跳过的幕：轮到你作答而还没答过时，下一幕和后面的小题都按不了。</li>
+    <li>字幕的播放键：一句说完以后再按，从头再说这一句；说到一半想从头听，把进度线拖到最左边。</li>
+    <li>讲完以后右下角出现重播；什么都不按就停在这里，按 ✕ 回书本。</li>
     <li>故意选错：第一次说提示，第二次老师演示。</li>
   </ul>
   <div class="toolbar">
@@ -111,53 +110,64 @@ code { font-family: var(--mono); font-size: 12px; }
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script src="sound.js"></script>
+<script src="components/registry.js"></script>
+<script src="components/stage/common.js"></script>
+<script src="components/stage/close.js"></script>
+<script src="components/stage/question-menu.js"></script>
+<script src="components/stage/part-switch.js"></script>
+<script src="components/stage/question-title.js"></script>
+<script src="components/stage/scene-prev.js"></script>
+<script src="components/stage/narration.js"></script>
+<script src="components/stage/scene-next.js"></script>
+<script src="components/stage/replay.js"></script>
 <script src="lib/score.js"></script>
 <script src="lib/beat-grid.js"></script>
 <script src="lib/conclusion-stack.js"></script>
 <script src="lib/choice.js"></script>
 <script src="lib/fill.js"></script>
-<script src="player/narration-bar.js"></script>
+<script src="components/interfaces/score.js"></script>
+<script src="components/interfaces/beat-grid.js"></script>
+<script src="components/interfaces/conclusion-stack.js"></script>
+<script src="components/interfaces/choice.js"></script>
+<script src="components/interfaces/fill.js"></script>
 <script src="player/lecture-player.js"></script>
 <script>
 /* ============================================================
    Demo page: plays the role of the app around the player. It loads the
-   workflow file and the questions during the loading screen, runs the
-   chosen one full screen when 开始 is tapped, stands in for the book's
-   page the close button leads to, and shows what the player traces, and
-   how the screen is doing, in a drawer that only the prototype has.
-   None of this is the player.
+   book file, the workflow file and the book's questions during the
+   loading screen, runs the chosen question full screen when 开始 is
+   tapped, stands in for the book's page the close button leads to, and
+   shows what the player traces, and how the screen is doing, in a drawer
+   that only the prototype has. None of this is the player.
    ============================================================ */
 (function () {
-  var WORKFLOW = 'workflows/rhythm-beats/workflow.yaml';
-  var QUESTIONS = [{ id: 'q01-time-signatures', tab: '第 1 题 · 判断拍号' }, { id: 'count-demo', tab: '示例 · 数有几个' }];
+  var BOOK = 'book.yaml', WORKFLOW = 'workflows/rhythm-beats/workflow.yaml';
   var IFACE = { point: '指点', count: '数', meter: '量拍', play: '播放', mask: '遮住', set: '摆成', answer: '作答', strike: '排除', positions: '给位置', conclude: '结论' };
   var PLACE = { board: '结论板', strip: '题目条', center: '中间', popup: '点了弹出' };
-  var data = { questions: {}, lines: {} };
-  var player = null, currentId = QUESTIONS[0].id, screenNote = '还没开始';
+  var STAGE_PLACE = { top: '顶上', head: '中间最上面', bottom: '底下' };
+  var data = { book: [], questions: {}, lines: {} };
+  var player = null, currentId = null, screenNote = '还没开始';
 
-  function fileOf(id) { return id.replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
-  // The same line ids as the recording tool: q.<key>, p<part>.<key>, p<part>.<item>.<key>.
-  function linesOf(qid, q) {
-    var out = [];
-    function add(id, l) { out.push({ id: id, text: typeof l === 'string' ? l : l.text, url: 'questions/' + qid + '/narration/' + fileOf(id) }); }
-    Object.keys(q.lines || {}).forEach(function (k) { add('q.' + k, q.lines[k]); });
-    (q.parts || []).forEach(function (p, pi) {
-      Object.keys(p.lines || {}).forEach(function (k) { add('p' + pi + '.' + k, p.lines[k]); });
-      (p.items || []).forEach(function (it) { Object.keys(it.lines || {}).forEach(function (k) { add('p' + pi + '.' + it.id + '.' + k, it.lines[k]); }); });
-    });
-    return out;
-  }
   function yaml(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url + ' ' + r.status); return r.text(); }).then(function (t) { return jsyaml.load(t); }); }
 
   PlayerLoading.need(function (progress) {
-    progress(0, '读流程文件和题目文件');
-    return Promise.all([yaml(WORKFLOW)].concat(QUESTIONS.map(function (q) { return yaml('questions/' + q.id + '/question.yaml'); }))).then(function (docs) {
-      data.workflow = docs[0];
-      var all = [];
-      QUESTIONS.forEach(function (q, i) { data.questions[q.id] = docs[i + 1]; var ls = linesOf(q.id, docs[i + 1]); all = all.concat(ls.map(function (l) { return Object.assign({ q: q.id }, l); })); });
-      return NarrationBar.prepare(all, progress).then(function (prepared) {
-        QUESTIONS.forEach(function (q) { data.lines[q.id] = []; });
-        prepared.forEach(function (l, i) { data.lines[all[i].q].push(l); });
+    progress(0, '读书本、流程和题目文件');
+    return Promise.all([yaml(BOOK), yaml(WORKFLOW)]).then(function (docs) {
+      var book = docs[0]; data.workflow = docs[1];
+      var list = (book.units || []).map(function (u, i) { return { id: u.lecture, no: String(i + 1) }; })
+        .concat((book.examples || []).map(function (u) { return { id: u.lecture, no: '例' }; }));
+      return Promise.all(list.map(function (b) { return yaml('questions/' + b.id + '/question.yaml'); })).then(function (qs) {
+        var all = [];
+        list.forEach(function (b, i) {
+          data.questions[b.id] = qs[i];
+          b.title = qs[i].title;
+          LecturePlayer.linesOf(qs[i], 'questions/' + b.id + '/narration/').forEach(function (l) { all.push(Object.assign({ q: b.id }, l)); });
+        });
+        data.book = list; currentId = list[0].id;
+        return NarrationBar.prepare(all, progress).then(function (prepared) {
+          list.forEach(function (b) { data.lines[b.id] = []; });
+          prepared.forEach(function (l, i) { data.lines[all[i].q].push(l); });
+        });
       });
     });
   });
@@ -192,16 +202,16 @@ code { font-family: var(--mono); font-size: 12px; }
   setInterval(function () { if (drawer.classList.contains('open')) showScreen(); }, 500);
 
   function renderRules(wf) {
-    var p = wf.player, el = document.getElementById('rules');
+    var p = wf.player, st = wf.stage || {}, el = document.getElementById('rules');
     var rows = [
-      ['开头', p.opening ? '先读题（' + wf.scenes[p.opening].title + '）' : '直接讲'],
+      ['开头', p.opening ? '先读题（' + wf.scenes[p.opening].title + '），读题那一幕展开题干' : '直接讲'],
       ['一幕讲完', p.sceneEnd === 'wait-next' ? '停下，「下一幕」亮起来等孩子点' : '接着讲'],
       ['一个小题讲完', p.partEnd === 'clear-stack' ? '清空结论板，题目条留着' : '—'],
-      ['跳过', p.skip ? '没讲完也能点「下一幕」跳过；写了 skip: false 的幕和等孩子作答时不能' : '不能'],
-      ['上一幕', p.back ? '能' : '不能'],
-      ['做错了', (p.wrong || []).map(function (w, i) { return '第 ' + (i + 1) + ' 次' + (w === 'hint' ? '说提示' : '演示'); }).join('，') + '，然后往下走'],
-      ['字幕条按钮', (p.narration || []).map(function (c) { return { pause: '暂停', replay: '重听这一句', rate: '语速' }[c]; }).join('、')]
+      ['往前', p.skip ? '没讲完的幕能跳过；写了 skip: false 的幕没答过就过不去' : '只能走讲过的'],
+      ['往回', p.back ? '上一幕、点结论、小题切换都能回去' : '不能'],
+      ['做错了', (p.wrong || []).map(function (w, i) { return '第 ' + (i + 1) + ' 次' + (w === 'hint' ? '说提示' : '演示'); }).join('，') + '，然后往下走']
     ];
+    Object.keys(STAGE_PLACE).forEach(function (k) { if (st[k]) rows.push(['舞台' + STAGE_PLACE[k], st[k].join('、')]); });
     el.innerHTML = '';
     rows.forEach(function (r) { var dt = document.createElement('dt'); dt.textContent = r[0]; var dd = document.createElement('dd'); dd.textContent = r[1]; el.appendChild(dt); el.appendChild(dd); });
   }
@@ -212,8 +222,8 @@ code { font-family: var(--mono); font-size: 12px; }
     Object.keys(wf.roles).forEach(function (role) {
       var r = wf.roles[role];
       var binds = [q.bind && q.bind[role]].concat((q.parts || []).map(function (p) { return p.bind && p.bind[role]; })).filter(Boolean);
-      var A = binds.length && LecturePlayer.ADAPTERS[binds[0]];
-      var ok = !binds.length ? r.optional : (r.needs || []).every(function (i) { return A && A.interfaces.indexOf(i) >= 0; });
+      var d = binds.length && LessonComponents.get(binds[0]);
+      var ok = !binds.length ? r.optional : (r.needs || []).every(function (i) { return d && d.interfaces.indexOf(i) >= 0; });
       var tr = document.createElement('tr');
       [r.title + (r.optional ? '（可以没有）' : ''), PLACE[r.place] || r.place, names(r.needs), binds.length ? binds.join('、') : '没有'].forEach(function (t) { var td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
       var td = document.createElement('td'); td.className = ok ? 'ok' : 'bad'; td.textContent = ok ? '✓' : '✗'; tr.appendChild(td);
@@ -226,13 +236,13 @@ code { font-family: var(--mono); font-size: 12px; }
     if (player) player.destroy();
     logEl.innerHTML = ''; t0 = performance.now(); window.lxTrace = [];
     ['now-part', 'now-scene', 'now-step'].forEach(function (id) { document.getElementById(id).textContent = '—'; });
-    document.querySelectorAll('#tabs .btn').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-q') === qid)); });
     var q = data.questions[qid];
     renderRules(data.workflow); renderBinds(data.workflow, q);
     var stage = document.getElementById('stage');
+    stage.innerHTML = '';
     player = new LecturePlayer({
       workflow: data.workflow, question: q, stage: stage, sound: SoundSource, lines: data.lines[qid], portrait: 'player/teacher.webp', onTrace: trace,
-      book: QUESTIONS.map(function (b) { return { id: b.id, title: data.questions[b.id].title }; }),
+      book: data.book,
       onLeave: function () { document.getElementById('book-mock').hidden = false; },
       onPick: function (id) { window.lxRun(id); }
     });
@@ -241,6 +251,7 @@ code { font-family: var(--mono); font-size: 12px; }
     pr.hidden = !player.problems.length;
     pr.textContent = player.problems.join('；');
     if (player.problems.length) { stage.innerHTML = '<div class="lx-curtain">题目文件对不上流程，见原型说明</div>'; return; }
+    document.querySelectorAll('#stage .lx-ctl').forEach(function (c) { c.setAttribute('data-label', c.getAttribute('data-ctl')); });
     player.bar.unlock();
     player.start();
     showScreen();
@@ -253,13 +264,6 @@ code { font-family: var(--mono); font-size: 12px; }
   opener.addEventListener('click', function () { openDrawer(true); });
   document.getElementById('proto-close').addEventListener('click', function () { openDrawer(false); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer.classList.contains('open')) openDrawer(false); });
-
-  var tabs = document.getElementById('tabs');
-  QUESTIONS.forEach(function (q) {
-    var b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.setAttribute('role', 'tab'); b.setAttribute('data-q', q.id); b.textContent = q.tab;
-    b.addEventListener('click', function () { window.lxRun(q.id); });
-    tabs.appendChild(b);
-  });
   document.getElementById('restart').addEventListener('click', function () { window.lxRun(currentId); });
   document.body.setAttribute('data-boundary', 'off');
   var bb = document.getElementById('boundary');

@@ -2,13 +2,12 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
 <style>
-/* Layout: a lit stage shaped like a lecture screen: the conclusion board (the component, outlined with a dashed boundary) in a column of fixed height on the left, the act's other components in the middle as a placeholder, a mock subtitle line under them. Under it a plain "workflow simulator" panel sends commands and logs the events the stack emits. Then a whole lecture played through at phone width, where the board is a short strip on top, and the interface table. */
+/* Layout: a lit stage shaped like a lecture screen: the conclusion board (the component, outlined with a dashed boundary) in a tall column on the left, a stand-in for the act's component in the middle (where conclusions fly from), a mock subtitle under them. Then the same board as a short strip at phone width, a panel that sends the workflow's commands and logs the events, and the interface table. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
   --surface: #ffffff;
   --line: #ebe6dc;
-  --line-strong: #d9d3c7;
   --ink: #161a2b;
   --ink-soft: #4b5168;
   --ink-muted: #6a6e7e;
@@ -16,142 +15,108 @@
   --boundary: #2f6bff;
   --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  /* The player's warm background behind the components. */
+  /* The player's lit stage behind the components. */
   --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
-  --stage-ink: #2a2118;
-  --vignette: rgba(80, 52, 24, .14);
   color-scheme: light;
 }
-/* The player's screen does not let the browser shift the scroll position when a component changes height, so the screen never jumps while a component glides. */
-body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
-.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
 h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
-h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; }
 p { margin: 0; }
-.lede { color: var(--ink-soft); max-width: 68ch; }
+.lede { color: var(--ink-soft); max-width: 70ch; }
 .tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
-.panel .what { color: var(--ink-soft); font-size: 14px; }
+.what { color: var(--ink-soft); font-size: 14px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.btn[aria-pressed="true"] { background: #efe8ff; border-color: #cbbcff; color: #4b23c9; }
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.5; min-height: 80px; max-height: 220px; overflow: auto; background: #faf8f4; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+code { font-family: var(--mono); font-size: 12px; }
 
-/* ---------- Stage (owned by the player, not by the stack) ---------- */
-.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 3vw, 28px); display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); grid-template-rows: 340px auto; gap: 18px; min-width: 0; isolation: isolate; }
-.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
-.stage > * { position: relative; z-index: 1; min-width: 0; }
-/* The board: the column the player gives the stack; the stack fills its height and scrolls inside it. It paints above the act's components, so a conclusion flying up from them passes over them. */
-.board { height: 100%; z-index: 2; }
-.stage .subtitle { grid-column: 1 / -1; }
-@media (max-width: 620px) { .stage { grid-template-columns: 1fr; grid-template-rows: 110px 200px auto; } .stage .subtitle { grid-column: auto; } }
-/* Where the act's other components (score, keyboard, ladder) would be: not part of this prototype. */
-.act-slot { display: grid; place-items: center; min-height: 150px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; text-align: center; padding: 16px; }
-/* The subtitle line is another component; this is only a mock of where it goes. */
-.subtitle { min-height: 3.2em; padding: 10px 16px; border-radius: 14px; background: rgba(42, 33, 24, .82); color: #fff8ec; font-size: 15px; line-height: 1.5; }
-.subtitle small { display: block; font-size: 11px; color: rgba(255, 248, 236, .6); }
-
-/* Dashed outline that marks exactly what the component is on this demo page. */
-body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline-offset: 4px; border-radius: 10px; }
-body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -2px; right: 6px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+/* ---------- Stage (the player's, not the stack's) ---------- */
+.stage { position: relative; border-radius: 28px; background: var(--stage); padding: 20px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: 380px auto; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px rgba(80, 52, 24, .14); border-radius: inherit; }
+.stage > * { position: relative; min-width: 0; }
+/* The board: the place the player gives the stack, of a fixed size; it paints above the middle, so a conclusion flying from there passes over it. */
+.board { z-index: 2; height: 100%; }
+.act { z-index: 1; display: grid; place-items: center; }
+.act-slot { display: grid; place-items: center; width: min(100%, 420px); min-height: 150px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; text-align: center; padding: 16px; box-sizing: border-box; }
+.subtitle { grid-column: 1 / -1; min-height: 3.2em; padding: 10px 16px; border-radius: 18px; background: rgba(24, 18, 44, .86); color: #fbf8f3; font-size: 15px; line-height: 1.5; }
+.phone { width: 100%; max-width: 360px; margin: 0 auto; border-radius: 26px; background: var(--stage); padding: 10px 8px; display: grid; grid-template-rows: 112px 220px; gap: 10px; isolation: isolate; box-sizing: border-box; }
+.phone .board { height: 112px; }
+@media (max-width: 680px) { .stage { grid-template-columns: 1fr; grid-template-rows: 300px 160px auto; } .subtitle { grid-column: auto; } }
+body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 12px; }
+body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -10px; right: 8px; z-index: 30; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
 
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
-/* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, violet light for whatever is lit, a brass clip holding the slips, dark bubbles. A line in a second language sits under the first, smaller and in italic. */
-/* Layout: the stack is as tall as its slips, but never taller than the place it is given; then its slips scroll inside it, by finger, wheel or a mouse drag, with no scrollbar shown, and the newest stays in view. Slips hidden above fade out at the top edge, and a small tag tells how many there are. */
-/* Motion: a slip that changes from the newest to an earlier one keeps its place on screen and changes gradually (size of the text, the stave, the number, its margins, and the height of its paper), so the eye can stay on it; at the same time the new slip's paper grows in under it, and the stack scrolls along so the new slip is in view. A conclusion reached somewhere else on the screen flies from there: a lifted copy of its slip rises from that place and lands in the room opening for it, so the eye follows it. Every move starts very gently, gathers pace and settles gently. */
+/* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, Chinese in the theme's sans, violet light for whatever is lit, the answer with a violet ring, a double rule and a seal, step numbers in outlined rings. */
+/* Layout: a wheel. The conclusion in focus stands in the middle of the board at full size; the ones before and after it get smaller and fainter the farther they are, and fade at the board's edges. In a tall board it turns up and down; in a short wide strip (a phone) it turns left and right. It never shows a scrollbar. */
+/* Motion: turned by a finger, a mouse wheel or a mouse drag, following the hand one for one; let go, it glides to the nearest conclusion. A new conclusion flies in from where it was reached while the wheel turns to make it the focus. Every glide starts very gently and settles gently. */
 .tl-cs {
   --tl-paper-a: #fffaf1;
   --tl-paper-b: #f2e6d1;
-  --tl-paper-back: #dcc8a6;
   --tl-paper-shadow: rgba(60, 38, 16, .45);
   --tl-ink: #241a12;
   --tl-ink-soft: #6b5238;
   --tl-glow: #7b4dff;
   --tl-glow-soft: rgba(123, 77, 255, .28);
   --tl-glow-ink: #4b23c9;
-  --tl-brass-a: #f6dc96;
-  --tl-brass-b: #c99a45;
-  --tl-brass-c: #7d561c;
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --tl-sans: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
-  --tl-ease: cubic-bezier(.6, 0, .25, 1);
-  --tl-move: .52s var(--tl-ease);
-  position: relative; box-sizing: border-box; display: flex; flex-direction: column; min-width: 0; width: 100%; max-width: 560px; max-height: 100%; margin: 0 auto; padding-top: 12px; min-height: 34px;
-  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; color: var(--tl-ink);
+  position: relative; box-sizing: border-box; width: 100%; height: 100%; min-height: 96px; color: var(--tl-ink);
+  -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
 }
-/* Drawing a state directly (a step back, a rebuild), or measuring a slip's size to come: nothing glides. */
-.tl-cs.tl-cs-still, .tl-cs.tl-cs-still *, .tl-cs-probe, .tl-cs-probe * { transition: none !important; }
-.tl-cs-probe { position: absolute !important; top: 0; left: 18px; right: 0; visibility: hidden; pointer-events: none; }
-/* The brass clip the slips are held under. */
-.tl-cs-clip { position: absolute; top: 0; left: 50%; z-index: 6; width: 132px; height: 18px; margin-left: -66px; border-radius: 5px 5px 7px 7px; pointer-events: none;
-  background: linear-gradient(180deg, var(--tl-brass-a), var(--tl-brass-b) 60%, var(--tl-brass-c)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), inset 0 -1px 0 rgba(60, 36, 8, .4), 0 4px 8px -2px rgba(60, 38, 16, .5); }
-.tl-cs-clip::before, .tl-cs-clip::after { content: ""; position: absolute; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3c8, #a77a2c 60%, #5c3d10); box-shadow: 0 1px 0 rgba(255, 255, 255, .4); }
-.tl-cs-clip::before { left: 12px; }
-.tl-cs-clip::after { right: 12px; }
-.tl-cs-scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-y; }
-.tl-cs-scroll::-webkit-scrollbar { display: none; }
-.tl-cs-scroll.tl-cs-above { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px); mask-image: linear-gradient(to bottom, transparent 0, #000 30px); }
-.tl-cs-list { position: relative; display: grid; padding: 0 0 18px 18px; transition: padding-bottom var(--tl-move); }
-.tl-cs-hidden-count { position: absolute; top: 20px; right: 4px; z-index: 7; display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border-radius: 9px; background: rgba(255, 250, 241, .94); box-shadow: 0 1px 3px rgba(70, 45, 20, .25); font: italic 600 14px/1.3 var(--tl-serif); color: var(--tl-ink-soft); pointer-events: none; opacity: 0; transition: opacity .3s; }
-.tl-cs-hidden-count.on { opacity: 1; }
-.tl-cs-hidden-count svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.tl-cs-slip { position: relative; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px; min-height: 48px; margin: -3px calc(var(--d, 0) * 7px) 0; padding: 7px 12px 8px 9px; border-radius: 5px; z-index: 1; cursor: pointer;
-  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, color-mix(in srgb, var(--tl-paper-a), var(--tl-paper-back) calc(var(--d, 0) * 14%)), color-mix(in srgb, var(--tl-paper-b), var(--tl-paper-back) calc(var(--d, 0) * 14%)));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 3px rgba(70, 45, 20, .1), 0 8px 14px -10px var(--tl-paper-shadow);
-  transition: margin var(--tl-move), padding var(--tl-move), min-height var(--tl-move), column-gap var(--tl-move), box-shadow .45s, opacity .45s, color .3s, transform .2s; }
+.tl-cs-view { position: absolute; inset: 0; overflow: hidden; touch-action: none; outline: none; }
+.tl-cs-y .tl-cs-view { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); }
+.tl-cs-x .tl-cs-view { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); }
+.tl-cs-view.tl-cs-grab { cursor: grabbing; }
+.tl-cs-view:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: -3px; border-radius: 12px; }
+.tl-cs-slip { position: absolute; left: 0; top: 0; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 60px; padding: 11px 16px 12px 11px; border-radius: 6px; transform-origin: 50% 50%; will-change: transform, opacity; cursor: pointer;
+  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 4px rgba(70, 45, 20, .1), 0 16px 28px -14px var(--tl-paper-shadow);
+  transition: box-shadow .45s, color .3s, filter .2s; }
 .tl-cs-practice .tl-cs-slip { cursor: default; }
-@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-list .tl-cs-slip:hover { transform: translateX(2px); } }
+@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-slip:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 0 0 1.5px var(--tl-glow-soft), 0 2px 4px rgba(70, 45, 20, .1), 0 18px 30px -14px var(--tl-paper-shadow); } }
 .tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
-.tl-cs-thread + .tl-cs-slip { margin-top: 0; }
-.tl-cs-slip:focus { outline: none; }
-.tl-cs.kbd .tl-cs-slip:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 2px; }
-/* The newest conclusion: a full-size slip at the bottom of the stack. */
-.tl-cs-slip.tl-cs-fresh { min-height: 64px; margin-top: 6px; padding: 11px 16px 12px 11px; column-gap: 12px; z-index: 2;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 4px rgba(70, 45, 20, .1), 0 20px 34px -14px var(--tl-paper-shadow); }
+/* The conclusion in focus: lifted a little higher off the board. */
+.tl-cs-slip.tl-cs-focus { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 3px 6px rgba(70, 45, 20, .12), 0 24px 38px -14px var(--tl-paper-shadow); }
 /* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
 .tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
-/* A conclusion flying in: the slip waits unseen in the room opening for it, while a lifted copy of it, with a soft violet glow, crosses the screen to it. The answer's seal stamps only once it has landed. */
-.tl-cs-slip.tl-cs-landing { visibility: hidden; }
-.tl-cs-slip.tl-cs-flyer { position: absolute; left: 0; top: 0; margin: 0; z-index: 9; transform-origin: 50% 50%; will-change: transform, opacity; transition: none; pointer-events: none;
+/* A conclusion flying in: the slip waits unseen in its place on the wheel while a lifted copy, with a soft violet glow, crosses the screen to it. */
+.tl-cs-slip.tl-cs-landing { visibility: hidden !important; }
+.tl-cs-slip.tl-cs-flyer { z-index: 9; transition: none; pointer-events: none; will-change: transform, opacity;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
 .tl-cs-flyer .tl-cs-seal { visibility: hidden; }
-.tl-cs-num { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 14px/1 var(--tl-serif); color: var(--tl-ink-soft); transition: width var(--tl-move), height var(--tl-move), font-size var(--tl-move), color .3s, border-color .3s; }
-.tl-cs-fresh .tl-cs-num { width: 30px; height: 30px; font-size: 17px; }
+.tl-cs-num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 16px/1 var(--tl-serif); color: var(--tl-ink-soft); }
 .tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }
 .tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
 .tl-cs-seal span { position: relative; margin-top: -3px; }
-.tl-cs-body { position: relative; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 9px; font: 500 17px/1.25 var(--tl-serif); transition: font-size var(--tl-move), gap var(--tl-move); }
-.tl-cs-fresh .tl-cs-body { font-size: 22px; gap: 3px 11px; }
-/* Chinese reads in the sans the theme pairs with its serif; numbers, notes and terms stay in the serif. */
+/* The steps a conclusion is built on, as small rings on its top edge. */
+.tl-cs-refs { position: absolute; top: -10px; left: 12px; display: flex; gap: 3px; pointer-events: none; }
+.tl-cs-ref { width: 19px; height: 19px; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center; background: var(--tl-paper-a); border: 1px solid var(--tl-glow); font: 600 12px/1 var(--tl-serif); color: var(--tl-glow-ink); }
+.tl-cs-body { position: relative; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; font: 500 21px/1.25 var(--tl-serif); }
+.tl-cs-x .tl-cs-body { font-size: 18px; gap: 2px 8px; }
+.tl-cs-x .tl-cs-slip { min-height: 52px; padding: 9px 12px 10px 9px; column-gap: 10px; }
+.tl-cs-x .tl-cs-num { width: 24px; height: 24px; font-size: 14px; }
 .tl-cs-text:lang(zh), .tl-cs-zh { font-family: var(--tl-sans); font-weight: 500; font-size: .86em; }
-/* The line in the second language: its own line under the parts, smaller, italic, softer. */
 .tl-cs-gloss { flex-basis: 100%; margin-top: -1px; font: italic 500 .74em/1.2 var(--tl-serif); color: var(--tl-ink-soft); }
-/* On a narrow stack the earlier conclusions are set smaller, so each stays short. */
-.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) .tl-cs-body { font-size: 15px; gap: 2px 7px; }
-.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) { column-gap: 8px; padding-right: 10px; }
-.tl-cs-narrow .tl-cs-slip:not(.tl-cs-fresh) .tl-cs-num { width: 22px; height: 22px; font-size: 13px; }
 .tl-cs-term { font-style: italic; font-weight: 600; }
 .tl-cs-op { display: inline-flex; color: var(--tl-ink-soft); }
 .tl-cs-op svg { width: .9em; height: .9em; stroke: currentColor; fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
-.tl-cs-text svg, .tl-cs-bubble svg.tl-cs-acc { fill: currentColor; }
+.tl-cs-text svg { fill: currentColor; }
+/* A short stave is cropped to what is drawn on it, and its lines stop at the crop. */
 .tl-cs-staff { line-height: 0; color: var(--tl-ink); max-width: 100%; }
-.tl-cs-staff svg { display: block; overflow: visible; max-width: 100%; height: auto; transition: width var(--tl-move); }
-.tl-cs-staff text { font-family: var(--tl-serif); font-style: italic; font-weight: 600; }
-.tl-cs-staff .tl-cs-sounding path, .tl-cs-staff path.tl-cs-sounding { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
-.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 8px 14px -10px var(--tl-paper-shadow); }
+.tl-cs-staff svg { display: block; overflow: hidden; max-width: 100%; height: auto; }
+.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-lit .tl-cs-num { color: var(--tl-glow-ink); border-color: var(--tl-glow); }
-.tl-cs-slip.tl-lit .tl-cs-staff, .tl-cs-slip.tl-lit .tl-cs-op, .tl-cs-slip.tl-lit .tl-cs-gloss { color: var(--tl-glow-ink); }
+.tl-cs-slip.tl-lit .tl-cs-staff, .tl-cs-slip.tl-lit .tl-cs-op { color: var(--tl-glow-ink); }
 .tl-cs-slip.tl-cs-down { background-color: color-mix(in srgb, var(--tl-glow) 10%, transparent); }
-.tl-cs-slip.tl-dim { opacity: .32; }
-/* The thread from the conclusions a new one builds on, in the left margin; drawn once the slips have settled. */
-.tl-cs-thread { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; transition: opacity .2s; }
-.tl-cs-thread.tl-cs-moving { opacity: 0; }
-.tl-cs-thread path { fill: none; stroke: var(--tl-glow); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.tl-cs-thread circle { fill: var(--tl-glow); }
-.tl-cs-thread .tl-cs-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-cs-draw .6s .1s var(--tl-ease) forwards; }
-.tl-cs-thread .tl-cs-dot { animation: tl-cs-fade .3s both; }
-.tl-cs-thread .tl-cs-tip { animation: tl-cs-fade .25s .6s both; }
 /* A hidden conclusion lies under a paper slip with a dashed question box: missing by shape, not only by colour. */
 .tl-cs-hidden > :not(.tl-cs-cover) { visibility: hidden; }
 .tl-cs-cover { position: absolute; inset: -3px -6px; z-index: 1; display: flex; align-items: center; padding-left: 6px; border-radius: 4px;
@@ -159,215 +124,150 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 .tl-cs-cover.off { transform: translateX(40%) rotate(4deg); opacity: 0; }
 .tl-cs-q { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2em; height: 1.2em; padding: 0 .3em; border: 1.5px dashed var(--tl-ink-soft); border-radius: 5px; font: italic 600 18px/1 var(--tl-serif); color: var(--tl-ink-soft); }
 .tl-cs-ink { animation: tl-cs-ink .55s cubic-bezier(.2, .8, .3, 1) both; }
-.tl-cs-over { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
+.tl-cs-over { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
 .tl-cs-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-cs-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
-.tl-cs-bubble { position: absolute; z-index: 6; max-width: calc(100% - 20px); padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: tl-cs-bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; pointer-events: none; }
-.tl-cs-bubble.tl-cs-still { animation: none; }
-.tl-cs-bubble.out { opacity: 0; }
-.tl-cs-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
-@keyframes tl-cs-draw { to { stroke-dashoffset: 0; } }
-@keyframes tl-cs-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tl-cs-ink { from { opacity: 0; filter: blur(4px); transform: scale(1.12); } to { opacity: 1; filter: none; transform: none; } }
-@keyframes tl-cs-bubble { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes tl-cs-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tl-cs *, .tl-cs *::before { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
-/* ---------- Layouts chosen by the workflow ---------- */
-.mini-stage { border-radius: 24px; padding: 18px 12px; background: var(--stage); position: relative; overflow: hidden; display: grid; grid-template-rows: 110px auto auto; gap: 12px; width: 100%; max-width: 390px; justify-self: center; }
-.mini-stage > * { position: relative; z-index: 1; min-width: 0; }
-.mini-stage .act-slot { min-height: 150px; }
-
-/* ---------- Workflow simulator (not part of the component) ---------- */
-.sim { display: grid; gap: 12px; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
-button.chip:hover { background: #f4f0fb; }
-button.chip:active { transform: scale(.97); }
-button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
-button.chip:focus { outline: none; }
-button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
-.chip-group { display: grid; gap: 6px; }
-.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
-.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.log .t { color: #8a80b8; }
-.sound-state { font-size: 13px; color: var(--ink-muted); }
-.sound-state b { color: var(--ink); }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
-td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
-.tablebox { overflow-x: auto; }
-.credit { font-size: 12px; color: var(--ink-muted); }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important; } }
+/* ---------- Page only ---------- */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 
-<div class="wrap">
-  <header style="display:grid;gap:10px">
-    <span class="tagline">组件 7 / 10 · 显示类 · 直接画在画面上，讲题画面左边一栏（手机上是上面一条）</span>
-    <h1>结论栈</h1>
-    <p class="lede">讲题里每一幕得出一条结论，结论栈把它们一条一条留在讲题画面的结论板上，最后从前面的结论得出答案。蓝色虚线框住的就是结论栈。结论用中文写，下面一行小字是英文原文。一幕的结论是在画面中间的组件上得出的（比如拍尺上数出来的），新的一条纸条就从那里浮起来，带着一点紫光飞过来，落进为它让出来的位置，眼睛跟着它走。同时原来最新的那条在原地慢慢缩成窄纸条，结论板跟着往下滚，让新的一条露出来。结论多了，放不下的往上滚走，顶上淡出，并标着上面还有几条；用手指上下滑、滚鼠标滚轮或者按住鼠标拖，都能翻看前面的结论。点一条：它亮起来，有说明的弹出说明，有谱的会响，不会跳到别的步骤。一条结论是从前面哪几条得出的，纸条落稳以后，左边有一条紫线从那几条连下来；答案带一圈紫光，落稳后盖上 ∴ 印章，可以先遮住再揭晓。框外面的东西都不属于它。</p>
-    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
-  </header>
+<main class="wrap">
+  <span class="tagline">组件原型 · etude 主题</span>
+  <h1>结论栈</h1>
+  <p class="lede">这次确认的是<b>结论栈组件</b>：讲题的结论板做成一个转盘。焦点上的那条结论在正中间、最大，前后的越远越小越淡，到边上淡出；手指滑、滚轮、按住鼠标拖都能转，松手停到最近的一条。点一条，组件发出“点了哪一条”的事件，由播放器决定回到得出它的那一幕。新结论从得出它的地方飞过来，转盘同时转到它。</p>
+  <div class="toolbar"><button type="button" class="btn" id="boundary" aria-pressed="true">显示组件边界</button></div>
 
-  <section class="stage" aria-label="题目画面">
-    <div class="board" id="main-stack"></div>
-    <div class="act-slot" id="main-act">这一幕的主角组件（拍尺、乐谱……）画在画面中间<br>不属于结论栈；结论从这里飞过去</div>
-    <div class="subtitle" id="subtitle"><small>字幕（另一个组件，这里只是示意）</small><span id="subtitle-text">点下面的「下一幕」开始。</span></div>
+  <section class="stage" aria-label="讲题画面（示意）">
+    <div class="board" id="board-wide"></div>
+    <div class="act"><div class="act-slot" id="source">这一幕的组件（示意）<br>结论从这里飞到结论板</div></div>
+    <div class="subtitle" id="subtitle">字幕条（示意）</div>
   </section>
 
-  <section class="panel sim">
+  <section class="panel">
+    <h2>手机上：顶上一条，左右转</h2>
+    <p class="what">同一个组件放进又宽又矮的地方，就横着转；结论板的大小由播放器给。</p>
+    <div class="phone"><div class="board" id="board-phone"></div><div class="act"><div class="act-slot" id="source-phone">这一幕的组件（示意）</div></div></div>
+  </section>
+
+  <section class="panel">
     <h2>模拟流程：发给结论栈的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给结论栈的指令；记录框列出结论栈发出的事件。「下一幕」把这一幕的结论推上去，并告诉结论栈它是在中间那块地方得出的，纸条从那里飞过来；「下一幕（原地长出来）」不给地方，纸条在原地长出来。「上一幕」是播放器回到上一幕时用的，结论栈直接摆成那一幕开始的样子，不放动画。在结论板上滑动、滚动或拖动翻看前面的结论；点一条：亮起、弹出说明、有谱的会响，两秒后自己淡掉；点空白处清掉。</p>
-    <div class="chip-group"><span>一幕一幕</span><div class="chips">
-      <button class="chip" type="button" data-cmd="next">下一幕</button>
-      <button class="chip" type="button" data-cmd="nextHere">下一幕（原地长出来）</button>
-      <button class="chip" type="button" data-cmd="back">上一幕</button>
-      <button class="chip" type="button" data-cmd="end">跳到最后（答案遮着）</button>
-      <button class="chip" type="button" data-cmd="revealAnswer">揭晓答案</button>
-    </div></div>
-    <div class="chip-group"><span>标记</span><div class="chips">
-      <button class="chip" type="button" data-cmd="recall">亮起第 1 条（又用到它）</button>
-      <button class="chip" type="button" data-cmd="spot">聚光第 2、3 条</button>
-      <button class="chip" type="button" data-cmd="caption">在最新一条下面弹出说明</button>
-      <button class="chip" type="button" data-cmd="maskNewest">遮住最新一条</button>
-      <button class="chip" type="button" data-cmd="revealAll">全部写出来</button>
-    </div></div>
-    <div class="chip-group"><span>其他</span><div class="chips">
-      <button class="chip" type="button" data-cmd="stop">停</button>
-      <button class="chip" type="button" data-cmd="clear">清除</button>
-      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
-    </div></div>
-    <div class="log" id="log" aria-live="polite" aria-label="结论栈发出的事件"></div>
-    <p class="sound-state" id="sound-state"></p>
+    <div class="toolbar">
+      <button type="button" class="btn" data-cmd="fly">推一条（从中间飞过来）</button>
+      <button type="button" class="btn" data-cmd="grow">推一条（原地长出来）</button>
+      <button type="button" class="btn" data-cmd="set2">直接摆成前两条</button>
+      <button type="button" class="btn" data-cmd="lit">亮起第 1 条</button>
+      <button type="button" class="btn" data-cmd="mask">遮住答案</button>
+      <button type="button" class="btn" data-cmd="reveal">揭晓答案</button>
+      <button type="button" class="btn" data-cmd="focus1">转到第 1 条</button>
+      <button type="button" class="btn" data-cmd="clear">清空</button>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
   </section>
 
   <section class="panel">
-    <h2>放一遍：一道讲题从头到尾（手机宽度）</h2>
-    <p class="what">手机上结论板是上面一条，只露出最新的一条；往下拉能看前面的。一道音程讲题的四幕按讲题的节奏自动走一遍：数音名得出“三度”，数半音得出“四个半音”，两条合起来得出“大三度”，最后得出答案。每条结论都从下面这一幕的组件那里飞上去。</p>
-    <div class="toolbar"><button class="chip" type="button" id="run-btn">从头放一遍</button></div>
-    <div class="mini-stage">
-      <div class="board" id="run-stack"></div>
-      <div class="act-slot" id="run-act">这一幕的主角组件</div>
-      <div class="subtitle"><small>字幕（示意）</small><span id="run-sub">点「从头放一遍」。</span></div>
-    </div>
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td>这道讲题的全部结论：编号、内容片段（文字、术语、符号 <code>op</code>、ABC 谱、第二种语言的一行 <code>gloss</code>）、从哪几条得出（<code>from</code>）、是不是答案（<code>final</code>）；模式</td></tr>
+      <tr><th>指令</th><td><code>push(id, {from})</code> 推一条，可带它在屏幕上从哪里来；<code>pushMs</code> 推一条要多久停稳；<code>set(ids)</code> 直接摆成这几条（不放动画，转到最后一条）；<code>focus(id)</code> 转到某一条；<code>highlight</code>、<code>spotlight</code>、<code>mask</code>、<code>reveal</code>、<code>stop</code>、<code>clear</code></td></tr>
+      <tr><th>事件</th><td><code>itemTap</code>（点了哪一条：编号、第几步、是不是答案、文字、是否遮着）、<code>blankTap</code></td></tr>
+      <tr><th>能力接口</th><td>结论（推、摆成、点了哪一条）、指点（亮起）、遮住（遮住、揭开）、摆成</td></tr>
+      <tr><th>外观</th><td>暖色纸条带纹理，衬线体的字、术语斜体，中文用主题配的黑体；步骤编号是描线的圆圈，答案是紫圈、双线和 ∴ 印章；一条结论由前面哪几条得出，它的顶边上就挂着那几步编号的紫色小圆圈；一小段谱按画出来的内容裁边，谱线停在裁边处；颜色和共用部分用 <code>etude</code> 主题的值</td></tr>
+      <tr><th>排法</th><td>转盘：焦点上的一条在正中间原大，前后各条按离焦点的远近缩到 0.8、0.68、0.6，越远越淡，边上淡出；又高又窄的地方上下转，又宽又矮的地方（宽是高的 1.6 倍以上）左右转；竖着转时纸条最宽 300 像素，横着转时 230 像素</td></tr>
+      <tr><th>动作</th><td>手指、滚轮、拖动一比一地转，松手按甩的快慢停到最近的一条；推一条时转盘 0.52 秒转到它，它从得出它的地方 0.8 秒飞过来；缓急曲线是主题的那一种</td></tr>
+      <tr><th>操作</th><td>能点的纸条鼠标放上去是手指、微微亮起；移动超过 6 像素就是转，不算点；点一条：转到它，发出 <code>itemTap</code>；转到边上看不见的点不到；键盘上下（左右）方向键转一格，回车相当于点</td></tr>
+      <tr><th>谁决定排版</th><td>结论板的大小由播放器给；转的方向和纸条的大小由组件按给它的地方自己定</td></tr>
+      <tr><th>声音</th><td>不发声</td></tr>
+    </table>
   </section>
-
-  <section class="panel">
-    <h2>它的接口（低耦合）</h2>
-    <div class="tablebox">
-      <table>
-        <thead><tr><th>方向</th><th>内容</th></tr></thead>
-        <tbody>
-          <tr><td>输入</td><td>这道讲题的全部结论（题目文件里写）：每条有编号和内容，内容是一串片段：文字、术语（斜体）、符号（<code>=</code>、<code>→</code>、<code>+</code>、<code>≠</code>）、一小段 ABC 谱，以及另起一行的第二种语言（<code>gloss</code>，比如中文结论下面的英文原文）；可以写它是从前面哪几条得出的、它是不是这道题的答案，可以带一句点了才弹出的说明。模式：讲题（点了发声、弹出说明）或练习（点了没有反应）；速度。</td></tr>
-          <tr><td>外观</td><td>纸条的纹理和叠起来的层次、黄铜夹子、紫色的连线、答案的紫光和印章、飞过来时的紫光、深色的说明气泡、顶上淡出和“上面还有几条”的小标签，都写在结论栈自己里面；颜色和共用部分用 <code>etude</code> 主题的值。中文用主题配的黑体，数字、谱和术语用衬线体。谱和文字里的升降号都用乐谱库画出来的字形。能点的纸条，鼠标放上去是手指，并往右微微一动。</td></tr>
-          <tr><td>排法</td><td>结论栈有多少条就多高，但不超过给它的地方；超过时纸条在里面滚动，最新的一条总在下面露着，不出滚动条。</td></tr>
-          <tr><td>动作</td><td>推上一条新结论时，最新的那条在原地慢慢缩成窄纸条，字、谱、编号和纸的高度一起连续变小；新的一条的位置同时在它下面让出来，结论栈同时往下滚，让它露出来，约半秒，起步很轻，然后加快，最后慢慢停住。给了“从哪里来”时，新的纸条从那块地方的中间浮起来（先略小、带紫光，0.1 秒内显出来），沿一条微弯的线飞到让出来的位置，约 0.8 秒，落下时正好盖在自己的位置上；没给时字在原地晚一点浮现。都落稳以后，答案盖上印章，紫线再画出来，用到的那几条亮一下。直接摆成某个样子时不放这些动作。系统打开“减少动态效果”时这些动作在 0.1 秒内做完。</td></tr>
-          <tr><td>操作</td><td>手指上下滑、鼠标滚轮、按住鼠标拖：翻看前面的结论；滑动和拖动不算点。点一条：亮起、弹出说明、有谱的会响，两秒后淡掉；点空白处清掉。点了不会跳到别的步骤。</td></tr>
-          <tr><td>指令</td><td><code>push(结论, 从哪里)</code> 这一幕的结论落到栈上，前面的缩小；“从哪里”是屏幕上的一块地方（播放器给的这一幕得出结论的那个角色的位置），可以不给；写了从哪几条得出的，那几条亮一下，紫线连下来；<code>set(结论…)</code> 直接摆成这几条，不放动画；<code>highlight(结论…)</code> 亮起前面的结论，并滚到看得见的地方；<code>spotlight(结论…)</code>；<code>caption(结论, 文字)</code> 在这一条下面弹出说明；<code>mask(结论…)</code> 用纸条遮住，可以在 <code>push</code> 之前遮；<code>reveal(…)</code> 纸条滑走、写出来；<code>stop()</code> 停下点出来的声音；<code>clear()</code>。</td></tr>
-          <tr><td>事件</td><td><code>itemTap</code>（哪一条、第几条、是不是答案、文字内容、是否遮着）；<code>blankTap</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用的是同一个；结论栈不知道这一幕用了哪些组件，只知道屏幕上的一块地方。</td></tr>
-          <tr><td>谁决定排版</td><td>播放器给它的地方：讲题画面左边的结论板（宽屏），或上面的一条（手机）；最宽 560。飞过来的纸条要从别的组件上面经过，所以播放器让结论板画在其他组件上面一层。</td></tr>
-          <tr><td>出现在哪里</td><td>每道讲题都有，直接画在画面上。练习里不出现，因为它就是解题的过程。</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
-  </section>
-</div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="sound.js"></script>
 <script>
 /* ============================================================
    Conclusion stack component. Keeps the conclusions a lecture has
-   reached, one per act: the newest is a full-size slip at the bottom,
-   earlier ones shrink into strips above it under a clip. The stack is as
-   tall as its slips but no taller than the place it is given; beyond
-   that its slips scroll inside it (finger, wheel or mouse drag) and the
-   newest stays in view. A conclusion built on earlier ones is joined to
-   them by a thread; the one that answers the question carries a seal.
-   Slips are kept on screen from one state to the next and their sizes
-   glide, so a slip that becomes a strip shrinks where it is instead of
-   being drawn again; a slip that joins grows in while the stack scrolls
-   along to it, all in the same stretch of time.
+   reached and shows them as a wheel: the one in focus stands in the
+   middle at full size, the ones before and after shrink and fade with
+   their distance from it. The wheel turns under a finger, a mouse wheel
+   or a mouse drag and comes to rest on the nearest conclusion; in a
+   short wide place it turns sideways. A tap on a conclusion turns the
+   wheel to it and reports it; what follows (going to the scene it came
+   from) is the player's.
    A conclusion pushed with the place on screen it was reached flies from
-   there: a lifted copy of its slip crosses to the room opening for it,
-   and the slip shows once the copy lands on it.
+   there: a lifted copy of its slip crosses to its place on the wheel
+   while the wheel turns to it, and the slip shows once the copy lands.
    Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc} | {gloss}],
-   from: [ids], final, note}}), mode ('lecture' | 'practice'), tempo.
-   Commands: push, set, highlight, spotlight, caption, mask, reveal,
-   stop, clear.
-   Events (via onEvent): itemTap, blankTap.
-   Sound goes through the injected source, lectures only.
+   from: [ids], final}}), mode ('lecture' | 'practice').
+   Commands: push, pushMs, set, focus, highlight, spotlight, mask,
+   reveal, stop, clear. Events (via onEvent): itemTap, blankTap.
    ============================================================ */
 function ConclusionStack(host, options) {
   var self = this;
   this.host = host;
-  this.o = Object.assign({ items: {}, mode: 'lecture', tempo: 96, sound: null, onEvent: function () {} }, options);
-  this.order = [];
-  this.masked = {};
-  this.held = [];
-  this.spot = null;
-  this.cap = null;
-  this.flash = [];
-  this.flashOn = false;
-  this.entering = null;
-  this.flyFrom = null;
-  this.flight = null;
-  this.press = null;
-  this.timers = [];
-  this.tapTimers = [];
-  this.voices = [];
+  this.o = Object.assign({ items: {}, mode: 'lecture', onEvent: function () {} }, options);
+  this.order = []; this.els = {}; this.size = {};
+  this.masked = {}; this.held = []; this.spot = null; this.flash = [];
+  this.p = 0; this.anim = null; this.flight = null; this.press = null; this.raf = 0;
+  this.wheelTimer = 0;
   host.classList.add('tl-cs');
-  host.addEventListener('pointerdown', function (ev) { self.onDown(ev); });
-  host.addEventListener('pointermove', function (ev) { self.onMove(ev); });
-  host.addEventListener('pointerup', function (ev) { self.onUp(ev); });
-  host.addEventListener('pointercancel', function () { self.press = null; });
-  host.addEventListener('keydown', function (ev) { self.onKey(ev); });
-  host.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') host.classList.add('kbd'); });
-  this.build();
+  host.classList.toggle('tl-cs-practice', this.o.mode !== 'lecture');
+  host.innerHTML = '<div class="tl-cs-view" tabindex="0" role="list" aria-label="结论"></div><div class="tl-cs-over" aria-hidden="true"></div>';
+  this.view = host.querySelector('.tl-cs-view'); this.over = host.querySelector('.tl-cs-over');
+  var v = this.view;
+  v.addEventListener('pointerdown', function (e) { self.onDown(e); });
+  v.addEventListener('pointermove', function (e) { self.onMove(e); });
+  v.addEventListener('pointerup', function (e) { self.onUp(e); });
+  v.addEventListener('pointercancel', function () { self.cancelPress(); });
+  v.addEventListener('wheel', function (e) { self.onWheel(e); }, { passive: false });
+  v.addEventListener('keydown', function (e) { self.onKey(e); });
+  if (window.ResizeObserver) new ResizeObserver(function () { self.measure(); self.frame(); }).observe(v);
 }
-ConclusionStack.NARROW_PX = 480;
-ConclusionStack.TAP_FADE_MS = 2000;
-// A press that moves less than this is a tap; more, and it scrolls.
+// How big and how clear a conclusion is at a distance of 0, 1, 2, 3... from
+// the focus (in conclusions), read between the steps.
+ConclusionStack.SCALE = [1, .8, .68, .6];
+ConclusionStack.ALPHA = [1, .82, .55, .3, 0];
+ConclusionStack.GAP = 10;
+ConclusionStack.PAD = 10;
+ConclusionStack.MAX_W = 300;
+ConclusionStack.X_W = 230;
+// A board wider than this many times its height turns sideways.
+ConclusionStack.SIDEWAYS = 1.6;
+// A press that moves less than this is a tap; more, and it turns the wheel.
 ConclusionStack.DRAG_PX = 6;
-// The choreography of a push: everything glides together for MOVE_MS (the
-// newest slip shrinking, the new slip's paper growing, the stack scrolling
-// to it), starting very gently so the eye is on the slip before it moves
-// much; the new slip's ink appears from INK_DELAY_MS for INK_MS, once its
-// paper has opened; the thread draws and its sources light once all is
-// still. A slip flying in takes FLY_MS, the room for it opening while it
-// travels; it appears over FLY_FADE of its flight and bows sideways by
-// ARC of the distance (at most ARC_MAX px).
+// Past either end the wheel gives only this much of the hand's movement.
+ConclusionStack.RUBBER = .35;
+// How far ahead a flick carries the wheel, in ms of its speed.
+ConclusionStack.FLICK_MS = 180;
+ConclusionStack.WHEEL_PX = 140;
+ConclusionStack.WHEEL_IDLE_MS = 140;
 ConclusionStack.MOVE_MS = 520;
-ConclusionStack.INK_DELAY_MS = 240;
-ConclusionStack.INK_MS = 400;
-ConclusionStack.SETTLE_MS = 660;
 ConclusionStack.FLY_MS = 800;
 ConclusionStack.FLY_FADE = .14;
 ConclusionStack.ARC = .16;
 ConclusionStack.ARC_MAX = 64;
-ConclusionStack.EASE = 'cubic-bezier(.6, 0, .25, 1)';
-ConclusionStack.STAFF_SCALE = { fresh: .8, strip: .62, narrow: .5 };
-ConclusionStack.LETTERS = 'CDEFGAB';
-ConclusionStack.STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
-ConclusionStack.SHIFT = { sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 };
-ConclusionStack.SVG = 'http://www.w3.org/2000/svg';
+ConclusionStack.FLASH_MS = 2000;
 ConclusionStack.OPS = {
   '=': '<path d="M3 6h10M3 10h10"/>',
   '≠': '<path d="M3 6h10M3 10h10M10.5 2.5l-5 11"/>',
   '+': '<path d="M8 3v10M3 8h10"/>',
   '→': '<path d="M2 8h11M9 4l4 4-4 4"/>'
 };
-ConclusionStack.OP_WORDS = { '=': 'equals', '≠': 'is not', '+': 'and', '→': 'gives' };
-ConclusionStack.UP = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 6.5l3-3 3 3"/></svg>';
+ConclusionStack.OP_WORDS = { '=': '等于', '≠': '不等于', '+': '加', '→': '得出' };
 
 ConclusionStack.esc = function (t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 ConclusionStack.still = function () { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
-// Text with Chinese in it is set in the theme's sans.
 ConclusionStack.hasZh = function (t) { return /[\u3400-\u9fff]/.test(String(t)); };
-
+ConclusionStack.table = function (t, d) {
+  d = Math.abs(d);
+  var i = Math.floor(d);
+  if (i >= t.length - 1) return t[t.length - 1];
+  return t[i] + (t[i + 1] - t[i]) * (d - i);
+};
 // The theme's easing curve, cubic-bezier(.6, 0, .25, 1), for motion moved
-// frame by frame toward a place that is itself gliding.
+// frame by frame.
 ConclusionStack.ease = function (t) {
   var x1 = .6, y1 = 0, x2 = .25, y2 = 1;
   var bx = function (u) { return 3 * u * (1 - u) * (1 - u) * x1 + 3 * u * u * (1 - u) * x2 + u * u * u; };
@@ -397,9 +297,7 @@ ConclusionStack.glyphs = function () {
   ConclusionStack._glyphs = out;
   return out;
 };
-
-// Text as HTML, every ♯ ♭ ♮ swapped for the library glyph. The glyph is
-// sized in em, so it grows and shrinks with the text around it.
+// Text as HTML, every ♯ ♭ ♮ swapped for the library glyph, sized in em.
 ConclusionStack.inline = function (text) {
   var G = ConclusionStack.glyphs(), s = 0.034, band = 14;
   return String(text).split(/([♯♭♮])/).map(function (part) {
@@ -409,9 +307,8 @@ ConclusionStack.inline = function (text) {
     return '<svg class="tl-cs-acc" viewBox="' + (g.x - .5) + ' ' + (G.lineY - band) + ' ' + (g.w + 1) + ' ' + band * 2 + '" style="width:' + ((g.w + 1) * s).toFixed(3) + 'em;height:' + (band * 2 * s).toFixed(3) + 'em;vertical-align:' + (0.33 - band * s).toFixed(3) + 'em;margin:0 1px" aria-hidden="true"><path d="' + g.d + '"/></svg>';
   }).join('');
 };
-
-// A part's ABC as a whole tune: header lines from the part (L:, K:, Q:)
-// with defaults, K: last, then the music.
+// A part's ABC as a whole tune: header lines from the part with defaults,
+// K: last, then the music.
 ConclusionStack.tune = function (abc) {
   var head = [], body = [], key = 'K:C';
   String(abc).split('\n').forEach(function (line) {
@@ -422,7 +319,6 @@ ConclusionStack.tune = function (abc) {
   if (!head.some(function (l) { return /^L:/.test(l); })) head.push('L:1/4');
   return 'X:1\n' + head.join('\n') + '\n' + key + '\n' + body.join('\n');
 };
-
 // A conclusion in words, for screen readers and for events.
 ConclusionStack.words = function (item) {
   return (item.parts || []).map(function (p) {
@@ -432,287 +328,31 @@ ConclusionStack.words = function (item) {
   }).join(' ');
 };
 
-ConclusionStack.prototype.audible = function () { return this.o.mode === 'lecture' && !!this.o.sound; };
 ConclusionStack.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
 ConclusionStack.prototype.item = function (id) { return this.o.items[id] || { parts: [] }; };
 ConclusionStack.prototype.known = function (list) {
   var self = this;
   return [].concat(list || []).filter(function (id) { return self.order.indexOf(id) >= 0; });
 };
-ConclusionStack.prototype.live = function () { return [].slice.call(this.list.querySelectorAll('.tl-cs-slip:not(.tl-cs-leaving)')); };
-// How much the stack is scaled on screen (the player may scale the stage).
-ConclusionStack.prototype.k = function () { var r = this.host.getBoundingClientRect(); return r.width / (this.host.offsetWidth || 1) || 1; };
+ConclusionStack.prototype.last = function () { return Math.max(0, this.order.length - 1); };
+ConclusionStack.prototype.focusIndex = function () { return Math.max(0, Math.min(this.last(), Math.round(this.p))); };
 
-// Every note the stack sounds goes through here, so stop() can silence
-// the notes already scheduled ahead on the audio clock.
-ConclusionStack.prototype.note = function (midi, delay, dur, velocity) {
-  var v = this.o.sound.play(midi, delay, dur, velocity);
-  if (v) this.voices.push(v);
-};
-ConclusionStack.prototype.silence = function () {
-  (this.voices || []).forEach(function (v) { v.stop(); });
-  this.voices = [];
-};
+/* ---------- drawing a slip ---------- */
 
-// Redraws everything inside the host, e.g. after a change of width or
-// mode; the conclusions and marks are state, so they come back.
-ConclusionStack.prototype.build = function () {
-  var self = this;
-  this.land(false);
-  this.stop(); this.clearTap();
-  clearTimeout(this.settleTimer);
-  this.host.classList.toggle('tl-cs-practice', this.o.mode !== 'lecture');
-  this.host.innerHTML = '<div class="tl-cs-clip" aria-hidden="true"></div>';
-  this.scroller = document.createElement('div'); this.scroller.className = 'tl-cs-scroll';
-  this.host.appendChild(this.scroller);
-  this.list = document.createElement('div'); this.list.className = 'tl-cs-list'; this.list.setAttribute('role', 'list');
-  this.scroller.appendChild(this.list);
-  this.thread = document.createElementNS(ConclusionStack.SVG, 'svg'); this.thread.setAttribute('class', 'tl-cs-thread'); this.thread.setAttribute('aria-hidden', 'true');
-  this.list.appendChild(this.thread);
-  this.count = document.createElement('div'); this.count.className = 'tl-cs-hidden-count'; this.count.setAttribute('aria-hidden', 'true');
-  this.host.appendChild(this.count);
-  this.over = document.createElement('div'); this.over.className = 'tl-cs-over';
-  this.host.appendChild(this.over);
-  this.scroller.addEventListener('scroll', function () { self.showHidden(); }, { passive: true });
-  this.slipEls = {}; this.staffs = {}; this.leaving = {}; this.shape = '';
-  this.render(false);
-  this.toEnd(false);
-};
-
-// Which conclusion is the newest and which are earlier strips, how deep.
-ConclusionStack.prototype.layout = function () {
-  var strips = this.order.slice(0, -1);
-  return { strips: strips, fresh: this.order.length ? this.order[this.order.length - 1] : null };
-};
-
-// What decides a slip's size: its kind, depth and the stack's width.
-ConclusionStack.prototype.sizeKey = function (el) {
-  return el.classList.contains('tl-cs-fresh') + ':' + el.style.getPropertyValue('--d') + ':' + this.narrow;
-};
-
-// The height a slip will have once its glides end: a copy styled the same
-// way, laid out out of sight with nothing gliding.
-ConclusionStack.prototype.measure = function (el) {
-  var copy = el.cloneNode(true);
-  copy.classList.add('tl-cs-probe');
-  this.list.appendChild(copy);
-  var h = copy.offsetHeight;
-  copy.remove();
-  return h;
-};
-
-// Brings the drawing to the state. Slips already on screen are kept and
-// restyled, so their sizes and places glide (the height of the paper too,
-// toward the height it will end with); new ones grow in, removed ones
-// flatten out; the one just pushed flies in when the push said where it
-// comes from. Unanimated, it simply draws the state.
-ConclusionStack.prototype.render = function (animated) {
-  var self = this, C = ConclusionStack, move = animated && !C.still();
-  var before = {};
-  if (move) Object.keys(this.slipEls).forEach(function (id) { var el = self.slipEls[id]; before[id] = { key: self.sizeKey(el), h: el.offsetHeight }; });
-  if (!move) this.host.classList.add('tl-cs-still');
-  this.narrow = this.host.clientWidth < C.NARROW_PX;
-  this.host.classList.toggle('tl-cs-narrow', this.narrow);
-  var L = this.layout(), want = [], grown = [];
-  var plan = L.strips.map(function (id, k) { return { id: id, kind: 'strip', depth: Math.min(3, L.strips.length - k) }; });
-  if (L.fresh) plan.push({ id: L.fresh, kind: 'fresh', depth: 0 });
-  var ids = plan.map(function (p) { return p.id; });
-  Object.keys(this.slipEls).forEach(function (id) { if (ids.indexOf(id) < 0) { self.leave(self.slipEls[id], move); delete self.slipEls[id]; } });
-  plan.forEach(function (p) {
-    var el = self.slipEls[p.id];
-    if (!el && self.leaving[p.id]) { el = self.leaving[p.id]; delete self.leaving[p.id]; if (el._anim) el._anim.cancel(); el.classList.remove('tl-cs-leaving'); el.style.overflow = ''; grown.push(el); }
-    if (!el) { el = self.slip(p.id); grown.push(el); }
-    self.slipEls[p.id] = el;
-    self.dress(el, p.id, p.kind, p.depth);
-    want.push(el);
-  });
-  this.place(want);
-  this.live().forEach(function (el) { el.tabIndex = -1; });
-  var slips = this.live();
-  if (slips.length) slips[slips.length - 1].tabIndex = 0;
-  this.applyMasks(false);
-  this.apply();
-  var entering = this.entering; this.entering = null;
-  var flyFrom = move ? this.flyFrom : null; this.flyFrom = null;
-  var shape = want.map(function (el) { return el.dataset.id + ':' + el.className + ':' + el.style.getPropertyValue('--d'); }).join('|') + '|' + this.narrow;
-  var changed = shape !== this.shape; this.shape = shape;
-  if (move) {
-    plan.forEach(function (p) {
-      var el = self.slipEls[p.id], b = before[p.id];
-      if (!b || grown.indexOf(el) >= 0 || b.key === self.sizeKey(el)) return;
-      var h = self.measure(el);
-      if (Math.abs(h - b.h) > .5) el.animate([{ height: b.h + 'px' }, { height: h + 'px' }], { duration: C.MOVE_MS, easing: C.EASE });
-    });
-    grown.forEach(function (el) {
-      var isNew = !!entering && el.dataset.id === entering;
-      self.grow(el, isNew, isNew ? flyFrom : null);
-    });
-  }
-  clearTimeout(this.settleTimer);
-  if (move && changed) {
-    this.thread.classList.add('tl-cs-moving');
-    this.settleTimer = setTimeout(function () { self.drawThread(!!entering); self.thread.classList.remove('tl-cs-moving'); self.placeCaption(false); self.showHidden(); }, flyFrom ? C.FLY_MS + 60 : C.SETTLE_MS);
-  } else {
-    this.drawThread(false); this.thread.classList.remove('tl-cs-moving');
-    this.placeCaption(false);
-  }
-  this.showHidden();
-  if (!move) requestAnimationFrame(function () { requestAnimationFrame(function () { self.host.classList.remove('tl-cs-still'); }); });
-};
-
-// Puts the wanted slips in order after the thread, leaving slips that are
-// flattening out where they are and moving nothing that is already in
-// place, so no slip loses its glide.
-ConclusionStack.prototype.place = function (want) {
-  var list = this.list, node = this.thread.nextSibling;
-  want.forEach(function (el) {
-    while (node && node !== el && node.classList.contains('tl-cs-leaving')) node = node.nextSibling;
-    if (node === el) { node = node.nextSibling; return; }
-    list.insertBefore(el, node);
-  });
-};
-
-// A slip leaving: it flattens and fades where it is, then goes.
-ConclusionStack.prototype.leave = function (el, move) {
-  var self = this, id = el.dataset.id;
-  el.classList.add('tl-cs-leaving'); el.tabIndex = -1;
-  if (!move) { el.remove(); return; }
-  if (id) this.leaving[id] = el;
-  var cs = getComputedStyle(el);
-  el.style.overflow = 'hidden';
-  el._anim = el.animate([
-    { height: el.offsetHeight + 'px', minHeight: cs.minHeight, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, opacity: 1 },
-    { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 }
-  ], { duration: ConclusionStack.MOVE_MS, easing: ConclusionStack.EASE, fill: 'forwards' });
-  el._anim.onfinish = function () { if (el.classList.contains('tl-cs-leaving')) { el.remove(); if (id && self.leaving[id] === el) delete self.leaving[id]; } };
-};
-
-// A slip joining: its paper grows from nothing to its own height over the
-// same time as everything else moves, while the stack scrolls along so it
-// comes into view. The conclusion just pushed then either flies in from
-// where it was reached, or has its ink settle in a moment later; the
-// answer's seal stamps last.
-ConclusionStack.prototype.grow = function (el, isNew, from) {
-  var C = ConclusionStack, cs = getComputedStyle(el);
-  var to = { height: el.offsetHeight + 'px', minHeight: cs.minHeight, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, marginTop: cs.marginTop, opacity: 1 };
-  var fromFrame = { height: '0px', minHeight: '0px', paddingTop: '0px', paddingBottom: '0px', marginTop: '0px', opacity: 0 };
-  el.style.overflow = 'hidden';
-  el._anim = el.animate([fromFrame, to], { duration: C.MOVE_MS, easing: C.EASE, fill: 'backwards' });
-  el._anim.onfinish = function () { el.style.overflow = ''; };
-  if (!isNew) return;
-  this.toEnd(true);
-  if (from) { this.fly(el, from); return; }
-  var body = el.querySelector('.tl-cs-body');
-  if (body) body.animate([{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(2px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: C.INK_MS, delay: C.INK_DELAY_MS, easing: C.EASE, fill: 'backwards' });
-  this.stamp(el, C.INK_DELAY_MS + C.INK_MS - 120);
-};
-
-// Scrolls so the newest slip is in view: at once, or gliding with the
-// push, following the stack's growing height frame by frame.
-ConclusionStack.prototype.toEnd = function (animated) {
-  var self = this, sc = this.scroller, C = ConclusionStack;
-  cancelAnimationFrame(this.scrollRaf);
-  if (!animated || C.still()) { sc.scrollTop = sc.scrollHeight; this.showHidden(); return; }
-  var start = sc.scrollTop, t0 = performance.now();
-  var frame = function (now) {
-    var t = Math.min(1, (now - t0) / C.MOVE_MS), end = Math.max(0, sc.scrollHeight - sc.clientHeight);
-    sc.scrollTop = start + (end - start) * C.ease(t);
-    if (t < 1) self.scrollRaf = requestAnimationFrame(frame); else self.showHidden();
-  };
-  this.scrollRaf = requestAnimationFrame(frame);
-};
-
-// Scrolls the least it takes for a slip to be wholly in view.
-ConclusionStack.prototype.showSlip = function (el) {
-  var sc = this.scroller, top = el.offsetTop, bottom = top + el.offsetHeight;
-  if (top < sc.scrollTop) sc.scrollTop = top - 4;
-  else if (bottom > sc.scrollTop + sc.clientHeight) sc.scrollTop = bottom - sc.clientHeight + 4;
-};
-
-// The fade at the top and the tag with how many slips are hidden above.
-ConclusionStack.prototype.showHidden = function () {
-  var sc = this.scroller, top = sc.scrollTop, n = 0;
-  this.live().forEach(function (el) { if (el.offsetTop + el.offsetHeight / 2 < top) n++; });
-  sc.classList.toggle('tl-cs-above', top > 2);
-  this.count.innerHTML = n ? ConclusionStack.UP + n : '';
-  this.count.classList.toggle('on', n > 0);
-};
-
-// The answer's seal stamps onto its slip.
-ConclusionStack.prototype.stamp = function (el, delay) {
-  var seal = el.querySelector('.tl-cs-seal');
-  if (seal) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, delay: delay, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
-};
-
-// The slip just pushed flies in from a place on screen (a rect in screen
-// pixels, where the act reached it). The slip itself stays unseen while a
-// lifted copy rises from the middle of that place and travels on a
-// shallow bow to the slip's own place, which may still be moving as the
-// stack makes room and scrolls; places are read on screen every frame and
-// worked out in the stack's own pixels, so a stage scaled to fit the
-// screen does not throw the flight off.
-ConclusionStack.prototype.fly = function (el, from) {
-  var self = this, C = ConclusionStack, host = this.host;
-  this.land(false);
-  var k = this.k(), hr = host.getBoundingClientRect();
-  var sx = (from.left + from.width / 2 - hr.left) / k, sy = (from.top + from.height / 2 - hr.top) / k;
-  el.classList.add('tl-cs-landing');
-  var flyer = el.cloneNode(true);
-  flyer.classList.remove('tl-cs-landing'); flyer.classList.add('tl-cs-flyer');
-  flyer.removeAttribute('role'); flyer.removeAttribute('tabindex'); flyer.removeAttribute('data-id');
-  flyer.setAttribute('aria-hidden', 'true');
-  var fw = el.offsetWidth;
-  flyer.style.width = fw + 'px';
-  flyer.style.opacity = '0';
-  this.over.appendChild(flyer);
-  var fh = flyer.offsetHeight, t0 = performance.now();
-  var f = { el: el, flyer: flyer, raf: 0 };
-  this.flight = f;
-  var at = function (t) {
-    var e = C.ease(t), kk = self.k(), h = host.getBoundingClientRect(), r = el.getBoundingClientRect();
-    var tx = (r.left - h.left) / kk + fw / 2, ty = (r.top - h.top) / kk + fh / 2;
-    var dx = tx - sx, dy = ty - sy, dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    var nx = -dy / dist, ny = dx / dist;
-    if (nx < 0) { nx = -nx; ny = -ny; }
-    var bow = Math.min(C.ARC_MAX, dist * C.ARC) * Math.sin(Math.PI * e);
-    var cx = sx + dx * e + nx * bow, cy = sy + dy * e + ny * bow;
-    flyer.style.transform = 'translate(' + (cx - fw / 2).toFixed(1) + 'px,' + (cy - fh / 2).toFixed(1) + 'px) scale(' + (.9 + .1 * e).toFixed(4) + ')';
-    flyer.style.opacity = String(Math.min(1, t / C.FLY_FADE));
-  };
-  at(0);
-  var frame = function (now) {
-    if (self.flight !== f) return;
-    var t = Math.min(1, (now - t0) / C.FLY_MS);
-    at(t);
-    if (t < 1) f.raf = requestAnimationFrame(frame); else self.land(true);
-  };
-  f.raf = requestAnimationFrame(frame);
-};
-
-// Ends a flight: the copy goes and the slip shows where it landed; on a
-// real landing the answer's seal stamps now.
-ConclusionStack.prototype.land = function (landed) {
-  var f = this.flight; if (!f) return;
-  this.flight = null;
-  cancelAnimationFrame(f.raf);
-  f.flyer.remove();
-  f.el.classList.remove('tl-cs-landing');
-  if (landed) this.stamp(f.el, 0);
-};
-
-// One conclusion as a slip: its step number (a seal for the answer), then
-// its parts in a row that wraps by words, and a second-language line
-// under them.
+// One conclusion as a slip: its step number (a seal for the answer), the
+// steps it is built on as rings on its top edge, then its parts in a row
+// that wraps by words, a second-language line under them.
 ConclusionStack.prototype.slip = function (id) {
-  var self = this, it = this.item(id);
+  var self = this, it = this.item(id), n = this.order.indexOf(id) + 1;
   var el = document.createElement('div');
-  el.className = 'tl-cs-slip';
-  el.dataset.id = id; el.tabIndex = -1; el.setAttribute('role', 'listitem');
-  el.innerHTML = (it.final ? '<span class="tl-cs-seal" aria-hidden="true"><span>∴</span></span>' : '<span class="tl-cs-num" aria-hidden="true"></span>') + '<div class="tl-cs-body"></div>';
+  el.className = 'tl-cs-slip' + (it.final ? ' tl-cs-final' : '');
+  el.dataset.id = id; el.setAttribute('role', 'listitem');
+  var refs = this.known(it.from).filter(function (f) { return f !== id; }).map(function (f) { return self.order.indexOf(f) + 1; });
+  el.innerHTML = (refs.length ? '<span class="tl-cs-refs" aria-hidden="true">' + refs.map(function (r) { return '<span class="tl-cs-ref">' + r + '</span>'; }).join('') + '</span>' : '') +
+    (it.final ? '<span class="tl-cs-seal" aria-hidden="true"><span>∴</span></span>' : '<span class="tl-cs-num" aria-hidden="true">' + n + '</span>') + '<div class="tl-cs-body"></div>';
   var body = el.querySelector('.tl-cs-body');
-  this.staffs[id] = [];
   (it.parts || []).forEach(function (p) {
-    if (p.abc) { self.drawStaff(id, p.abc, body); return; }
+    if (p.abc) { body.appendChild(self.staff(p.abc)); return; }
     var s = document.createElement('span');
     if (p.op) { s.className = 'tl-cs-op'; s.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true">' + (ConclusionStack.OPS[p.op] || '') + '</svg>'; }
     else if (p.gloss) { s.className = 'tl-cs-gloss'; s.setAttribute('lang', 'en'); s.innerHTML = ConclusionStack.inline(p.gloss); }
@@ -723,31 +363,18 @@ ConclusionStack.prototype.slip = function (id) {
     }
     body.appendChild(s);
   });
+  el.setAttribute('aria-label', (it.final ? '答案：' : '第 ' + n + ' 步：') + ConclusionStack.words(it));
   return el;
 };
 
-// Styles a slip for its place: the newest or an earlier one, how deep in
-// the stack, its step number and the size of its staves. Changes glide.
-ConclusionStack.prototype.dress = function (el, id, kind, depth) {
-  var it = this.item(id), K = ConclusionStack.STAFF_SCALE[kind === 'fresh' ? 'fresh' : this.narrow ? 'narrow' : 'strip'];
-  el.classList.toggle('tl-cs-fresh', kind === 'fresh');
-  el.classList.toggle('tl-cs-final', !!it.final);
-  el.style.setProperty('--d', String(depth));
-  var num = el.querySelector('.tl-cs-num'); if (num) num.textContent = String(this.order.indexOf(id) + 1);
-  (this.staffs[id] || []).forEach(function (st) { st.svg.style.width = (st.w * K).toFixed(1) + 'px'; });
-};
-
-// Draws a part's ABC on a short stave cropped to what is drawn (clef, key
-// signature, time signature, notes; not the bare stave lines). Its width
-// is set by the slip it is on; it never grows wider than the slip. Keeps
-// the notes for playback.
-ConclusionStack.prototype.drawStaff = function (id, abc, body) {
+// A part's ABC on a short stave cropped to what is drawn (clef, key and
+// time signature, notes; not the bare stave lines).
+ConclusionStack.prototype.staff = function (abc) {
   var holder = document.createElement('span'); holder.className = 'tl-cs-staff';
-  body.appendChild(holder);
   var box = document.createElement('div');
   box.style.cssText = 'position:absolute;left:-9999px;top:0;width:700px;visibility:hidden';
   document.body.appendChild(box);
-  var vis = ABCJS.renderAbc(box, ConclusionStack.tune(abc), { add_classes: true, staffwidth: 560, paddingleft: 0, paddingright: 0, paddingtop: 0, paddingbottom: 0 })[0];
+  ABCJS.renderAbc(box, ConclusionStack.tune(abc), { add_classes: true, staffwidth: 560, paddingleft: 0, paddingright: 0, paddingtop: 0, paddingbottom: 0 });
   var svg = box.querySelector('svg');
   var all = svg.getBBox(), right = 0;
   svg.querySelectorAll('path, text').forEach(function (p) {
@@ -759,458 +386,361 @@ ConclusionStack.prototype.drawStaff = function (id, abc, body) {
   svg.setAttribute('viewBox', '0 ' + y0 + ' ' + w + ' ' + h);
   svg.removeAttribute('width'); svg.removeAttribute('height');
   svg.removeAttribute('style'); svg.setAttribute('aria-hidden', 'true');
+  svg.style.width = (w * .8).toFixed(1) + 'px';
   holder.appendChild(svg);
   box.remove();
-  this.staffs[id].push({ svg: svg, w: w, notes: this.collect(vis) });
+  return holder;
 };
 
-// The notes of a snippet in order with their onsets in whole notes,
-// pitches (key signature and accidentals within the bar applied), grace
-// notes and ornament, and the drawn shapes to light while they sound.
-ConclusionStack.prototype.collect = function (vis) {
-  var C = ConclusionStack, out = [], t = 0, bar = {};
-  var keyOf = function (k) { var m = {}; ((k && k.accidentals) || []).forEach(function (a) { m[a.note.toUpperCase()] = a.acc; }); return m; };
-  var key = {}; try { key = keyOf(vis.getKeySignature()); } catch (e) { key = {}; }
-  var info = function (p, within) {
-    var letter = C.LETTERS[((p.pitch % 7) + 7) % 7], slot = letter + p.pitch;
-    if (within && p.accidental) within[slot] = p.accidental;
-    var acc = p.accidental || (within && within[slot]) || key[letter] || null;
-    return 60 + 12 * Math.floor(p.pitch / 7) + C.STEP[letter] + (acc ? C.SHIFT[acc] : 0);
-  };
-  (vis.lines || []).forEach(function (line) {
-    var staff = (line.staff || [])[0]; if (!staff) return;
-    ((staff.voices || [])[0] || []).forEach(function (el) {
-      if (el.el_type === 'bar') { bar = {}; return; }
-      if (el.el_type !== 'note') return;
-      var d = el.duration || 0;
-      if (el.rest || !el.pitches) { t += d; return; }
-      var shapes = ((el.abselem && el.abselem.elemset) || []).filter(function (x) { return x && x.getBBox; });
-      var pitch = el.pitches[0];
-      out.push({
-        t: t, d: d, shapes: shapes,
-        midis: el.pitches.map(function (p) { return info(p, bar); }),
-        up: info({ pitch: pitch.pitch + 1 }, null), down: info({ pitch: pitch.pitch - 1 }, null),
-        graces: (el.gracenotes || []).map(function (g) { return { midi: info(g, null), crushed: !!g.acciaccatura }; }),
-        ornament: (el.decoration || []).filter(function (x) { return /trill|turn|mordent|pralltriller/.test(x); })[0] || null
-      });
-      t += d;
-    });
+/* ---------- the wheel ---------- */
+
+// Reads the board's size: which way the wheel turns, how wide a slip is,
+// and each slip's length along the wheel at full size.
+ConclusionStack.prototype.measure = function () {
+  var self = this, C = ConclusionStack, v = this.view, W = v.clientWidth, H = v.clientHeight;
+  if (!W || !H) return;
+  this.W = W; this.H = H;
+  this.axis = W > H * C.SIDEWAYS ? 'x' : 'y';
+  this.host.classList.toggle('tl-cs-x', this.axis === 'x');
+  this.host.classList.toggle('tl-cs-y', this.axis === 'y');
+  this.w = this.axis === 'y' ? Math.min(C.MAX_W, W - 2 * C.PAD) : Math.min(C.X_W, Math.round(W * .62));
+  this.order.forEach(function (id) {
+    var el = self.els[id];
+    el.style.width = self.w + 'px';
+    var h = el.offsetHeight;
+    var fit = self.axis === 'x' ? Math.min(1, (H - 2 * 6) / h) : Math.min(1, (H * .7) / h);
+    self.size[id] = { len: self.axis === 'y' ? h : self.w, cross: self.axis === 'y' ? self.w : h, fit: fit };
   });
+};
+
+// Where every slip stands for a wheel position p (a conclusion's index,
+// between two while it turns): the focus at the middle, each neighbour
+// packed against the next by its shrunken length.
+ConclusionStack.prototype.geometry = function (p) {
+  var self = this, C = ConclusionStack, n = this.order.length, out = [];
+  if (!n || !this.W) return out;
+  this.order.forEach(function (id, i) {
+    var sz = self.size[id], el = self.els[id], g = el._grow === undefined ? 1 : el._grow;
+    if (!sz) { self.measure(); sz = self.size[id]; }
+    var s = sz.fit * C.table(C.SCALE, i - p);
+    out.push({ id: id, el: el, sz: sz, s: s * (.85 + .15 * g), ext: sz.len * s * g, gap: C.GAP * s * g, a: C.table(C.ALPHA, i - p) * g });
+  });
+  var D = function (i) { return (out[i].ext + out[i + 1].ext) / 2 + (out[i].gap + out[i + 1].gap) / 2; };
+  var mid = (this.axis === 'y' ? this.H : this.W) / 2;
+  var f = Math.max(0, Math.min(n - 1, Math.floor(p))), t = p - f;
+  var step = t >= 0 && f < n - 1 ? D(f) : out[f].ext + out[f].gap;
+  out[f].c = mid - t * step;
+  for (var i = f + 1; i < n; i++) out[i].c = out[i - 1].c + D(i - 1);
+  for (var j = f - 1; j >= 0; j--) out[j].c = out[j + 1].c - D(j);
   return out;
 };
 
-// How a snippet sounds, in seconds from its start: each note at the
-// stack's tempo, ornaments and grace notes played out the way the other
-// etude components play them (a semiquaver of the beat each).
-ConclusionStack.prototype.sequence = function (notes) {
-  var q = 60 / this.o.tempo, out = [], end = 0;
-  notes.forEach(function (n) {
-    var at = n.t * 4 * q, len = n.d * 4 * q, unit = Math.min(q / 4, len / 4), main = n.midis;
-    var push = function (midis, s, d) { out.push({ midis: midis, at: s, dur: Math.max(.06, d), shapes: n.shapes }); };
-    if (n.ornament === 'trill') {
-      var u = unit / 2, s = at, i = 0;
-      while (s + u < at + len - unit) { push([i % 2 ? n.up : main[0]], s, u); s += u; i++; }
-      push(main, s, at + len - s);
-    } else if (n.ornament === 'turn') {
-      [n.up, main[0], n.down].forEach(function (m, i) { push([m], at + i * len / 4, len / 4); });
-      push(main, at + 3 * len / 4, len / 4);
-    } else if (/mordent|pralltriller/.test(n.ornament || '')) {
-      var other = /upper|prall/.test(n.ornament) ? n.up : n.down;
-      push([main[0]], at, unit); push([other], at + unit, unit); push(main, at + 2 * unit, len - 2 * unit);
-    } else if (n.graces.length) {
-      var g = n.graces[0];
-      if (g.crushed) { push([g.midi], Math.max(0, at - .06), .06); push(main, at, len); }
-      else { push([g.midi], at, len / 2); push(main, at + len / 2, len / 2); }
-    } else push(main, at, len);
-    end = Math.max(end, at + len);
+// Puts every slip where it stands now; the nearest the focus paints on top.
+ConclusionStack.prototype.frame = function () {
+  var self = this, G = this.geometry(this.p), fi = this.focusIndex(), lit = this.held.concat(this.flash);
+  G.forEach(function (g, i) {
+    var el = g.el, len = g.sz.len, cross = g.sz.cross;
+    var dim = self.spot && self.spot.indexOf(g.id) < 0 ? .35 : 1;
+    var x = self.axis === 'y' ? (self.W - cross) / 2 : g.c - len / 2;
+    var y = self.axis === 'y' ? g.c - len / 2 : (self.H - cross) / 2;
+    el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) scale(' + g.s.toFixed(4) + ')';
+    el.style.opacity = (g.a * dim).toFixed(3);
+    el.style.visibility = g.a < .02 ? 'hidden' : '';
+    el.style.zIndex = String(100 - Math.round(Math.abs(i - self.p) * 10));
+    el.classList.toggle('tl-cs-focus', i === fi);
+    el.classList.toggle('tl-lit', lit.indexOf(g.id) >= 0);
   });
-  return { steps: out, length: end };
 };
 
-// The thread from the conclusions the newest one builds on: a dot at
-// each, down the left margin, into the newest. Drawn once the slips stand
-// still.
-ConclusionStack.prototype.drawThread = function (animated) {
-  var self = this, L = this.layout(), svg = this.thread;
-  svg.innerHTML = '';
-  if (!L.fresh || !this.slipEls[L.fresh]) return;
-  var from = this.known(this.item(L.fresh).from).filter(function (id) { return id !== L.fresh && self.slipEls[id]; });
-  if (!from.length) return;
-  var mid = function (el) { return el.offsetTop + Math.min(el.offsetHeight / 2, 22); };
-  var to = this.slipEls[L.fresh], ty = to.offsetTop + Math.min(to.offsetHeight / 2, 30), tx = to.offsetLeft, gx = 8;
-  var ends = from.map(function (id) { var el = self.slipEls[id]; return { y: mid(el), x: el.offsetLeft }; });
-  var top = Math.min.apply(null, ends.map(function (e) { return e.y; }));
-  var draw = animated ? ' class="tl-cs-draw"' : '', html = '';
-  ends.forEach(function (e) { html += '<path' + draw + ' pathLength="1" d="M' + (e.x - 1) + ' ' + e.y + 'H' + gx + '"/><circle' + (animated ? ' class="tl-cs-dot"' : '') + ' cx="' + (e.x - 1) + '" cy="' + e.y + '" r="2.8"/>'; });
-  html += '<path' + draw + ' pathLength="1" d="M' + gx + ' ' + top + 'V' + ty + 'H' + (tx - 2) + '"/>';
-  html += '<path' + (animated ? ' class="tl-cs-tip"' : '') + ' d="M' + (tx - 7) + ' ' + (ty - 4) + 'L' + (tx - 2) + ' ' + ty + 'L' + (tx - 7) + ' ' + (ty + 4) + '"/>';
-  svg.innerHTML = html;
+// The wheel's motion, one frame at a time: a glide to a conclusion, a
+// slip growing into its place, a slip flying in.
+ConclusionStack.prototype.kick = function () {
+  var self = this;
+  if (this.raf) return;
+  this.raf = requestAnimationFrame(function tick(now) {
+    self.raf = 0;
+    var busy = false, C = ConclusionStack;
+    if (self.anim) {
+      var a = self.anim, t = Math.min(1, (now - a.t0) / a.ms);
+      self.p = a.from + (a.to - a.from) * C.ease(t);
+      if (t >= 1) self.anim = null; else busy = true;
+    }
+    self.order.forEach(function (id) {
+      var el = self.els[id]; if (el._growT0 === undefined) return;
+      var t = Math.min(1, (now - el._growT0) / C.MOVE_MS);
+      el._grow = C.ease(t);
+      if (t >= 1) { delete el._growT0; delete el._grow; } else busy = true;
+    });
+    self.frame();
+    if (self.flight) { self.flyFrame(now); busy = busy || !!self.flight; }
+    if (busy) self.raf = requestAnimationFrame(tick);
+  });
 };
+ConclusionStack.prototype.glide = function (to, ms) {
+  to = Math.max(0, Math.min(this.last(), to));
+  if (ConclusionStack.still() || Math.abs(to - this.p) < .001) { this.anim = null; this.p = to; this.frame(); return; }
+  this.anim = { from: this.p, to: to, t0: performance.now(), ms: ms || Math.min(620, 260 + 140 * Math.abs(to - this.p)) };
+  this.kick();
+};
+// The distance between two neighbours' middles near the focus, so the
+// wheel follows the hand one for one.
+ConclusionStack.prototype.unit = function () {
+  var G = this.geometry(this.p), f = this.focusIndex();
+  if (G.length < 2) return 80;
+  var a = G[Math.max(0, f - 1)], b = G[Math.min(G.length - 1, Math.max(1, f))];
+  return Math.max(30, Math.abs(b.c - a.c) || 80);
+};
+
+/* ---------- flying in ---------- */
+
+// A lifted copy of the new slip rises from the middle of the place it was
+// reached (a rect in screen pixels) and travels on a shallow bow to the
+// slip's place on the wheel, read on screen every frame while the wheel
+// turns; places are worked out in the stack's own pixels, so a scaled
+// stage does not throw the flight off.
+ConclusionStack.prototype.fly = function (el, from) {
+  var host = this.host, k = this.k(), hr = host.getBoundingClientRect();
+  el.classList.add('tl-cs-landing');
+  var flyer = el.cloneNode(true);
+  flyer.classList.remove('tl-cs-landing', 'tl-cs-focus'); flyer.classList.add('tl-cs-flyer');
+  flyer.removeAttribute('role'); flyer.removeAttribute('data-id'); flyer.removeAttribute('aria-label');
+  flyer.style.cssText = 'width:' + this.w + 'px;opacity:0;z-index:9';
+  this.over.appendChild(flyer);
+  this.flight = { el: el, flyer: flyer, t0: performance.now(), sx: (from.left + from.width / 2 - hr.left) / k, sy: (from.top + from.height / 2 - hr.top) / k, fw: flyer.offsetWidth, fh: flyer.offsetHeight };
+  this.kick();
+};
+ConclusionStack.prototype.k = function () { var r = this.host.getBoundingClientRect(); return r.width / (this.host.offsetWidth || 1) || 1; };
+ConclusionStack.prototype.flyFrame = function (now) {
+  var C = ConclusionStack, f = this.flight, t = Math.min(1, (now - f.t0) / C.FLY_MS), e = C.ease(t);
+  var k = this.k(), h = this.host.getBoundingClientRect(), r = f.el.getBoundingClientRect();
+  var tx = (r.left + r.width / 2 - h.left) / k, ty = (r.top + r.height / 2 - h.top) / k, ts = (r.width / k) / f.fw;
+  var dx = tx - f.sx, dy = ty - f.sy, dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  var nx = -dy / dist, ny = dx / dist;
+  if (nx < 0) { nx = -nx; ny = -ny; }
+  var bow = Math.min(C.ARC_MAX, dist * C.ARC) * Math.sin(Math.PI * e);
+  var cx = f.sx + dx * e + nx * bow, cy = f.sy + dy * e + ny * bow, sc = .9 + (ts - .9) * e;
+  f.flyer.style.transform = 'translate(' + (cx - f.fw / 2).toFixed(1) + 'px,' + (cy - f.fh / 2).toFixed(1) + 'px) scale(' + sc.toFixed(4) + ')';
+  f.flyer.style.opacity = String(Math.min(1, t / C.FLY_FADE));
+  if (t >= 1) this.land(true);
+};
+// Ends a flight: the copy goes and the slip shows where it landed; on a
+// real landing the answer's seal stamps and the steps it is built on
+// light for a moment.
+ConclusionStack.prototype.land = function (landed) {
+  var f = this.flight; if (!f) return;
+  this.flight = null;
+  f.flyer.remove();
+  f.el.classList.remove('tl-cs-landing');
+  if (landed) this.settled(f.el.dataset.id, true);
+};
+ConclusionStack.prototype.settled = function (id, animated) {
+  var self = this, el = this.els[id]; if (!el) return;
+  var seal = el.querySelector('.tl-cs-seal');
+  if (seal && animated && !ConclusionStack.still()) seal.animate([{ transform: 'scale(1.7) rotate(-20deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: 'cubic-bezier(.2, 1.5, .4, 1)', fill: 'backwards' });
+  this.flash = this.known(this.item(id).from).filter(function (f) { return f !== id; });
+  this.frame();
+  clearTimeout(this.flashTimer);
+  this.flashTimer = setTimeout(function () { self.flash = []; self.frame(); }, ConclusionStack.FLASH_MS);
+};
+
+/* ---------- the child's hand ---------- */
+
+ConclusionStack.prototype.pos = function (e) { return this.axis === 'x' ? e.clientX : e.clientY; };
+ConclusionStack.prototype.onDown = function (e) {
+  if (e.button > 0 || !this.order.length) return;
+  this.anim = null;
+  this.press = { x: e.clientX, y: e.clientY, at: this.pos(e), p0: this.p, unit: this.unit(), drag: false, samples: [{ t: performance.now(), v: this.pos(e) }] };
+  try { this.view.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is already gone */ }
+};
+ConclusionStack.prototype.onMove = function (e) {
+  var pr = this.press; if (!pr) return;
+  if (!pr.drag && (Math.abs(e.clientX - pr.x) > ConclusionStack.DRAG_PX || Math.abs(e.clientY - pr.y) > ConclusionStack.DRAG_PX)) { pr.drag = true; this.view.classList.add('tl-cs-grab'); }
+  if (!pr.drag) return;
+  e.preventDefault();
+  var C = ConclusionStack, np = pr.p0 - (this.pos(e) - pr.at) / (pr.unit * this.k()), last = this.last();
+  if (np < 0) np *= C.RUBBER; else if (np > last) np = last + (np - last) * C.RUBBER;
+  this.p = np;
+  pr.samples.push({ t: performance.now(), v: this.pos(e) });
+  if (pr.samples.length > 6) pr.samples.shift();
+  this.frame();
+};
+ConclusionStack.prototype.onUp = function (e) {
+  var pr = this.press; if (!pr) return;
+  this.press = null; this.view.classList.remove('tl-cs-grab');
+  if (!pr.drag) { this.tapAt(e); return; }
+  var s = pr.samples, a = s[0], b = s[s.length - 1], speed = b.t > a.t ? -(b.v - a.v) / (b.t - a.t) / (pr.unit * this.k()) : 0;
+  this.glide(Math.round(this.p + speed * ConclusionStack.FLICK_MS));
+};
+ConclusionStack.prototype.cancelPress = function () {
+  if (!this.press) return;
+  this.press = null; this.view.classList.remove('tl-cs-grab');
+  this.glide(Math.round(this.p));
+};
+ConclusionStack.prototype.onWheel = function (e) {
+  if (!this.order.length) return;
+  e.preventDefault();
+  var self = this, C = ConclusionStack, d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  if (e.deltaMode === 1) d *= 16;
+  this.anim = null;
+  this.p = Math.max(-.3, Math.min(this.last() + .3, this.p + d / C.WHEEL_PX));
+  this.frame();
+  clearTimeout(this.wheelTimer);
+  this.wheelTimer = setTimeout(function () { self.glide(Math.round(self.p)); }, C.WHEEL_IDLE_MS);
+};
+ConclusionStack.prototype.onKey = function (e) {
+  var d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+  if (d) { e.preventDefault(); this.glide(this.focusIndex() + d); return; }
+  if ((e.key === 'Enter' || e.key === ' ') && this.order.length) { e.preventDefault(); this.tap(this.order[this.focusIndex()], null); }
+};
+// A tap goes to the slip under the finger that is nearest the focus; a
+// slip turned out of sight cannot be tapped.
+ConclusionStack.prototype.tapAt = function (e) {
+  var self = this, vr = this.view.getBoundingClientRect(), x = e.clientX, y = e.clientY, best = null, bd = Infinity;
+  if (x >= vr.left && x <= vr.right && y >= vr.top && y <= vr.bottom) {
+    this.order.forEach(function (id, i) {
+      var el = self.els[id];
+      if (el.style.visibility === 'hidden' || parseFloat(el.style.opacity) < .15) return;
+      var r = el.getBoundingClientRect();
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
+      var d = Math.abs(i - self.p); if (d < bd) { bd = d; best = id; }
+    });
+  }
+  if (!best) { this.emit('blankTap', {}); return; }
+  this.tap(best, e);
+};
+ConclusionStack.prototype.tap = function (id, e) {
+  var el = this.els[id], it = this.item(id); if (!el) return;
+  if (this.o.mode !== 'lecture') return;
+  el.classList.add('tl-cs-down'); setTimeout(function () { el.classList.remove('tl-cs-down'); }, 200);
+  if (e) this.ripple(e);
+  this.glide(this.order.indexOf(id));
+  var hidden = !!this.masked[id];
+  this.emit('itemTap', { id: id, step: this.order.indexOf(id) + 1, final: !!it.final, text: hidden ? null : ConclusionStack.words(it), hidden: hidden });
+};
+ConclusionStack.prototype.ripple = function (e) {
+  var rect = this.host.getBoundingClientRect(), k = this.k(), r = document.createElement('div'); r.className = 'tl-cs-ripple';
+  r.style.left = (e.clientX - rect.left) / k + 'px'; r.style.top = (e.clientY - rect.top) / k + 'px';
+  this.over.appendChild(r);
+  setTimeout(function () { r.remove(); }, 600);
+};
+
+/* ---------- masks ---------- */
 
 ConclusionStack.prototype.applyMasks = function (animated) {
   var self = this;
-  Object.keys(this.slipEls).forEach(function (id) {
-    var el = self.slipEls[id], body = el.querySelector('.tl-cs-body'), on = !!self.masked[id];
+  this.order.forEach(function (id) {
+    var el = self.els[id], body = el.querySelector('.tl-cs-body'), on = !!self.masked[id];
     var cover = body.querySelector(':scope > .tl-cs-cover');
     if (on && !cover) {
       cover = document.createElement('span'); cover.className = 'tl-cs-cover'; cover.innerHTML = '<span class="tl-cs-q">?</span>';
       body.appendChild(cover); body.classList.add('tl-cs-hidden');
     } else if (!on && cover) {
       body.classList.remove('tl-cs-hidden');
-      if (animated) {
+      if (animated && !ConclusionStack.still()) {
         body.querySelectorAll(':scope > :not(.tl-cs-cover)').forEach(function (c) { c.classList.remove('tl-cs-ink'); void c.offsetWidth; c.classList.add('tl-cs-ink'); });
         cover.classList.add('off'); setTimeout(function () { cover.remove(); }, 480);
       } else cover.remove();
     }
-    el.setAttribute('aria-label', (self.item(id).final ? 'Answer: ' : 'Step ' + (self.order.indexOf(id) + 1) + ': ') + (on ? '未知' : ConclusionStack.words(self.item(id))));
   });
 };
 
-// Applies the marks held in state to the drawn slips: lit (held, the
-// sources of the conclusion just pushed once its thread draws, the one a
-// tap lit) and the spotlight.
-ConclusionStack.prototype.apply = function () {
-  var self = this, lit = this.held.concat(this.flashOn ? this.flash : []); if (this.tapLit) lit.push(this.tapLit);
-  Object.keys(this.slipEls).forEach(function (id) {
-    var el = self.slipEls[id];
-    el.classList.toggle('tl-lit', lit.indexOf(id) >= 0);
-    el.classList.toggle('tl-dim', !!self.spot && self.spot.indexOf(id) < 0);
-  });
-};
+/* ---------- commands ---------- */
 
-// A press on the stack: it becomes a scroll once it moves a few pixels
-// (a finger scrolls natively; a mouse drag scrolls the slips by hand), and
-// a tap only if it ends where it began.
-ConclusionStack.prototype.onDown = function (ev) {
-  this.host.classList.remove('kbd');
-  this.press = { x: ev.clientX, y: ev.clientY, top: this.scroller.scrollTop, mouse: ev.pointerType === 'mouse', drag: false };
-  if (this.press.mouse && ev.button === 0) { try { this.host.setPointerCapture(ev.pointerId); } catch (e) { /* the pointer is already gone */ } }
-};
-ConclusionStack.prototype.onMove = function (ev) {
-  var p = this.press; if (!p) return;
-  var dy = ev.clientY - p.y;
-  if (!p.drag && (Math.abs(dy) > ConclusionStack.DRAG_PX || Math.abs(ev.clientX - p.x) > ConclusionStack.DRAG_PX)) p.drag = true;
-  if (p.drag && p.mouse) { this.scroller.scrollTop = p.top - dy / this.k(); ev.preventDefault(); }
-};
-ConclusionStack.prototype.onUp = function (ev) {
-  var p = this.press; this.press = null;
-  if (!p || p.drag || Math.abs(this.scroller.scrollTop - p.top) > 2) return;
-  // Slips touch each other, so a tap goes to the slip at that height, or
-  // the nearest one within a few pixels; the clip's sides and the margin
-  // under the newest slip are blank.
-  var y = ev.clientY, best = null, dist = Infinity;
-  this.live().forEach(function (el) {
-    var b = el.getBoundingClientRect(), d = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
-    if (d <= dist) { dist = d; best = el; }
-  });
-  if (!best || dist > 6) { this.blankTap(); return; }
-  if (this.o.mode !== 'lecture') return;
-  this.tap(best.dataset.id, ev);
-};
-
-ConclusionStack.prototype.onKey = function (ev) {
-  var cur = ev.target.closest('.tl-cs-slip'); if (!cur) return;
-  var list = this.live(), i = list.indexOf(cur), next = null;
-  if (ev.key === 'ArrowDown') next = list[Math.min(list.length - 1, i + 1)];
-  else if (ev.key === 'ArrowUp') next = list[Math.max(0, i - 1)];
-  else if (ev.key === 'Enter' || ev.key === ' ') {
-    ev.preventDefault();
-    if (this.o.mode === 'lecture') this.tap(cur.dataset.id, null);
-    return;
-  } else if (ev.key === 'Escape') { this.blankTap(); return; }
-  if (!next || next === cur) return;
-  ev.preventDefault();
-  cur.tabIndex = -1; next.tabIndex = 0; this.showSlip(next); next.focus({ preventScroll: true });
-};
-
-ConclusionStack.prototype.tap = function (id, ev) {
-  var self = this, el = this.slipEls[id], it = this.item(id); if (!el) return;
-  this.clearTap();
-  this.tapLit = id;
-  el.classList.add('tl-cs-down'); setTimeout(function () { el.classList.remove('tl-cs-down'); }, 200);
-  if (ev) this.ripple(ev);
-  this.apply();
-  var hidden = !!this.masked[id];
-  if (!hidden && this.audible() && this.staffs[id].length) { this.stop(); this.sound(id); }
-  if (!hidden && it.note) { this.cap = { id: id, html: ConclusionStack.inline(it.note), tapped: true }; this.placeCaption(true); }
-  this.emit('itemTap', { id: id, step: this.order.indexOf(id) + 1, final: !!it.final, text: hidden ? null : ConclusionStack.words(it), hidden: hidden });
-  this.tapTimers.push(setTimeout(function () {
-    self.list.querySelectorAll('.tl-cs-bubble.tl-cs-tapped').forEach(function (b) { b.classList.add('out'); });
-    self.tapLit = null; self.apply();
-  }, ConclusionStack.TAP_FADE_MS));
-  this.tapTimers.push(setTimeout(function () {
-    if (self.cap && self.cap.tapped) { self.cap = null; self.placeCaption(false); }
-  }, ConclusionStack.TAP_FADE_MS + 500));
-};
-
-ConclusionStack.prototype.blankTap = function () {
-  this.clearTap();
-  this.emit('blankTap', {});
-};
-
-ConclusionStack.prototype.clearTap = function () {
-  (this.tapTimers || []).forEach(clearTimeout); this.tapTimers = [];
-  if (this.cap && this.cap.tapped) { this.cap = null; if (this.list) this.placeCaption(false); }
-  if (this.tapLit) { this.tapLit = null; if (this.list) this.apply(); }
-};
-
-ConclusionStack.prototype.ripple = function (ev) {
-  var rect = this.host.getBoundingClientRect(), k = this.k(), r = document.createElement('div'); r.className = 'tl-cs-ripple';
-  r.style.left = (ev.clientX - rect.left) / k + 'px'; r.style.top = (ev.clientY - rect.top) / k + 'px';
-  this.over.appendChild(r);
-  setTimeout(function () { r.remove(); }, 600);
-};
-
-// Sounds the snippets of one conclusion in order, lighting each note as
-// it plays.
-ConclusionStack.prototype.sound = function (id) {
-  var self = this, timers = this.timers, at = 0;
-  var light = function (els, on) { els.forEach(function (e) { e.classList.toggle('tl-cs-sounding', on); }); };
-  this.staffs[id].forEach(function (st) {
-    var seq = self.sequence(st.notes), start = at;
-    seq.steps.forEach(function (s) {
-      s.midis.forEach(function (m) { self.note(m, start + s.at, s.dur, .6); });
-      timers.push(setTimeout(function () { light(s.shapes, true); }, (start + s.at) * 1000));
-      timers.push(setTimeout(function () { light(s.shapes, false); }, (start + s.at + s.dur) * 1000 - 20));
-    });
-    at += seq.length + .35;
-  });
-};
-
-// The caption in state as a dark bubble under its slip, inside the
-// scrolling list so it moves with its slip. Under the newest slip the
-// list makes room for it, and scrolls so it shows; a bubble never covers
-// another conclusion.
-ConclusionStack.prototype.placeCaption = function (animated) {
-  var c = this.cap, el = c && this.slipEls[c.id];
-  this.list.querySelectorAll('.tl-cs-bubble').forEach(function (e) { e.remove(); });
-  if (!el) { this.list.style.paddingBottom = ''; return; }
-  var b = document.createElement('div'); b.innerHTML = c.html;
-  b.className = 'tl-cs-bubble' + (c.tapped ? ' tl-cs-tapped' : '') + (animated ? '' : ' tl-cs-still');
-  this.list.appendChild(b);
-  var body = el.querySelector('.tl-cs-body');
-  var x0 = el.offsetLeft + body.offsetLeft, vx = x0 + Math.min(body.offsetWidth, 160) / 2;
-  var bottom = el.offsetTop + el.offsetHeight, bw = b.offsetWidth, bh = b.offsetHeight, W = this.list.clientWidth;
-  var last = this.live().pop(), listEnd = last ? last.offsetTop + last.offsetHeight : bottom, need = bottom + 6 + bh + 10 - listEnd;
-  this.list.style.paddingBottom = need > 18 ? need + 'px' : '';
-  var left = Math.max(10, Math.min(W - 10 - bw, vx - bw / 2));
-  b.style.left = left + 'px';
-  b.style.top = bottom + 6 + 'px';
-  b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
-  var sc = this.scroller, end = bottom + 6 + bh + 10;
-  if (end > sc.scrollTop + sc.clientHeight) sc.scrollTop = end - sc.clientHeight;
-};
-
-// The conclusion of this act lands on the stack. With opts.from (a rect
-// on screen), it flies there from that place. Once everything has
-// settled, the conclusions it is built on light up for a moment while
-// its thread draws.
+// The conclusion of this act joins the wheel after the others, and the
+// wheel turns to it. With opts.from (a rect on screen) it flies there
+// from that place; without, it grows in its place.
 ConclusionStack.prototype.push = function (id, opts) {
-  var self = this, C = ConclusionStack, from = opts && opts.from;
+  var self = this, from = opts && opts.from;
   if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
-  this.land(false);
-  this.stop(); this.clearTap();
-  this.cap = null;
+  this.land(true);
   this.order.push(id);
-  clearTimeout(this.flashTimer); clearTimeout(this.flashEnd);
-  this.flash = this.known(this.item(id).from).filter(function (f) { return f !== id; });
-  this.flashOn = false;
-  this.entering = id;
-  this.flyFrom = from && from.width >= 0 ? from : null;
-  this.render(true);
-  if (C.still()) this.toEnd(false);
-  var settle = C.still() ? 0 : from ? C.FLY_MS + 60 : C.SETTLE_MS;
-  this.flashTimer = setTimeout(function () { self.flashOn = true; self.apply(); }, settle);
-  this.flashEnd = setTimeout(function () { self.flash = []; self.flashOn = false; self.apply(); }, settle + C.TAP_FADE_MS);
+  var el = this.slip(id);
+  this.els[id] = el; this.view.appendChild(el);
+  this.applyMasks(false);
+  this.measure();
+  if (ConclusionStack.still()) { this.anim = null; this.p = this.last(); this.frame(); this.settled(id, false); return; }
+  if (from && from.width >= 0) this.fly(el, from);
+  else { el._grow = 0; el._growT0 = performance.now(); setTimeout(function () { self.settled(id, true); }, ConclusionStack.MOVE_MS); }
+  this.glide(this.last(), ConclusionStack.MOVE_MS);
 };
-
-// How long a push takes to come to rest, so whoever pushed can wait for it.
+// How long a push takes to come to rest, so whoever pushed can wait.
 ConclusionStack.prototype.pushMs = function (opts) {
   if (ConclusionStack.still()) return 0;
-  return opts && opts.from ? ConclusionStack.FLY_MS + 60 : ConclusionStack.SETTLE_MS;
+  return opts && opts.from ? ConclusionStack.FLY_MS + 60 : ConclusionStack.MOVE_MS + 60;
 };
-
-// Shows exactly these conclusions with no entrance, scrolled to the
-// newest; used when the player goes back a scene, when a lecture is
-// opened again at a scene, or a question is opened again.
+// Shows exactly these conclusions, turned to the last, with no motion;
+// used when the player goes back a scene, skips one, or opens a lecture
+// again at a scene. A flight under way lands at once.
 ConclusionStack.prototype.set = function (ids) {
   var self = this, seen = {};
-  this.land(false);
-  this.stop(); this.clearTap();
-  clearTimeout(this.flashTimer); clearTimeout(this.flashEnd); this.flash = []; this.flashOn = false;
-  this.cap = null; this.entering = null; this.flyFrom = null;
+  this.land(false); this.anim = null;
   this.order = [].concat(ids || []).filter(function (id) { if (!self.o.items[id] || seen[id]) return false; seen[id] = true; return true; });
-  this.held = this.known(this.held); this.spot = this.spot ? this.known(this.spot) : null;
-  if (this.spot && !this.spot.length) this.spot = null;
-  this.render(false);
-  this.toEnd(false);
+  this.view.innerHTML = ''; this.els = {}; this.size = {};
+  this.order.forEach(function (id) { var el = self.slip(id); self.els[id] = el; self.view.appendChild(el); });
+  this.applyMasks(false);
+  this.flash = [];
+  this.measure();
+  this.p = this.last();
+  this.frame();
 };
-
-// Lights earlier conclusions and scrolls the first of them into view.
-ConclusionStack.prototype.highlight = function (ids) {
-  this.held = this.known(ids); this.render(true);
-  var first = this.held[0] && this.slipEls[this.held[0]]; if (first) this.showSlip(first);
-};
-ConclusionStack.prototype.spotlight = function (ids) { var f = this.known(ids); this.spot = f.length ? f : null; this.render(true); };
-ConclusionStack.prototype.caption = function (id, html) { if (!this.slipEls[id]) return; this.cap = { id: id, html: html, tapped: false }; this.placeCaption(true); };
-ConclusionStack.prototype.mask = function (ids) { var self = this; [].concat(ids).forEach(function (id) { if (self.o.items[id]) self.masked[id] = true; }); this.applyMasks(false); };
-// With no argument, reveal() uncovers everything.
-ConclusionStack.prototype.reveal = function (ids) {
-  var self = this;
-  if (ids === undefined) this.masked = {};
-  else [].concat(ids).forEach(function (id) { delete self.masked[id]; });
-  this.applyMasks(true);
-};
-
-// Stops the sound of a tapped conclusion: timers are cleared and every
-// note still queued or sounding is silenced.
+ConclusionStack.prototype.focus = function (id) { var i = this.order.indexOf(id); if (i >= 0) this.glide(i); };
+ConclusionStack.prototype.highlight = function (ids) { this.held = this.known(ids); this.frame(); };
+ConclusionStack.prototype.spotlight = function (ids) { this.spot = ids && ids.length ? this.known(ids) : null; this.frame(); };
+ConclusionStack.prototype.mask = function (ids) { var self = this; [].concat(ids || []).forEach(function (id) { self.masked[id] = true; }); this.applyMasks(false); };
+ConclusionStack.prototype.reveal = function (ids) { var self = this; [].concat(ids || []).forEach(function (id) { delete self.masked[id]; }); this.applyMasks(true); };
+// Stops anything moving: a glide ends where it was going, a flight lands.
 ConclusionStack.prototype.stop = function () {
-  (this.timers || []).forEach(clearTimeout); this.timers = [];
-  this.silence();
-  if (this.list) this.list.querySelectorAll('.tl-cs-sounding').forEach(function (e) { e.classList.remove('tl-cs-sounding'); });
+  if (this.anim) { this.p = this.anim.to; this.anim = null; }
+  this.land(true);
+  this.frame();
 };
-
-ConclusionStack.prototype.clear = function () {
-  this.land(false);
-  this.stop(); this.clearTap();
-  clearTimeout(this.flashTimer); clearTimeout(this.flashEnd);
-  this.order = []; this.masked = {}; this.held = []; this.spot = null; this.cap = null; this.flash = []; this.flashOn = false;
-  this.render(false);
-  this.toEnd(false);
-};
+ConclusionStack.prototype.clear = function () { this.held = []; this.spot = null; this.masked = {}; this.set([]); };
 
 /* ============================================================
-   Assembly: this page plays the role of the player, the workflow and
-   the question file. It holds the conclusions, wires the stack's events
-   to a log, and shows how the sound is doing; the stack calls nothing
-   here directly. A push passes the place of the act's component on the
-   page, the way the player passes the place of the role an act used.
+   Assembly: plays the player on this page. Opens through the loading
+   screen, puts one stack in the wide board and one in the phone strip,
+   sends the workflow's commands from the panel and logs the events.
    ============================================================ */
 (function () {
-  var stateEl = document.getElementById('sound-state');
-  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function () {
-    var s = SoundSource.status();
-    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
-  });
-
-  // The conclusions question files would hold: adapted examples, not
-  // copied exam items, in Chinese with the English under it.
-  var keyItems = {
-    k1: { parts: [{ abc: 'K:Eb\nx' }, { op: '=' }, { text: '3 个降号：B♭ E♭ A♭' }, { gloss: '3 flats: B♭ E♭ A♭' }] },
-    k2: { parts: [{ text: '3 个降号' }, { op: '→' }, { term: 'E♭ major' }, { text: '或' }, { term: 'C minor' }], from: ['k1'] },
-    k3: { parts: [{ abc: 'K:Eb\n=B2' }, { op: '=' }, { text: 'B 还原，C 小调升高的第七级' }, { gloss: 'B♮, the raised 7th of C minor' }], note: 'harmonic minor raises the 7th' },
-    k4: { parts: [{ abc: 'K:Eb\nG B c2' }, { op: '=' }, { text: '停在主音 C 上' }, { gloss: 'ends on the tonic C' }] },
-    ans: { parts: [{ term: 'C minor' }, { text: '（和声小调）' }, { gloss: 'harmonic minor' }], from: ['k2', 'k3', 'k4'], final: true, note: 'B♮ is its leading note' }
+  var ITEMS = {
+    m: { parts: [{ text: '一共 6 个八分音符' }] },
+    g: { parts: [{ text: '三个一组' }, { op: '→' }, { text: '复拍子' }] },
+    i1: { parts: [{ abc: 'M:3/4\nx' }, { text: '分组不对' }] },
+    i2: { parts: [{ abc: 'M:6/8\nx' }, { text: '长度、分组都对' }] },
+    i3: { parts: [{ abc: 'M:5/8\nx' }, { text: '放不下' }] },
+    a: { parts: [{ abc: 'M:6/8\nx' }, { text: '八分之六拍' }], from: ['m', 'g'], final: true }
   };
-  var KEY_STEPS = [
-    { id: 'k1', say: '先看调号：三个降号，B♭、E♭、A♭。' },
-    { id: 'k2', say: '三个降号，可能是 E♭ 大调，也可能是它的关系小调 C 小调。' },
-    { id: 'k3', say: '第二小节出现了 B 还原，这是 C 小调升高的第七级。' },
-    { id: 'k4', say: '旋律最后停在 C 上，C 是主音。' },
-    { id: 'ans', say: '把这三条放在一起，这段旋律是什么调？先想一想。', masked: true }
-  ];
-  var runItems = {
-    i1: { parts: [{ abc: 'L:1/2\n_EG' }, { op: '=' }, { text: '三个音名：三度' }, { gloss: 'E♭ F G: a 3rd' }] },
-    i2: { parts: [{ text: 'E♭ → G' }, { op: '=' }, { text: '4 个半音' }, { gloss: '4 semitones' }] },
-    i3: { parts: [{ text: '三度' }, { op: '+' }, { text: '4 个半音' }, { op: '=' }, { term: 'major' }], from: ['i1', 'i2'] },
-    ia: { parts: [{ abc: 'L:1/2\n[_EG]' }, { op: '=' }, { text: '大三度' }, { gloss: 'major 3rd' }], from: ['i3'], final: true }
-  };
-  var RUN_STEPS = [
-    { id: 'i1', say: '先数音名：E、F、G，三个音名，是三度。' },
-    { id: 'i2', say: '再到键盘上数半音：从 E♭ 到 G，一共四个半音。' },
-    { id: 'i3', say: '三度，又是四个半音，就是大三度。' },
-    { id: 'ia', say: '所以 E♭ 到 G 是大三度。' }
-  ];
-
-  document.body.setAttribute('data-boundary', 'on');
+  var ORDER = ['m', 'g', 'i1', 'i2', 'i3', 'a'];
+  var logEl = document.getElementById('log'), stacks = {};
   window.tlEvents = [];
-  var logEl = document.getElementById('log');
-  var t0 = performance.now();
-  function log(ev) {
-    window.tlEvents.push(ev);
-    var line = document.createElement('div');
-    var t = ((performance.now() - t0) / 1000).toFixed(1);
-    var data = Object.assign({}, ev); delete data.type;
-    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
-    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  function log(where, ev) {
+    var d = document.createElement('div');
+    d.textContent = where + ' → ' + ev.type + (ev.id ? ' ' + ev.id + '（第 ' + ev.step + ' 步' + (ev.final ? '，答案' : '') + '）' : '');
+    logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+    window.tlEvents.push(Object.assign({ where: where }, ev));
   }
-  // Where the act reached its conclusion, as the player would pass it.
-  function placeOf(id) { var r = document.getElementById(id).getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
-
-  var main = new ConclusionStack(document.getElementById('main-stack'), { items: keyItems, sound: SoundSource, onEvent: log });
-  var sub = document.getElementById('subtitle-text');
-  var act = 0;
-  function say(text) { sub.textContent = text; }
-  function goTo(n, how) {
-    act = Math.max(0, Math.min(KEY_STEPS.length, n));
-    if (how === 'fly' || how === 'here') {
-      var s = KEY_STEPS[act - 1];
-      if (s.masked) main.mask(s.id);
-      main.push(s.id, how === 'fly' ? { from: placeOf('main-act') } : null);
-    } else main.set(KEY_STEPS.slice(0, act).map(function (s) { return s.id; }));
-    say(act ? KEY_STEPS[act - 1].say : '点下面的「下一幕」开始。');
-  }
-  var newest = function () { return main.order[main.order.length - 1]; };
-  var commands = {
-    next: function () { if (act < KEY_STEPS.length) goTo(act + 1, 'fly'); },
-    nextHere: function () { if (act < KEY_STEPS.length) goTo(act + 1, 'here'); },
-    back: function () { goTo(act - 1, 'set'); },
-    end: function () { main.mask('ans'); goTo(KEY_STEPS.length, 'set'); },
-    revealAnswer: function () { if (main.order.indexOf('ans') < 0) return; main.reveal('ans'); say('是 C 和声小调：调号是三个降号，B 还原是它的导音，旋律停在主音 C 上。'); },
-    recall: function () { main.highlight(['k1']); },
-    spot: function () { main.spotlight(['k2', 'k3']); },
-    caption: function () { var id = newest(); if (id) main.caption(id, ConclusionStack.inline(keyItems[id].note || ConclusionStack.words(keyItems[id]))); },
-    maskNewest: function () { var id = newest(); if (id) main.mask(id); },
-    revealAll: function () { main.reveal(); },
-    stop: function () { main.stop(); },
-    clear: function () { main.clear(); act = 0; say('点下面的「下一幕」开始。'); }
+  PlayerLoading.need(function (progress) { progress(1, '准备好了'); return Promise.resolve(); });
+  PlayerLoading.onStart(function () {
+    stacks.wide = new ConclusionStack(document.getElementById('board-wide'), { items: ITEMS, onEvent: function (ev) { log('电脑', ev); } });
+    stacks.phone = new ConclusionStack(document.getElementById('board-phone'), { items: ITEMS, onEvent: function (ev) { log('手机', ev); } });
+    window.tlStacks = stacks;
+  });
+  function next(s) { return ORDER.filter(function (id) { return s.order.indexOf(id) < 0; })[0]; }
+  function each(fn) { Object.keys(stacks).forEach(function (k) { fn(stacks[k], k); }); }
+  var CMD = {
+    fly: function () { each(function (s, k) { var id = next(s); if (id) s.push(id, { from: document.getElementById(k === 'wide' ? 'source' : 'source-phone').getBoundingClientRect() }); }); },
+    grow: function () { each(function (s) { var id = next(s); if (id) s.push(id); }); },
+    set2: function () { each(function (s) { s.set(ORDER.slice(0, 2)); }); },
+    lit: function () { each(function (s) { s.highlight(['m']); }); },
+    mask: function () { each(function (s) { s.mask(['a']); }); },
+    reveal: function () { each(function (s) { s.reveal(['a']); }); },
+    focus1: function () { each(function (s) { s.focus('m'); }); },
+    clear: function () { each(function (s) { s.clear(); }); }
   };
-  document.querySelectorAll('[data-cmd]').forEach(function (b) {
-    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
-  });
-
-  var modeBtn = document.getElementById('mode');
-  modeBtn.addEventListener('click', function () {
-    var practice = main.o.mode !== 'practice';
-    main.o.mode = practice ? 'practice' : 'lecture';
-    modeBtn.setAttribute('aria-pressed', String(practice));
-    modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
-    main.build();
-    log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
-  });
-
-  // A whole lecture played through at the pace of its acts, every
-  // conclusion flying up from the act's component.
-  var run = new ConclusionStack(document.getElementById('run-stack'), { items: runItems, sound: SoundSource, onEvent: log });
-  var runSub = document.getElementById('run-sub'), runTimers = [];
-  document.getElementById('run-btn').addEventListener('click', function () {
-    runTimers.forEach(clearTimeout); runTimers = [];
-    run.clear(); runSub.textContent = '';
-    RUN_STEPS.forEach(function (s, i) {
-      runTimers.push(setTimeout(function () { run.push(s.id, { from: placeOf('run-act') }); runSub.textContent = s.say; }, 400 + i * 2800));
-    });
-  });
-
-  window.tlMain = main; window.tlRun = run;
-  window.tlGoTo = goTo;
-
-  var boundaryBtn = document.getElementById('toggle-boundary');
-  boundaryBtn.addEventListener('click', function () {
-    var on = document.body.getAttribute('data-boundary') !== 'on';
-    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
-    boundaryBtn.setAttribute('aria-pressed', String(on));
-  });
-
-  // A rebuild redraws the stack at its new width; conclusions, marks and
-  // masks are state, so they come back.
-  var all = function () { return [main, run]; };
-  var lastW = window.innerWidth, rt = null;
-  window.addEventListener('resize', function () {
-    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
-    clearTimeout(rt);
-    rt = setTimeout(function () { all().forEach(function (c) { c.build(); }); }, 180);
-  });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (c) { c.build(); }); });
+  document.querySelectorAll('[data-cmd]').forEach(function (b) { b.addEventListener('click', function () { CMD[b.getAttribute('data-cmd')](); }); });
+  window.tlCmd = CMD;
+  document.body.setAttribute('data-boundary', 'on');
+  var bb = document.getElementById('boundary');
+  bb.addEventListener('click', function () { var on = document.body.getAttribute('data-boundary') !== 'on'; document.body.setAttribute('data-boundary', on ? 'on' : 'off'); bb.setAttribute('aria-pressed', String(on)); });
 })();
 </script>

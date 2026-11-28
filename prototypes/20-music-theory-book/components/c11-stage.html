@@ -1,0 +1,187 @@
+<title>舞台主题的公共组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<style>
+/* Layout: a mock lecture stage (lit frame) with the stage theme's components where the rhythm workflow puts them: close, question menu and part switch along the top, the question's title over the middle, previous scene, subtitle, next scene and replay along the bottom. Each is outlined with a dashed boundary and its id. The same stage again at phone width. Under them a panel that sends the commands the player sends and logs the events the components emit, and the interface table. */
+:root {
+  --canvas: #f7f4ef; --surface: #ffffff; --line: #ebe6dc; --ink: #161a2b; --ink-soft: #4b5168; --ink-muted: #6a6e7e; --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --lit: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  color-scheme: light;
+}
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 28px max(16px, env(safe-area-inset-right, 0px)) 64px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 72ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.5; min-height: 80px; max-height: 220px; overflow: auto; background: #faf8f4; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.scroll-x { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; }
+code { font-family: var(--mono); font-size: 12px; }
+.note { color: var(--ink-soft); font-size: 14px; }
+
+/* ---------- The mock stage (the player's, not the components') ---------- */
+.stage { position: relative; border-radius: 26px; background: var(--lit); display: grid; grid-template-rows: auto auto minmax(140px, 1fr) auto; min-height: 460px; min-width: 0; box-shadow: 0 20px 50px -24px rgba(40, 24, 10, .5); }
+.phone { width: 100%; max-width: 380px; margin: 0 auto; min-height: 560px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+.row.head { justify-content: center; padding-top: 0; }
+.row.bottom { gap: 12px; padding: 10px 14px 14px; }
+.phone .row { gap: 8px; padding: 8px; }
+.ctl { position: relative; flex: 0 1 auto; display: flex; min-width: 0; }
+.ctl.grow { flex: 1 1 auto; }
+.ctl:has(> [hidden]) { display: none; }
+.middle { display: grid; place-items: center; margin: 0 16px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; }
+body[data-boundary="on"] .ctl { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 16px; }
+body[data-boundary="on"] .ctl::before { content: attr(data-ctl); position: absolute; top: -12px; left: 4px; z-index: 50; font: 700 10px/1 var(--font); color: #fff; background: var(--boundary); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
+</style>
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题</span>
+  <h1>舞台主题的公共组件</h1>
+  <p class="lede">这次确认的是<b>舞台主题的八个公共组件</b>：关闭、换题、小题切换、题目标题、上一幕、字幕、下一幕、重播。每道讲题都有它们，和题目选哪套主题无关，所以单独成一套主题，外形都照字幕条：深色玻璃、暖白的字、紫光、圆形图标按钮，按钮上不写字。它们站在舞台的哪里由流程文件写；它们只收指令、发事件，由播放器接到上一幕、下一幕、换题这些动作上。</p>
+  <div class="toolbar"><button type="button" class="btn" id="boundary">显示组件边界</button></div>
+
+  <section class="stage" id="stage-wide" aria-label="讲题舞台（示意）">
+    <div class="row top"></div><div class="row head"></div><div class="middle">这一幕的组件（示意）</div><div class="row bottom"></div>
+  </section>
+  <section class="panel">
+    <h2>手机宽度</h2>
+    <div class="stage phone" id="stage-phone" aria-label="手机上的讲题舞台（示意）">
+      <div class="row top"></div><div class="row head"></div><div class="middle">这一幕的组件（示意）</div><div class="row bottom"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>模拟播放器：发给组件的指令</h2>
+    <p class="note">字幕的录音在这里是和每句一样长的静音，只为看字幕和按钮怎么动。</p>
+    <div class="toolbar">
+      <button type="button" class="btn" data-cmd="say">说一句</button>
+      <button type="button" class="btn" data-cmd="turn">轮到你了</button>
+      <button type="button" class="btn" data-cmd="open">展开题干</button>
+      <button type="button" class="btn" data-cmd="fold">收起题干</button>
+      <button type="button" class="btn" data-cmd="ready">一幕讲完（下一幕发光）</button>
+      <button type="button" class="btn" data-cmd="hold">等孩子作答（下一幕、后面的小题按不了）</button>
+      <button type="button" class="btn" data-cmd="partb">到小题 (b)</button>
+      <button type="button" class="btn" data-cmd="end">讲完了（下一幕不在了，重播出现）</button>
+      <button type="button" class="btn" data-cmd="again">从头再来</button>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+  </section>
+
+  <section class="panel">
+    <h2>它们的接口</h2>
+    <div class="scroll-x"><table>
+      <tr><th>编号</th><th>名称</th><th>能力接口</th><th>指令</th><th>事件</th></tr>
+      <tr><td><code>close</code></td><td>关闭</td><td>离开 <code>leave</code></td><td>—</td><td><code>leave.press</code></td></tr>
+      <tr><td><code>question-menu</code></td><td>换题</td><td>题目 <code>questions</code></td><td><code>questions.set {items, current}</code></td><td><code>questions.pick {id}</code></td></tr>
+      <tr><td><code>part-switch</code></td><td>小题切换</td><td>小题 <code>parts</code></td><td><code>parts.set {items: [{label, enabled}], current}</code></td><td><code>parts.pick {index}</code></td></tr>
+      <tr><td><code>question-title</code></td><td>题目标题</td><td>标题 <code>title</code></td><td><code>title.set {open}</code>（展开或收起题干）</td><td>—</td></tr>
+      <tr><td><code>scene-prev</code></td><td>上一幕</td><td>往回 <code>back</code></td><td><code>back.set {enabled}</code></td><td><code>back.press</code></td></tr>
+      <tr><td><code>narration</code></td><td>字幕</td><td>旁白 <code>narrate</code></td><td><code>say</code>、<code>turn</code>、<code>flag</code>、<code>pause</code>、<code>resume</code>、<code>seek</code>、<code>rate</code>、<code>mute</code>、<code>set</code>、<code>stop</code>、<code>clear</code>、<code>unlock</code>、<code>whenRunning</code></td><td><code>narrate.lineStart</code>、<code>lineEnd</code>、<code>lineFail</code>、<code>lineRetry</code>、<code>replay</code>、<code>seek</code>、<code>pause</code>、<code>resume</code>、<code>rate</code></td></tr>
+      <tr><td><code>scene-next</code></td><td>下一幕</td><td>往前 <code>forward</code></td><td><code>forward.set {enabled, ready, shown}</code></td><td><code>forward.press</code></td></tr>
+      <tr><td><code>replay</code></td><td>重播</td><td>从头 <code>restart</code></td><td><code>restart.set {shown}</code></td><td><code>restart.press</code></td></tr>
+    </table></div>
+    <p class="note">输入：换题拿到这本书的题目（编号、第几题、标题）；小题切换拿到流程分出的几段（读题、(a)、(b)…）；题目标题拿到题号、标题、题干和原题英文；字幕拿到台词和录音、老师头像、流程打开的按钮（暂停、语速）。外观、动作、窄屏怎么变都写在组件里，共用的玻璃、圆按钮、弹出列表、图标和缓急在主题的共用部分 <code>stage/common.js</code>。</p>
+  </section>
+</main>
+
+<script src="sound.js"></script>
+<script src="registry.js"></script>
+<script src="stage/common.js"></script>
+<script src="stage/close.js"></script>
+<script src="stage/question-menu.js"></script>
+<script src="stage/part-switch.js"></script>
+<script src="stage/question-title.js"></script>
+<script src="stage/scene-prev.js"></script>
+<script src="stage/narration.js"></script>
+<script src="stage/scene-next.js"></script>
+<script src="stage/replay.js"></script>
+<script>
+/* ============================================================
+   Assembly: plays the player on this page. Lays the stage theme's
+   components out the way the rhythm workflow does, gives each its input,
+   sends the player's commands from the panel and logs the events. The
+   subtitle's recordings are silent clips as long as each line.
+   ============================================================ */
+(function () {
+  var LAYOUT = { top: ['close', 'question-menu', 'part-switch'], head: ['question-title'], bottom: ['scene-prev', 'narration', 'scene-next', 'replay'] };
+  var BOOK = [{ id: 'q01', no: '1', title: '判断拍号' }, { id: 'q02', no: '2', title: '数音程' }, { id: 'q03', no: '3', title: '写出音阶' }];
+  var PARTS = ['读题', '(a)', '(b)', '(c)'];
+  var LINES = [
+    { id: 'l1', text: '这道题给了三小节节奏，(a)、(b)、(c)，每一小节都没有写拍号。', s: 3 },
+    { id: 'l2', text: '一共是六个八分音符那么长。', s: 2 },
+    { id: 'l3', text: '现在请你选：(a) 是哪个拍号？在它的框里打勾。', s: 3 }
+  ];
+  var stages = {}, prepared = [], lineAt = 0, logEl = document.getElementById('log');
+  window.stEvents = [];
+
+  function silence(seconds) {
+    var rate = 8000, n = Math.round(rate * seconds), b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+  function log(where, ev) {
+    var d = document.createElement('div');
+    d.textContent = where + ' → ' + ev.name + (ev.id ? ' ' + ev.id : '') + (ev.index !== undefined ? ' ' + ev.index : '') + (ev.value !== undefined ? ' ' + ev.value : '');
+    logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+    window.stEvents.push(Object.assign({ where: where }, ev));
+  }
+  function build(key, el) {
+    var ctl = {};
+    Object.keys(LAYOUT).forEach(function (place) {
+      LAYOUT[place].forEach(function (id) {
+        var def = LessonComponents.get(id), host = document.createElement('div');
+        host.className = 'ctl' + (id === 'narration' ? ' grow' : ''); host.setAttribute('data-ctl', id);
+        el.querySelector('.row.' + place).appendChild(host);
+        var input = {
+          narration: { buttons: ['pause', 'rate'], lines: prepared, portrait: '../player/teacher.webp' },
+          'question-menu': { items: BOOK, current: 'q01' },
+          'part-switch': { items: PARTS.map(function (l) { return { label: l }; }), current: 0 },
+          'question-title': { no: '1', title: '判断拍号', text: '下面每一小节都没有写拍号。给每一小节选出正确的拍号。', gloss: 'Tick the correct time signature for each of these bars.' }
+        }[id] || {};
+        var c = def.create(host, input, {});
+        c.on(function (ev) { log(key === 'wide' ? '电脑' : '手机', ev); });
+        def.interfaces.forEach(function (i) { ctl[i] = c; });
+      });
+    });
+    ctl.back.call('back.set', { enabled: false });
+    return ctl;
+  }
+
+  PlayerLoading.need(function (progress) {
+    return NarrationBar.prepare(LINES.map(function (l) { return { id: l.id, text: l.text, url: silence(l.s) }; }), progress).then(function (lines) { prepared = lines; });
+  });
+  PlayerLoading.onStart(function () {
+    stages.wide = build('wide', document.getElementById('stage-wide'));
+    stages.phone = build('phone', document.getElementById('stage-phone'));
+    window.stStages = stages;
+    Object.keys(stages).forEach(function (k) { stages[k].narrate.unlock(); });
+  });
+  function each(fn) { Object.keys(stages).forEach(function (k) { fn(stages[k]); }); }
+  var CMD = {
+    say: function () { var l = LINES[lineAt++ % LINES.length]; each(function (c) { c.narrate.turn(false); c.narrate.say(l.id); }); },
+    turn: function () { each(function (c) { c.narrate.turn(true); }); },
+    open: function () { each(function (c) { c.title.call('title.set', { open: true }); }); },
+    fold: function () { each(function (c) { c.title.call('title.set', { open: false }); }); },
+    ready: function () { each(function (c) { c.forward.call('forward.set', { enabled: true, ready: true, shown: true }); c.back.call('back.set', { enabled: true }); }); },
+    hold: function () { each(function (c) { c.forward.call('forward.set', { enabled: false, ready: false, shown: true }); c.parts.call('parts.set', { current: 1, items: PARTS.map(function (l, i) { return { label: l, enabled: i <= 1 }; }) }); }); },
+    partb: function () { each(function (c) { c.parts.call('parts.set', { current: 2, items: PARTS.map(function (l, i) { return { label: l, enabled: i <= 2 }; }) }); c.back.call('back.set', { enabled: true }); }); },
+    end: function () { each(function (c) { c.forward.call('forward.set', { shown: false }); c.restart.call('restart.set', { shown: true }); c.narrate.flag('讲完了'); }); },
+    again: function () { each(function (c) { c.forward.call('forward.set', { enabled: true, ready: false, shown: true }); c.restart.call('restart.set', { shown: false }); c.back.call('back.set', { enabled: false }); c.narrate.clear(); c.parts.call('parts.set', { current: 0, items: PARTS.map(function (l) { return { label: l, enabled: true }; }) }); }); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) { b.addEventListener('click', function () { CMD[b.getAttribute('data-cmd')](); }); });
+  window.stCmd = CMD;
+  document.body.setAttribute('data-boundary', 'on');
+  document.getElementById('boundary').addEventListener('click', function () { document.body.setAttribute('data-boundary', document.body.getAttribute('data-boundary') === 'on' ? 'off' : 'on'); });
+})();
+</script>

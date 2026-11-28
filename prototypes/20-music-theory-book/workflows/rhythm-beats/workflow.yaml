@@ -12,8 +12,14 @@ player:
   partEnd: clear-stack
   skip: true
   back: true
-  narration: [pause, replay, rate]
   wrong: [hint, demo]
+
+stage:
+  top: [close, question-menu, part-switch]
+  head: [question-title]
+  bottom: [scene-prev, narration, scene-next, replay]
+  inputs:
+    narration: { buttons: [pause, rate] }
 
 roles:
   stack:
@@ -133,6 +139,7 @@ parts:
 scenes:
   read:
     title: 读题
+    prompt: open
     stage: [material]
     steps:
       - say: read.question

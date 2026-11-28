@@ -1,5 +1,5 @@
 id: q01-time-signatures
-title: 第 1 题 · 判断拍号
+title: 判断拍号
 workflow: rhythm-beats
 theme: etude
 prompt:
@@ -19,8 +19,7 @@ inputs:
       M:none
       L:1/8
       K:C
-      "^(a)"BAG d2B | [K:C clef=bass]"^(b)"D,E, F,G, A,2F, |
-      K:C clef=treble
+      "^(a)"BAG d2B | [K:C clef=bass]"^(b)"D,E, F,G, A,2F, |[K:C clef=treble]
       "^(c)"(3cBA GA |]
 
 lines:
@@ -79,8 +78,8 @@ parts:
       choose.hint: 再想一想：哪个拍号长度对，又是三个八分音符一组？
       choose.demo: 我们一起来看，是八分之六拍。
     conclusions:
-      measure: { parts: [{ text: 一共 6 个八分音符 }, { gloss: 6 quavers in the bar }] }
-      grouping: { parts: [{ text: 三个一组 }, { op: '→' }, { text: 复拍子 }, { gloss: 'grouped 3 + 3: compound time' }] }
+      measure: { parts: [{ text: 一共 6 个八分音符 }] }
+      grouping: { parts: [{ text: 三个一组 }, { op: '→' }, { text: 复拍子 }] }
       answer: { parts: [{ abc: "M:6/8\nK:C\nx" }, { text: 八分之六拍 }], from: [measure, grouping], final: true }
 
   - kind: meter
@@ -129,8 +128,8 @@ parts:
       choose.hint: 先数一共几个八分音符，再看哪个拍号正好装下。
       choose.demo: 我们一起来看，是八分之七拍。
     conclusions:
-      measure: { parts: [{ text: 一共 7 个八分音符 }, { gloss: 7 quavers in the bar }] }
-      grouping: { parts: [{ text: 2 + 2 + 3 }, { op: '→' }, { text: 不规则拍子 }, { gloss: irregular time }] }
+      measure: { parts: [{ text: 一共 7 个八分音符 }] }
+      grouping: { parts: [{ text: 2 + 2 + 3 }, { op: '→' }, { text: 不规则拍子 }] }
       answer: { parts: [{ abc: "M:7/8\nK:C clef=bass\nx" }, { text: 八分之七拍 }], from: [measure, grouping], final: true }
 
   - kind: meter
@@ -178,6 +177,6 @@ parts:
       choose.hint: 三连音只占一个四分音符。一共几个四分音符？
       choose.demo: 我们一起来看，是四分之二拍。
     conclusions:
-      measure: { parts: [{ text: 一共 2 个四分音符 }, { gloss: 2 crotchets in the bar }] }
-      grouping: { parts: [{ text: 三连音 = 1 拍 }, { op: '→' }, { text: 单拍子 }, { gloss: 'a triplet is one beat: simple time' }] }
+      measure: { parts: [{ text: 一共 2 个四分音符 }] }
+      grouping: { parts: [{ text: 三连音 = 1 拍 }, { op: '→' }, { text: 单拍子 }] }
       answer: { parts: [{ abc: "M:2/4\nK:C\nx" }, { text: 四分之二拍 }], from: [measure, grouping], final: true }

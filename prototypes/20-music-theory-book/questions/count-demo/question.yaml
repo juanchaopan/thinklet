@@ -1,5 +1,5 @@
 id: count-demo
-title: 数有几个（示例，不是书里的题）
+title: 数有几个（示例）
 workflow: rhythm-beats
 theme: etude
 prompt:
@@ -40,9 +40,9 @@ parts:
       fill.hint: 数一数尺子上一共亮了几格。
       fill.demo: 是三，我来写给你看。
     conclusions:
-      beat: { parts: [{ term: '9/16' }, { op: '=' }, { text: 3 + 3 + 3 个十六分音符 }, { gloss: 3 + 3 + 3 semiquavers }] }
-      measure: { parts: [{ text: 量出 3 个附点八分音符 }, { gloss: 3 dotted quavers }] }
-      answer: { parts: [{ text: 3 拍 }, { gloss: 3 beats }], from: [beat, measure], final: true }
+      beat: { parts: [{ term: '9/16' }, { op: '=' }, { text: 3 + 3 + 3 个十六分音符 }] }
+      measure: { parts: [{ text: 量出 3 个附点八分音符 }] }
+      answer: { parts: [{ text: 3 拍 }], from: [beat, measure], final: true }
 
   - kind: count
     tag: (b)
@@ -65,5 +65,5 @@ parts:
       fill.hint: 数一数尺子上亮了几格。
       fill.demo: 是六，我来写给你看。
     conclusions:
-      measure: { parts: [{ text: 附点四分音符 }, { op: '=' }, { text: 6 个十六分音符 }, { gloss: 6 semiquavers }] }
+      measure: { parts: [{ text: 附点四分音符 }, { op: '=' }, { text: 6 个十六分音符 }] }
       answer: { parts: [{ text: '6' }], from: [measure], final: true }

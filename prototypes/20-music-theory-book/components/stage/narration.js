@@ -1,32 +1,40 @@
 /* ============================================================
-   Narration bar. The player's own strip along the bottom of a lecture:
-   the teacher's portrait (no name), the line being said as a subtitle
-   with a progress line the child can drag to hear part of this line
-   again, and the child's buttons for this line only: pause or continue,
-   replay this line, and the speed on a vertical slider. Which buttons
-   show is set by the workflow file. There is no way to step to another
-   line or scene: the workflow owns the steps.
+   Subtitle (stage theme). The band along the bottom of a lecture: the
+   teacher's portrait (no name), the line being said as a subtitle with a
+   progress line the child can drag to hear part of this line again, and
+   the child's buttons for this line only: play and pause, and the speed
+   on a vertical slider. Which buttons show is set by the workflow file.
+   It never steps to another line or scene; the stage's scene buttons do.
+
+   The play button: while the line is said it pauses; paused, it goes on;
+   once the line is over (the child's turn, or waiting for the next
+   scene) it says the line again from its start; on a line that could not
+   play it tries again. To hear a line again from its start while it is
+   being said, the child drags the progress line to its left end.
 
    The player tells it which line to say (say returns a promise that
    settles when the line is over), when it is the child's turn (turn),
-   and while the bar is paused the player waits (whenRunning).
-   Dragging the progress line moves within the current line only: while
-   the line is still being said the lecture waits for it to end; after
-   it ended, the line is heard again from there and nothing moves on.
-   A line that cannot play (blocked, broken, not started in 8 seconds,
-   taken away by the system) stays on screen and waits for the child to
-   tap continue; it is never skipped. Muted, lines still play silently
-   so the lecture keeps its pace.
+   and while it is paused the player waits (whenRunning). Dragging the
+   progress line moves within the current line only: while the line is
+   still being said the lecture waits for it to end; after it ended, the
+   line is heard again from there and nothing moves on. A line that
+   cannot play (blocked, broken, not started in 8 seconds, taken away by
+   the system) stays on screen and waits for the child to press play; it
+   is never skipped. Muted, lines still play silently so the lecture
+   keeps its pace.
 
    Each line is a recording played by one HTMLAudioElement, so a slower
-   or faster speed keeps the pitch, and the phone's silent switch does
-   not mute it. The portrait's halo follows a loudness envelope measured
+   or faster speed keeps the pitch, and a phone's silent switch does not
+   mute it. The portrait's halo follows a loudness envelope measured
    when the recordings are prepared.
 
-   Commands: say, turn, flag, pause, resume, replay, seek, rate, mute,
-   set, stop, clear, unlock (the player calls it on the child's touches).
-   Events (via onEvent): lineStart, lineEnd, lineFail, lineRetry,
-   replay, seek, pause, resume, rate.
+   Inputs: buttons (pause, rate), lines [{id, text, url, duration, env}],
+   portrait, rate, muted.
+   Interface: narrate. Commands (methods): say, turn, flag, pause,
+   resume, seek, rate, mute, set, stop, clear, unlock, whenRunning.
+   Events: narrate.lineStart, narrate.lineEnd, narrate.lineFail,
+   narrate.lineRetry, narrate.replay, narrate.seek, narrate.pause,
+   narrate.resume, narrate.rate.
    ============================================================ */
 var NarrationBar = (function () {
   var RATE_MIN = 0.6, RATE_MAX = 1.4, RATE_STEP = 0.05, RATE_SNAP = 0.03;
@@ -39,75 +47,70 @@ var NarrationBar = (function () {
   var MIN_LINES = 2;
   var SILENT = null;
 
+  // The band is a grid: the portrait, the state tags, the subtitle, the
+  // progress line and the buttons. On a wide band the portrait stands on
+  // the left and the buttons on the right of everything; on a narrow one
+  // the subtitle takes the whole width next to a smaller portrait, the
+  // progress line and the buttons share the row under it, and the state
+  // tags sit on the band's top edge.
   var CSS = [
-    '.pl-nb{--nb-glass:rgba(24,18,44,.86);--nb-edge:rgba(255,255,255,.10);--nb-text:#fbf8f3;--nb-soft:rgba(251,248,243,.66);--nb-glow:#a98bff;--nb-btn:#6d3cf0;',
-    'container-type:inline-size;position:relative;font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;color:var(--nb-text)}',
-    '.pl-nb-body{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 14px 12px 12px;border-radius:22px;background:var(--nb-glass);',
-    'box-shadow:0 18px 40px -18px rgba(20,10,40,.7),inset 0 0 0 1px var(--nb-edge);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2)}',
-    '.pl-nb-face{--lv:0;position:relative;width:56px;height:56px;border-radius:50%;flex:none}',
-    '.pl-nb-face::before{content:"";position:absolute;inset:-6px;border-radius:50%;background:radial-gradient(circle,rgba(169,139,255,.75),rgba(169,139,255,0) 70%);opacity:calc(.15 + var(--lv) * .85);transform:scale(calc(.86 + var(--lv) * .22));transition:opacity .08s linear}',
-    '.pl-nb-face img{position:relative;width:100%;height:100%;border-radius:50%;object-fit:cover;background:#3a2f5c;box-shadow:0 0 0 2px rgba(255,255,255,.22)}',
-    '.pl-nb[data-state="turn"] .pl-nb-face::before{animation:pl-nb-breathe 2.4s ease-in-out infinite}',
-    '@keyframes pl-nb-breathe{0%,100%{opacity:.2;transform:scale(.9)}50%{opacity:.95;transform:scale(1.08)}}',
-    '.pl-nb-say{min-width:0;display:grid;gap:6px}',
-    '.pl-nb-meta{display:flex;gap:8px;min-height:20px;align-items:center;flex-wrap:wrap}',
-    '.pl-nb-flag,.pl-nb-mute{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;line-height:1;padding:4px 9px;border-radius:999px;background:rgba(169,139,255,.22);color:#e5dcff}',
-    '.pl-nb-flag[hidden],.pl-nb-mute[hidden]{display:none}',
-    '.pl-nb-flag{animation:pl-nb-pop .35s cubic-bezier(.2,1.5,.4,1) both}',
-    '.pl-nb-flag[data-kind="fail"]{background:rgba(232,110,90,.25);color:#ffd9d0}',
-    '.pl-nb-mute svg{width:14px;height:14px}',
-    '@keyframes pl-nb-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}',
-    '.pl-nb-lines{position:relative;overflow:hidden;transition:height .52s cubic-bezier(.6,0,.25,1)}',
-    '.pl-nb-lines.pl-nb-still{transition:none}',
-    '.pl-nb-line{margin:0;font-size:17px;line-height:' + LINE_HEIGHT + ';letter-spacing:.01em;text-wrap:pretty}',
-    '.pl-nb-line.pl-nb-enter{animation:pl-nb-up .52s cubic-bezier(.6,0,.25,1) both}',
-    '.pl-nb-line.pl-nb-leave{position:absolute;left:0;right:0;top:0;animation:pl-nb-out .34s ease-in both}',
-    '@keyframes pl-nb-up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}',
-    '@keyframes pl-nb-out{to{transform:translateY(-12px);opacity:0}}',
-    '.pl-nb-seek{position:relative;display:flex;align-items:center;height:36px;margin:-14px 0 -12px;cursor:pointer;touch-action:none;-webkit-tap-highlight-color:transparent}',
-    '.pl-nb-seek:focus{outline:none}.pl-nb-seek:focus-visible{outline:2px solid var(--nb-glow);outline-offset:-6px;border-radius:8px}',
-    '.pl-nb-seek[aria-disabled="true"]{pointer-events:none;opacity:.45}',
-    '.pl-nb-track{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;transition:height .2s}',
-    '.pl-nb-seek:hover .pl-nb-track,.pl-nb-seek.pl-nb-drag .pl-nb-track{height:6px}',
-    '.pl-nb-fill{display:block;height:100%;background:var(--nb-glow);box-shadow:0 0 8px var(--nb-glow);transform-origin:left;transform:scaleX(0)}',
-    '.pl-nb-knob{position:absolute;top:50%;left:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fbf8f3;box-shadow:0 0 0 3px rgba(169,139,255,.45),0 2px 6px rgba(0,0,0,.4);transition:transform .2s}',
-    '.pl-nb-seek:hover .pl-nb-knob,.pl-nb-seek.pl-nb-drag .pl-nb-knob{transform:scale(1.35)}',
-    '.pl-nb-ctl{display:flex;align-items:center;gap:6px}',
-    '.pl-nb-btn{position:relative;display:grid;justify-items:center;align-content:center;gap:2px;min-width:48px;min-height:52px;padding:4px 6px;border:0;border-radius:14px;background:transparent;color:var(--nb-text);font:inherit;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent}',
-    '.pl-nb-btn:hover{background:rgba(255,255,255,.08)}',
-    '.pl-nb-btn:active{transform:scale(.95)}',
-    '.pl-nb-btn:focus{outline:none}.pl-nb-btn:focus-visible{outline:2px solid var(--nb-glow);outline-offset:2px}',
-    '.pl-nb-btn svg{width:22px;height:22px}',
-    '.pl-nb-btn span{color:var(--nb-soft)}',
-    '.pl-nb-btn[disabled]{opacity:.35;cursor:default}',
-    '.pl-nb-btn .f{fill:currentColor}.pl-nb-btn .s{fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}',
-    '.pl-nb-main{min-width:56px}',
-    '.pl-nb-disc{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8f6bff,var(--nb-btn));box-shadow:0 8px 18px -8px var(--nb-btn),inset 0 1px 0 rgba(255,255,255,.25)}',
-    '.pl-nb-main span{display:none}',
-    '.pl-nb-rate b{font-size:15px;font-variant-numeric:lining-nums tabular-nums;line-height:22px;color:var(--nb-text)}',
-    '.pl-nb-ratebox{position:relative}',
-    '.pl-nb-pop{position:absolute;right:-4px;bottom:calc(100% + 12px);z-index:5;width:76px;padding:14px 0 12px;border-radius:18px;background:var(--nb-glass);box-shadow:0 18px 40px -14px rgba(20,10,40,.8),inset 0 0 0 1px var(--nb-edge);',
-    '-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:grid;justify-items:center;gap:8px;animation:pl-nb-rise .32s cubic-bezier(.6,0,.25,1) both}',
-    '.pl-nb-pop[hidden]{display:none}',
-    '@keyframes pl-nb-rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}',
-    '.pl-nb-pop small{font-size:11px;font-weight:700;color:var(--nb-soft)}',
-    '.pl-nb-slider{position:relative;width:44px;height:168px;touch-action:none;cursor:pointer;border-radius:12px}',
-    '.pl-nb-slider:focus{outline:none}.pl-nb-slider:focus-visible{outline:2px solid var(--nb-glow);outline-offset:2px}',
-    '.pl-nb-rail{position:absolute;left:50%;top:10px;bottom:10px;width:6px;margin-left:-3px;border-radius:3px;background:rgba(255,255,255,.14)}',
-    '.pl-nb-railfill{position:absolute;left:0;right:0;bottom:0;border-radius:3px;background:linear-gradient(0deg,#6d3cf0,#a98bff);box-shadow:0 0 8px rgba(169,139,255,.6)}',
-    '.pl-nb-normal{position:absolute;left:8px;right:8px;height:2px;margin-top:-1px;border-radius:1px;background:rgba(255,255,255,.4)}',
-    '.pl-nb-thumb{position:absolute;left:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fbf8f3;box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 4px rgba(169,139,255,.35)}',
-    '.pl-nb-value{font-size:15px;font-weight:800;font-variant-numeric:lining-nums tabular-nums}',
-    '@container (max-width:560px){.pl-nb-body{gap:10px;padding:10px}.pl-nb-face{width:44px;height:44px}.pl-nb-line{font-size:16px}.pl-nb-btn{min-width:44px;min-height:48px}.pl-nb-btn span{display:none}.pl-nb-disc{width:42px;height:42px}}',
-    '@container (max-width:380px){.pl-nb-body{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"face say" "ctl ctl"}.pl-nb-face{grid-area:face}.pl-nb-say{grid-area:say}.pl-nb-ctl{grid-area:ctl;justify-content:flex-end}}',
-    '@media (prefers-reduced-motion:reduce){.pl-nb *,.pl-nb *::before{animation-duration:.01ms!important;transition-duration:.01ms!important}}'
+    '.st-nb{container-type:inline-size;position:relative;min-width:0;flex:1 1 auto}',
+    '.st-nb-body{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"face meta ctl" "face lines ctl" "face seek ctl";align-items:center;column-gap:14px;row-gap:6px;padding:12px 14px 12px 12px;border-radius:22px}',
+    '.st-nb-face{grid-area:face;--lv:0;position:relative;width:56px;height:56px;border-radius:50%;flex:none}',
+    '.st-nb-face::before{content:"";position:absolute;inset:-6px;border-radius:50%;background:radial-gradient(circle,rgba(169,139,255,.75),rgba(169,139,255,0) 70%);opacity:calc(.15 + var(--lv) * .85);transform:scale(calc(.86 + var(--lv) * .22));transition:opacity .08s linear}',
+    '.st-nb-face img{position:relative;width:100%;height:100%;border-radius:50%;object-fit:cover;background:#3a2f5c;box-shadow:0 0 0 2px rgba(255,255,255,.22)}',
+    '.st-nb[data-state="turn"] .st-nb-face::before{animation:st-nb-breathe 2.4s ease-in-out infinite}',
+    '@keyframes st-nb-breathe{0%,100%{opacity:.2;transform:scale(.9)}50%{opacity:.95;transform:scale(1.08)}}',
+    '.st-nb-meta{grid-area:meta;display:flex;gap:8px;min-height:20px;align-items:center;flex-wrap:wrap;min-width:0}',
+    '.st-nb-flag,.st-nb-mute{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;line-height:1;padding:4px 9px;border-radius:999px;background:rgba(169,139,255,.22);color:#e5dcff}',
+    '.st-nb-flag[hidden],.st-nb-mute[hidden]{display:none}',
+    '.st-nb-flag{animation:st-nb-pop .35s cubic-bezier(.2,1.5,.4,1) both}',
+    '.st-nb-flag[data-kind="fail"]{background:rgba(232,110,90,.25);color:#ffd9d0}',
+    '.st-nb-mute svg{width:14px;height:14px}',
+    '@keyframes st-nb-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}',
+    '.st-nb-lines{grid-area:lines;position:relative;min-width:0;overflow:hidden;transition:height .52s var(--st-ease)}',
+    '.st-nb-lines.st-nb-still{transition:none}',
+    '.st-nb-line{margin:0;font-size:17px;line-height:' + LINE_HEIGHT + ';letter-spacing:.01em;text-wrap:pretty}',
+    '.st-nb-line.st-nb-enter{animation:st-nb-up .52s var(--st-ease) both}',
+    '.st-nb-line.st-nb-leave{position:absolute;left:0;right:0;top:0;animation:st-nb-out .34s ease-in both}',
+    '@keyframes st-nb-up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}',
+    '@keyframes st-nb-out{to{transform:translateY(-12px);opacity:0}}',
+    '.st-nb-seek{grid-area:seek;position:relative;display:flex;align-items:center;height:36px;margin:-10px 0 -10px;min-width:0;cursor:pointer;touch-action:none}',
+    '.st-nb-seek:focus{outline:none}.st-nb-seek:focus-visible{outline:2px solid var(--st-glow);outline-offset:-6px;border-radius:8px}',
+    '.st-nb-seek[aria-disabled="true"]{pointer-events:none;opacity:.45}',
+    '.st-nb-track{flex:1;height:3px;border-radius:3px;background:rgba(255,255,255,.14);overflow:hidden;transition:height .2s}',
+    '.st-nb-seek:hover .st-nb-track,.st-nb-seek.st-nb-drag .st-nb-track{height:6px}',
+    '.st-nb-fill{display:block;height:100%;background:var(--st-glow);box-shadow:0 0 8px var(--st-glow);transform-origin:left;transform:scaleX(0)}',
+    '.st-nb-knob{position:absolute;top:50%;left:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#fbf8f3;box-shadow:0 0 0 3px rgba(169,139,255,.45),0 2px 6px rgba(0,0,0,.4);transition:transform .2s}',
+    '.st-nb-seek:hover .st-nb-knob,.st-nb-seek.st-nb-drag .st-nb-knob{transform:scale(1.35)}',
+    '.st-nb-ctl{grid-area:ctl;display:flex;align-items:center;gap:4px}',
+    '.st-nb-ctl .st-btn{background:transparent;box-shadow:none;width:48px;height:52px;border-radius:14px}',
+    '.st-nb-ctl .st-btn:hover:not([disabled]){background:rgba(255,255,255,.08)}',
+    '.st-nb-ctl .st-btn .f{fill:currentColor;stroke:none}',
+    '.st-nb-disc{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8f6bff,var(--st-btn));box-shadow:0 8px 18px -8px var(--st-btn),inset 0 1px 0 rgba(255,255,255,.25)}',
+    '.st-nb-rate b{font-size:15px;font-variant-numeric:lining-nums tabular-nums;line-height:22px}',
+    '.st-nb-ratebox{position:relative}',
+    '.st-nb-pop{position:absolute;right:-4px;bottom:calc(100% + 12px);z-index:5;width:76px;padding:12px 0 12px;border-radius:18px;display:grid;justify-items:center;gap:10px;animation:st-nb-rise .32s var(--st-ease) both}',
+    '.st-nb-pop[hidden]{display:none}',
+    '@keyframes st-nb-rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}',
+    '.st-nb-slider{position:relative;width:44px;height:168px;touch-action:none;cursor:pointer;border-radius:12px}',
+    '.st-nb-slider:focus{outline:none}.st-nb-slider:focus-visible{outline:2px solid var(--st-glow);outline-offset:2px}',
+    '.st-nb-rail{position:absolute;left:50%;top:10px;bottom:10px;width:6px;margin-left:-3px;border-radius:3px;background:rgba(255,255,255,.14)}',
+    '.st-nb-railfill{position:absolute;left:0;right:0;bottom:0;border-radius:3px;background:linear-gradient(0deg,#6d3cf0,#a98bff);box-shadow:0 0 8px rgba(169,139,255,.6)}',
+    '.st-nb-normal{position:absolute;left:8px;right:8px;height:2px;margin-top:-1px;border-radius:1px;background:rgba(255,255,255,.4)}',
+    '.st-nb-thumb{position:absolute;left:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:#fbf8f3;box-shadow:0 3px 10px rgba(0,0,0,.4),0 0 0 4px rgba(169,139,255,.35)}',
+    '.st-nb-value{font-size:15px;font-weight:800;font-variant-numeric:lining-nums tabular-nums}',
+    '@container (max-width:560px){.st-nb-body{column-gap:10px;padding:10px}.st-nb-face{width:44px;height:44px}.st-nb-line{font-size:16px}.st-nb-ctl .st-btn{width:44px;height:48px}.st-nb-disc{width:42px;height:42px}}',
+    '@container (max-width:400px){.st-nb-body{grid-template-areas:"face lines lines" "seek seek ctl";row-gap:0;column-gap:8px;padding:9px 8px 4px 9px;align-items:start}',
+    '.st-nb-face{width:34px;height:34px;margin-top:2px}.st-nb-line{font-size:15px}',
+    '.st-nb-meta{position:absolute;top:-11px;left:46px;min-height:0;pointer-events:none}',
+    '.st-nb-seek{margin:0 0 0 4px;height:44px;align-self:center}.st-nb-ctl{align-self:center}.st-nb-ctl .st-btn{width:42px;height:44px}.st-nb-disc{width:38px;height:38px}}'
   ].join('');
 
   var ICON = {
     play: '<path class="f" d="M8.5 5.6v12.8l10-6.4z"/>',
     pause: '<rect class="f" x="6.8" y="5.6" width="3.6" height="12.8" rx="1"/><rect class="f" x="13.6" y="5.6" width="3.6" height="12.8" rx="1"/>',
-    replay: '<path class="s" d="M6 12.4a6.2 6.2 0 1 0 1.9-4.6"/><path class="s" d="M5.6 4.6v4.2h4.2"/>',
-    muted: '<path class="f" d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path class="s" d="M15 9.2l5 5.6M20 9.2l-5 5.6"/>'
+    muted: '<path d="M4 9.5h3l4-3.5v12l-4-3.5H4z" fill="currentColor" stroke="none"/><path d="M15 9.2l5 5.6M20 9.2l-5 5.6" fill="none" stroke="currentColor" stroke-width="2"/>'
   };
   function svg(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[name] + '</svg>'; }
   function rateText(r) { return (Math.round(r * 100) / 100).toString() + '×'; }
@@ -119,8 +122,9 @@ var NarrationBar = (function () {
   function clamp01(f) { return Math.max(0, Math.min(1, f)); }
 
   function injectStyle() {
-    if (document.getElementById('pl-nb-style')) return;
-    var s = document.createElement('style'); s.id = 'pl-nb-style'; s.textContent = CSS; document.head.appendChild(s);
+    StageTheme.inject();
+    if (document.getElementById('st-nb-style')) return;
+    var s = document.createElement('style'); s.id = 'st-nb-style'; s.textContent = CSS; document.head.appendChild(s);
   }
 
   function silentUrl() {
@@ -168,9 +172,10 @@ var NarrationBar = (function () {
   }
 
   function Bar(host, options) {
+    LessonComponents.Base.call(this);
     injectStyle();
     this.host = host;
-    this.o = Object.assign({ portrait: '', controls: ['pause', 'replay', 'rate'], lines: [], rate: 1, muted: false, onEvent: function () {} }, options);
+    this.o = Object.assign({ portrait: '', buttons: ['pause', 'rate'], lines: [], rate: 1, muted: false }, options);
     this.lines = {};
     var self = this;
     this.o.lines.forEach(function (l) { self.lines[l.id] = l; });
@@ -187,54 +192,49 @@ var NarrationBar = (function () {
     this.bindAudio();
     this.render();
   }
-
+  Bar.prototype = Object.create(LessonComponents.Base.prototype);
   Bar.prepare = prepare;
   Bar.RATE_MIN = RATE_MIN; Bar.RATE_MAX = RATE_MAX;
 
-  Bar.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
-  Bar.prototype.has = function (c) { return this.o.controls.indexOf(c) >= 0; };
+  Bar.prototype.fire = function (type, data) { this.emit(Object.assign({ name: 'narrate.' + type }, data || {})); };
+  Bar.prototype.has = function (c) { return this.o.buttons.indexOf(c) >= 0; };
 
   Bar.prototype.build = function () {
     var self = this;
+    this.host.classList.add('st-ui');
     var el = document.createElement('div');
-    el.className = 'pl-nb';
+    el.className = 'st-nb';
     el.setAttribute('role', 'region');
     el.setAttribute('aria-label', '老师的话');
     el.innerHTML =
-      '<div class="pl-nb-body">' +
-        '<div class="pl-nb-face"><img alt="老师" draggable="false"></div>' +
-        '<div class="pl-nb-say">' +
-          '<div class="pl-nb-meta"><span class="pl-nb-flag" hidden></span><span class="pl-nb-mute" hidden>' + svg('muted') + '静音，看字幕</span></div>' +
-          '<div class="pl-nb-lines" aria-live="polite"></div>' +
-          '<div class="pl-nb-seek" role="slider" tabindex="0" aria-label="这一句播到哪里" aria-valuemin="0" aria-valuemax="100"><div class="pl-nb-track"><i class="pl-nb-fill"></i></div><i class="pl-nb-knob"></i></div>' +
-        '</div>' +
-        '<div class="pl-nb-ctl">' +
-          (this.has('replay') ? '<button type="button" class="pl-nb-btn" data-act="replay" aria-label="重听这一句">' + svg('replay') + '<span>重听</span></button>' : '') +
-          (this.has('pause') ? '<button type="button" class="pl-nb-btn pl-nb-main" data-act="toggle"><i class="pl-nb-disc"></i><span></span></button>' : '') +
+      '<div class="st-nb-body st-glass">' +
+        '<div class="st-nb-face"><img alt="老师" draggable="false"></div>' +
+        '<div class="st-nb-meta"><span class="st-nb-flag" hidden></span><span class="st-nb-mute" hidden>' + svg('muted') + '静音，看字幕</span></div>' +
+        '<div class="st-nb-lines" aria-live="polite"></div>' +
+        '<div class="st-nb-seek" role="slider" tabindex="0" aria-label="这一句播到哪里" aria-valuemin="0" aria-valuemax="100"><div class="st-nb-track"><i class="st-nb-fill"></i></div><i class="st-nb-knob"></i></div>' +
+        '<div class="st-nb-ctl">' +
+          (this.has('pause') ? '<button type="button" class="st-btn st-nb-main" data-act="toggle"><i class="st-nb-disc"></i></button>' : '') +
           (this.has('rate') ?
-            '<div class="pl-nb-ratebox">' +
-              '<button type="button" class="pl-nb-btn pl-nb-rate" data-act="rate" aria-haspopup="true" aria-expanded="false"><b></b><span>语速</span></button>' +
-              '<div class="pl-nb-pop" hidden>' +
-                '<small>快</small>' +
-                '<div class="pl-nb-slider" role="slider" tabindex="0" aria-orientation="vertical" aria-label="语速" aria-valuemin="' + RATE_MIN + '" aria-valuemax="' + RATE_MAX + '">' +
-                  '<i class="pl-nb-rail"><i class="pl-nb-railfill"></i></i><i class="pl-nb-normal"></i><i class="pl-nb-thumb"></i>' +
+            '<div class="st-nb-ratebox">' +
+              '<button type="button" class="st-btn st-nb-rate" data-act="rate" aria-haspopup="true" aria-expanded="false"><b></b></button>' +
+              '<div class="st-nb-pop st-glass" hidden>' +
+                '<div class="st-nb-slider" role="slider" tabindex="0" aria-orientation="vertical" aria-label="语速" aria-valuemin="' + RATE_MIN + '" aria-valuemax="' + RATE_MAX + '">' +
+                  '<i class="st-nb-rail"><i class="st-nb-railfill"></i></i><i class="st-nb-normal"></i><i class="st-nb-thumb"></i>' +
                 '</div>' +
-                '<small>慢</small>' +
-                '<b class="pl-nb-value"></b>' +
+                '<b class="st-nb-value"></b>' +
               '</div>' +
             '</div>' : '') +
         '</div>' +
       '</div>';
-    this.host.innerHTML = '';
     this.host.appendChild(el);
     this.el = el;
     var q = function (s) { return el.querySelector(s); };
-    this.face = q('.pl-nb-face'); this.flagEl = q('.pl-nb-flag'); this.muteEl = q('.pl-nb-mute');
-    this.linesBox = q('.pl-nb-lines'); this.fillEl = q('.pl-nb-fill'); this.seekEl = q('.pl-nb-seek'); this.knobEl = q('.pl-nb-knob');
+    this.face = q('.st-nb-face'); this.flagEl = q('.st-nb-flag'); this.muteEl = q('.st-nb-mute');
+    this.linesBox = q('.st-nb-lines'); this.fillEl = q('.st-nb-fill'); this.seekEl = q('.st-nb-seek'); this.knobEl = q('.st-nb-knob');
     this.btn = {}; Array.prototype.forEach.call(el.querySelectorAll('[data-act]'), function (b) { self.btn[b.getAttribute('data-act')] = b; });
-    this.pop = q('.pl-nb-pop'); this.slider = q('.pl-nb-slider'); this.rateBox = q('.pl-nb-ratebox');
-    q('.pl-nb-face img').src = this.o.portrait || '';
-    this.linesBox.classList.add('pl-nb-still');
+    this.pop = q('.st-nb-pop'); this.slider = q('.st-nb-slider'); this.rateBox = q('.st-nb-ratebox');
+    q('.st-nb-face img').src = this.o.portrait || '';
+    this.linesBox.classList.add('st-nb-still');
     this.linesBox.style.height = this.minHeight() + 'px';
 
     el.addEventListener('click', function (e) {
@@ -257,19 +257,19 @@ var NarrationBar = (function () {
   // two seconds.
   Bar.prototype.bindSeek = function () {
     var self = this, s = this.seekEl;
-    function at(clientX) { var r = self.el.querySelector('.pl-nb-track').getBoundingClientRect(); return clamp01((clientX - r.left) / r.width); }
+    function at(clientX) { var r = self.el.querySelector('.st-nb-track').getBoundingClientRect(); return clamp01((clientX - r.left) / r.width); }
     s.addEventListener('pointerdown', function (e) {
       if (!self.line()) return;
-      self.dragging = true; s.classList.add('pl-nb-drag'); s.setPointerCapture(e.pointerId);
+      self.dragging = true; s.classList.add('st-nb-drag'); s.setPointerCapture(e.pointerId);
       self.fill(at(e.clientX)); e.preventDefault();
     });
     s.addEventListener('pointermove', function (e) { if (self.dragging) self.fill(at(e.clientX)); });
     s.addEventListener('pointerup', function (e) {
       if (!self.dragging) return;
-      self.dragging = false; s.classList.remove('pl-nb-drag');
+      self.dragging = false; s.classList.remove('st-nb-drag');
       self.seek(at(e.clientX), true);
     });
-    s.addEventListener('pointercancel', function () { self.dragging = false; s.classList.remove('pl-nb-drag'); });
+    s.addEventListener('pointercancel', function () { self.dragging = false; s.classList.remove('st-nb-drag'); });
     s.addEventListener('keydown', function (e) {
       var d = { ArrowRight: SEEK_KEY_S, ArrowUp: SEEK_KEY_S, ArrowLeft: -SEEK_KEY_S, ArrowDown: -SEEK_KEY_S }[e.key];
       var l = self.line(); if (!d || !l) return;
@@ -305,33 +305,33 @@ var NarrationBar = (function () {
     return Math.ceil(parseFloat(getComputedStyle(this.linesBox).fontSize || '17') * LINE_HEIGHT * MIN_LINES);
   };
   Bar.prototype.currentLineEl = function () {
-    var all = this.linesBox.querySelectorAll('.pl-nb-line:not(.pl-nb-leave)');
+    var all = this.linesBox.querySelectorAll('.st-nb-line:not(.st-nb-leave)');
     return all[all.length - 1] || null;
   };
   Bar.prototype.fitLines = function () {
     var p = this.currentLineEl();
-    this.linesBox.classList.add('pl-nb-still');
+    this.linesBox.classList.add('st-nb-still');
     this.linesBox.style.height = Math.max(this.minHeight(), p ? p.offsetHeight : 0) + 'px';
   };
   Bar.prototype.showLine = function (text, animate) {
     var box = this.linesBox, cur = this.currentLineEl();
     if (cur && cur.textContent === text) return;
-    var olds = box.querySelectorAll('.pl-nb-line');
+    var olds = box.querySelectorAll('.st-nb-line');
     var p = document.createElement('p');
-    p.className = 'pl-nb-line';
+    p.className = 'st-nb-line';
     p.textContent = text;
     box.appendChild(p);
     var h = Math.max(this.minHeight(), p.offsetHeight);
-    if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (animate && !StageTheme.still()) {
       box.style.height = box.getBoundingClientRect().height + 'px';
       void box.offsetHeight;
-      box.classList.remove('pl-nb-still');
+      box.classList.remove('st-nb-still');
       box.style.height = h + 'px';
-      Array.prototype.forEach.call(olds, function (o) { o.classList.remove('pl-nb-enter'); o.classList.add('pl-nb-leave'); setTimeout(function () { o.remove(); }, FADE_OUT_MS); });
-      p.classList.add('pl-nb-enter');
+      Array.prototype.forEach.call(olds, function (o) { o.classList.remove('st-nb-enter'); o.classList.add('st-nb-leave'); setTimeout(function () { o.remove(); }, FADE_OUT_MS); });
+      p.classList.add('st-nb-enter');
     } else {
       Array.prototype.forEach.call(olds, function (o) { o.remove(); });
-      box.classList.add('pl-nb-still');
+      box.classList.add('st-nb-still');
       box.style.height = h + 'px';
     }
   };
@@ -410,7 +410,7 @@ var NarrationBar = (function () {
     this.deferred = false;
     a.defaultPlaybackRate = this.rateValue; a.playbackRate = this.rateValue; a.muted = this.muted;
     this.kick();
-    this.emit('lineStart', { id: id, replay: !this.pending || this.pending.id !== id });
+    this.fire('lineStart', { id: id, replay: !this.pending || this.pending.id !== id });
     this.render();
   };
 
@@ -425,7 +425,7 @@ var NarrationBar = (function () {
     if (!this.pending) return;
     var p = this.pending;
     this.pending = null;
-    if (by === 'end') this.emit('lineEnd', { id: p.id });
+    if (by === 'end') this.fire('lineEnd', { id: p.id });
     p.resolve({ id: p.id, by: by });
   };
 
@@ -442,7 +442,7 @@ var NarrationBar = (function () {
     this.playToken++;
     this.failed = { id: this.current, reason: reason };
     this.audio.pause();
-    this.emit('lineFail', { id: this.current, reason: reason });
+    this.fire('lineFail', { id: this.current, reason: reason });
     this.render();
   };
 
@@ -468,11 +468,11 @@ var NarrationBar = (function () {
   Bar.prototype.press = function (act) {
     if (act === 'rate') { this.openPop(this.pop.hidden); return; }
     this.openPop(false);
-    if (act === 'replay') { this.replay(); this.emit('replay', { id: this.current }); return; }
-    if (act === 'toggle') {
-      if (this.failed) { this.emit('lineRetry', { id: this.failed.id }); this.paused = false; this.startLine(this.failed.id, false); this.wake(); return; }
-      if (this.paused) { this.resume(); this.emit('resume', {}); } else { this.pause(); this.emit('pause', {}); }
-    }
+    if (act !== 'toggle') return;
+    if (this.failed) { this.fire('lineRetry', { id: this.failed.id }); this.paused = false; this.startLine(this.failed.id, false); this.wake(); return; }
+    if (this.paused) { this.resume(); this.fire('resume', {}); return; }
+    if (this.active) { this.pause(); this.fire('pause', {}); return; }
+    if (this.line()) { this.seek(0, false); this.fire('replay', { id: this.line().id }); }
   };
 
   Bar.prototype.openPop = function (open) {
@@ -485,7 +485,7 @@ var NarrationBar = (function () {
     var v = clampRate(r);
     if (v === this.rateValue) return;
     this.rate(v);
-    this.emit('rate', { value: v });
+    this.fire('rate', { value: v });
   };
 
   // ---------- commands ----------
@@ -497,11 +497,6 @@ var NarrationBar = (function () {
     this.startLine(id, true);
     return done;
   };
-  // Says the current line again from its start. While the line is the one
-  // the lecture is waiting for, the lecture simply waits a little longer;
-  // after it ended (the child's turn, or 下一步), it is said once more and
-  // nothing moves on.
-  Bar.prototype.replay = function () { this.seek(0, false); };
   // Plays the current line from a point (0..1 of its length). While it is
   // playing it jumps there; after it ended, or when it failed, it plays
   // again from there. A pause stays a pause.
@@ -515,7 +510,7 @@ var NarrationBar = (function () {
     } else {
       this.startLine(l.id, false, t);
     }
-    if (byChild) this.emit('seek', { id: l.id, at: Math.round(t * 100) / 100 });
+    if (byChild) this.fire('seek', { id: l.id, at: Math.round(t * 100) / 100 });
   };
   Bar.prototype.turn = function (on) { this.turnOn = !!on; this.render(); };
   Bar.prototype.flag = function (text) { this.flagText = text || null; this.render(); };
@@ -529,8 +524,8 @@ var NarrationBar = (function () {
     if (!this.paused) return;
     this.paused = false;
     if (this.active && !this.failed) {
-      if (this.deferred) { this.deferred = false; this.audio.defaultPlaybackRate = this.rateValue; this.audio.playbackRate = this.rateValue; this.audio.muted = this.muted; this.kick(); }
-      else this.kick();
+      if (this.deferred) { this.deferred = false; this.audio.defaultPlaybackRate = this.rateValue; this.audio.playbackRate = this.rateValue; this.audio.muted = this.muted; }
+      this.kick();
     }
     this.render();
     this.wake();
@@ -577,6 +572,9 @@ var NarrationBar = (function () {
     this.render();
     this.wake();
   };
+  Bar.prototype.getState = function () { return { line: this.current }; };
+  Bar.prototype.setState = function (s) { this.set(s); };
+  Bar.prototype.call = function (name) { throw new Error('narration: ' + name); };
 
   Bar.prototype.render = function (still) {
     var st = this.failed ? 'failed' : this.paused ? 'paused' : this.active ? 'speaking' : this.turnOn ? 'turn' : 'idle';
@@ -595,30 +593,34 @@ var NarrationBar = (function () {
     this.muteEl.hidden = !this.muted;
     this.seekEl.setAttribute('aria-disabled', this.line() ? 'false' : 'true');
     var b = this.btn;
-    if (b.replay) b.replay.disabled = !(this.current || this.last);
     if (b.toggle) {
-      var main = this.failed || this.paused ? ['play', '继续'] : ['pause', '暂停'];
+      var speaking = this.active && !this.paused && !this.failed;
+      var main = speaking ? ['pause', '暂停'] : this.failed ? ['play', '再听这一句'] : this.paused ? ['play', '继续'] : ['play', '从头再听这一句'];
       if (b.toggle.getAttribute('data-icon') !== main[0]) {
         b.toggle.setAttribute('data-icon', main[0]);
-        b.toggle.querySelector('.pl-nb-disc').innerHTML = svg(main[0]);
-        b.toggle.querySelector('span').textContent = main[1];
+        b.toggle.querySelector('.st-nb-disc').innerHTML = svg(main[0]);
       }
-      b.toggle.setAttribute('aria-label', this.failed ? '再听这一句' : main[1]);
+      b.toggle.setAttribute('aria-label', main[1]);
+      b.toggle.disabled = !speaking && !this.paused && !this.failed && !this.line();
     }
     if (b.rate) {
       b.rate.querySelector('b').textContent = rateText(this.rateValue);
       b.rate.setAttribute('aria-label', '语速 ' + rateText(this.rateValue));
       var frac = (this.rateValue - RATE_MIN) / (RATE_MAX - RATE_MIN);
       var inner = 'calc(10px + (100% - 20px) * ';
-      this.el.querySelector('.pl-nb-thumb').style.top = inner + (1 - frac).toFixed(4) + ')';
-      this.el.querySelector('.pl-nb-railfill').style.height = (frac * 100).toFixed(2) + '%';
-      this.el.querySelector('.pl-nb-normal').style.top = inner + (1 - (1 - RATE_MIN) / (RATE_MAX - RATE_MIN)).toFixed(4) + ')';
-      this.el.querySelector('.pl-nb-value').textContent = rateText(this.rateValue);
+      this.el.querySelector('.st-nb-thumb').style.top = inner + (1 - frac).toFixed(4) + ')';
+      this.el.querySelector('.st-nb-railfill').style.height = (frac * 100).toFixed(2) + '%';
+      this.el.querySelector('.st-nb-normal').style.top = inner + (1 - (1 - RATE_MIN) / (RATE_MAX - RATE_MIN)).toFixed(4) + ')';
+      this.el.querySelector('.st-nb-value').textContent = rateText(this.rateValue);
       this.slider.setAttribute('aria-valuenow', String(this.rateValue));
       this.slider.setAttribute('aria-valuetext', rateText(this.rateValue));
     }
     if (this.active) this.loop();
   };
 
+  LessonComponents.register('narration', {
+    theme: 'stage', interfaces: ['narrate'],
+    create: function (host, input) { return new Bar(host, input); }
+  });
   return Bar;
 })();

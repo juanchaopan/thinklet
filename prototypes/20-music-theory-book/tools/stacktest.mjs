@@ -1,165 +1,143 @@
-// Checks the conclusion stack prototype the way a child and a workflow
-// would use it: pushes every act, taps every slip at its middle and near
-// its edges, the pile and the blank margins; checks that lights fade and
-// blank taps clear; that slips, numbers and bubbles cover no text and stay
-// inside the stack; that the thread ends at its sources; that stepping back
-// restores an act with nothing moving and masks survive; that practice taps
-// do nothing; that a slip with a stave sounds and stop silences it; and
-// that the page does not scroll sideways. Every tap first scrolls the stack
-// into view, so a tap never lands off screen. How smooth a push moves is
-// checked separately (probe/csmotion.mjs).
-// Usage: node stacktest.mjs <fragment.html> [width]
+// Checks the conclusion stack (a wheel) the way a child and a workflow
+// would use it, on the component page, in its tall board and in its
+// phone strip:
+// - pushing every conclusion with a flight: the flying copy only ever
+//   gets nearer its place, has hardly moved at 100 ms, lands on it, and
+//   the wheel ends turned to the newest, which stands in the middle at
+//   full size with every other slip no bigger the farther it is (far
+//   slips all rest at the smallest size);
+// - turning by mouse wheel, by mouse drag and by keyboard: the wheel comes
+//   to rest on a conclusion, centred, and a drag is never a tap;
+// - tapping a slip that is not in focus: one itemTap for that slip, and
+//   the wheel turns to it; tapping the empty board: blankTap;
+// - set: exactly the given slips, nothing moving;
+// - the strip turns sideways; the page never scrolls sideways; no errors.
+// Usage: node stacktest.mjs <width>
 import { openPage } from './serve.mjs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const [, , file, width = '390'] = process.argv;
-const { page, errors, close, loading } = await openPage(file, width);
-if (loading) console.log(`loading screen: ${loading.note}, bar ${loading.bar}`);
+const [, , width = '1280'] = process.argv;
+const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'components', 'c7-conclusion-stack.html');
+const { page, errors, close } = await openPage(file, width, 1000);
+const fails = [];
+const check = (ok, what) => { if (!ok) fails.push(what); };
+const events = (type, where) => page.evaluate(([t, w]) => window.tlEvents.filter((e) => e.type === t && (!w || e.where === w)), [type, where]);
 
-const lastOf = (type) => page.evaluate((t) => window.tlEvents.filter((e) => e.type === t).pop() || null, type);
-const countOf = (type) => page.evaluate((t) => window.tlEvents.filter((e) => e.type === t).length, type);
-const toStack = (sel = '#main-stack') => page.$eval(sel, (e) => e.scrollIntoView({ block: 'center' }));
-const lit = () => page.$$eval('#main-stack .tl-cs-slip.tl-lit', (r) => r.length);
-const settle = (ms = 2900) => page.waitForTimeout(ms);
-const centreOf = async (sel) => { await toStack(); return page.$eval(sel, (e) => { const b = e.getBoundingClientRect(); return { x: b.left + b.width * .5, y: b.top + b.height / 2 }; }); };
-
-// Overlaps between texts, staves, numbers, the pile label and bubbles, and
-// anything leaving the stack.
-const overlaps = () => page.$eval('#main-stack', (h) => {
-  const box = h.getBoundingClientRect();
-  const parts = [...h.querySelectorAll('.tl-cs-body > .tl-cs-text, .tl-cs-body > .tl-cs-staff svg, .tl-cs-body > .tl-cs-op, .tl-cs-num, .tl-cs-seal, .tl-cs-more, .tl-cs-bubble')]
-    .map((e) => ({ c: (e.className.baseVal ?? e.className).split(' ')[0] || e.tagName, id: e.closest('.tl-cs-slip')?.dataset.id || '-', r: e.getBoundingClientRect() }))
-    .filter((b) => b.r.width > 0);
-  const out = [];
-  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
-    const a = parts[i].r, b = parts[j].r;
-    if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) out.push(`${parts[i].id}.${parts[i].c}~${parts[j].id}.${parts[j].c}`);
+// Where each slip of a stack stands: its middle, size against the slip's
+// own width, opacity, and the view's middle.
+const shape = (key) => page.evaluate((k) => {
+  const s = window.tlStacks[k], v = s.view.getBoundingClientRect();
+  return {
+    axis: s.axis, p: s.p, focus: s.focusIndex(), order: s.order.slice(),
+    mid: s.axis === 'y' ? v.top + v.height / 2 : v.left + v.width / 2,
+    slips: s.order.map((id) => { const el = s.els[id], r = el.getBoundingClientRect(); return { id, c: s.axis === 'y' ? r.top + r.height / 2 : r.left + r.width / 2, k: r.width / el.offsetWidth, a: Number(el.style.opacity) }; })
+  };
+}, key);
+const centred = (sh, what) => {
+  const f = sh.slips[sh.focus];
+  check(Math.abs(f.c - sh.mid) < 2, `${what}: the slip in focus is ${Math.round(f.c - sh.mid)}px off the middle`);
+  check(Math.abs(f.k - 1) < .02, `${what}: the slip in focus is not full size (${f.k.toFixed(2)})`);
+  sh.slips.forEach((s, i) => { if (i !== sh.focus) check(s.k < f.k - .1, `${what}: slip ${i} is not smaller than the focus`); });
+  for (let i = 0; i + 1 < sh.slips.length; i++) {
+    const d0 = Math.abs(i - sh.focus), d1 = Math.abs(i + 1 - sh.focus);
+    const near = d0 < d1 ? sh.slips[i].k : sh.slips[i + 1].k, far = d0 < d1 ? sh.slips[i + 1].k : sh.slips[i].k;
+    if (d0 !== d1) check(near >= far - .001, `${what}: slip ${d0 < d1 ? i + 1 : i} is bigger than its neighbour nearer the focus`);
   }
-  [...h.querySelectorAll('.tl-cs-slip, .tl-cs-bubble')].forEach((e) => { const r = e.getBoundingClientRect(); if (r.left < box.left - .5 || r.right > box.right + .5 || r.bottom > box.bottom + .5) out.push(`${e.dataset.id || 'bubble'} outside`); });
-  return out;
+};
+
+await page.evaluate(() => window.scrollTo(0, 0));
+
+// Push every conclusion with a flight, sampling the first flight.
+await page.evaluate(() => {
+  window.tlSamples = [];
+  const s = window.tlStacks.wide, t0 = performance.now();
+  window.tlCmd.fly();
+  const tick = () => {
+    const f = s.flight; if (!f) return;
+    const a = f.flyer.getBoundingClientRect(), b = f.el.getBoundingClientRect();
+    window.tlSamples.push({ t: performance.now() - t0, d: Math.hypot(a.left + a.width / 2 - b.left - b.width / 2, a.top + a.height / 2 - b.top - b.height / 2) });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 });
-
-// Push the five acts, checking each settles cleanly.
-await toStack();
-for (let i = 1; i <= 5; i++) {
-  await page.click('[data-cmd="next"]');
-  await settle();
-  await toStack();
-  const o = await overlaps();
-  const st = await page.$eval('#main-stack', (h) => ({ slips: h.querySelectorAll('.tl-cs-slip').length, folded: (h.querySelector('.tl-cs-more')?.textContent || '').trim(), height: Math.round(h.getBoundingClientRect().height) }));
-  console.log(`act ${i}: slips ${st.slips}, pile "${st.folded}", stack ${st.height} px high${o.length ? ', OVERLAPS ' + o.join(' ') : ''}`);
+await page.waitForTimeout(1200);
+const samples = await page.evaluate(() => window.tlSamples);
+check(samples.length > 20, `too few flight frames (${samples.length})`);
+if (samples.length) {
+  const d0 = samples[0].d, back = samples.filter((s, i) => i && s.d > samples[i - 1].d + 1).length;
+  const at100 = samples.filter((s) => s.t <= 100).pop();
+  check(back === 0, `the flying copy turned back ${back} times`);
+  check(!at100 || (d0 - at100.d) / d0 < .06, `the flight moved ${at100 ? Math.round((d0 - at100.d) / d0 * 100) : '?'}% in its first 100 ms`);
+  check(samples[samples.length - 1].d < 12, `the flight ended ${samples[samples.length - 1].d.toFixed(1)}px from its place`);
+  console.log(`flight: ${samples.length} frames, ${Math.round(d0)}px, ${at100 ? Math.round((d0 - at100.d) / d0 * 100) : '?'}% at 100 ms, turned back ${back}`);
 }
+for (let i = 1; i < 6; i++) { await page.evaluate(() => window.tlCmd.fly()); await page.waitForTimeout(1000); }
+check(!(await page.$('.tl-cs-flyer')), 'a flying copy was left behind');
+let wide = await shape('wide');
+check(wide.axis === 'y', 'the tall board does not turn up and down');
+check(wide.order.length === 6 && wide.focus === 5, `after six pushes: ${wide.order.length} slips, focus ${wide.focus}`);
+centred(wide, 'after pushing');
+const phone = await shape('phone');
+check(phone.axis === 'x', 'the phone strip does not turn sideways');
+centred(phone, 'phone strip');
 
-// Thread: one dot per visible source (or the pile), the tip at the newest slip.
-const thread = await page.$eval('#main-stack', (h) => {
-  const dots = [...h.querySelectorAll('.tl-cs-thread circle')].map((c) => c.getBoundingClientRect()).map((r) => r.top + r.height / 2);
-  const targets = [...h.querySelectorAll('.tl-cs-pile, .tl-cs-slip')].map((e) => ({ id: e.dataset.id || 'pile', r: e.getBoundingClientRect() }));
-  const hit = dots.map((y) => (targets.find((t) => y >= t.r.top && y <= t.r.bottom) || {}).id);
-  const tip = h.querySelector('.tl-cs-thread path:last-child').getBoundingClientRect();
-  const fresh = h.querySelector('.tl-cs-fresh').getBoundingClientRect();
-  return { dots: hit, tipInFresh: tip.top >= fresh.top && tip.bottom <= fresh.bottom, tipGap: Math.round(fresh.left - tip.right) };
-});
-console.log(`thread dots on ${thread.dots.join(', ')}; tip inside the answer's height ${thread.tipInFresh}, ${thread.tipGap} px from its edge`);
-
-// Taps on every slip at its middle and just inside its visible top and
-// bottom (the next slip lies over the last 3 px).
-let taps = 0, hits = 0;
-const missed = [];
-await toStack();
-const pts = await page.$$eval('#main-stack .tl-cs-slip', (s) => s.flatMap((e) => { const b = e.getBoundingClientRect(); return [['mid', b.top + b.height / 2], ['top', b.top + 4], ['bottom', b.bottom - 6]].map(([w, y]) => ({ id: e.dataset.id, w, x: b.left + b.width * .6, y })); }));
-for (const p of pts) {
-  await page.mouse.click(p.x, p.y);
-  const ev = await lastOf('itemTap');
-  taps++;
-  if (ev && ev.id === p.id) hits++; else missed.push(`${p.id}.${p.w}->${ev && ev.id}`);
-}
-console.log(`taps ${taps}, hit ${hits}${missed.length ? ', missed ' + missed.join(' ') : ''}`);
-const ansTap = await lastOf('itemTap');
-
-// Blank: the clip's side and the margin under the newest slip.
-const blanks0 = await countOf('blankTap');
-await toStack();
-const blankPts = await page.$eval('#main-stack', (h) => { const b = h.getBoundingClientRect(); const f = h.querySelector('.tl-cs-fresh').getBoundingClientRect(); return [{ x: b.left + 12, y: b.top + 4 }, { x: b.left + b.width / 2, y: f.bottom + 12 }]; });
-for (const p of blankPts) await page.mouse.click(p.x, p.y);
-console.log(`blank taps registered ${(await countOf('blankTap')) - blanks0} of 2; lit after ${await lit()}`);
-
-// Tap lights fade.
-const mid = pts.find((p) => p.w === 'mid');
-await page.mouse.click(mid.x, mid.y);
-const litNow = await lit();
-await page.waitForTimeout(2300);
-console.log(`a tap lights ${litNow}; 2.3 s later lit ${await lit()}; the masked answer reported hidden ${ansTap && ansTap.hidden} with text ${ansTap && ansTap.text}`);
-
-// Pile: open, everything shown without overlaps; a blank tap folds it back.
-await toStack();
-const pile = await page.$('#main-stack .tl-cs-pile');
-if (pile) {
-  const pb = await pile.boundingBox();
-  await page.mouse.click(pb.x + pb.width - 20, pb.y + pb.height / 2);
-  await page.waitForTimeout(900);
-  const opened = await lastOf('pileTap');
-  const shown = await page.$$eval('#main-stack .tl-cs-slip', (s) => s.length);
-  const o = await overlaps();
-  await toStack();
-  const f = await page.$eval('#main-stack', (h) => { const r = h.querySelector('.tl-cs-fresh').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom + 12 }; });
-  await page.mouse.click(f.x, f.y);
-  await page.waitForTimeout(900);
-  console.log(`pile tap -> open ${opened.open}, slips ${shown}${o.length ? ', OVERLAPS ' + o.join(' ') : ''}; after a blank tap slips ${await page.$$eval('#main-stack .tl-cs-slip', (s) => s.length)}`);
-}
-
-// Highlight brings a folded conclusion out; caption sits under the newest
-// and the stack grows to hold it.
-await page.click('[data-cmd="recall"]');
+// Mouse wheel up two notches.
+const view = await page.$eval('#board-wide .tl-cs-view', (v) => { const r = v.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, top: r.top, h: r.height }; });
+await page.mouse.move(view.x, view.y);
+await page.mouse.wheel(0, -140); await page.waitForTimeout(60); await page.mouse.wheel(0, -140);
 await page.waitForTimeout(900);
-const recalled = await page.$$eval('#main-stack .tl-cs-slip.tl-lit', (s) => s.map((e) => e.dataset.id));
-await page.click('[data-cmd="revealAnswer"]');
-await page.click('[data-cmd="caption"]');
-await page.waitForTimeout(900);
-await toStack();
-const capO = await overlaps();
-console.log(`highlight k1 -> lit ${recalled.join(',')}; caption under the answer${capO.length ? ', OVERLAPS ' + capO.join(' ') : ' covers nothing and stays inside'}`);
+wide = await shape('wide');
+check(wide.focus === 3, `two wheel notches up rest on slip 3, not ${wide.focus}`);
+check(Math.abs(wide.p - Math.round(wide.p)) < .001, 'the wheel did not come to rest on a conclusion');
+centred(wide, 'after the wheel');
 
-// Stepping back restores an act with nothing moving; a masked conclusion stays masked.
-await page.evaluate(() => window.tlMain.mask('k2'));
-await page.click('[data-cmd="back"]');
-await page.waitForTimeout(100);
-const back = await page.$eval('#main-stack', (h) => ({ ids: [...h.querySelectorAll('.tl-cs-slip')].map((e) => e.dataset.id), moving: h.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length, draws: h.querySelectorAll('.tl-cs-draw').length, covers: h.querySelectorAll('.tl-cs-cover').length }));
-console.log(`back one act -> slips ${back.ids.join(',')}, animations running ${back.moving}, threads drawing ${back.draws}, covers ${back.covers}`);
-await page.evaluate(() => window.tlMain.reveal());
-
-// Sound: a slip with a stave sounds its notes; stop silences them.
-await page.evaluate(() => { window.__notes = []; const p = SoundSource.play; SoundSource.play = function (m, d, dur) { window.__notes.push([m, +(d || 0).toFixed(3), +dur.toFixed(3)]); return p.apply(this, arguments); }; });
-const k4 = await centreOf('#main-stack .tl-cs-slip[data-id="k4"]');
-await page.mouse.click(k4.x, k4.y);
-const notes = await page.evaluate(() => window.__notes.splice(0));
+// A mouse drag down turns back; it is not a tap.
+const taps0 = (await events('itemTap')).length;
+await page.mouse.move(view.x, view.y);
+await page.mouse.down();
+for (let i = 1; i <= 12; i++) { await page.mouse.move(view.x, view.y + i * 10); await page.waitForTimeout(16); }
 await page.waitForTimeout(150);
-const during = await page.evaluate(() => SoundSource.status().voices);
-await page.evaluate(() => window.tlMain.stop());
-await page.waitForTimeout(120);
-console.log(`k4 sounds ${JSON.stringify(notes)}; voices ${during} while sounding, ${await page.evaluate(() => SoundSource.status().voices)} after stop`);
+await page.mouse.up();
+await page.waitForTimeout(900);
+wide = await shape('wide');
+check(wide.focus < 3, `a drag down did not turn the wheel back (focus ${wide.focus})`);
+check((await events('itemTap')).length === taps0, 'a drag was taken for a tap');
+centred(wide, 'after a drag');
 
-// Run demo: the interval chord sounds together.
-await page.evaluate(() => window.tlRun.set(['i1', 'i2', 'i3', 'ia']));
-await toStack('#run-stack');
-const ia = await page.$eval('#run-stack .tl-cs-slip[data-id="ia"]', (e) => { const b = e.getBoundingClientRect(); return { x: b.left + b.width * .5, y: b.top + b.height / 2 }; });
-await page.mouse.click(ia.x, ia.y);
-console.log(`answer slip [_EG] sounds ${JSON.stringify(await page.evaluate(() => window.__notes.splice(0)))}`);
+// The keyboard turns one step.
+await page.focus('#board-wide .tl-cs-view');
+const before = wide.focus;
+await page.keyboard.press('ArrowDown');
+await page.waitForTimeout(800);
+wide = await shape('wide');
+check(wide.focus === before + 1, `ArrowDown went from ${before} to ${wide.focus}`);
 
-// Practice: taps do nothing.
-await page.click('#mode');
-await page.waitForTimeout(300);
-const before = await countOf('itemTap'), litBefore = await lit();
-const pr = await centreOf('#main-stack .tl-cs-slip');
-await page.mouse.click(pr.x, pr.y);
-console.log(`practice: itemTap ${(await countOf('itemTap')) - before}, lit ${litBefore} -> ${await lit()}, notes ${(await page.evaluate(() => window.__notes.length))}, slips kept ${await page.$$eval('#main-stack .tl-cs-slip', (s) => s.length)}`);
-await page.click('#mode');
-await page.waitForTimeout(300);
+// A tap on the slip after the focus: one itemTap for it, and it comes to the middle.
+const target = wide.slips[wide.focus + 1];
+const at = await page.evaluate((id) => { const r = window.tlStacks.wide.els[id].getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }, target.id);
+await page.mouse.click(at[0], at[1]);
+await page.waitForTimeout(900);
+const taps = (await events('itemTap', '电脑')).slice(taps0);
+check(taps.length === 1 && taps[0].id === target.id, `a tap on ${target.id} gave ${JSON.stringify(taps.map((t) => t.id))}`);
+wide = await shape('wide');
+check(wide.order[wide.focus] === target.id, 'the tapped slip did not come to the middle');
 
-// After two rebuilds a tap still raises exactly one event.
-const n0 = await countOf('blankTap');
-await toStack();
-const corner = await page.$eval('#main-stack', (h) => { const r = h.getBoundingClientRect(); return { x: r.left + 8, y: r.top + 4 }; });
-await page.mouse.click(corner.x, corner.y);
-const scroll = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
-console.log(`one blank tap after two rebuilds -> ${(await countOf('blankTap')) - n0} event; page width ${scroll.sw} for a ${scroll.iw} wide window`);
-if (errors.length) console.log('errors:', errors.join(' | '));
+// Set straight to two slips: nothing moving, turned to the last.
+await page.evaluate(() => window.tlCmd.set2());
+const set = await page.evaluate(() => { const s = window.tlStacks.wide; return { n: s.order.length, anim: !!s.anim || !!s.flight, p: s.p }; });
+check(set.n === 2 && !set.anim && set.p === 1, `set: ${JSON.stringify(set)}`);
+centred(await shape('wide'), 'after set');
+
+// A tap on the empty board above the slips.
+const blanks0 = (await events('blankTap', '电脑')).length;
+await page.mouse.click(view.x, view.top + 8);
+await page.waitForTimeout(200);
+check((await events('blankTap', '电脑')).length === blanks0 + 1, 'a tap on the empty board was not blankTap');
+
+const sideways = await page.evaluate(() => document.scrollingElement.scrollWidth > innerWidth + 1);
+check(!sideways, 'the page scrolls sideways');
+if (errors.length) fails.push('console: ' + errors.join(' / '));
+console.log(`stack @${width}: ` + (fails.length ? 'FAIL ' + fails.join('; ') : 'PASS'));
 await close();
+process.exit(fails.length ? 1 : 0);

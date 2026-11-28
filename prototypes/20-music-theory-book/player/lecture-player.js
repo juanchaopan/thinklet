@@ -1,39 +1,36 @@
 /* ============================================================
-   Lecture player. Reads a workflow file and a question file, puts the
-   component the question binds to each of the workflow's roles on the
-   stage, and runs the lecture exactly as the workflow file says: the
-   opening scene that reads the question, the question's parts (小题),
-   each part's scenes, each scene's steps (say, do, show, act, conclude),
-   what happens at the end of a scene and of a part, moving back and
-   forward a scene, and wrong attempts. Nothing in here knows a particular
-   workflow, part kind, scene or component.
+   Lecture player. Reads a workflow file and a question file and runs
+   the lecture exactly as the workflow file says: it puts the controls
+   the workflow lays out (stage theme components: close, question menu,
+   part switch, the question's title, previous and next scene, the
+   subtitle, replay) where the workflow puts them, puts the component the
+   question binds to each of the workflow's roles on the stage, and plays
+   the opening scene that reads the question, then the question's parts,
+   each part's scenes and each scene's steps (say, do, show, act,
+   conclude); what happens at the end of a scene and of a part, where
+   the child may go back or on, and wrong attempts, all come from the
+   workflow file. Nothing in here knows a particular workflow, part kind,
+   scene or component: components are found through the registry and
+   reached only through their capability interfaces.
 
-   The stage is a lit frame on a dark backdrop, full screen. Along its top
-   are the player's own controls: close (back to the book), the question
-   and its parts in a menu, and a dot per scene. On its left (on top on a
-   phone) is the conclusion board; in the middle the question's text, the
-   strip with the question's material, and the centre where the roles of
-   the current scene stand, large; along the bottom the narration and the
-   buttons for the previous and the next scene. Each scene names the roles
-   that stand in the centre; the others leave, so the eye knows where to
-   look. A role in the centre can only be touched while the child is
-   asked to answer on it. Nothing scrolls or slides: the frame clips what
-   it holds, the middle is scaled evenly to fit, and every change moves so
-   the eye can follow it.
+   The stage is a lit frame on a dark backdrop, full screen: the
+   workflow's top controls along its top, the conclusion board on its
+   left (on top on a phone), in the middle the question's title, the
+   strip with the question's material and the centre where the roles of
+   the current scene stand, large; the workflow's bottom controls along
+   the bottom. A role in the centre can only be touched while the child
+   is asked to answer on it. Nothing scrolls or slides: the frame clips
+   what it holds, the middle is scaled evenly to fit, and every change
+   moves so the eye can follow it.
 
-   Steps reach components only through capability interfaces: a step
-   says "role R, interface call C, value V"; the player looks up the
-   component bound to R and passes the call on.
-
-   ADAPTERS is a temporary layer for the prototype: today's components
-   still have their own command and event names (select, fill, optionTap,
-   keyPress...). Each adapter turns interface calls into those commands
-   and the component's events into interface events, and says which
-   interfaces the component implements. When the interfaces are final
-   and the components implement them directly, the adapters go away.
+   Where the child may go: back always (the previous scene, an earlier
+   part, a conclusion's scene), when the workflow allows going back; on
+   only past scenes that may be skipped or have been done once, so a
+   scene that asks the child to answer is never passed unanswered.
    ============================================================ */
 var LecturePlayer = (function () {
   var ABORT = { aborted: true };
+  var U = LessonComponents.util, arr = U.arr, sleep = U.sleep;
   // Motion: the theme's half-second glide with its very gentle start; a
   // crossfade lets the old content go a little before the new comes in.
   var MOVE_MS = 520, EASE = 'cubic-bezier(.6, 0, .25, 1)';
@@ -42,226 +39,17 @@ var LecturePlayer = (function () {
   // rows, the board's width beside the middle on a wide screen and its
   // height above it on a narrow one, and when a screen counts as wide.
   var COL_MAX = 760, ROW_GAP = 16, BOARD_W = 320, BOARD_H = 112, WIDE_MIN = 900, WIDE_RATIO = 1.15;
-  // A material in the strip is drawn at most this wide, so it reads as the
-  // question rather than the thing being worked on.
-  var STRIP_MAX = 320;
+  // A material in the strip reads as the question rather than the thing
+  // being worked on: it is drawn at most this wide, and narrower still
+  // when it would take more than this share of the middle's height
+  // (within these bounds in pixels).
+  var STRIP_MAX = 320, STRIP_MIN = 140, STRIP_SHARE = .24, STRIP_MIN_H = 84, STRIP_MAX_H = 150;
+  // Where the workflow can put controls, in the order they are built.
+  var PLACES = ['top', 'head', 'bottom'];
 
-  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function still() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
-  function arr(x) { return x === undefined || x === null ? [] : [].concat(x); }
-  function notesOf(v) {
-    if (!v) return [];
-    if (Array.isArray(v)) return v.reduce(function (a, g) { return a.concat(notesOf(g)); }, []);
-    return arr(v.notes);
-  }
   function rectOf(el) { var r = el.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
-  function esc(t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-
-  /* ---------- adapters (temporary, see above) ---------- */
-
-  function Base(env) { this.env = env; this.listeners = []; }
-  Base.prototype.on = function (fn) { this.listeners.push(fn); };
-  Base.prototype.emit = function (ev) { this.listeners.forEach(function (f) { f(ev); }); };
-  Base.prototype.stop = function () { if (this.c && this.c.stop) this.c.stop(); };
-
-  // Score: point, play, positions.
-  function ScoreA(host, input, env) {
-    Base.call(this, env);
-    var self = this;
-    this.c = new Score(host, Object.assign({ mode: 'lecture', sound: env.sound, onEvent: function (ev) { self.emit({ name: 'point.tap', raw: ev }); } }, input));
-    this.st = { spot: null, hl: null, labels: [] };
-  }
-  ScoreA.prototype = Object.create(Base.prototype);
-  ScoreA.interfaces = ['point', 'play', 'positions'];
-  ScoreA.prototype.indices = function (v, ctx) {
-    var bar = (v && v.bar) || (ctx.at && ctx.at.bar) || 1;
-    var inBar = this.c.notesOfBar(bar);
-    return notesOf(v).map(function (i) { return inBar[i] && inBar[i].index; }).filter(function (i) { return i !== undefined; });
-  };
-  ScoreA.prototype.call = function (name, v, ctx) {
-    var self = this;
-    if (name === 'point.spotlight') { this.c.spotlight(v && v.bar ? v.bar : null); this.st.spot = v && v.bar || null; this.st.hl = null; return; }
-    if (name === 'point.highlight') { var idx = this.indices(v, ctx); this.c.highlight(idx); this.st.hl = idx; return; }
-    if (name === 'point.label') {
-      arr(v).forEach(function (g) { var i = self.indices(g, ctx)[0]; if (i !== undefined) { self.c.label(i, g.label); self.st.labels.push([i, g.label]); } });
-      return;
-    }
-    if (name === 'point.clear') { this.setState({}); return; }
-    throw new Error('score: ' + name);
-  };
-  ScoreA.prototype.getState = function () { return JSON.parse(JSON.stringify(this.st)); };
-  ScoreA.prototype.setState = function (s) {
-    var self = this; s = s || {};
-    this.c.clear();
-    if (s.spot) this.c.spotlight(s.spot);
-    if (s.hl) this.c.highlight(s.hl);
-    (s.labels || []).forEach(function (l) { self.c.label(l[0], l[1]); });
-    this.st = { spot: s.spot || null, hl: s.hl || null, labels: (s.labels || []).slice() };
-  };
-
-  // Beat grid: point, count, meter, set, play. Changing to another rhythm
-  // goes through the player's crossfade, so the new bar comes in where the
-  // old one fades. In a hurry (a skipped scene) every mark is drawn at once.
-  function GridA(host, input, env) {
-    Base.call(this, env);
-    this.host = host; this.input = input;
-    this.make(input.abc);
-  }
-  GridA.prototype = Object.create(Base.prototype);
-  GridA.interfaces = ['point', 'count', 'meter', 'set', 'play'];
-  GridA.prototype.make = function (abc) {
-    var self = this;
-    if (this.c) this.c.stop();
-    this.host.innerHTML = '';
-    this.abc = abc;
-    this.c = new BeatGrid(this.host, Object.assign({}, this.input, { abc: abc, mode: 'lecture', sound: this.env.sound, onEvent: function (ev) {
-      if (ev.type === 'countStep' && self.counting && ev.n === ev.total) { var done = self.counting; self.counting = null; setTimeout(done, 650); }
-      if (ev.type === 'tileTap' || ev.type === 'beatTap') self.emit({ name: 'point.tap', raw: ev });
-    } }));
-    this.st = { abc: abc, meter: null, sub: [], counts: [], labels: [], hl: null };
-  };
-  GridA.prototype.sig = function (m) { return typeof m === 'object' && m ? [m.sig, m.group] : [m, undefined]; };
-  GridA.prototype.call = function (name, v, ctx) {
-    var self = this, hurry = ctx && ctx.hurry;
-    if (name === 'meter.show') { var s = this.sig(v); this.c.meter(s[0], s[1]); this.st.meter = v; this.st.sub = []; this.st.counts = []; return hurry ? null : sleep(700); }
-    if (name === 'meter.subdivide') { this.c.subdivide(v); this.st.sub.push(v); return hurry ? null : sleep(400); }
-    if (name === 'count.run') {
-      this.st.counts.push(v);
-      if (hurry) { this.c.count(v, undefined, undefined, true); return null; }
-      return new Promise(function (res) { self.counting = res; self.c.count(v); setTimeout(function () { if (self.counting === res) { self.counting = null; res(); } }, 15000); });
-    }
-    if (name === 'point.highlight') { var idx = notesOf(v); this.c.highlight(idx); this.st.hl = idx; return; }
-    if (name === 'point.label') { arr(v).forEach(function (g) { var i = notesOf(g)[0]; if (i !== undefined) { self.c.label(i, g.label, hurry); self.st.labels.push([i, g.label]); } }); return hurry ? null : sleep(500); }
-    if (name === 'point.spotlight') { var n = notesOf(v); this.c.spotlight(n.length ? { tiles: [Math.min.apply(null, n), Math.max.apply(null, n)] } : null); return; }
-    if (name === 'point.clear') { this.c.clear(); return; }
-    if (name === 'set') { if (v === this.abc) return; if (hurry) { this.make(v); return; } this.env.swap(function () { self.make(v); }); return sleep(MOVE_MS); }
-    throw new Error('beat-grid: ' + name);
-  };
-  GridA.prototype.stop = function () { this.c.stop(); if (this.counting) { var r = this.counting; this.counting = null; r(); } };
-  GridA.prototype.getState = function () { return JSON.parse(JSON.stringify(this.st)); };
-  GridA.prototype.setState = function (s) {
-    var self = this; s = s || {};
-    this.stop();
-    if (s.abc && s.abc !== this.abc) this.make(s.abc); else { this.c.clear(); this.c.meter(this.input.meter || '?'); }
-    if (s.meter) { var m = this.sig(s.meter); this.c.meter(m[0], m[1]); }
-    (s.sub || []).forEach(function (u) { self.c.subdivide(u); });
-    (s.counts || []).forEach(function (u) { self.c.count(u, undefined, undefined, true); });
-    (s.labels || []).forEach(function (l) { self.c.label(l[0], l[1], true); });
-    if (s.hl) this.c.highlight(s.hl);
-    this.st = JSON.parse(JSON.stringify(Object.assign({ abc: this.abc, meter: null, sub: [], counts: [], labels: [], hl: null }, s)));
-  };
-
-  // Choice: answer, point, strike, set, play, positions.
-  function ChoiceA(host, input, env) {
-    Base.call(this, env);
-    var self = this;
-    this.c = new Choice(host, Object.assign({}, input, { mode: 'lecture', sound: env.sound, onEvent: function (ev) {
-      if (ev.type === 'optionTap') { self.st.selected = ev.selected.slice(); if (ev.on && !ev.struck) self.emit({ name: 'answer.given', item: null, value: ev.id }); }
-      if (ev.type === 'boxTap') { self.st.values = ev.values.slice(); if (ev.value) self.emit({ name: 'answer.given', item: ev.index, value: ev.value }); }
-    } }));
-    this.st = { selected: [], values: [], struck: [], checks: {}, spotlight: [] };
-  }
-  ChoiceA.prototype = Object.create(Base.prototype);
-  ChoiceA.interfaces = ['answer', 'point', 'strike', 'set', 'play', 'positions'];
-  ChoiceA.prototype.key = function (a) { return a.item === null || a.item === undefined ? a.value : a.item; };
-  ChoiceA.prototype.call = function (name, v, ctx, ok) {
-    var hurry = ctx && ctx.hurry;
-    if (name === 'point.spotlight') { this.st.spotlight = arr(v); this.c.spotlight(this.st.spotlight); return; }
-    if (name === 'point.highlight') { this.c.highlight(arr(v)); return; }
-    if (name === 'point.clear') { this.st.spotlight = []; this.c.spotlight([]); this.c.highlight([]); return; }
-    if (name === 'strike') { this.st.struck = this.st.struck.concat(arr(v)); this.c.strike(arr(v)); return hurry ? null : sleep(600); }
-    if (name === 'answer.focus') return;
-    if (name === 'answer.check') { var m = {}; m[this.key(v)] = ok; this.st.checks[this.key(v)] = ok; this.c.check(m); return; }
-    if (name === 'answer.clear') {
-      if (v && v.value !== undefined) delete this.st.checks[this.key(v)];
-      this.st.selected = []; this.st.values = [];
-      this.apply(); return;
-    }
-    if (name === 'answer.demo') {
-      if (v.item === null || v.item === undefined) { this.st.selected = [v.value]; this.c.select([v.value]); }
-      else { this.st.values[v.item] = v.value; this.c.select(this.st.values); }
-      return hurry ? null : sleep(500);
-    }
-    if (name === 'answer.lock') { this.c.lock(v !== false); return; }
-    throw new Error('choice: ' + name);
-  };
-  ChoiceA.prototype.apply = function () { this.c.set({ selected: this.st.selected, values: this.st.values, struck: this.st.struck, checks: this.st.checks, spotlight: this.st.spotlight }); };
-  ChoiceA.prototype.getState = function () { return JSON.parse(JSON.stringify(this.st)); };
-  ChoiceA.prototype.setState = function (s) {
-    this.st = JSON.parse(JSON.stringify(Object.assign({ selected: [], values: [], struck: [], checks: {}, spotlight: [] }, s || {})));
-    this.apply();
-  };
-
-  // Fill-in: answer, point, set, positions.
-  function FillA(host, input, env) {
-    Base.call(this, env);
-    var self = this;
-    this.c = new Fill(host, Object.assign({}, input, { onEvent: function (ev) {
-      if (ev.type !== 'keyPress') return;
-      self.st.values = Object.assign({}, ev.values);
-      var f = self.c.field(ev.id);
-      if (ev.accepted && ev.key !== 'back' && ev.key !== 'next' && f && ev.value.length >= f.size) self.emit({ name: 'answer.given', item: ev.id, value: ev.value });
-    } }));
-    this.st = { values: {}, checks: {}, spotlight: [], focus: null };
-  }
-  FillA.prototype = Object.create(Base.prototype);
-  FillA.interfaces = ['answer', 'point', 'set', 'positions'];
-  FillA.prototype.call = function (name, v, ctx, ok) {
-    var hurry = ctx && ctx.hurry;
-    if (name === 'point.spotlight') { this.st.spotlight = arr(v); this.c.spotlight(this.st.spotlight); return; }
-    if (name === 'point.highlight') { this.c.highlight(arr(v)); return; }
-    if (name === 'point.clear') { this.st.spotlight = []; this.c.spotlight([]); this.c.highlight([]); return; }
-    if (name === 'answer.focus') { var id = v && typeof v === 'object' ? v.item : v; this.st.focus = id; this.c.focus(id); return; }
-    if (name === 'answer.check') { var m = {}; m[v.item] = ok; this.st.checks[v.item] = ok; this.c.check(m); return; }
-    if (name === 'answer.clear') {
-      if (v && v.item !== undefined && v.item !== null) { this.st.values[v.item] = ''; delete this.st.checks[v.item]; this.st.focus = v.item; }
-      this.apply(); return;
-    }
-    if (name === 'answer.demo') {
-      this.st.values[v.item] = v.value;
-      if (hurry) { this.apply(); return; }
-      this.c.type(v.item, v.value);
-      return sleep(Fill.TYPE_GAP_MS * (String(v.value).length + 1) + 400);
-    }
-    if (name === 'answer.lock') { this.c.lock(v !== false); return; }
-    throw new Error('fill: ' + name);
-  };
-  FillA.prototype.apply = function () { this.c.set({ values: this.st.values, checks: this.st.checks, spotlight: this.st.spotlight, focus: this.st.focus }); };
-  FillA.prototype.getState = function () { return JSON.parse(JSON.stringify(this.st)); };
-  FillA.prototype.setState = function (s) {
-    this.st = JSON.parse(JSON.stringify(Object.assign({ values: {}, checks: {}, spotlight: [], focus: null }, s || {})));
-    this.apply();
-  };
-
-  // Conclusion stack: conclude, point, mask, set. A push may carry the
-  // place on screen the conclusion was reached; the stack flies it from
-  // there, and the step waits until it has landed.
-  function StackA(host, input, env) {
-    Base.call(this, env);
-    var self = this;
-    this.c = new ConclusionStack(host, Object.assign({}, input, { mode: 'lecture', sound: env.sound, onEvent: function (ev) {
-      if (ev.type === 'itemTap') self.emit({ name: 'conclude.tap', id: ev.id });
-    } }));
-  }
-  StackA.prototype = Object.create(Base.prototype);
-  StackA.interfaces = ['conclude', 'point', 'mask', 'set'];
-  StackA.prototype.call = function (name, v, ctx) {
-    if (name === 'conclude.push') {
-      var id = v && typeof v === 'object' ? v.id : v, opts = v && v.from && !(ctx && ctx.hurry) ? { from: v.from } : null;
-      if (this.c.order.indexOf(id) >= 0) return;
-      this.c.push(id, opts);
-      return ctx && ctx.hurry ? null : sleep(this.c.pushMs(opts) + 300);
-    }
-    if (name === 'conclude.set') { this.c.set(arr(v)); return; }
-    if (name === 'point.highlight') { this.c.highlight(arr(v)); return; }
-    throw new Error('conclusion-stack: ' + name);
-  };
-  StackA.prototype.getState = function () { return { order: this.c.order.slice() }; };
-  StackA.prototype.setState = function (s) { this.c.set((s && s.order) || []); };
-
-  var ADAPTERS = { score: ScoreA, 'beat-grid': GridA, choice: ChoiceA, fill: FillA, 'conclusion-stack': StackA };
-
-  /* ---------- the stage: the player's own look ---------- */
+  function fileOf(id) { return id.replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
 
   var FONT = '"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif';
   var STAGE_CSS = [
@@ -274,89 +62,52 @@ var LecturePlayer = (function () {
     'box-shadow:0 30px 80px -20px rgba(0,0,0,.7),0 0 0 1px rgba(255,230,200,.12)}',
     '.lx-frame::after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 140px 20px rgba(80,52,24,.14);border-radius:inherit}',
     '@media (max-width:600px){.lx-frame{inset:max(6px,env(safe-area-inset-top,0px)) max(6px,env(safe-area-inset-right,0px)) max(6px,env(safe-area-inset-bottom,0px)) max(6px,env(safe-area-inset-left,0px));border-radius:20px}}',
-    // The top bar: close, the question menu, the scene dots.
-    '.lx-top{position:relative;z-index:6;min-width:0;display:flex;align-items:center;gap:10px;padding:10px 12px 6px}',
-    '.lx-btn{appearance:none;border:0;margin:0;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;color:#2a2118}',
-    '.lx-btn:focus{outline:none}.lx-btn:focus-visible{outline:3px solid #a98bff;outline-offset:2px}',
-    '.lx-close{flex:none;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.72);box-shadow:0 2px 8px -2px rgba(70,45,20,.35);transition:transform .15s,background .2s}',
-    '.lx-close:hover{background:#fff}.lx-close:active{transform:scale(.94)}',
-    '.lx-close svg,.lx-title svg,.lx-nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}',
-    '.lx-title{flex:0 1 auto;min-width:0;display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px 0 16px;border-radius:999px;background:rgba(255,255,255,.72);box-shadow:0 2px 8px -2px rgba(70,45,20,.35);font-size:15px;font-weight:800;transition:background .2s}',
-    '.lx-title:hover{background:#fff}',
-    '.lx-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '.lx-title .lx-part{color:#6d3cf0;flex:none}',
-    '.lx-title svg{flex:none}',
-    '.lx-dots{margin-left:auto;flex:0 1 auto;display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden;padding-right:4px}',
-    '.lx-dotgroup{flex:none;display:flex;align-items:center;gap:4px}',
-    '.lx-dotgroup b{font:italic 600 14px/1 "Cormorant Garamond",serif;color:#6b5238;margin-right:2px}',
-    '.lx-dot{width:8px;height:8px;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(107,82,56,.5);transition:background .3s,box-shadow .3s,transform .3s}',
-    '.lx-dot.done{background:rgba(107,82,56,.55);box-shadow:none}',
-    '.lx-dot.now{background:#7b4dff;box-shadow:0 0 0 3px rgba(123,77,255,.22);transform:scale(1.15)}',
-    // On a phone only the current part's dots show.
-    '@media (max-width:600px){.lx-dotgroup:not(.cur){display:none}.lx-dots{gap:6px}.lx-dot{width:7px;height:7px}.lx-dotgroup{gap:4px}.lx-title{font-size:14px;padding:0 10px 0 12px}}',
-    '.lx-menu{position:absolute;z-index:20;top:58px;left:64px;min-width:240px;max-width:calc(100% - 76px);padding:8px;border-radius:16px;background:#fffdf8;box-shadow:0 20px 50px -12px rgba(40,24,10,.55),0 0 0 1px rgba(122,88,54,.12);transform-origin:20px 0;transition:opacity .2s,transform .25s cubic-bezier(.6,0,.25,1)}',
-    '.lx-menu[hidden]{display:block;opacity:0;transform:translateY(-6px) scale(.97);pointer-events:none;visibility:hidden}',
-    '.lx-menu h3{margin:6px 10px 4px;font-size:12px;color:#8a7a68;font-weight:700}',
-    '.lx-menu .lx-btn{display:flex;width:100%;align-items:center;gap:8px;min-height:44px;padding:0 12px;border-radius:10px;font-size:15px;text-align:left;background:transparent}',
-    '.lx-menu .lx-btn:hover{background:#f3ecff}',
-    '.lx-menu .lx-btn[aria-current="true"]{color:#4b23c9;font-weight:800;background:#f3ecff}',
-    // The body: the board and the middle.
-    '.lx-body{position:relative;z-index:1;min-height:0;min-width:0;display:grid;gap:12px;padding:4px 14px 0}',
+    // A control's place: as wide as the control and no wider than its
+    // row, gone when the control is hidden; the subtitle's place takes the
+    // room left in its row.
+    '.lx-ctl{position:relative;flex:0 1 auto;display:flex;min-width:0}',
+    '.lx-ctl.lx-grow{flex:1 1 auto}',
+    '.lx-ctl:has(> [hidden]){display:none}',
+    '.lx-top{position:relative;z-index:6;min-width:0;display:flex;align-items:center;gap:10px;padding:10px 12px 4px}',
+    '.lx-body{position:relative;z-index:1;min-height:0;min-width:0;display:grid;gap:12px;padding:6px 14px 0}',
     '.lx-body[data-cols="2"]{grid-template-columns:' + BOARD_W + 'px minmax(0,1fr)}',
-    '.lx-body[data-cols="1"]{grid-template-columns:minmax(0,1fr);grid-template-rows:' + BOARD_H + 'px minmax(0,1fr);padding:2px 8px 0}',
+    '.lx-body[data-cols="1"]{grid-template-columns:minmax(0,1fr);grid-template-rows:' + BOARD_H + 'px minmax(0,1fr);padding:4px 8px 0}',
     '.lx-board{position:relative;z-index:3;min-height:0;min-width:0}',
     '.lx-board > .lx-role,.lx-board .lx-host{height:100%}',
-    '.lx-main{position:relative;min-height:0;min-width:0;overflow:visible}',
+    '.lx-main{position:relative;min-height:0;min-width:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px}',
+    '.lx-head{position:relative;z-index:2;min-width:0;display:flex;justify-content:center}',
+    '.lx-head:empty{display:none}',
+    '.lx-room{position:relative;min-height:0;min-width:0}',
     '.lx-canvas{position:absolute;left:0;top:0;display:flex;flex-direction:column;gap:' + ROW_GAP + 'px;transform-origin:0 0;will-change:transform}',
-    '.lx-prompt{text-align:center;color:#2a2118;padding:0 8px}',
-    '.lx-prompt p{margin:0;font-size:18px;font-weight:700;line-height:1.45}',
-    '.lx-prompt p + p{margin-top:2px;font:italic 500 16px/1.3 "Cormorant Garamond","Times New Roman",serif;color:#6b5238}',
     '.lx-strip{display:grid;justify-items:center}',
     '.lx-strip:empty{display:none}',
-    '.lx-strip > .lx-role{width:100%;max-width:' + STRIP_MAX + 'px}',
+    '.lx-strip > .lx-role{width:100%;max-width:var(--lx-strip-w,' + STRIP_MAX + 'px)}',
     '.lx-center{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center}',
     '.lx-center-in{display:grid;gap:' + ROW_GAP + 'px}',
     '.lx-role{position:relative;min-width:0}',
     '.lx-role[hidden]{display:none}',
     '.lx-ghost{position:absolute;margin:0;pointer-events:none}',
-    // The dock: narration, then the previous and next scene.
-    '.lx-dock{position:relative;z-index:5;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;padding:8px 14px 12px;width:100%;max-width:1040px;justify-self:center;box-sizing:border-box;min-width:0}',
-    '.lx-nav{display:flex;gap:10px;padding-bottom:2px}',
-    '@media (max-width:760px){.lx-dock{grid-template-columns:minmax(0,1fr);gap:8px;padding:6px 8px 8px}.lx-nav{justify-content:space-between}}',
-    '.lx-nav .lx-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:52px;padding:0 18px;border-radius:999px;font-size:16px;font-weight:800;transition:transform .15s,background .3s,box-shadow .3s,color .3s,opacity .3s}',
-    '.lx-prev{background:rgba(255,255,255,.75);box-shadow:0 2px 8px -2px rgba(70,45,20,.35)}',
-    '.lx-prev:hover{background:#fff}',
-    '.lx-next{position:relative;color:#4b23c9;background:rgba(255,255,255,.75);box-shadow:0 2px 8px -2px rgba(70,45,20,.35)}',
-    '.lx-next:hover{background:#fff}',
-    '.lx-next.ready{color:#fff;background:radial-gradient(circle at 30% 25%,#9a7bff,#6d3cf0);box-shadow:0 14px 28px -12px #6d3cf0,0 0 0 4px rgba(255,255,255,.55)}',
-    '.lx-next.ready::after{content:"";position:absolute;inset:-4px;border-radius:inherit;animation:lx-ring 2.2s ease-out 1s infinite}',
-    '@keyframes lx-ring{0%{box-shadow:0 0 0 0 rgba(169,139,255,.55)}70%,100%{box-shadow:0 0 0 14px rgba(169,139,255,0)}}',
-    '.lx-nav .lx-btn:active:not([disabled]){transform:scale(.96)}',
-    '.lx-nav .lx-btn[disabled]{opacity:.38;cursor:default}',
-    // The card at the end of the lecture.
-    '.lx-end{position:absolute;inset:0;z-index:30;display:grid;place-items:center;padding:20px;background:rgba(36,26,20,.38);backdrop-filter:blur(3px);transition:opacity .45s}',
-    '.lx-end[hidden]{display:grid;opacity:0;pointer-events:none;visibility:hidden}',
-    '.lx-end-card{width:min(100%,400px);display:grid;gap:12px;justify-items:center;text-align:center;padding:28px 22px 22px;border-radius:24px;background:#fffdf8;box-shadow:0 30px 70px -20px rgba(30,18,8,.7);transform:translateY(0);transition:transform .52s cubic-bezier(.6,0,.25,1)}',
-    '.lx-end[hidden] .lx-end-card{transform:translateY(18px)}',
-    '.lx-end-seal{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;color:#fff;font:700 34px/1 "Cormorant Garamond",serif;background:radial-gradient(circle at 35% 30%,#b9a0ff,#7b4dff);box-shadow:0 10px 24px -8px #7b4dff,0 0 0 4px rgba(255,255,255,.9)}',
-    '.lx-end-card h2{margin:4px 0 0;font-size:22px;color:#2a2118}',
-    '.lx-end-card p{margin:0;color:#6b5238;font-size:15px}',
-    '.lx-end-acts{display:grid;gap:10px;width:100%;margin-top:6px}',
-    '.lx-end-acts .lx-btn{min-height:52px;border-radius:999px;font-size:16px;font-weight:800;background:#f3ecff;color:#4b23c9}',
-    '.lx-end-acts .lx-btn.main{color:#fff;background:radial-gradient(circle at 30% 25%,#9a7bff,#6d3cf0);box-shadow:0 12px 26px -12px #6d3cf0}',
-    '@media (prefers-reduced-motion:reduce){.lx-next.ready::after{animation:none}.lx-menu,.lx-end,.lx-end-card{transition-duration:.01ms}}'
+    '.lx-dock{position:relative;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 14px 12px;width:100%;max-width:1100px;justify-self:center;box-sizing:border-box;min-width:0}',
+    '@media (max-width:600px){.lx-top{gap:8px;padding:8px 8px 2px}.lx-dock{gap:6px;padding:6px 6px 8px}}'
   ].join('');
-
-  var ICON = {
-    close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-    down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>',
-    prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
-    next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg>'
-  };
 
   function addStyle(id, css) {
     if (document.getElementById(id)) return;
     var s = document.createElement('style'); s.id = id; s.textContent = css; document.head.appendChild(s);
+  }
+
+  // Every line a question has, with the ids the player says them by:
+  // q.<key> for the question's own lines (reading it), p<part>.<key>,
+  // p<part>.<item>.<key>; each with the url of its recording under base.
+  function linesOf(q, base) {
+    var out = [];
+    function add(id, l) { out.push({ id: id, text: typeof l === 'string' ? l : l.text, url: base + fileOf(id) }); }
+    Object.keys(q.lines || {}).forEach(function (k) { add('q.' + k, q.lines[k]); });
+    (q.parts || []).forEach(function (p, pi) {
+      Object.keys(p.lines || {}).forEach(function (k) { add('p' + pi + '.' + k, p.lines[k]); });
+      (p.items || []).forEach(function (it) { Object.keys(it.lines || {}).forEach(function (k) { add('p' + pi + '.' + it.id + '.' + k, it.lines[k]); }); });
+    });
+    return out;
   }
 
   /* ---------- the player ---------- */
@@ -368,30 +119,42 @@ var LecturePlayer = (function () {
     this.stage = opts.stage; this.sound = opts.sound;
     this.trace = function (kind, text) { if (!self.destroyed) onTrace(kind, text); };
     this.lines = opts.lines;
-    this.inst = {}; this.keys = {};
-    this.snap = {}; this.snapEnd = {};
-    this.token = null; this.done = false; this.destroyed = false; this.mounted = null;
+    this.inst = {}; this.keys = {}; this.ctl = {};
+    this.snap = {}; this.done = {}; this.concludedAt = {};
+    this.token = null; this.finished = false; this.destroyed = false; this.mounted = null;
     this.scale = 1; this.cols = 1;
     this.problems = this.check();
     if (this.problems.length) return;
     this.plan = this.buildPlan();
     this.layout();
   }
+  Player.linesOf = linesOf;
 
-  // What `task content` will check: every role the workflow needs has a
-  // component that implements its interfaces, every part is a kind the
-  // workflow offers and fills what that kind requires, and nothing else.
+  // What `task content` will check: every control the workflow lays out
+  // is a stage theme component and the subtitle is among them; every role
+  // the workflow needs has a component of the question's theme that
+  // implements its interfaces; every part is a kind the workflow offers
+  // and fills what that kind requires, and nothing else.
   Player.prototype.check = function () {
-    var wf = this.wf, q = this.q, out = [];
+    var wf = this.wf, q = this.q, out = [], st = wf.stage || {}, talk = false;
+    PLACES.forEach(function (place) {
+      arr(st[place]).forEach(function (id) {
+        var d = LessonComponents.get(id);
+        if (!d || d.theme !== 'stage') { out.push('舞台上的 ' + id + ' 不是舞台主题的组件'); return; }
+        if (d.interfaces.indexOf('narrate') >= 0) talk = true;
+      });
+    });
+    if (!talk) out.push('流程的舞台上没有字幕条');
     var parts = q.parts || [];
     Object.keys(wf.roles).forEach(function (role) {
       var r = wf.roles[role];
       var binds = [q.bind && q.bind[role]].concat(parts.map(function (p) { return p.bind && p.bind[role]; })).filter(Boolean);
       if (!binds.length && !r.optional) out.push('角色「' + r.title + '」没有指定组件');
       binds.forEach(function (b) {
-        var A = ADAPTERS[b];
-        if (!A) { out.push('角色「' + r.title + '」指定的组件 ' + b + ' 不存在'); return; }
-        arr(r.needs).forEach(function (i) { if (A.interfaces.indexOf(i) < 0) out.push('组件 ' + b + ' 没有实现角色「' + r.title + '」要的接口 ' + i); });
+        var d = LessonComponents.get(b);
+        if (!d) { out.push('角色「' + r.title + '」指定的组件 ' + b + ' 不存在'); return; }
+        if (d.theme !== q.theme) out.push('组件 ' + b + ' 不在题目选的主题 ' + q.theme + ' 里');
+        arr(r.needs).forEach(function (i) { if (d.interfaces.indexOf(i) < 0) out.push('组件 ' + b + ' 没有实现角色「' + r.title + '」要的接口 ' + i); });
       });
     });
     parts.forEach(function (p, i) {
@@ -412,8 +175,7 @@ var LecturePlayer = (function () {
   Player.prototype.buildPlan = function () {
     var self = this, out = [];
     arr(this.wf.player.opening).forEach(function (name) {
-      var def = self.wf.scenes[name];
-      out.push({ pi: 0, opening: true, name: name, def: def, params: {}, part: {} });
+      out.push({ pi: 0, opening: true, name: name, def: self.wf.scenes[name], params: {}, part: {} });
     });
     (this.q.parts || []).forEach(function (p, pi) { out = out.concat(self.scenesOf(pi)); });
     out.forEach(function (s, g) { s.g = g; });
@@ -438,35 +200,27 @@ var LecturePlayer = (function () {
     return out;
   };
 
-  // The stage: the frame with its top bar, the body (board and middle)
-  // and the dock. Each role gets a slot in its place, in the order the
-  // workflow lists them; the board paints above the middle, so a
-  // conclusion flying to it passes over the other roles.
+  // The stage: the frame with the workflow's top controls, the body (the
+  // board, and the middle with the head controls over the scaled canvas)
+  // and the workflow's bottom controls. Each role gets a slot in its
+  // place, in the order the workflow lists them; the board paints above
+  // the middle, so a conclusion flying to it passes over the other roles.
   Player.prototype.layout = function () {
-    var self = this, wf = this.wf, q = this.q;
+    var self = this, wf = this.wf;
     addStyle('lx-stage-style', STAGE_CSS);
     this.stage.classList.add('lx-stage');
     this.stage.innerHTML =
       '<div class="lx-frame">' +
-        '<div class="lx-top"><button type="button" class="lx-btn lx-close" aria-label="回到书本">' + ICON.close + '</button>' +
-        '<button type="button" class="lx-btn lx-title" aria-haspopup="true" aria-expanded="false"><span class="lx-name"></span><span class="lx-part"></span>' + ICON.down + '</button>' +
-        '<div class="lx-dots" aria-hidden="true"></div><div class="lx-menu" hidden></div></div>' +
-        '<div class="lx-body" data-cols="1"><div class="lx-board"></div><div class="lx-main"><div class="lx-canvas">' +
-          '<div class="lx-prompt"></div><div class="lx-strip"></div><div class="lx-center"><div class="lx-center-in"></div></div>' +
-        '</div></div></div>' +
-        '<div class="lx-dock"><div class="lx-bar"></div><div class="lx-nav">' +
-          '<button type="button" class="lx-btn lx-prev">' + ICON.prev + '<span>上一幕</span></button>' +
-          '<button type="button" class="lx-btn lx-next"><span>下一幕</span>' + ICON.next + '</button></div></div>' +
-        '<div class="lx-end" hidden><div class="lx-end-card"></div></div>' +
+        '<div class="lx-top"></div>' +
+        '<div class="lx-body" data-cols="1"><div class="lx-board"></div><div class="lx-main"><div class="lx-head"></div><div class="lx-room"><div class="lx-canvas">' +
+          '<div class="lx-strip"></div><div class="lx-center"><div class="lx-center-in"></div></div>' +
+        '</div></div></div></div>' +
+        '<div class="lx-dock"></div>' +
       '</div>';
     var $ = function (s) { return self.stage.querySelector(s); };
-    this.frame = $('.lx-frame'); this.body = $('.lx-body'); this.main = $('.lx-main'); this.canvas = $('.lx-canvas');
-    this.promptEl = $('.lx-prompt'); this.stripEl = $('.lx-strip'); this.centerEl = $('.lx-center'); this.centerIn = $('.lx-center-in');
-    this.boardEl = $('.lx-board'); this.menu = $('.lx-menu'); this.dotsEl = $('.lx-dots');
-    this.prevBtn = $('.lx-prev'); this.nextBtn = $('.lx-next'); this.endEl = $('.lx-end');
-    var pr = q.prompt || {};
-    this.promptEl.innerHTML = (pr.text ? '<p lang="zh">' + esc(pr.text) + '</p>' : '') + (pr.gloss ? '<p lang="en">' + esc(pr.gloss) + '</p>' : '');
-    $('.lx-name').textContent = q.title || '';
+    this.frame = $('.lx-frame'); this.body = $('.lx-body'); this.room = $('.lx-room'); this.canvas = $('.lx-canvas');
+    this.stripEl = $('.lx-strip'); this.centerIn = $('.lx-center-in'); this.boardEl = $('.lx-board');
+    this.placeEl = { top: $('.lx-top'), head: $('.lx-head'), bottom: $('.lx-dock') };
     this.slots = {};
     this.stackRole = Object.keys(wf.roles).filter(function (r) { return arr(wf.roles[r].needs).indexOf('conclude') >= 0; })[0];
     Object.keys(wf.roles).forEach(function (role) {
@@ -478,45 +232,75 @@ var LecturePlayer = (function () {
       if (r.place !== 'board' && r.place !== 'strip') slot.inert = true;
       self.slots[role] = slot;
     });
-    this.bar = new NarrationBar($('.lx-bar'), {
-      portrait: this.opts.portrait, controls: wf.player.narration || [], lines: this.lines,
-      onEvent: function (ev) { self.trace('bar', ev.type + (ev.id ? ' ' + ev.id : '') + (ev.value ? ' ' + ev.value : '')); }
-    });
-    $('.lx-close').addEventListener('click', function () { self.trace('nav', '关闭，回到书本'); if (self.opts.onLeave) self.opts.onLeave(); });
-    $('.lx-title').addEventListener('click', function () { self.openMenu(self.menu.hidden); });
-    this.prevBtn.addEventListener('click', function () { self.back(); });
-    this.nextBtn.addEventListener('click', function () { self.forward(); });
+    this.buildControls();
     this.frame.addEventListener('pointerdown', function (ev) { self.onPress(ev); }, true);
-    this.frame.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !self.menu.hidden) self.openMenu(false); });
     this.ro = new ResizeObserver(function () { self.fit(); });
-    this.ro.observe(this.main); this.ro.observe(this.canvas); this.ro.observe(this.stage);
-    this.renderDots();
+    this.ro.observe(this.room); this.ro.observe(this.canvas); this.ro.observe(this.stage);
     this.fit();
   };
 
+  // The controls the workflow lays out, each a stage theme component in
+  // its place; the player gives each what it needs by the interfaces it
+  // implements, and listens to what they report.
+  Player.prototype.buildControls = function () {
+    var self = this, st = this.wf.stage || {};
+    PLACES.forEach(function (place) {
+      arr(st[place]).forEach(function (id) {
+        var def = LessonComponents.get(id);
+        var host = document.createElement('div');
+        host.className = 'lx-ctl'; host.setAttribute('data-ctl', id);
+        if (def.interfaces.indexOf('narrate') >= 0) host.classList.add('lx-grow');
+        self.placeEl[place].appendChild(host);
+        var input = Object.assign({}, (st.inputs || {})[id]);
+        def.interfaces.forEach(function (i) { Object.assign(input, self.controlInput(i)); });
+        var c = def.create(host, input, { sound: self.sound });
+        def.interfaces.forEach(function (i) { self.ctl[i] = c; });
+        c.on(function (ev) { self.onControl(ev); });
+      });
+    });
+    this.bar = this.ctl.narrate;
+  };
+  Player.prototype.controlInput = function (iface) {
+    var q = this.q, book = arr(this.opts.book), me = book.filter(function (b) { return b.id === q.id; })[0] || {};
+    if (iface === 'narrate') return { lines: this.lines, portrait: this.opts.portrait };
+    if (iface === 'questions') return { items: book, current: q.id };
+    if (iface === 'title') return { no: me.no, title: q.title, text: q.prompt && q.prompt.text, gloss: q.prompt && q.prompt.gloss };
+    if (iface === 'parts') return { items: this.partItems(), current: 0 };
+    return {};
+  };
+  Player.prototype.onControl = function (ev) {
+    var n = ev.name;
+    if (n === 'leave.press') { this.trace('nav', '关闭，回到书本'); if (this.opts.onLeave) this.opts.onLeave(); return; }
+    if (n === 'back.press') { this.back(); return; }
+    if (n === 'forward.press') { this.forward(); return; }
+    if (n === 'restart.press') { this.restart(); return; }
+    if (n === 'questions.pick') { this.trace('nav', '换一道题：' + ev.id); if (this.opts.onPick) this.opts.onPick(ev.id); return; }
+    if (n === 'parts.pick') { this.jumpSegment(ev.index); return; }
+    if (n.indexOf('narrate.') === 0) this.trace('bar', n.slice(8) + (ev.id ? ' ' + ev.id : '') + (ev.value ? ' ' + ev.value : ''));
+  };
+
   // A touch on anything that can be pressed (whatever shows the pointing
-  // hand) gives the player's soft press sound; a touch outside the open
-  // menu closes it.
+  // hand) gives the player's soft press sound.
   Player.prototype.onPress = function (ev) {
     var t = ev.target;
-    if (!this.menu.hidden && !t.closest('.lx-menu') && !t.closest('.lx-title')) this.openMenu(false);
     if (t.closest('[disabled]')) return;
     if (getComputedStyle(t).cursor === 'pointer' && this.sound && this.sound.tap) this.sound.tap();
   };
 
   // Fits the middle: picks the board beside it on a wide screen or on top
-  // on a narrow one, sets the column width, then scales the canvas evenly
-  // so the question's text, the strip and the centre all show at once,
-  // with the centre in the middle of the room left under the strip. It
-  // runs whenever anything changes size, frame by frame while a role
-  // glides, so the scale follows smoothly. Widths depend only on the
-  // screen; when they change, the roles are laid out again at the new width.
+  // on a narrow one, sets the column width, keeps the strip's material
+  // short, then scales the canvas evenly so the strip and the centre show
+  // at once, the centre in the middle of the room left under the strip.
+  // It runs whenever anything changes size, frame by frame while a role
+  // glides or the title unfolds, so the scale follows smoothly. Widths
+  // depend only on the screen; when they change, the roles are laid out
+  // again at the new width.
   Player.prototype.fit = function () {
-    if (this.destroyed || !this.main) return;
+    if (this.destroyed || !this.room) return;
     var wide = this.stage.clientWidth >= WIDE_MIN && this.stage.clientWidth >= this.stage.clientHeight * WIDE_RATIO;
     var cols = wide ? 2 : 1;
     if (cols !== this.cols || !this.body.getAttribute('data-ready')) { this.cols = cols; this.body.setAttribute('data-cols', String(cols)); this.body.setAttribute('data-ready', '1'); }
-    var aw = this.main.clientWidth, ah = this.main.clientHeight, c = this.canvas;
+    var aw = this.room.clientWidth, ah = this.room.clientHeight, c = this.canvas;
     if (!aw || !ah) return;
     var w = Math.round(Math.min(COL_MAX, aw));
     if (w !== this.colW) {
@@ -524,11 +308,26 @@ var LecturePlayer = (function () {
       this.colW = w; c.style.width = w + 'px';
       if (again) this.relayoutSoon();
     }
-    var h = this.promptEl.offsetHeight + this.stripEl.offsetHeight + this.centerIn.offsetHeight + ROW_GAP * 2;
+    this.fitStrip(ah);
+    var strip = this.stripEl.offsetHeight;
+    var h = strip + (strip ? ROW_GAP : 0) + this.centerIn.offsetHeight;
     var s = Math.min(1, ah / Math.max(1, h), aw / w);
     c.style.minHeight = (ah / s).toFixed(1) + 'px';
     c.style.transform = 'translate(' + ((aw - w * s) / 2).toFixed(1) + 'px,0) scale(' + s.toFixed(4) + ')';
     this.scale = s;
+  };
+  // The material in the strip is drawn narrower when it would be taller
+  // than its share of the middle, so a long material stays a small picture
+  // of the question and leaves the room to the scene's roles.
+  Player.prototype.fitStrip = function (ah) {
+    var r = this.stripEl.querySelector('.lx-role:not([hidden])');
+    if (!r) return;
+    var cap = Math.max(STRIP_MIN_H, Math.min(STRIP_MAX_H, ah * STRIP_SHARE)), rw = r.offsetWidth, rh = r.offsetHeight;
+    if (!rw || !rh) return;
+    var want = Math.round(Math.max(STRIP_MIN, Math.min(STRIP_MAX, rw * cap / rh)));
+    if (rh > cap + 2 || (rh < cap - 8 && rw < STRIP_MAX - 2)) {
+      if (Math.abs(want - rw) > 2) this.stripEl.style.setProperty('--lx-strip-w', want + 'px');
+    }
   };
 
   // After the screen changes width, every role is drawn again at its new
@@ -547,9 +346,7 @@ var LecturePlayer = (function () {
   };
 
   // Asks the browser for the full screen; the tap that starts the lecture
-  // lets it. Where it cannot (a phone browser that only lets videos go
-  // full screen, a frame that does not allow it), the stage still fills
-  // the whole window.
+  // lets it. Where it cannot, the stage still fills the whole window.
   Player.prototype.fullscreen = function () {
     var self = this, el = document.documentElement;
     if (document.fullscreenElement || document.webkitFullscreenElement) { this.trace('screen', '已经是全屏'); return; }
@@ -562,98 +359,82 @@ var LecturePlayer = (function () {
     } catch (e) { no(e); }
   };
 
-  /* ---------- the top bar ---------- */
+  /* ---------- where the child may go ---------- */
 
-  // A dot per scene: one for reading the question, then a group per part
-  // with its tag. Scenes passed are filled, the current one is violet.
-  Player.prototype.renderDots = function () {
-    var self = this, html = '', group = null;
-    this.plan.forEach(function (sc) {
-      var key = sc.opening ? 'open' : 'p' + sc.pi;
-      if (key !== group) {
-        if (group !== null) html += '</span>';
-        html += '<span class="lx-dotgroup">' + (sc.opening ? '' : '<b>' + esc(self.q.parts[sc.pi].tag || '') + '</b>');
-        group = key;
-      }
-      html += '<i class="lx-dot" data-g="' + sc.g + '"></i>';
-    });
-    this.dotsEl.innerHTML = html + '</span>';
+  // The segments the part switch shows: reading the question (the opening
+  // scene's title), then each part by its tag.
+  Player.prototype.partItems = function () {
+    var self = this, out = [];
+    arr(this.wf.player.opening).slice(0, 1).forEach(function (name) { out.push({ label: self.wf.scenes[name].title }); });
+    (this.q.parts || []).forEach(function (p, pi) { out.push({ label: p.tag || String(pi + 1) }); });
+    return out;
   };
-  Player.prototype.markDots = function () {
-    var g = this.cursor ? this.cursor.g : -1, reached = this.reached || 0;
-    this.dotsEl.querySelectorAll('.lx-dot').forEach(function (d) {
-      var i = Number(d.getAttribute('data-g'));
-      d.classList.toggle('now', i === g);
-      d.classList.toggle('done', i !== g && i <= reached);
-    });
-    this.dotsEl.querySelectorAll('.lx-dotgroup').forEach(function (gp) { gp.classList.toggle('cur', !!gp.querySelector('.lx-dot.now')); });
-    var sc = this.plan[g], tag = sc && !sc.opening ? this.q.parts[sc.pi].tag || '' : '读题';
-    this.stage.querySelector('.lx-part').textContent = tag;
-  };
-
-  // The menu under the title: reading the question and each part of this
-  // question, then the book's other questions.
-  Player.prototype.openMenu = function (on) {
-    var self = this, m = this.menu;
-    this.stage.querySelector('.lx-title').setAttribute('aria-expanded', String(on));
-    if (!on) { m.hidden = true; return; }
-    var cur = this.plan[this.cursor ? this.cursor.g : 0];
-    var html = '<h3>' + esc(this.q.title || '') + '</h3>';
-    if (this.wf.player.opening) html += '<button type="button" class="lx-btn" data-jump="open"' + (cur && cur.opening ? ' aria-current="true"' : '') + '>读题</button>';
-    (this.q.parts || []).forEach(function (p, pi) {
-      html += '<button type="button" class="lx-btn" data-jump="' + pi + '"' + (cur && !cur.opening && cur.pi === pi ? ' aria-current="true"' : '') + '>小题 ' + esc(p.tag || pi + 1) + ' · ' + esc(self.wf.parts[p.kind].title) + '</button>';
-    });
-    var book = arr(this.opts.book).filter(function (b) { return b.id !== self.q.id; });
-    if (book.length) {
-      html += '<h3>书里的其他题</h3>';
-      book.forEach(function (b) { html += '<button type="button" class="lx-btn" data-question="' + esc(b.id) + '">' + esc(b.title) + '</button>'; });
-    }
-    m.innerHTML = html;
-    m.querySelectorAll('[data-jump]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        self.openMenu(false);
-        var j = b.getAttribute('data-jump');
-        self.jump(j === 'open' ? 0 : self.firstOf(Number(j)));
-      });
-    });
-    m.querySelectorAll('[data-question]').forEach(function (b) {
-      b.addEventListener('click', function () { self.openMenu(false); if (self.opts.onPick) self.opts.onPick(b.getAttribute('data-question')); });
-    });
-    m.hidden = false;
-  };
-  Player.prototype.firstOf = function (pi) {
+  Player.prototype.opens = function () { return arr(this.wf.player.opening).length ? 1 : 0; };
+  Player.prototype.segmentOf = function (g) { var sc = this.plan[g]; return sc.opening ? 0 : sc.pi + this.opens(); };
+  Player.prototype.firstOfSegment = function (i) {
+    if (this.opens() && i === 0) return 0;
+    var pi = i - this.opens();
     for (var g = 0; g < this.plan.length; g++) if (!this.plan[g].opening && this.plan[g].pi === pi) return g;
     return 0;
   };
+  Player.prototype.skippable = function (g) { return !!this.wf.player.skip && this.plan[g].def.skip !== false; };
+  // The child may leave scene g forward once it has been done, or when
+  // it may be skipped and is not waiting for the child's answer.
+  Player.prototype.canLeave = function (g) {
+    if (this.done[g]) return true;
+    return this.skippable(g) && !(this.waiting && this.cursor && this.cursor.g === g);
+  };
+  // Whether the child may go from scene a to scene b: back when the
+  // workflow allows it; on only past scenes that are done or skippable.
+  Player.prototype.canGo = function (a, b) {
+    if (b === a) return true;
+    if (b < a) return !!this.wf.player.back;
+    for (var k = a; k < b; k++) if (k === a ? !this.canLeave(k) : !(this.done[k] || this.skippable(k))) return false;
+    return true;
+  };
 
-  /* ---------- the previous and next scene ---------- */
-
-  // 下一幕 glows when a scene has ended; before that it can skip the scene
-  // when the workflow allows it and the child is not being asked to
-  // answer. 上一幕 goes back a scene when the workflow allows it.
+  // Tells the controls where the child may go now: 下一幕 glows when a
+  // scene has ended and is not there after the last one; replay comes in
+  // once the lecture has been heard to the end.
   Player.prototype.updateNav = function () {
-    var c = this.cursor, sc = c && this.plan[c.g];
-    var ended = c && c.phase === 'end' && !this.done;
-    var canSkip = c && c.phase === 'run' && !this.waiting && this.wf.player.skip && sc && sc.def.skip !== false;
-    var isLast = c && c.g >= this.plan.length - 1;
-    this.nextBtn.disabled = !(ended && !isLast) && !(canSkip && !isLast);
-    this.nextBtn.classList.toggle('ready', !!(ended && !isLast));
-    this.prevBtn.disabled = !(this.wf.player.back && c && c.g > 0);
+    var self = this, c = this.cursor; if (!c) return;
+    var g = c.g, isLast = g >= this.plan.length - 1, ended = c.phase === 'end';
+    if (this.ctl.forward) this.ctl.forward.call('forward.set', { enabled: ended ? !isLast : this.canLeave(g), ready: ended && !isLast, shown: !(ended && isLast) });
+    if (this.ctl.back) this.ctl.back.call('back.set', { enabled: !!this.wf.player.back && g > 0 });
+    if (this.ctl.restart) this.ctl.restart.call('restart.set', { shown: this.finished });
+    if (this.ctl.parts) {
+      var cur = this.segmentOf(g);
+      this.ctl.parts.call('parts.set', { current: cur, items: this.partItems().map(function (it, i) { return Object.assign(it, { enabled: i === cur || self.canGo(g, self.firstOfSegment(i)) }); }) });
+    }
   };
   Player.prototype.forward = function () {
-    var c = this.cursor; if (!c || this.nextBtn.disabled) return;
+    var c = this.cursor; if (!c) return;
     if (c.phase === 'end') { if (this.resolveNext) { var r = this.resolveNext; this.resolveNext = null; r(); } return; }
+    if (!this.canLeave(c.g)) return;
     this.trace('nav', '跳过这一幕：' + this.plan[c.g].def.title);
     this.go(c.g, 'skip');
   };
   Player.prototype.back = function () {
-    var c = this.cursor; if (!c || this.prevBtn.disabled) return;
+    var c = this.cursor; if (!c || c.g === 0 || !this.wf.player.back) return;
     this.trace('nav', '回到上一幕：' + this.plan[c.g - 1].def.title);
     this.go(c.g - 1, 'back');
   };
-  Player.prototype.jump = function (g) {
-    this.trace('nav', '跳到：' + (this.plan[g].opening ? '读题' : '小题 ' + (this.q.parts[this.plan[g].pi].tag || '')));
-    this.go(g, this.snap[g] ? 'back' : 'jump');
+  Player.prototype.jumpSegment = function (i) {
+    var c = this.cursor, t = this.firstOfSegment(i); if (!c || !this.canGo(c.g, t)) return;
+    this.trace('nav', '换到：' + this.partItems()[i].label);
+    this.go(t, this.snap[t] ? 'back' : 'jump');
+  };
+  // A conclusion tapped on the board: back to the scene it was reached in.
+  Player.prototype.toConclusion = function (id) {
+    var g = this.concludedAt[id], c = this.cursor;
+    if (g === undefined || !c || !this.canGo(c.g, g)) return;
+    this.trace('nav', '点了结论，回到它的那一幕：' + this.plan[g].def.title);
+    this.go(g, 'back');
+  };
+  Player.prototype.restart = function () {
+    this.trace('nav', '从头再讲一遍');
+    this.finished = false; this.done = {};
+    this.go(0, this.snap[0] ? 'back' : 'jump');
   };
 
   /* ---------- roles on the stage ---------- */
@@ -699,9 +480,9 @@ var LecturePlayer = (function () {
       self.inst[role] = null;
       if (!binding) return;
       slot.setAttribute('data-label', self.wf.roles[role].title + ' · ' + binding);
-      var A = ADAPTERS[binding];
-      var a = new A(host, input || {}, { sound: self.sound, swap: function (fn) { return self.swapRole(role, fn); } });
-      a.binding = binding; a.interfaces = A.interfaces;
+      var def = LessonComponents.get(binding);
+      var a = def.create(host, input || {}, { sound: self.sound, moveMs: MOVE_MS, swap: function (fn) { return self.swapRole(role, fn); } });
+      a.binding = binding; a.interfaces = def.interfaces;
       a.on(function (ev) { self.trace('event', role + ' → ' + ev.name + (ev.value !== undefined ? ' ' + JSON.stringify(ev.value) : '') + (ev.id ? ' ' + ev.id : '')); self.onEvent(role, ev); });
       self.inst[role] = a;
     };
@@ -745,14 +526,16 @@ var LecturePlayer = (function () {
     return { x: (r.left - c.left) / s, y: (r.top - c.top) / s, w: r.width / s, h: r.height / s };
   };
 
-  // Puts on stage the roles a scene names: centre roles it names come in
+  // Puts on stage what a scene names: centre roles it names come in
   // (rising into place), centre roles it does not name leave (fading where
   // they were), a strip role it names steps from the strip to the centre
   // and back after; roles that stay glide from where they were to where
-  // they are now, and the canvas's scale glides with them. Centre roles
-  // can be touched only while an act waits on them.
+  // they are now, and the canvas's scale glides with them. The title
+  // unfolds the question's text in the scenes that ask for it. Centre
+  // roles can be touched only while an act waits on them.
   Player.prototype.compose = function (sc, animated) {
     var self = this, wf = this.wf, want = arr(sc.def.stage), move = animated && !still();
+    if (this.ctl.title) this.ctl.title.call('title.set', { open: sc.def.prompt === 'open' });
     var before = {}, oldT = this.canvas.style.transform;
     Object.keys(this.slots).forEach(function (r) { var s = self.slots[r]; if (!s.hidden && !s.closest('.lx-board')) before[r] = self.local(s); });
     var leaving = [];
@@ -842,9 +625,8 @@ var LecturePlayer = (function () {
   // Passes one interface call to the component bound to a role. A call
   // marked optional, on a role that may be absent, or to an interface the
   // role only uses when present, is skipped when it cannot be made. The
-  // value is the step's `with`, read from the question, or one the player
-  // works out itself (`value`). The scene remembers the last role it acted
-  // on other than the stack: that is where its conclusion comes from.
+  // scene remembers the last role it acted on other than the stack: that
+  // is where its conclusion comes from.
   Player.prototype.callRole = function (spec, sc, token, extra) {
     var role = this.value(spec.role, sc), r = this.wf.roles[role], a = this.inst[role];
     var iface = spec.call.split('.')[0];
@@ -882,10 +664,12 @@ var LecturePlayer = (function () {
 
   // A conclusion goes to the stack from where the scene reached it: the
   // role the step names in `from`, or else the last role the scene acted
-  // on; the stack flies it up from that role's place on screen.
+  // on; the stack flies it up from that role's place on screen. The
+  // player remembers the scene, so a tap on the conclusion leads back.
   Player.prototype.conclude = function (s, sc, token) {
     var key = this.value(s.conclude, sc), id = this.conclusionId(key, sc);
     if (!id) { if (s.optional) return Promise.resolve(); throw new Error('没有结论 ' + key); }
+    this.concludedAt[id] = sc.g;
     var src = s.from ? this.value(s.from, sc) : sc.lastRole, slot = src && this.slots[src];
     var from = slot && !slot.hidden ? rectOf(slot) : null;
     if (from && !token.hurry) this.trace('call', '结论从「' + this.wf.roles[src].title + '」飞到结论板');
@@ -956,6 +740,7 @@ var LecturePlayer = (function () {
     return new Promise(function (res) { self.waiting = { role: role, name: name, item: item, resolve: res }; });
   };
   Player.prototype.onEvent = function (role, ev) {
+    if (ev.name === 'conclude.tap') { this.toConclusion(ev.id); return; }
     var w = this.waiting;
     if (w && w.role === role && w.name === ev.name && (w.item === null || w.item === undefined || String(w.item) === String(ev.item))) { this.waiting = null; w.resolve(ev); }
   };
@@ -1006,7 +791,6 @@ var LecturePlayer = (function () {
 
   Player.prototype.start = function () {
     this.fullscreen();
-    this.reached = 0;
     this.setupPart(0, 'still');
     this.enter();
     this.go(0, 'start');
@@ -1016,23 +800,22 @@ var LecturePlayer = (function () {
   Player.prototype.enter = function () {
     if (still()) return;
     var order = 0;
-    [this.boardEl, this.promptEl].concat([].slice.call(this.canvas.querySelectorAll('.lx-role:not([hidden])'))).forEach(function (el) {
+    [this.placeEl.top, this.boardEl, this.placeEl.head].concat([].slice.call(this.canvas.querySelectorAll('.lx-role:not([hidden])')), [this.placeEl.bottom]).forEach(function (el) {
       el.animate([{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }], { duration: MOVE_MS, delay: order++ * ENTER_STAGGER, easing: EASE, fill: 'backwards' });
     });
   };
 
   // Moves to scene g and runs from there. how: 'start' and 'next' play it
   // in turn (a new part sets up its components and clears the stack as
-  // the workflow says); 'back' and a jump to a scene seen before set the
-  // stage straight to how it began; 'jump' to a part not seen yet sets up
-  // that part afresh; 'skip' sets the scene back to its start and runs it
-  // in a hurry, without narration and with every mark drawn at once, then
-  // goes on to the next.
+  // the workflow says); 'back' (and a jump to a scene seen before) sets
+  // the stage straight to how that scene began; 'jump' to a part not seen
+  // yet sets up that part afresh; 'skip' sets the scene back to its start
+  // and runs it in a hurry, without narration and with every mark drawn at
+  // once, then goes on to the next.
   Player.prototype.go = function (g, how) {
     var self = this, sc = this.plan[g];
     if (this.token) this.token.abort();
     this.stopAll();
-    this.done = false; this.endEl.hidden = true;
     this.bar.flag(null);
     var token = this.token = this.newToken(how === 'skip');
     var prev = this.cursor;
@@ -1041,18 +824,17 @@ var LecturePlayer = (function () {
     else {
       var stack = this.inst[this.stackRole];
       if (this.mounted !== sc.pi) {
-        if (this.wf.player.partEnd === 'clear-stack' && stack && stack.c.order.length) this.swapRole(this.stackRole, function () { stack.call('conclude.set', []); });
+        if (this.wf.player.partEnd === 'clear-stack' && stack && stack.getState().order.length) this.swapRole(this.stackRole, function () { stack.call('conclude.set', []); });
         this.bar.set({});
         this.setupPart(sc.pi, 'swap');
       }
       this.compose(sc, how !== 'start');
     }
     if (!this.snap[g]) this.snap[g] = this.snapshot();
-    this.reached = Math.max(this.reached, g);
-    this.markDots(); this.updateNav();
+    this.updateNav();
     var pause = how === 'start' || (prev && this.plan[prev.g] && this.plan[prev.g].pi !== sc.pi) ? (still() ? 0 : MOVE_MS + FADE_IN_DELAY) : 0;
     this.guard(sleep(token.hurry ? 0 : pause), token).then(function () { return self.runScene(sc, token); }).then(function () {
-      self.snapEnd[g] = self.snapshot();
+      self.done[g] = true;
       self.cursor.phase = 'end';
       if (g >= self.plan.length - 1) { self.finish(); return; }
       if (token.hurry) { self.go(g + 1, 'next'); return; }
@@ -1066,31 +848,24 @@ var LecturePlayer = (function () {
     });
   };
 
-  // The end of the lecture: the narration says so, and a card offers to
-  // hear it again, stay and look at the conclusions, or go back to the book.
+  // The end of the lecture: the subtitle says so and the replay control
+  // comes in. The stage stays as it is; the close control leads back to
+  // the book.
   Player.prototype.finish = function () {
-    var self = this;
-    this.done = true;
+    this.finished = true;
     this.bar.flag('讲完了');
     this.updateNav();
     this.trace('done', '这道讲题讲完了');
-    var card = this.endEl.querySelector('.lx-end-card');
-    card.innerHTML = '<div class="lx-end-seal" aria-hidden="true">∴</div><h2>这道题讲完了</h2><p>' + esc(this.q.title || '') + '</p>' +
-      '<div class="lx-end-acts"><button type="button" class="lx-btn main" data-end="again">从头再听一遍</button><button type="button" class="lx-btn" data-end="look">留在这里，看看结论</button><button type="button" class="lx-btn" data-end="leave">回到书本</button></div>';
-    card.querySelector('[data-end="again"]').addEventListener('click', function () { self.trace('nav', '从头再听一遍'); self.endEl.hidden = true; self.go(0, self.snap[0] ? 'back' : 'jump'); });
-    card.querySelector('[data-end="look"]').addEventListener('click', function () { self.endEl.hidden = true; });
-    card.querySelector('[data-end="leave"]').addEventListener('click', function () { self.trace('nav', '回到书本'); if (self.opts.onLeave) self.opts.onLeave(); });
-    setTimeout(function () { if (self.done && !self.destroyed) self.endEl.hidden = false; }, still() ? 0 : 900);
   };
 
   Player.prototype.destroy = function () {
-    this.destroyed = true; this.done = true;
+    this.destroyed = true;
     if (this.ro) this.ro.disconnect();
     clearTimeout(this.relayoutTimer);
     if (this.token) this.token.abort();
     if (this.bar) this.stopAll();
+    Object.keys(this.ctl).forEach(function (i) { this.ctl[i].stop(); }, this);
   };
 
-  Player.ADAPTERS = ADAPTERS;
   return Player;
 })();

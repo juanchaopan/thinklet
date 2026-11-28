@@ -1,0 +1,7 @@
+title: 英皇乐理五级精讲
+# Units in the book's order: each is one lecture (and, later, its practices).
+units:
+  - lecture: q01-time-signatures
+# Questions that only show a workflow works for another part kind; not in the book.
+examples:
+  - lecture: count-demo
