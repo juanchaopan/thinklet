@@ -442,7 +442,7 @@ var LectureEngine = (function () {
     var fromName = d.from ? this.val(d.from, sc.scope) : null, from = fromName ? this.layout.rectOf(fromName) : null;
     this.layout.focus(n);
     this.trace('call', n + '（' + a.binding + '）. ' + d.call + (r.value !== undefined ? ' ' + JSON.stringify(r.value).slice(0, 120) : '') + (from && !token.hurry ? '，从 ' + fromName + ' 飞过来' : ''));
-    var p = a.call(d.call, r.value, { hurry: token.hurry, ref: r.path, from: from && !token.hurry ? from : null, at: this.val('$part.at', sc.scope) });
+    var p = a.call(d.call, r.value, { hurry: token.hurry, ref: r.path, from: from && !token.hurry ? from : null });
     return d.wait ? this.guard(p, token) : Promise.resolve();
   };
 
