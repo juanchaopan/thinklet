@@ -1,13 +1,16 @@
 /* ============================================================
    Score (etude): its capability interfaces. Turns interface calls into
    the score's own commands and its events into interface events, and
-   keeps what it shows as state. Interfaces: point, play, positions.
+   keeps what it shows as state. The score's drawing scales with the
+   width it is given (fluid), so it is not drawn again when it moves to a
+   wider or narrower place. Interfaces: point, play, positions.
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
   function ScoreI(host, input, env) {
     LessonComponents.Base.call(this);
     var self = this;
+    this.host = host;
     this.c = new Score(host, Object.assign({ mode: 'lecture', sound: env.sound, onEvent: function (ev) { self.emit({ name: 'point.tap', raw: ev }); } }, input));
     this.st = { spot: null, hl: null, labels: [] };
   }
@@ -27,6 +30,7 @@
       return;
     }
     if (name === 'point.clear') { this.setState({}); return; }
+    if (name === 'positions.rect') { var r = this.host.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
     throw new Error('score: ' + name);
   };
   ScoreI.prototype.stop = function () { if (this.c.stop) this.c.stop(); };
@@ -39,5 +43,5 @@
     (s.labels || []).forEach(function (l) { self.c.label(l[0], l[1]); });
     this.st = { spot: s.spot || null, hl: s.hl || null, labels: (s.labels || []).slice() };
   };
-  LessonComponents.register('score', { theme: 'etude', interfaces: ['point', 'play', 'positions'], create: function (h, i, e) { return new ScoreI(h, i, e); } });
+  LessonComponents.register('score', { theme: 'etude', fluid: true, interfaces: ['point', 'play', 'positions'], create: function (h, i, e) { return new ScoreI(h, i, e); } });
 })();

@@ -1,47 +1,58 @@
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
-/* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, Chinese in the theme's sans, violet light for whatever is lit, the answer with a violet ring, a double rule and a seal, step numbers in outlined rings. */
+/* Colours: every colour is a theme constant, var(--th-<name>) (engine/theme.js), set by the stage or the page; the component names them once below as its own aliases and writes an alpha variant with color-mix against transparent. With the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, Chinese in the theme's sans, violet light for whatever is lit, the answer with a violet ring, a double rule and a seal, step numbers in outlined rings. */
 /* Layout: a wheel. The conclusion in focus stands in the middle of the board at full size; the ones before and after it get smaller and fainter the farther they are, and fade at the board's edges. In a tall board it turns up and down; in a short wide strip (a phone) it turns left and right. It never shows a scrollbar. */
 /* Motion: turned by a finger, a mouse wheel or a mouse drag, following the hand one for one; let go, it glides to the nearest conclusion. A new conclusion flies in from where it was reached while the wheel turns to make it the focus. Every glide starts very gently and settles gently. */
 .tl-cs {
-  --tl-paper-a: #fffaf1;
-  --tl-paper-b: #f2e6d1;
-  --tl-paper-shadow: rgba(60, 38, 16, .45);
-  --tl-ink: #241a12;
-  --tl-ink-soft: #6b5238;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .28);
-  --tl-glow-ink: #4b23c9;
+  --tl-paper-a: var(--th-paper-a);
+  --tl-paper-b: var(--th-paper-b);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-glow-ink: var(--th-accent-ink);
+  --tl-light: var(--th-light);
+  /* The light on a slip's top edge, its thin rim, the near drop under it and the long shadow it casts. */
+  --tl-sheen: color-mix(in srgb, var(--th-light) 90%, transparent);
+  --tl-rim: color-mix(in srgb, var(--th-edge) 12%, transparent);
+  --tl-drop: color-mix(in srgb, var(--th-shade) 10%, transparent);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  /* The paper laid over a hidden conclusion, a shade darker than the slip. */
+  --tl-cover-a: color-mix(in srgb, var(--th-paper-b) 80%, var(--th-paper-back));
+  --tl-cover-b: color-mix(in srgb, var(--th-paper-b) 40%, var(--th-paper-back));
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --tl-sans: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
   position: relative; box-sizing: border-box; width: 100%; height: 100%; min-height: 96px; color: var(--tl-ink);
   -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
 }
 .tl-cs-view { position: absolute; inset: 0; overflow: hidden; touch-action: none; outline: none; }
-.tl-cs-y .tl-cs-view { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); }
-.tl-cs-x .tl-cs-view { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); }
+/* The edge fade is a mask, which reads only the alpha of its colours. */
+.tl-cs-y .tl-cs-view { -webkit-mask-image: linear-gradient(to bottom, transparent 0, var(--th-dark) 14%, var(--th-dark) 86%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, var(--th-dark) 14%, var(--th-dark) 86%, transparent 100%); }
+.tl-cs-x .tl-cs-view { -webkit-mask-image: linear-gradient(to right, transparent 0, var(--th-dark) 12%, var(--th-dark) 88%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, var(--th-dark) 12%, var(--th-dark) 88%, transparent 100%); }
 .tl-cs-view.tl-cs-grab { cursor: grabbing; }
 .tl-cs-view:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: -3px; border-radius: 12px; }
 .tl-cs-slip { position: absolute; left: 0; top: 0; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 60px; padding: 11px 16px 12px 11px; border-radius: 6px; transform-origin: 50% 50%; will-change: transform, opacity; cursor: pointer;
-  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 4px rgba(70, 45, 20, .1), 0 16px 28px -14px var(--tl-paper-shadow);
+  background: radial-gradient(90% 80% at 30% 0%, color-mix(in srgb, var(--tl-light) 70%, transparent), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 2px 4px var(--tl-drop), 0 16px 28px -14px var(--tl-paper-shadow);
   transition: box-shadow .45s, color .3s, filter .2s; }
 .tl-cs-practice .tl-cs-slip { cursor: default; }
-@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-slip:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 0 0 1.5px var(--tl-glow-soft), 0 2px 4px rgba(70, 45, 20, .1), 0 18px 30px -14px var(--tl-paper-shadow); } }
-.tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-slip:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 95%, transparent), 0 0 0 1.5px var(--tl-glow-soft), 0 2px 4px var(--tl-drop), 0 18px 30px -14px var(--tl-paper-shadow); } }
+/* The paper's grain: the edge colour seen through a noise mask, multiplied into the slip. */
+.tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit; background-color: var(--th-edge);
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
 /* The conclusion in focus: lifted a little higher off the board. */
-.tl-cs-slip.tl-cs-focus { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 3px 6px rgba(70, 45, 20, .12), 0 24px 38px -14px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-cs-focus { box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 3px 6px color-mix(in srgb, var(--th-shade) 12%, transparent), 0 24px 38px -14px var(--tl-paper-shadow); }
 /* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
-.tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
 /* A conclusion flying in: the slip waits unseen in its place on the wheel while a lifted copy, with a soft violet glow, crosses the screen to it. */
 .tl-cs-slip.tl-cs-landing { visibility: hidden !important; }
 .tl-cs-slip.tl-cs-flyer { z-index: 9; transition: none; pointer-events: none; will-change: transform, opacity;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
+  box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
 .tl-cs-flyer .tl-cs-seal { visibility: hidden; }
 .tl-cs-num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 16px/1 var(--tl-serif); color: var(--tl-ink-soft); }
-.tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }
-.tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: var(--tl-light); font: 700 24px/1 var(--tl-serif); }
+.tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); }
 .tl-cs-seal span { position: relative; margin-top: -3px; }
 /* The steps a conclusion is built on, as small rings on its top edge. */
 .tl-cs-refs { position: absolute; top: -10px; left: 12px; display: flex; gap: 3px; pointer-events: none; }
@@ -59,14 +70,14 @@
 /* A short stave is cropped to what is drawn on it, and its lines stop at the crop. */
 .tl-cs-staff { line-height: 0; color: var(--tl-ink); max-width: 100%; }
 .tl-cs-staff svg { display: block; overflow: hidden; max-width: 100%; height: auto; }
-.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-lit .tl-cs-num { color: var(--tl-glow-ink); border-color: var(--tl-glow); }
 .tl-cs-slip.tl-lit .tl-cs-staff, .tl-cs-slip.tl-lit .tl-cs-op { color: var(--tl-glow-ink); }
 .tl-cs-slip.tl-cs-down { background-color: color-mix(in srgb, var(--tl-glow) 10%, transparent); }
 /* A hidden conclusion lies under a paper slip with a dashed question box: missing by shape, not only by colour. */
 .tl-cs-hidden > :not(.tl-cs-cover) { visibility: hidden; }
 .tl-cs-cover { position: absolute; inset: -3px -6px; z-index: 1; display: flex; align-items: center; padding-left: 6px; border-radius: 4px;
-  background: linear-gradient(180deg, #efe1c6, #e6d4b2); box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 3px 6px -2px rgba(70, 45, 20, .35); transform: rotate(-.6deg); transition: transform .45s cubic-bezier(.3, .8, .3, 1), opacity .45s; }
+  background: linear-gradient(180deg, var(--tl-cover-a), var(--tl-cover-b)); box-shadow: 0 1px 0 color-mix(in srgb, var(--tl-light) 60%, transparent) inset, 0 3px 6px -2px color-mix(in srgb, var(--th-shade) 35%, transparent); transform: rotate(-.6deg); transition: transform .45s cubic-bezier(.3, .8, .3, 1), opacity .45s; }
 .tl-cs-cover.off { transform: translateX(40%) rotate(4deg); opacity: 0; }
 .tl-cs-q { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2em; height: 1.2em; padding: 0 .3em; border: 1.5px dashed var(--tl-ink-soft); border-radius: 5px; font: italic 600 18px/1 var(--tl-serif); color: var(--tl-ink-soft); }
 .tl-cs-ink { animation: tl-cs-ink .55s cubic-bezier(.2, .8, .3, 1) both; }

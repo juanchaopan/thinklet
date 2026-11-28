@@ -1,0 +1,10 @@
+title: 英皇乐理五级精讲
+grades: { from: 4, to: 8, teaching: 6 }
+# Units in the book's order: each is one lecture and its practices.
+units:
+  - lecture: time-signatures
+    practices: []
+# Items that only show a workflow working for another kind of part; the
+# prototype lists them after the book's units, they are not in the book.
+examples:
+  - count-demo

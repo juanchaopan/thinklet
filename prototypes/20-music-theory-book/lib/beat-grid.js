@@ -5,6 +5,8 @@
    label, spotlight, caption, play, stop, clear. Events (via
    onEvent): tileTap, beatTap, blankTap, countStep, playStart,
    playEnd. Sound goes through the injected source, lectures only.
+   Colours come from the theme constants (--th-<name>) set on the
+   page or stage around the grid.
    Time is counted in ticks: a semibreve is 6720 ticks, which divides
    evenly by every note value down to the hemidemisemiquaver and by
    triplets, quintuplets, sextuplets and septuplets.

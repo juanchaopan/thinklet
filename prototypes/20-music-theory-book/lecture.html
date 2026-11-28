@@ -1,0 +1,252 @@
+<title>讲题原型</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Caveat:wght@600&display=swap">
+<link rel="stylesheet" href="lib/score.css">
+<link rel="stylesheet" href="lib/beat-grid.css">
+<link rel="stylesheet" href="lib/conclusion-stack.css">
+<link rel="stylesheet" href="lib/choice.css">
+<link rel="stylesheet" href="lib/fill.css">
+<style>
+/* Layout: the lecture is the engine's full-screen stage, laid out by the item's workflow. A drawer that only this prototype has (opened from the dashed button at the bottom left) shows what the files say and what the engine does; a stand-in for the book's page shows where the close button leads. */
+:root {
+  /* Prototype chrome (thinklet look.md). */
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  color-scheme: light;
+}
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: #1c140f; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+#stage { position: fixed; inset: 0; }
+.lx-curtain { display: grid; place-items: center; height: 100%; color: #e8d9c4; font-weight: 700; padding: 24px; text-align: center; }
+body[data-boundary="on"] .lx-region { outline: 1.5px dashed var(--boundary); outline-offset: -1px; }
+body[data-boundary="on"] .lx-region::before { content: attr(data-region); position: absolute; top: 2px; left: 4px; z-index: 7; font: 700 10px/1 var(--font); color: #fff; background: var(--boundary); padding: 2px 5px; border-radius: 4px; }
+body[data-boundary="on"] .lx-slot { outline: 1px dotted #ff7a2f; }
+
+.proto-open { position: fixed; z-index: 50; left: max(4px, env(safe-area-inset-left, 0px)); bottom: max(4px, env(safe-area-inset-bottom, 0px)); font: 700 12px/1 var(--font); min-height: 26px; padding: 0 8px; border-radius: 8px; border: 1.5px dashed var(--boundary); background: rgba(255, 255, 255, .9); color: var(--boundary); cursor: pointer; }
+.proto-drawer { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); box-sizing: border-box; overflow-y: auto; background: var(--surface); border-left: 1.5px dashed var(--boundary); box-shadow: -20px 0 40px -20px rgba(0, 0, 0, .3); padding: max(16px, env(safe-area-inset-top, 0px)) 18px 24px; display: grid; gap: 14px; align-content: start; transform: translateX(105%); transition: transform .45s cubic-bezier(.6, 0, .25, 1); }
+.proto-drawer.open { transform: none; }
+.proto-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tagline { font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #e8efff; color: var(--boundary); }
+h2 { font-size: 16px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.btn[aria-pressed="true"] { background: #efe8ff; border-color: #cbbcff; color: #4b23c9; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; margin: 0; }
+.kv dt { color: var(--ink-muted); }
+.kv dd { margin: 0; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; }
+.problems { color: #c8452f; font-weight: 700; }
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.5; max-height: 360px; overflow: auto; background: #faf8f4; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log .t { color: var(--ink-muted); }
+.log [data-k="scene"] { color: #4b23c9; font-weight: 700; }
+.log [data-k="say"] { color: #6b5238; }
+.log [data-k="act"], .log [data-k="next"], .log [data-k="nav"], .log [data-k="screen"] { color: #1f6bd6; font-weight: 700; }
+.log [data-k="error"] { color: #c8452f; font-weight: 700; }
+.try { margin: 0; padding-left: 1.2em; color: var(--ink-soft); font-size: 14px; display: grid; gap: 4px; }
+.book-mock { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; background: rgba(28, 20, 15, .92); color: #f6efe4; text-align: center; }
+.book-mock[hidden] { display: none; }
+.book-mock div { display: grid; gap: 14px; justify-items: center; max-width: 360px; }
+.book-mock b { font-size: 20px; }
+</style>
+
+<div id="stage"><div class="lx-curtain">正在准备</div></div>
+
+<div class="book-mock" id="book-mock" hidden><div><b>这里是书本的主页</b><p>原型里只是示意：真实的产品会回到这本书的目录。</p><button type="button" class="btn" id="book-back">回到这道题</button></div></div>
+
+<button type="button" class="proto-open" id="proto-open" aria-controls="proto-drawer" aria-expanded="false">原型说明</button>
+<aside class="proto-drawer" id="proto-drawer" aria-label="原型说明">
+  <div class="proto-head"><span class="tagline">只有原型有</span><button type="button" class="btn" id="proto-close">收起</button></div>
+  <p class="lede">这是在确认<b>声明式的流程和题目</b>：舞台按流程的排法分成区域，按屏幕大小换排法；幕与幕之间留下的东西滑过去，离开的淡出或飞进结论板；颜色全部来自主题。题目是第 1 题 · 判断拍号；“数有几个”是示例题，证明同一个流程能讲另一种部分，不是书里的内容。</p>
+  <ul class="try">
+    <li>换个窗口大小（或转手机）：排法跟着屏幕换，每个组件都在自己的区域里。</li>
+    <li>一项一项地对完、轮到选的时候，拍尺缩进结论板；选对以后，选项缩进它得出的那条结论。</li>
+    <li>中间放不下时，几个组件变成转盘：焦点上的正常大小，两头变小变淡，可以滑动。</li>
+    <li>往回总是可以；轮到你作答而还没答过时，下一幕和后面的部分都按不了。</li>
+  </ul>
+  <div class="toolbar">
+    <button type="button" class="btn" id="restart">从头再讲</button>
+    <button type="button" class="btn" id="boundary" aria-pressed="false">显示区域和组件边界</button>
+  </div>
+  <h2>画面</h2>
+  <dl class="kv">
+    <dt>全屏</dt><dd id="now-full">—</dd>
+    <dt>屏幕</dt><dd id="now-screen">—</dd>
+    <dt>中间的缩放</dt><dd id="now-scale">—</dd>
+    <dt>动画</dt><dd id="now-motion">—</dd>
+  </dl>
+  <h2>现在讲到</h2>
+  <dl class="kv">
+    <dt>幕</dt><dd id="now-scene">—</dd>
+    <dt>这一步</dt><dd id="now-step">—</dd>
+  </dl>
+  <h2>占位和组件</h2>
+  <p class="problems" id="problems" hidden></p>
+  <table><thead><tr><th>占位</th><th>要的接口</th><th>组件</th></tr></thead><tbody id="binds"></tbody></table>
+  <h2>引擎做了什么</h2>
+  <div class="log" id="log" aria-live="off"></div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="sound.js"></script>
+<script src="components/registry.js"></script>
+<script src="engine/params.js"></script>
+<script src="engine/theme.js"></script>
+<script src="engine/wheel.js"></script>
+<script src="engine/layout.js"></script>
+<script src="components/stage/common.js"></script>
+<script src="components/stage/close.js"></script>
+<script src="components/stage/question-menu.js"></script>
+<script src="components/stage/part-switch.js"></script>
+<script src="components/stage/question-title.js"></script>
+<script src="components/stage/scene-prev.js"></script>
+<script src="components/stage/narration.js"></script>
+<script src="components/stage/scene-next.js"></script>
+<script src="components/stage/replay.js"></script>
+<script src="lib/score.js"></script>
+<script src="lib/beat-grid.js"></script>
+<script src="lib/conclusion-stack.js"></script>
+<script src="lib/choice.js"></script>
+<script src="lib/fill.js"></script>
+<script src="components/interfaces/score.js"></script>
+<script src="components/interfaces/beat-grid.js"></script>
+<script src="components/interfaces/conclusion-stack.js"></script>
+<script src="components/interfaces/choice.js"></script>
+<script src="components/interfaces/fill.js"></script>
+<script src="engine/lecture.js"></script>
+<script>
+/* ============================================================
+   Prototype shell: plays the part of the app around the engine. It reads
+   the book, its items, their workflows and themes from the content folder
+   (the stand-in for object storage) during the loading screen, prepares
+   every spoken value's recording, runs the chosen item full screen when
+   开始 is tapped, stands in for the book's page the close button leads to,
+   and shows what the engine traces in a drawer only the prototype has.
+   None of this is the engine.
+   ============================================================ */
+(function () {
+  var CONTENT = 'content/', BOOK = 'abrsm-theory-grade-5';
+  var data = { items: {}, workflows: {}, themes: {}, lines: {}, book: [] };
+  var engine = null, currentName = null, screenNote = '还没开始';
+
+  function yaml(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url + ' ' + r.status); return r.text(); }).then(function (t) { return jsyaml.load(t); }); }
+  function itemBase(name) { return CONTENT + 'books/' + BOOK + '/items/' + name + '/'; }
+
+  PlayerLoading.need(function (progress) {
+    progress(0, '读书本、题目、流程和主题');
+    return yaml(CONTENT + 'books/' + BOOK + '/book.yaml').then(function (book) {
+      var list = (book.units || []).map(function (u, i) { return { name: u.lecture, no: String(i + 1) }; })
+        .concat((book.examples || []).map(function (n) { return { name: n, no: '例' }; }));
+      return Promise.all(list.map(function (b) { return yaml(itemBase(b.name) + 'item.yaml'); })).then(function (items) {
+        list.forEach(function (b, i) { data.items[b.name] = items[i]; });
+        var wfs = {}, ths = {};
+        items.forEach(function (it) { wfs[it.workflow] = true; ths[it.theme] = true; });
+        return Promise.all([
+          Promise.all(Object.keys(wfs).map(function (w) { return yaml(CONTENT + 'workflows/' + w + '.yaml').then(function (d) { data.workflows[w] = d; }); })),
+          Promise.all(Object.keys(ths).map(function (t) { return ThemeConstants.load(CONTENT + 'themes/' + t + '.yaml').then(function (d) { data.themes[t] = d; }); }))
+        ]).then(function () {
+          list.forEach(function (b) { b.title = data.items[b.name].params.title; });
+          data.book = list; currentName = list[0].name;
+          var all = [];
+          list.forEach(function (b) {
+            var it = data.items[b.name], spoken = LessonParams.paths(data.workflows[it.workflow].params, it.params, 'speech');
+            var folder = itemBase(b.name) + it.params.narration + '/';
+            Object.keys(spoken).forEach(function (path) {
+              var v = spoken[path];
+              all.push({ item: b.name, id: path, text: typeof v === 'string' ? v : v.text, url: folder + LessonParams.fileOf(path) });
+            });
+          });
+          return NarrationBar.prepare(all, progress).then(function (prepared) {
+            list.forEach(function (b) { data.lines[b.name] = []; });
+            prepared.forEach(function (l, i) { data.lines[all[i].item].push(l); });
+          });
+        });
+      });
+    });
+  });
+  PlayerLoading.onStart(function () { run(currentName); });
+
+  var logEl = document.getElementById('log'), t0 = performance.now();
+  var KIND = { scene: '幕', say: '说', call: '指令', event: '事件', act: '作答', next: '下一幕', nav: '切换', bar: '字幕', screen: '画面', done: '完', error: '出错' };
+  function trace(kind, text) {
+    var line = document.createElement('div');
+    line.setAttribute('data-k', kind);
+    line.innerHTML = '<span class="t">' + ((performance.now() - t0) / 1000).toFixed(1) + 's</span> ' + (KIND[kind] || kind) + '  ';
+    line.appendChild(document.createTextNode(text));
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    if (kind === 'scene') document.getElementById('now-scene').textContent = text.replace(/^幕：/, '');
+    if (kind === 'say' || kind === 'act' || kind === 'next' || kind === 'done' || kind === 'nav') document.getElementById('now-step').textContent = text;
+    if (kind === 'screen') { screenNote = text; showScreen(); }
+    window.lxTrace = window.lxTrace || []; window.lxTrace.push({ kind: kind, text: text, t: performance.now() - t0 });
+  }
+
+  function showScreen() {
+    var full = document.fullscreenElement || document.webkitFullscreenElement;
+    document.getElementById('now-full').textContent = full ? '全屏了' : screenNote;
+    var L = engine && engine.layout, v = L && L.cur && L.cur.v;
+    document.getElementById('now-screen').textContent = v ? (typeof v.when === 'string' ? v.when : v.when ? JSON.stringify(v.when) : '兜底') + '（' + innerWidth + '×' + innerHeight + '）' : '—';
+    document.getElementById('now-scale').textContent = L ? Math.round(L.scaleOf('main') * 100) + '%' : '—';
+    document.getElementById('now-motion').textContent = matchMedia('(prefers-reduced-motion: reduce)').matches ? '系统设置了“减少动态效果”，动作直接到终点' : '正常';
+  }
+  document.addEventListener('fullscreenchange', showScreen);
+  setInterval(function () { if (drawer.classList.contains('open')) showScreen(); }, 500);
+
+  function renderBinds(wf, item) {
+    var tb = document.getElementById('binds'); tb.innerHTML = '';
+    Object.keys(wf.controls).forEach(function (n) {
+      var c = wf.controls[n], id = (item.components || {})[n] || c.component || '—';
+      var tr = document.createElement('tr');
+      [n, (c.needs || []).join('、'), id + ((item.components || {})[n] ? '（题目选的）' : c.component ? '（流程默认）' : '')].forEach(function (t) { var td = document.createElement('td'); td.textContent = t; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+
+  function run(name) {
+    currentName = name;
+    if (engine) engine.destroy();
+    logEl.innerHTML = ''; t0 = performance.now(); window.lxTrace = [];
+    var item = data.items[name], wf = data.workflows[item.workflow];
+    renderBinds(wf, item);
+    var stage = document.getElementById('stage');
+    stage.innerHTML = '';
+    engine = new LectureEngine({
+      workflow: wf, item: item, name: name, book: data.book, theme: data.themes[item.theme],
+      stage: stage, sound: SoundSource, lines: data.lines[name], portrait: 'player/teacher.webp', onTrace: trace,
+      onLeave: function () { document.getElementById('book-mock').hidden = false; },
+      onPick: function (id) { window.lxRun(id); }
+    });
+    window.lxEngine = engine;
+    var pr = document.getElementById('problems');
+    pr.hidden = !engine.problems.length;
+    pr.textContent = engine.problems.join('；');
+    if (engine.problems.length) { stage.innerHTML = '<div class="lx-curtain">题目文件对不上流程：' + engine.problems.join('；') + '</div>'; return; }
+    engine.start();
+    if (engine.bar) engine.bar.unlock();
+    showScreen();
+  }
+  window.lxRun = function (name) { if (data.items[name]) run(name); };
+
+  document.getElementById('book-back').addEventListener('click', function () { document.getElementById('book-mock').hidden = true; });
+  var drawer = document.getElementById('proto-drawer'), opener = document.getElementById('proto-open');
+  function openDrawer(on) { drawer.classList.toggle('open', on); opener.setAttribute('aria-expanded', String(on)); opener.hidden = on; if (on) showScreen(); }
+  opener.addEventListener('click', function () { openDrawer(true); });
+  document.getElementById('proto-close').addEventListener('click', function () { openDrawer(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawer.classList.contains('open')) openDrawer(false); });
+  document.getElementById('restart').addEventListener('click', function () { window.lxRun(currentName); });
+  document.body.setAttribute('data-boundary', 'off');
+  var bb = document.getElementById('boundary');
+  bb.addEventListener('click', function () { var on = document.body.getAttribute('data-boundary') !== 'on'; document.body.setAttribute('data-boundary', on ? 'on' : 'off'); bb.setAttribute('aria-pressed', String(on)); });
+  ['pointerup', 'touchend', 'keydown'].forEach(function (t) { document.addEventListener(t, function () { if (engine && engine.bar) engine.bar.unlock(); }, { capture: true, passive: true }); });
+})();
+</script>

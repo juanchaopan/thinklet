@@ -56,22 +56,31 @@ p { margin: 0; }
 body[data-boundary="on"] .tl-ch { outline: 1.5px dashed var(--boundary); outline-offset: 8px; border-radius: 10px; }
 body[data-boundary="on"] .tl-ch::before { content: "选择组件"; position: absolute; top: -20px; left: 10px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
 
-/* ---------- Choice component: it defines its whole look here and takes nothing from the page ---------- */
-/* The look follows the etude theme: options are tiles of warm paper with grain, each with an ivory tick box the child marks in dark ink, as on an exam paper; terms in italic serif; violet light for whatever the workflow lights or confirms, brick red with a dashed edge and a cross for what is wrong, a red rule drawn through an option ruled out. */
+/* ---------- Choice component: it defines its whole look here; every colour it draws is a theme constant ---------- */
+/* Options are tiles of paper with grain, each with an ivory tick box the child marks in ink, as on an exam paper; terms in italic serif; the accent light for whatever the workflow lights or confirms, the wrong colour with a dashed edge and a cross for what is wrong, a rule in the wrong colour drawn through an option ruled out. Every colour is a theme constant --th-<name>, set by the stage (or the component page) on an ancestor; an alpha variant is mixed with transparent where it is used. */
 .tl-ch {
-  --tl-paper-a: #fffaf1;
-  --tl-paper-b: #f2e6d1;
-  --tl-paper-back: #dcc8a6;
-  --tl-paper-shadow: rgba(60, 38, 16, .45);
-  --tl-ink: #241a12;
-  --tl-ink-soft: #6b5238;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .28);
-  --tl-glow-ink: #4b23c9;
-  --tl-wrong: #c8452f;
-  --tl-ivory: #fffdf8;
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
+  --tl-paper-a: var(--th-paper-a);
+  --tl-paper-b: var(--th-paper-b);
+  --tl-paper-back: var(--th-paper-back);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-glow-ink: var(--th-accent-ink);
+  --tl-wrong: var(--th-wrong);
+  --tl-ivory: var(--th-ivory);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-light: var(--th-light);
+  --tl-shade: var(--th-shade);
+  --tl-edge: var(--th-edge);
+  --tl-dark: var(--th-dark);
+  /* The lit top edge of a tile and the light ring round a seal or badge. */
+  --tl-sheen: color-mix(in srgb, var(--th-light) 90%, transparent);
+  --tl-sheen-soft: color-mix(in srgb, var(--th-light) 85%, transparent);
+  /* Paper grain: noise used as a mask, so its colour is a theme constant rather than a colour written into the image. */
+  --tl-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --tl-ease: cubic-bezier(.6, 0, .25, 1);
   --tl-move: .52s var(--tl-ease);
@@ -90,21 +99,21 @@ body[data-boundary="on"] .tl-ch::before { content: "选择组件"; position: abs
 .tl-ch-stem svg.tl-ch-acc, .tl-ch-body svg.tl-ch-acc, .tl-ch-bubble svg.tl-ch-acc { fill: currentColor; }
 .tl-ch-opts { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); gap: 12px; align-items: stretch; }
 .tl-ch-opt { position: relative; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 56px; padding: 10px 16px 10px 13px; border-radius: 8px; cursor: pointer;
-  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 3px rgba(70, 45, 20, .1), 0 12px 20px -12px var(--tl-paper-shadow);
+  background: radial-gradient(90% 80% at 30% 0%, color-mix(in srgb, var(--tl-light) 70%, transparent), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 var(--tl-sheen-soft), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 12%, transparent), 0 2px 3px color-mix(in srgb, var(--tl-shade) 10%, transparent), 0 12px 20px -12px var(--tl-paper-shadow);
   transition: transform .32s var(--tl-ease), box-shadow .35s, opacity .45s, filter .45s, color .3s; }
 .tl-ch-opt::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+  background: var(--tl-edge); -webkit-mask-image: var(--tl-grain); mask-image: var(--tl-grain); }
 .tl-ch-opt:focus, .tl-ch-mark:focus { outline: none; }
 .tl-ch.kbd .tl-ch-opt:focus-visible, .tl-ch.kbd .tl-ch-mark:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 3px; }
 /* Options drawn as staves stand up: the stave on top, the tick box under it, as on an exam paper. */
 .tl-ch-tall .tl-ch-opt { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; justify-items: center; row-gap: 10px; padding: 14px 12px 12px; }
 .tl-ch-tall .tl-ch-box { grid-row: 2; }
 .tl-ch-tall .tl-ch-body { grid-row: 1; justify-self: center; justify-content: center; }
-/* The option the child picked lifts a little and its edge darkens; the tick in its box is theirs, in dark ink. */
-.tl-ch-opt.tl-ch-on { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1.5px color-mix(in srgb, var(--tl-ink) 55%, transparent), 0 3px 5px rgba(70, 45, 20, .14), 0 18px 28px -14px var(--tl-paper-shadow); }
+/* The option the child picked lifts a little and its edge darkens; the tick in its box is theirs, in ink. */
+.tl-ch-opt.tl-ch-on { transform: translateY(-2px); box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1.5px color-mix(in srgb, var(--tl-ink) 55%, transparent), 0 3px 5px color-mix(in srgb, var(--tl-shade) 14%, transparent), 0 18px 28px -14px var(--tl-paper-shadow); }
 .tl-ch-opt.tl-ch-down { transform: translateY(1px) scale(.985); }
-.tl-ch-box { position: relative; flex: none; width: 28px; height: 28px; box-sizing: border-box; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--tl-ink-soft) 75%, transparent); background: var(--tl-ivory); box-shadow: inset 0 1px 2px rgba(60, 38, 16, .22); transition: border-color .3s, box-shadow .35s, transform .15s; }
+.tl-ch-box { position: relative; flex: none; width: 28px; height: 28px; box-sizing: border-box; border-radius: 5px; border: 1.5px solid color-mix(in srgb, var(--tl-ink-soft) 75%, transparent); background: var(--tl-ivory); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--tl-shade) 22%, transparent); transition: border-color .3s, box-shadow .35s, transform .15s; }
 .tl-ch-box svg { position: absolute; left: -5px; top: -6px; width: 36px; height: 36px; overflow: visible; fill: none; stroke: var(--tl-ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; transition: opacity .18s; }
 .tl-ch-box svg.tl-ch-erase { opacity: 0; }
 .tl-ch-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: tl-ch-draw .3s var(--tl-pen) forwards; }
@@ -118,31 +127,31 @@ body[data-boundary="on"] .tl-ch::before { content: "选择组件"; position: abs
 .tl-ch-probe .tl-ch-staff svg { max-width: none; }
 .tl-ch-staff text { font-family: var(--tl-serif); font-style: italic; font-weight: 600; }
 .tl-ch-staff .tl-ch-sounding path, .tl-ch-staff path.tl-ch-sounding { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
-/* Lit by the workflow: a violet ring and glow. */
-.tl-ch-opt.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 22px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
+/* Lit by the workflow: a ring and glow in the accent. */
+.tl-ch-opt.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 1.5px var(--tl-glow), 0 0 22px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
 .tl-ch-opt.tl-lit .tl-ch-staff { color: var(--tl-glow-ink); }
 .tl-ch-opt.tl-dim, .tl-ch-mark.tl-dim { opacity: .32; }
-/* Ruled out: a brick-red rule drawn through the option, the option faded; the box can no longer be ticked. */
+/* Ruled out: a rule in the wrong colour drawn through the option, the option faded; the box can no longer be ticked. */
 .tl-ch-strike { position: absolute; left: -6px; right: -6px; top: 52%; height: 2.5px; margin-top: -1px; border-radius: 2px; background: var(--tl-wrong); transform: rotate(-2deg) scaleX(0); transform-origin: 0 50%; pointer-events: none; transition: transform .42s var(--tl-pen); }
 .tl-ch-out .tl-ch-strike { transform: rotate(-2deg) scaleX(1); }
 .tl-ch-out .tl-ch-body > :not(.tl-ch-strike) { opacity: .42; filter: saturate(.4); transition: opacity .45s, filter .45s; }
 .tl-ch-out .tl-ch-box { border-style: dashed; background: color-mix(in srgb, var(--tl-ivory), var(--tl-paper-back) 30%); }
-/* Confirmed by the workflow: violet ring and a violet seal with a tick; or brick red, a dashed edge and a seal with a cross. */
-.tl-ch-opt.tl-ch-right { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 2px var(--tl-glow), 0 0 28px -4px var(--tl-glow-soft), 0 14px 24px -12px var(--tl-paper-shadow); }
-.tl-ch-opt.tl-ch-wrong { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1.5px var(--tl-wrong), 0 8px 16px -12px var(--tl-paper-shadow); outline: 1.5px dashed color-mix(in srgb, var(--tl-wrong) 60%, transparent); outline-offset: 3px; }
-.tl-ch-seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; pointer-events: none; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .9); }
-.tl-ch-seal svg { width: 15px; height: 15px; fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-.tl-ch-seal.tl-ch-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); }
-.tl-ch-seal.tl-ch-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, #fff), var(--tl-wrong)); box-shadow: 0 4px 10px -2px rgba(200, 69, 47, .35), 0 0 0 2px rgba(255, 255, 255, .9); }
+/* Confirmed by the workflow: an accent ring and an accent seal with a tick; or the wrong colour, a dashed edge and a seal with a cross. */
+.tl-ch-opt.tl-ch-right { box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 2px var(--tl-glow), 0 0 28px -4px var(--tl-glow-soft), 0 14px 24px -12px var(--tl-paper-shadow); }
+.tl-ch-opt.tl-ch-wrong { box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1.5px var(--tl-wrong), 0 8px 16px -12px var(--tl-paper-shadow); outline: 1.5px dashed color-mix(in srgb, var(--tl-wrong) 60%, transparent); outline-offset: 3px; }
+.tl-ch-seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; pointer-events: none; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px var(--tl-sheen); }
+.tl-ch-seal svg { width: 15px; height: 15px; fill: none; stroke: var(--tl-light); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.tl-ch-seal.tl-ch-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, var(--tl-light)), var(--tl-glow)); }
+.tl-ch-seal.tl-ch-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, var(--tl-light)), var(--tl-wrong)); box-shadow: 0 4px 10px -2px color-mix(in srgb, var(--tl-wrong) 35%, transparent), 0 0 0 2px var(--tl-sheen); }
 .tl-ch-seal.tl-ch-pop { animation: tl-ch-pop .45s cubic-bezier(.2, 1.5, .4, 1) both; }
 /* A letter the workflow sticks on an option sits on the tile's corner, covering nothing. */
-.tl-ch-badge { position: absolute; top: -9px; left: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); color: #fff; pointer-events: none;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-ch-badge { position: absolute; top: -9px; left: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); color: var(--tl-light); pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px var(--tl-sheen-soft); }
 .tl-ch-badge.tl-ch-pop { animation: tl-ch-pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 /* A row of boxes under a score: each box stands under the note or bar it answers. */
 .tl-ch-strip { position: relative; height: 54px; }
 .tl-ch-mark { position: absolute; top: 5px; width: 44px; height: 44px; margin-left: -22px; display: grid; place-items: center; cursor: pointer; border-radius: 10px; transition: opacity .45s; }
-.tl-ch-mark .tl-ch-box { width: 32px; height: 32px; box-shadow: inset 0 1px 2px rgba(60, 38, 16, .22), 0 6px 12px -8px var(--tl-paper-shadow); }
+.tl-ch-mark .tl-ch-box { width: 32px; height: 32px; box-shadow: inset 0 1px 2px color-mix(in srgb, var(--tl-shade) 22%, transparent), 0 6px 12px -8px var(--tl-paper-shadow); }
 .tl-ch-mark .tl-ch-box svg { left: -3px; top: -4px; }
 .tl-ch-mark.tl-ch-down .tl-ch-box { transform: scale(.94); }
 .tl-ch-mark.tl-lit .tl-ch-box { border-color: var(--tl-glow); box-shadow: 0 0 0 1.5px var(--tl-glow), 0 0 18px -2px var(--tl-glow-soft); }
@@ -156,7 +165,7 @@ body[data-boundary="on"] .tl-ch::before { content: "选择组件"; position: abs
 /* Room the choice makes under a row for a bubble, so a bubble never covers another option. */
 .tl-ch-room { grid-column: 1 / -1; position: relative; height: 0; }
 .tl-ch-strip + .tl-ch-room { margin-top: 4px; }
-.tl-ch-bubble { position: absolute; top: 2px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); transition: opacity .2s; }
+.tl-ch-bubble { position: absolute; top: 2px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--tl-dark) 50%, transparent); transition: opacity .2s; }
 .tl-ch-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .tl-ch-over { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
 .tl-ch-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-ch-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
@@ -289,12 +298,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
           <tr><td>输入</td><td>样子：选项（<code>list</code>）或谱下一排框（<code>marks</code>）。题干（题目文件里写，原题的语言，可以带小题号如 (a)）。选项：每个有编号和内容，内容是一串片段：文字、术语（斜体）或一小段 ABC 谱（谱号、调号、几个音都用它写），可以带一句读屏用的名称；能选几个（默认一个）。一排框：几个框。模式：讲题或练习；速度。</td></tr>
-          <tr><td>外观</td><td>纸片、象牙色小方框、深色墨水的勾和叉、紫色的亮起和“对”、砖红的“错”和划线、深色气泡，都写在组件自己里面；颜色和共用部分用 <code>etude</code> 主题的值。谱和文字里的升降号用乐谱库的字形。</td></tr>
+          <tr><td>外观</td><td>纸片和纸纹、象牙色小方框、墨水的勾和叉、强调色的亮起和“对”、错误色的“错”和划线、深色气泡，样子都写在组件自己里面；用到的每一种颜色都取主题常量（<code>--th-…</code>），组件里不写死颜色，换主题就换颜色，大小和动作不变。这一页用 <code>etude</code> 主题：米色的纸、深褐的墨、紫色的光、砖红的错。谱和文字里的升降号用乐谱库的字形。</td></tr>
           <tr><td>排法</td><td>组件自己定：先量每个选项本身多宽，一行放得下就全部并排（最多四个），放不下就两个一行，再放不下就一行一个；同一组一样宽、一样高。画成谱的选项竖着放，同一组的谱一样长。一排框按流程给的位置摆，每个框对着谱上的一个音或小节。</td></tr>
           <tr><td>动作</td><td>点选项：纸片轻轻按下、抬起一点，墨水的勾一笔画出来（约 0.3 秒）；换选项时原来的勾淡掉。点框：勾或叉一笔一笔画出来。划掉：红线从左往右划过去，选项变淡。核对：紫圈或砖红虚线边出现，角上的印章弹出来。弹出说明：先在那一行下面让出地方（0.52 秒，起步很轻），气泡再弹出，后面的选项慢慢往下让，不被盖住；收起时气泡先淡掉，地方再慢慢合上。</td></tr>
           <tr><td>指令</td><td><code>select(选项…)</code> 替孩子选；<code>strike(选项…)</code> 用红线划掉；<code>highlight(选项…)</code>；<code>spotlight(选项…)</code>；<code>label({选项: 字母})</code>；<code>caption(选项, 文字)</code>，选项为空时收起；<code>check({选项: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 一排框摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>play(选项)</code>、<code>stop()</code>；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>optionTap</code>（哪个、第几个、现在打勾没有、现在选了哪些、是不是已经划掉）；<code>boxTap</code>（第几个框、现在是勾、叉还是空、全部框的值）；<code>blankTap</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用同一个。一排框对着谱上哪几处，由流程从乐谱组件的 <code>slots</code> 拿到位置再交给选择组件，两个组件互不知道。哪个是答案由题目文件给，组件只画出来。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”，和其他组件用同一个。颜色由舞台（这一页上是页面本身）按主题文件设好的主题常量给。一排框对着谱上哪几处，由流程从乐谱组件的 <code>slots</code> 拿到位置再交给选择组件，两个组件互不知道。哪个是答案由题目文件给，组件只画出来。</td></tr>
           <tr><td>声音</td><td>讲题里，带音符的选项点了会响；练习里不响，免得声音成了提示。只有谱号、调号的选项不出声。</td></tr>
           <tr><td>出现在哪里</td><td>练习里是作答的组件，直接画在画面上，放在谱或题干下面。讲题里也可以用：最后一幕让孩子自己选，或者用排除法一个一个看选项。</td></tr>
         </tbody>
@@ -305,15 +314,19 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../engine/theme.js"></script>
 <script src="sound.js"></script>
 <script>
 /* ============================================================
    Choice component. Answers by ticking, as on an exam paper: either a
    set of options, each a paper tile with a tick box (one or several may
    be picked), or a row of boxes under a score, each ticked or crossed.
-   The child's marks are drawn in dark ink; what the workflow lights or
-   confirms is violet, what is wrong brick red with a dashed edge and a
-   cross, an option ruled out has a red rule through it.
+   The child's marks are drawn in ink; what the workflow lights or
+   confirms is in the accent, what is wrong in the wrong colour with a
+   dashed edge and a cross, an option ruled out has a rule through it.
+   Every colour is a theme constant the stylesheet reads; the script
+   draws no colour of its own.
    The component does not know the answer: the workflow tells it what
    to draw right or wrong.
    Inputs: shape ('list' | 'marks'), tag, prompt (parts), options
@@ -916,12 +929,16 @@ Choice.prototype.clear = function () { this.set({}); };
 
 /* ============================================================
    Assembly: this page plays the role of the player, the workflow and
-   the question file. It draws stand-ins for the score above a choice,
-   hands the choice the places of the score's answer boxes, wires the
-   events to a log and shows how the sound is doing; the choice calls
-   nothing here directly.
+   the question file. Like the player on its stage, it first sets the
+   theme's constants on the page from the theme file, then builds the
+   choices. It draws stand-ins for the score above a choice, hands the
+   choice the places of the score's answer boxes, wires the events to a
+   log and shows how the sound is doing; the choice calls nothing here
+   directly.
    ============================================================ */
-(function () {
+var THEME_URL = '../content/themes/etude.yaml';
+
+function assemble() {
   var stateEl = document.getElementById('sound-state');
   var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
   SoundSource.watch(function () {
@@ -1110,5 +1127,12 @@ Choice.prototype.clear = function () { this.set({}); };
     rt = setTimeout(rebuild, 180);
   });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebuild);
-})();
+}
+
+// The page still works without the theme file (colours missing), so a
+// failed load is reported and the choices are built anyway.
+ThemeConstants.load(THEME_URL)
+  .then(function (theme) { ThemeConstants.apply(document.documentElement, theme); })
+  .catch(function (e) { console.error('主题没有加载：' + e.message); })
+  .then(assemble);
 </script>

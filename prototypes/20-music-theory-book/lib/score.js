@@ -4,6 +4,7 @@
    label, slots, count, caption, play, stop, clear. Events (via
    onEvent): noteTap, blankTap, countStep, playStart, playEnd.
    Sound goes through the injected source, and only in lectures.
+   Colours are the theme constants (--th-*) set on the stage or page.
    ============================================================ */
 function Score(host, options) {
   this.host = host;

@@ -1,0 +1,353 @@
+summary: >-
+  节奏拆拍：把节奏按时值等比例放到按拍分好的尺子上，先弄清一拍是什么、一小节几拍，再量、再切，
+  然后一项一项地对。判断拍号、数有几个、写法对不对、单复拍改写四种部分都从这里出发。
+  一道题先读题，再一部分一部分地讲；每一部分的种类决定它走哪几幕。
+
+# Formal parameters: what an item using this workflow passes in.
+params:
+  title: { type: text, required: true, note: 题目的标题，几个字 }
+  prompt: { type: text, note: 题干 }
+  prompt-gloss: { type: text, note: 原卷上题干的英文 }
+  narration: { type: folder, required: true, note: 这道题的录音文件夹 }
+  material: { type: abc, note: 题目上印的那一段谱；只有一句文字的题不写 }
+  lines: { type: map, of: speech, required: true, note: 读题时说的话，键是 read.question、read.ask }
+  parts:
+    type: list
+    required: true
+    note: 题目分成的几部分，一部分一部分地讲
+    each:
+      kind: { type: { oneOf: [meter, count, notation, rewrite] }, required: true, note: 'meter 判断拍号；count 数有几个；notation 写法对不对；rewrite 单复拍改写' }
+      tag: { type: text, note: 这一部分的标号，例如 (a) }
+      at: { type: spot, note: 这一部分指着谱的哪里 }
+      answering: { type: { oneOf: [pick, each] }, required: { $kind: [meter, notation, rewrite] }, note: pick 是从几项里选一项；each 是每项各答一次 }
+      meter: { type: meter, required: { $kind: [notation, rewrite] }, note: 题目给的拍号 }
+      target-meter: { type: meter, required: { $kind: [rewrite] }, note: 改写成的拍号 }
+      unit: { type: duration, required: { $kind: [meter, count] }, note: 用什么时值来量 }
+      beat: { type: duration, required: { $kind: [notation, rewrite] }, note: 一拍的时值 }
+      groups: { type: groups, required: { $kind: [meter] }, note: 能看出拍子怎么分组的地方 }
+      rhythm: { type: abc, required: true, note: 放到拍尺上的这一段 }
+      compare: { type: abc, note: 改写后的那一段，和拍尺一拍对一拍 }
+      options: { type: answer-input, required: true, note: 作答组件拿到的参数 }
+      rule: { type: input, note: 这种拍子怎么写的说明 }
+      items:
+        type: list
+        required: true
+        note: 作答点
+        each:
+          id: { type: text, required: true }
+          rhythm: { type: abc, note: 这一项放到拍尺上的节奏 }
+          meter: { type: meter, note: 这一项的拍号 }
+          spot: { type: spot, note: 对这一项时拍尺上亮哪里 }
+          fits: { type: boolean, note: 这一项对不对（pick 时） }
+          answer: { type: answers, note: 算对的答案（each 时） }
+          demo: { type: answer, note: 演示时替孩子答的 }
+          lines: { type: map, of: speech }
+          conclusions: { type: map, of: conclusion }
+      answer: { type: answers, required: { $answering: [pick] }, note: 这一部分算对的答案 }
+      lines: { type: map, of: speech, required: true }
+      conclusions: { type: map, of: conclusion, required: true }
+
+# Component placeholders: the interfaces each needs, a default component
+# where every item uses the same one, and where its inputs come from.
+controls:
+  close: { needs: [leave], component: close }
+  menu: { needs: [questions], component: question-menu, inputs: { items: $book.items, current: $item.name } }
+  segments: { needs: [parts], component: part-switch }
+  title:
+    needs: [title]
+    component: question-title
+    inputs: { no: $item.no, title: $title, text: $prompt, gloss: $prompt-gloss }
+    state: { open: false }
+  prev: { needs: [back], component: scene-prev }
+  narrator: { needs: [narrate], component: narration, inputs: { folder: $narration, buttons: [pause, rate] } }
+  next: { needs: [forward], component: scene-next }
+  replay: { needs: [restart], component: replay }
+  board: { needs: [conclude], uses: [positions], inputs: { items: $paths.conclusion } }
+  material: { needs: [point], uses: [play, positions], inputs: { abc: $material } }
+  ruler: { needs: [meter, count, point, set], inputs: { abc: $part.rhythm, meter: '?' } }
+  compare: { needs: [meter, count, point, set], inputs: { abc: $part.compare, meter: '?' } }
+  answer: { needs: [answer, point], uses: [strike, positions], inputs: $part.options }
+  rule: { needs: [point, mask], inputs: $part.rule }
+
+screens:
+  wide: { minWidth: 900, minAspect: 1.15 }
+  short: { maxHeight: 520, minAspect: 1.3 }
+  tall: { minWidth: 600 }
+
+layouts:
+  stage:
+    # What each region holds unless a scene says otherwise.
+    place:
+      parts: [segments]
+      exits: [menu, close]
+      title: [title]
+      board: [board]
+      strip: [material]
+      main: []
+      pop: []
+      dock: [prev, narrator, next, replay]
+    # Region settings every variant shares; a variant may change them.
+    regions:
+      parts: { flow: row, align: start }
+      exits: { flow: row, align: end }
+      title: { flow: row, align: center }
+      board: { fit: fill, layer: 3 }
+      strip: { fit: contain, width: 320, zoom: [0.4, 1], maxHeight: 22% }
+      main: { fit: contain, width: 760, zoom: [0.6, 1.4], overflow: wheel }
+      pop: { over: main, fit: contain, width: 520, zoom: [0.6, 1], layer: 4 }
+      dock: { flow: row, grow: narrator, maxWidth: 1100 }
+    # Grid tracks are CSS track sizes; one with a comma is quoted.
+    variants:
+      - when: wide
+        columns: [300px, 'minmax(0, 1fr)']
+        rows: [auto, auto, auto, 'minmax(0, 1fr)', auto]
+        areas:
+          - parts exits
+          - board title
+          - board strip
+          - board main
+          - dock  dock
+      - when: short
+        columns: [230px, 'minmax(0, 1fr)', auto]
+        rows: [auto, 'minmax(0, 1fr)', auto, auto]
+        areas:
+          - parts title exits
+          - board main  main
+          - strip main  main
+          - dock  dock  dock
+        regions:
+          strip: { maxHeight: 34% }
+          main: { zoom: [0.5, 1.2] }
+      - when: tall
+        columns: ['minmax(0, 1fr)', auto]
+        rows: [auto, auto, 124px, auto, 'minmax(0, 1fr)', auto]
+        areas:
+          - parts exits
+          - title title
+          - board board
+          - strip strip
+          - main  main
+          - dock  dock
+        regions:
+          strip: { maxHeight: 14% }
+      - columns: ['minmax(0, 1fr)', auto]
+        rows: [auto, auto, 92px, auto, 'minmax(0, 1fr)', auto]
+        areas:
+          - parts exits
+          - title title
+          - board board
+          - strip strip
+          - main  main
+          - dock  dock
+        regions:
+          strip: { maxHeight: 15% }
+          main: { width: 420, zoom: [0.6, 1.2] }
+
+scenes:
+  read:
+    title: 读题
+    layout: stage
+    place: { strip: [], main: [material] }
+    state: { title: { open: true } }
+    steps:
+      - do: { control: narrator, call: narrate.say, with: $lines.read.question, wait: true }
+      - do: { control: narrator, call: narrate.say, with: $lines.read.ask, wait: true }
+
+  beat:
+    title: 找拍
+    layout: stage
+    when: { has: $part.meter }
+    place: { main: [ruler] }
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.beat.read, wait: true }
+          - do: { control: material, call: point.spotlight, with: $part.at }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.beat.unit, wait: true }
+          - do: { control: ruler, call: meter.show, with: $part.meter, wait: true }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.beat.split, wait: true }
+          - do: { control: ruler, call: meter.subdivide, with: $part.unit, wait: true }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.beat, from: ruler, wait: true }
+
+  target-beat:
+    title: 改写成的拍子
+    layout: stage
+    place: { main: [ruler, compare] }
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.target.unit, wait: true }
+          - do: { control: compare, call: meter.show, with: $part.target-meter, wait: true }
+      - do: { control: narrator, call: narrate.say, with: $part.lines.target.match, wait: true }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.target, from: compare, wait: true }
+
+  measure:
+    title: 量一共多长
+    layout: stage
+    place: { main: [ruler] }
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.measure.unit, wait: true }
+          - do: { control: material, call: point.spotlight, with: $part.at }
+      - do: { control: ruler, call: count.run, with: $part.unit, wait: true }
+      - do: { control: narrator, call: narrate.say, with: $part.lines.measure.total, wait: true }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.measure, from: ruler, wait: true }
+
+  grouping:
+    title: 看怎么分组
+    layout: stage
+    place: { main: [ruler] }
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.grouping.look, wait: true }
+          - do: { control: material, call: point.highlight, with: $part.groups }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.grouping.kind, wait: true }
+          - do: { control: ruler, call: point.label, with: $part.groups, wait: true }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.grouping, from: ruler, wait: true }
+
+  rule:
+    title: 这种拍子怎么写
+    layout: stage
+    when: { has: $part.conclusions.rule }
+    place: { main: [ruler], pop: [rule] }
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.rule.open, wait: true }
+          - do: { control: rule, call: point.highlight, with: $part.at }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.rule, from: rule, wait: true }
+
+  cut:
+    title: 按拍切开
+    layout: stage
+    place: { main: [ruler] }
+    steps:
+      - do: { control: narrator, call: narrate.say, with: $part.lines.cut.lines, wait: true }
+      - do: { control: ruler, call: count.run, with: $part.beat, wait: true }
+      - do: { control: board, call: conclude.push, with: $part.conclusions.cut, from: ruler, wait: true }
+
+  each-item:
+    title: 一项一项地对
+    layout: stage
+    params: { on: { default: ruler } }
+    place: { main: [ruler, compare, answer] }
+    # When the child is asked to choose next, the ruler has done its work:
+    # it folds into the conclusion board.
+    exit:
+      ruler: { kind: fly, to: board }
+      compare: { kind: fly, to: board }
+    steps:
+      - do: { control: $on, call: set, with: $item.rhythm, wait: true }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $item.lines.item.look, wait: true }
+          - do: { control: answer, call: point.spotlight, with: $item.id }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $item.lines.item.check, wait: true }
+          - do: { control: $on, call: meter.show, with: $item.meter, wait: true }
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $item.lines.item.verdict, wait: true }
+          - do: { control: $on, call: point.highlight, with: $item.spot }
+      - when: { $part.answering: pick, $item.fits: false }
+        do: { control: answer, call: strike, with: $item.id, wait: true }
+      - when: { $part.answering: each }
+        await:
+          control: answer
+          event: answer.given
+          item: $item.id
+          accept: $item.answer
+          show: $item.demo
+          right:
+            - do: { control: narrator, call: narrate.say, with: $item.lines.item.right, wait: true }
+          wrong:
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $item.lines.item.hint, wait: true }
+              then: retry
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $item.lines.item.demo, wait: true }
+              then: show
+      - do: { control: board, call: conclude.push, with: $item.conclusions.item, from: $on, wait: true }
+
+  choose:
+    title: 选出来
+    layout: stage
+    place: { main: [answer] }
+    forward: done
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.choose.ask, wait: true }
+          - do: { control: answer, call: point.spotlight, with: null }
+      - await:
+          control: answer
+          event: answer.given
+          accept: $part.answer
+          right:
+            - do: { control: narrator, call: narrate.say, with: $part.lines.choose.right, wait: true }
+          wrong:
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $part.lines.choose.hint, wait: true }
+              then: retry
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $part.lines.choose.demo, wait: true }
+              then: show
+      - do: { control: board, call: conclude.push, with: $part.conclusions.answer, from: answer, wait: true }
+      # The answer, once on the board, folds the options away into it.
+      - exit: answer
+        motion: { kind: fly, to: { control: board, item: $part.conclusions.answer } }
+
+  fill:
+    title: 写出来
+    layout: stage
+    place: { main: [ruler, answer] }
+    forward: done
+    steps:
+      - together:
+          - do: { control: narrator, call: narrate.say, with: $part.lines.fill.ask, wait: true }
+          - do: { control: answer, call: answer.focus, with: $item.id }
+      - await:
+          control: answer
+          event: answer.given
+          item: $item.id
+          accept: $item.answer
+          show: $item.demo
+          right:
+            - do: { control: narrator, call: narrate.say, with: $part.lines.fill.right, wait: true }
+          wrong:
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $part.lines.fill.hint, wait: true }
+              then: retry
+            - steps:
+                - do: { control: narrator, call: narrate.say, with: $part.lines.fill.demo, wait: true }
+              then: show
+      - do: { control: board, call: conclude.push, with: $part.conclusions.answer, from: answer, wait: true }
+
+# The order of the scenes. Reading the question first; then each part in
+# turn, its kind deciding which scenes it goes through, the board cleared
+# as a part begins.
+sequence:
+  - scene: read
+    segment: 读题
+  - for: $parts
+    as: part
+    segment: $part.tag
+    start:
+      - do: { control: board, call: conclude.set, with: [] }
+    sequence:
+      - { scene: beat, when: { $part.kind: [count, notation, rewrite] } }
+      - { scene: target-beat, when: { $part.kind: rewrite } }
+      - { scene: measure, when: { $part.kind: [meter, count] } }
+      - { scene: grouping, when: { $part.kind: meter } }
+      - { scene: rule, when: { $part.kind: notation } }
+      - { scene: cut, when: { $part.kind: [notation, rewrite] } }
+      - for: $part.items
+        as: item
+        when: { $part.kind: [meter, notation] }
+        sequence: [each-item]
+      - for: $part.items
+        as: item
+        when: { $part.kind: rewrite }
+        sequence: [{ scene: each-item, with: { on: compare } }]
+      - { scene: choose, when: { $part.answering: pick } }
+      - for: $part.items
+        as: item
+        when: { $part.kind: count }
+        sequence: [fill]

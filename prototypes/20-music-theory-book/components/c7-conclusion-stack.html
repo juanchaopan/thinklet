@@ -53,49 +53,60 @@ body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline
 body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -10px; right: 8px; z-index: 30; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
 
 /* ---------- Conclusion stack component: it defines its whole look here and takes nothing from the page ---------- */
-/* The look follows the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, Chinese in the theme's sans, violet light for whatever is lit, the answer with a violet ring, a double rule and a seal, step numbers in outlined rings. */
+/* Colours: every colour is a theme constant, var(--th-<name>) (engine/theme.js), set by the stage or the page; the component names them once below as its own aliases and writes an alpha variant with color-mix against transparent. With the etude theme: slips of warm paper with grain, ink in the serif with terms in italic, Chinese in the theme's sans, violet light for whatever is lit, the answer with a violet ring, a double rule and a seal, step numbers in outlined rings. */
 /* Layout: a wheel. The conclusion in focus stands in the middle of the board at full size; the ones before and after it get smaller and fainter the farther they are, and fade at the board's edges. In a tall board it turns up and down; in a short wide strip (a phone) it turns left and right. It never shows a scrollbar. */
 /* Motion: turned by a finger, a mouse wheel or a mouse drag, following the hand one for one; let go, it glides to the nearest conclusion. A new conclusion flies in from where it was reached while the wheel turns to make it the focus. Every glide starts very gently and settles gently. */
 .tl-cs {
-  --tl-paper-a: #fffaf1;
-  --tl-paper-b: #f2e6d1;
-  --tl-paper-shadow: rgba(60, 38, 16, .45);
-  --tl-ink: #241a12;
-  --tl-ink-soft: #6b5238;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .28);
-  --tl-glow-ink: #4b23c9;
+  --tl-paper-a: var(--th-paper-a);
+  --tl-paper-b: var(--th-paper-b);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-glow-ink: var(--th-accent-ink);
+  --tl-light: var(--th-light);
+  /* The light on a slip's top edge, its thin rim, the near drop under it and the long shadow it casts. */
+  --tl-sheen: color-mix(in srgb, var(--th-light) 90%, transparent);
+  --tl-rim: color-mix(in srgb, var(--th-edge) 12%, transparent);
+  --tl-drop: color-mix(in srgb, var(--th-shade) 10%, transparent);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  /* The paper laid over a hidden conclusion, a shade darker than the slip. */
+  --tl-cover-a: color-mix(in srgb, var(--th-paper-b) 80%, var(--th-paper-back));
+  --tl-cover-b: color-mix(in srgb, var(--th-paper-b) 40%, var(--th-paper-back));
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --tl-sans: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
   position: relative; box-sizing: border-box; width: 100%; height: 100%; min-height: 96px; color: var(--tl-ink);
   -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
 }
 .tl-cs-view { position: absolute; inset: 0; overflow: hidden; touch-action: none; outline: none; }
-.tl-cs-y .tl-cs-view { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%); }
-.tl-cs-x .tl-cs-view { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 12%, #000 88%, transparent 100%); }
+/* The edge fade is a mask, which reads only the alpha of its colours. */
+.tl-cs-y .tl-cs-view { -webkit-mask-image: linear-gradient(to bottom, transparent 0, var(--th-dark) 14%, var(--th-dark) 86%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, var(--th-dark) 14%, var(--th-dark) 86%, transparent 100%); }
+.tl-cs-x .tl-cs-view { -webkit-mask-image: linear-gradient(to right, transparent 0, var(--th-dark) 12%, var(--th-dark) 88%, transparent 100%); mask-image: linear-gradient(to right, transparent 0, var(--th-dark) 12%, var(--th-dark) 88%, transparent 100%); }
 .tl-cs-view.tl-cs-grab { cursor: grabbing; }
 .tl-cs-view:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: -3px; border-radius: 12px; }
 .tl-cs-slip { position: absolute; left: 0; top: 0; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 60px; padding: 11px 16px 12px 11px; border-radius: 6px; transform-origin: 50% 50%; will-change: transform, opacity; cursor: pointer;
-  background: radial-gradient(90% 80% at 30% 0%, rgba(255, 255, 255, .7), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 2px 4px rgba(70, 45, 20, .1), 0 16px 28px -14px var(--tl-paper-shadow);
+  background: radial-gradient(90% 80% at 30% 0%, color-mix(in srgb, var(--tl-light) 70%, transparent), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 2px 4px var(--tl-drop), 0 16px 28px -14px var(--tl-paper-shadow);
   transition: box-shadow .45s, color .3s, filter .2s; }
 .tl-cs-practice .tl-cs-slip { cursor: default; }
-@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-slip:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 0 0 1.5px var(--tl-glow-soft), 0 2px 4px rgba(70, 45, 20, .1), 0 18px 30px -14px var(--tl-paper-shadow); } }
-.tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .33  0 0 0 0 .2  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+@media (hover: hover) { .tl-cs:not(.tl-cs-practice) .tl-cs-slip:hover { filter: brightness(1.04); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 95%, transparent), 0 0 0 1.5px var(--tl-glow-soft), 0 2px 4px var(--tl-drop), 0 18px 30px -14px var(--tl-paper-shadow); } }
+/* The paper's grain: the edge colour seen through a noise mask, multiplied into the slip. */
+.tl-cs-slip::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit; background-color: var(--th-edge);
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
 /* The conclusion in focus: lifted a little higher off the board. */
-.tl-cs-slip.tl-cs-focus { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 3px 6px rgba(70, 45, 20, .12), 0 24px 38px -14px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-cs-focus { box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 3px 6px color-mix(in srgb, var(--th-shade) 12%, transparent), 0 24px 38px -14px var(--tl-paper-shadow); }
 /* The conclusion that answers the question: a violet ring, a double rule inside and a seal. */
-.tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-cs-final { box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 1.5px var(--tl-glow), 0 0 26px -6px var(--tl-glow-soft), 0 20px 34px -14px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-cs-final::before { content: ""; position: absolute; inset: 4px; border: 3px double color-mix(in srgb, var(--tl-glow) 32%, transparent); border-radius: 3px; pointer-events: none; }
 /* A conclusion flying in: the slip waits unseen in its place on the wheel while a lifted copy, with a soft violet glow, crosses the screen to it. */
 .tl-cs-slip.tl-cs-landing { visibility: hidden !important; }
 .tl-cs-slip.tl-cs-flyer { z-index: 9; transition: none; pointer-events: none; will-change: transform, opacity;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 0 0 1px rgba(122, 88, 54, .12), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
+  box-shadow: inset 0 1px 0 var(--tl-sheen), inset 0 0 0 1px var(--tl-rim), 0 0 0 1.5px var(--tl-glow-soft), 0 0 30px -6px var(--tl-glow-soft), 0 26px 40px -16px var(--tl-paper-shadow); }
 .tl-cs-flyer .tl-cs-seal { visibility: hidden; }
 .tl-cs-num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--tl-ink-soft) 60%, transparent); font: 600 16px/1 var(--tl-serif); color: var(--tl-ink-soft); }
-.tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: #fff; font: 700 24px/1 var(--tl-serif); }
-.tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-cs-seal { flex: none; width: 34px; height: 34px; display: grid; place-items: center; position: relative; color: var(--tl-light); font: 700 24px/1 var(--tl-serif); }
+.tl-cs-seal::before { content: ""; position: absolute; inset: 4px; border-radius: 5px; transform: rotate(45deg); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); }
 .tl-cs-seal span { position: relative; margin-top: -3px; }
 /* The steps a conclusion is built on, as small rings on its top edge. */
 .tl-cs-refs { position: absolute; top: -10px; left: 12px; display: flex; gap: 3px; pointer-events: none; }
@@ -113,14 +124,14 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 /* A short stave is cropped to what is drawn on it, and its lines stop at the crop. */
 .tl-cs-staff { line-height: 0; color: var(--tl-ink); max-width: 100%; }
 .tl-cs-staff svg { display: block; overflow: hidden; max-width: 100%; height: auto; }
-.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
+.tl-cs-slip.tl-lit { color: var(--tl-glow-ink); box-shadow: inset 0 1px 0 var(--tl-sheen), 0 0 0 1.5px var(--tl-glow), 0 0 20px -4px var(--tl-glow-soft), 0 12px 20px -12px var(--tl-paper-shadow); }
 .tl-cs-slip.tl-lit .tl-cs-num { color: var(--tl-glow-ink); border-color: var(--tl-glow); }
 .tl-cs-slip.tl-lit .tl-cs-staff, .tl-cs-slip.tl-lit .tl-cs-op { color: var(--tl-glow-ink); }
 .tl-cs-slip.tl-cs-down { background-color: color-mix(in srgb, var(--tl-glow) 10%, transparent); }
 /* A hidden conclusion lies under a paper slip with a dashed question box: missing by shape, not only by colour. */
 .tl-cs-hidden > :not(.tl-cs-cover) { visibility: hidden; }
 .tl-cs-cover { position: absolute; inset: -3px -6px; z-index: 1; display: flex; align-items: center; padding-left: 6px; border-radius: 4px;
-  background: linear-gradient(180deg, #efe1c6, #e6d4b2); box-shadow: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 3px 6px -2px rgba(70, 45, 20, .35); transform: rotate(-.6deg); transition: transform .45s cubic-bezier(.3, .8, .3, 1), opacity .45s; }
+  background: linear-gradient(180deg, var(--tl-cover-a), var(--tl-cover-b)); box-shadow: 0 1px 0 color-mix(in srgb, var(--tl-light) 60%, transparent) inset, 0 3px 6px -2px color-mix(in srgb, var(--th-shade) 35%, transparent); transform: rotate(-.6deg); transition: transform .45s cubic-bezier(.3, .8, .3, 1), opacity .45s; }
 .tl-cs-cover.off { transform: translateX(40%) rotate(4deg); opacity: 0; }
 .tl-cs-q { display: inline-flex; align-items: center; justify-content: center; min-width: 2.2em; height: 1.2em; padding: 0 .3em; border: 1.5px dashed var(--tl-ink-soft); border-radius: 5px; font: italic 600 18px/1 var(--tl-serif); color: var(--tl-ink-soft); }
 .tl-cs-ink { animation: tl-cs-ink .55s cubic-bezier(.2, .8, .3, 1) both; }
@@ -174,9 +185,9 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
       <tr><th>指令</th><td><code>push(id, {from})</code> 推一条，可带它在屏幕上从哪里来；<code>pushMs</code> 推一条要多久停稳；<code>set(ids)</code> 直接摆成这几条（不放动画，转到最后一条）；<code>focus(id)</code> 转到某一条；<code>highlight</code>、<code>spotlight</code>、<code>mask</code>、<code>reveal</code>、<code>stop</code>、<code>clear</code></td></tr>
       <tr><th>事件</th><td><code>itemTap</code>（点了哪一条：编号、第几步、是不是答案、文字、是否遮着）、<code>blankTap</code></td></tr>
       <tr><th>能力接口</th><td>结论（推、摆成、点了哪一条）、指点（亮起）、遮住（遮住、揭开）、摆成</td></tr>
-      <tr><th>外观</th><td>暖色纸条带纹理，衬线体的字、术语斜体，中文用主题配的黑体；步骤编号是描线的圆圈，答案是紫圈、双线和 ∴ 印章；一条结论由前面哪几条得出，它的顶边上就挂着那几步编号的紫色小圆圈；一小段谱按画出来的内容裁边，谱线停在裁边处；颜色和共用部分用 <code>etude</code> 主题的值</td></tr>
+      <tr><th>外观</th><td>暖色纸条带纹理，衬线体的字、术语斜体，中文用主题配的黑体；步骤编号是描线的圆圈，答案是紫圈、双线和 ∴ 印章；一条结论由前面哪几条得出，它的顶边上就挂着那几步编号的紫色小圆圈；一小段谱按画出来的内容裁边，谱线停在裁边处；所有颜色都取主题常量（<code>--th-…</code>），组件里不写死颜色，这一页用 <code>etude</code> 主题</td></tr>
       <tr><th>排法</th><td>转盘：焦点上的一条在正中间原大，前后各条按离焦点的远近缩到 0.8、0.68、0.6，越远越淡，边上淡出；又高又窄的地方上下转，又宽又矮的地方（宽是高的 1.6 倍以上）左右转；竖着转时纸条最宽 300 像素，横着转时 230 像素</td></tr>
-      <tr><th>动作</th><td>手指、滚轮、拖动一比一地转，松手按甩的快慢停到最近的一条；推一条时转盘 0.52 秒转到它，它从得出它的地方 0.8 秒飞过来；缓急曲线是主题的那一种</td></tr>
+      <tr><th>动作</th><td>手指、滚轮、拖动一比一地转，松手按甩的快慢停到最近的一条；推一条时转盘 0.52 秒转到它，它从得出它的地方 0.8 秒飞过来，不带来处时在原地 0.52 秒长出来；缓急曲线是主题的那一种</td></tr>
       <tr><th>操作</th><td>能点的纸条鼠标放上去是手指、微微亮起；移动超过 6 像素就是转，不算点；点一条：转到它，发出 <code>itemTap</code>；转到边上看不见的点不到；键盘上下（左右）方向键转一格，回车相当于点</td></tr>
       <tr><th>谁决定排版</th><td>结论板的大小由播放器给；转的方向和纸条的大小由组件按给它的地方自己定</td></tr>
       <tr><th>声音</th><td>不发声</td></tr>
@@ -185,6 +196,8 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../engine/theme.js"></script>
 <script src="sound.js"></script>
 <script>
 /* ============================================================
@@ -199,6 +212,8 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
    A conclusion pushed with the place on screen it was reached flies from
    there: a lifted copy of its slip crosses to its place on the wheel
    while the wheel turns to it, and the slip shows once the copy lands.
+   Without that place it grows in its place while the wheel turns to it.
+   Colours come from the theme constants (--th-<name>) set around it.
    Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc} | {gloss}],
    from: [ids], final}}), mode ('lecture' | 'practice').
    Commands: push, pushMs, set, focus, highlight, spotlight, mask,
@@ -453,7 +468,8 @@ ConclusionStack.prototype.frame = function () {
 };
 
 // The wheel's motion, one frame at a time: a glide to a conclusion, a
-// slip growing into its place, a slip flying in.
+// slip growing into its place, a slip flying in. Whatever starts one of
+// them calls kick, so it runs even when the others have nothing to do.
 ConclusionStack.prototype.kick = function () {
   var self = this;
   if (this.raf) return;
@@ -648,7 +664,9 @@ ConclusionStack.prototype.applyMasks = function (animated) {
 
 // The conclusion of this act joins the wheel after the others, and the
 // wheel turns to it. With opts.from (a rect on screen) it flies there
-// from that place; without, it grows in its place.
+// from that place; without, it grows in its place, and the frame loop is
+// kicked for the growth itself, since the wheel may already stand where
+// it is going (the first conclusion) and then has no glide to run.
 ConclusionStack.prototype.push = function (id, opts) {
   var self = this, from = opts && opts.from;
   if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
@@ -660,7 +678,11 @@ ConclusionStack.prototype.push = function (id, opts) {
   this.measure();
   if (ConclusionStack.still()) { this.anim = null; this.p = this.last(); this.frame(); this.settled(id, false); return; }
   if (from && from.width >= 0) this.fly(el, from);
-  else { el._grow = 0; el._growT0 = performance.now(); setTimeout(function () { self.settled(id, true); }, ConclusionStack.MOVE_MS); }
+  else {
+    el._grow = 0; el._growT0 = performance.now();
+    this.kick();
+    setTimeout(function () { self.settled(id, true); }, ConclusionStack.MOVE_MS);
+  }
   this.glide(this.last(), ConclusionStack.MOVE_MS);
 };
 // How long a push takes to come to rest, so whoever pushed can wait.
@@ -698,7 +720,8 @@ ConclusionStack.prototype.clear = function () { this.held = []; this.spot = null
 
 /* ============================================================
    Assembly: plays the player on this page. Opens through the loading
-   screen, puts one stack in the wide board and one in the phone strip,
+   screen, which also reads the etude theme and sets its constants on
+   the page, puts one stack in the wide board and one in the phone strip,
    sends the workflow's commands from the panel and logs the events.
    ============================================================ */
 (function () {
@@ -711,6 +734,7 @@ ConclusionStack.prototype.clear = function () { this.held = []; this.spot = null
     a: { parts: [{ abc: 'M:6/8\nx' }, { text: '八分之六拍' }], from: ['m', 'g'], final: true }
   };
   var ORDER = ['m', 'g', 'i1', 'i2', 'i3', 'a'];
+  var THEME = '../content/themes/etude.yaml';
   var logEl = document.getElementById('log'), stacks = {};
   window.tlEvents = [];
   function log(where, ev) {
@@ -719,7 +743,14 @@ ConclusionStack.prototype.clear = function () { this.held = []; this.spot = null
     logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
     window.tlEvents.push(Object.assign({ where: where }, ev));
   }
-  PlayerLoading.need(function (progress) { progress(1, '准备好了'); return Promise.resolve(); });
+  function note(text) { var d = document.createElement('div'); d.textContent = text; logEl.appendChild(d); }
+  PlayerLoading.need(function (progress) {
+    return ThemeConstants.load(THEME).then(function (theme) {
+      ThemeConstants.check(theme).forEach(note);
+      ThemeConstants.apply(document.documentElement, theme);
+      progress(1, '主题准备好了');
+    });
+  });
   PlayerLoading.onStart(function () {
     stacks.wide = new ConclusionStack(document.getElementById('board-wide'), { items: ITEMS, onEvent: function (ev) { log('电脑', ev); } });
     stacks.phone = new ConclusionStack(document.getElementById('board-phone'), { items: ITEMS, onEvent: function (ev) { log('手机', ev); } });

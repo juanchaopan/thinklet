@@ -2,7 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
 <style>
-/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. */
+/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -47,35 +47,39 @@ p { margin: 0; }
 body[data-boundary="on"] .tl-bg { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 20px; }
 body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: absolute; top: -18px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
 
-/* ---------- Beat grid component: it defines its whole look here and takes nothing from the page ---------- */
+/* ---------- Beat grid component: it defines its whole look here; every colour is a theme constant (--th-<name>) ---------- */
 .tl-bg {
-  --tl-paper-a: #fffaf1;
-  --tl-paper-b: #f2e6d1;
-  --tl-paper-shadow: rgba(60, 38, 16, .45);
-  --tl-ink: #241a12;
-  --tl-line: rgba(36, 26, 18, .62);
-  --tl-guide: rgba(36, 26, 18, .16);
-  --tl-ribbon: #6b5238;
-  --tl-ribbon-hi: rgba(255, 236, 205, .55);
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .28);
-  --tl-warn: #c8452f;
-  --tl-warn-soft: rgba(200, 69, 47, .16);
-  --tl-wood-a: #e9c98f;
-  --tl-wood-b: #cfa264;
-  --tl-wood-ink: #4a3016;
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
-  --tl-caption: #2a2118;
+  /* Local names for the theme constants the grid draws with; alpha variants are mixed with transparent. */
+  --tl-paper-a: var(--th-paper-a);
+  --tl-paper-b: var(--th-paper-b);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  --tl-ink: var(--th-ink);
+  --tl-line: color-mix(in srgb, var(--th-ink) 62%, transparent);
+  --tl-guide: color-mix(in srgb, var(--th-ink) 16%, transparent);
+  --tl-guide-major: color-mix(in srgb, var(--th-ink) 26%, transparent);
+  --tl-ribbon: var(--th-ribbon);
+  --tl-ribbon-hi: color-mix(in srgb, var(--th-light-warm) 55%, transparent);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-warn: var(--th-wrong);
+  --tl-warn-soft: color-mix(in srgb, var(--th-wrong) 16%, transparent);
+  --tl-wood-a: var(--th-wood-a);
+  --tl-wood-b: var(--th-wood-b);
+  --tl-wood-ink: var(--th-wood-ink);
+  --tl-cell: color-mix(in srgb, var(--th-wood-ink) 10%, transparent);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-caption: var(--th-caption);
+  --tl-light: var(--th-light);
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-card { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 16px; padding: 10px 10px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; outline: none;
   background:
-    radial-gradient(120% 90% at 20% 0%, rgba(255, 255, 255, .7), transparent 60%),
-    repeating-linear-gradient(0deg, rgba(120, 90, 50, .025) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 20% 0%, color-mix(in srgb, var(--th-light) 70%, transparent), transparent 60%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--th-edge) 2.5%, transparent) 0 1px, transparent 1px 3px),
     linear-gradient(170deg, var(--tl-paper-a), var(--tl-paper-b));
-  box-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 -2px 6px rgba(120, 84, 40, .12) inset, 0 2px 3px rgba(60, 38, 16, .18), 0 24px 44px -20px var(--tl-paper-shadow); }
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--th-light) 90%, transparent) inset, 0 -2px 6px color-mix(in srgb, var(--th-edge) 12%, transparent) inset, 0 2px 3px color-mix(in srgb, var(--th-shade) 18%, transparent), 0 24px 44px -20px var(--tl-paper-shadow); }
 .tl-bg.kbd .tl-card:focus-visible { box-shadow: 0 0 0 3px var(--tl-glow), 0 24px 44px -20px var(--tl-paper-shadow); }
 .tl-rows { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .tl-row { position: relative; }
@@ -83,10 +87,10 @@ body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: 
 /* The ruler under each row: light maple with engraved ticks. */
 .tl-ruler { position: absolute; border-radius: 4px;
   background:
-    linear-gradient(180deg, rgba(255, 246, 225, .55), transparent 40%, rgba(80, 48, 16, .12)),
-    repeating-linear-gradient(92deg, rgba(120, 70, 20, .08) 0 1px, transparent 1px 5px, rgba(255, 230, 190, .1) 5px 6px, transparent 6px 11px),
+    linear-gradient(180deg, color-mix(in srgb, var(--th-light-warm) 55%, transparent), transparent 40%, color-mix(in srgb, var(--th-shade) 12%, transparent)),
+    repeating-linear-gradient(92deg, color-mix(in srgb, var(--th-edge) 8%, transparent) 0 1px, transparent 1px 5px, color-mix(in srgb, var(--th-light-warm) 10%, transparent) 5px 6px, transparent 6px 11px),
     linear-gradient(180deg, var(--tl-wood-a), var(--tl-wood-b));
-  box-shadow: inset 0 1px 0 rgba(255, 248, 230, .8), inset 0 -1px 0 rgba(80, 48, 16, .35), 0 2px 4px rgba(60, 36, 12, .25); }
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--th-light-warm) 80%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--th-shade) 35%, transparent), 0 2px 4px color-mix(in srgb, var(--th-shade) 25%, transparent); }
 .tl-bg svg text { font-family: var(--tl-serif); }
 .tl-glyph { fill: var(--tl-ink); transition: fill .2s; }
 .tl-stem { fill: var(--tl-ink); transition: fill .2s; }
@@ -96,7 +100,7 @@ body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: 
 .tl-barline { stroke: var(--tl-ink); stroke-width: 1.8; }
 .tl-barline.tl-warnline { stroke: var(--tl-warn); stroke-width: 2.4; stroke-dasharray: 5 3; animation: fade .4s ease-out both; }
 .tl-guide { stroke: var(--tl-guide); stroke-width: 1; stroke-dasharray: 2 4; }
-.tl-guide.tl-major { stroke: rgba(36, 26, 18, .26); stroke-dasharray: 3 3; }
+.tl-guide.tl-major { stroke: var(--tl-guide-major); stroke-dasharray: 3 3; }
 .tl-ribbon { fill: var(--tl-ribbon); opacity: .78; transition: fill .2s, opacity .3s; }
 .tl-ribbon-hi { fill: var(--tl-ribbon-hi); pointer-events: none; }
 .tl-rest .tl-ribbon { fill: transparent; stroke: var(--tl-ribbon); stroke-width: 1.3; stroke-dasharray: 3 3; opacity: .8; }
@@ -111,7 +115,7 @@ body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: 
 .tl-rest.tl-over .tl-ribbon { fill: var(--tl-warn-soft); stroke: var(--tl-warn); }
 .tl-missing { fill: var(--tl-warn-soft); stroke: var(--tl-warn); stroke-width: 1.3; stroke-dasharray: 4 3; animation: fade .4s ease-out both; }
 .tl-dim { opacity: .22; }
-.tl-cell { fill: rgba(90, 52, 16, .1); }
+.tl-cell { fill: var(--tl-cell); }
 .tl-cell.tl-lit { fill: color-mix(in srgb, var(--tl-glow) 35%, transparent); }
 .tl-cell.tl-pulse { animation: pulse .45s ease-out; }
 .tl-tick { stroke: var(--tl-wood-ink); stroke-width: 1; opacity: .5; }
@@ -123,22 +127,22 @@ body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: 
 .tl-tupno { font-size: 15px; font-style: italic; font-weight: 600; fill: var(--tl-ink); }
 .tl-bracket { fill: none; stroke: var(--tl-ink); stroke-width: 1.1; }
 .tl-unit { fill: color-mix(in srgb, var(--tl-glow) 30%, transparent); stroke: var(--tl-glow); stroke-width: 1.2; animation: fade .3s ease-out both; }
-.tl-countno { font-size: 17px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: var(--tl-glow); stroke-width: 3px; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
+.tl-countno { font-size: 17px; font-weight: 700; fill: var(--tl-light); paint-order: stroke; stroke: var(--tl-glow); stroke-width: 3px; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; transform-box: fill-box; transform-origin: center; }
 /* Overlays positioned over the whole grid. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
-.tl-badge { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 15px/1 var(--tl-serif); color: #fff;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-badge { position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 15px/1 var(--tl-serif); color: var(--tl-light);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--th-light) 85%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-playhead { position: absolute; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--tl-glow); box-shadow: 0 0 10px 2px var(--tl-glow-soft), 0 0 3px var(--tl-glow); opacity: 0; transition: opacity .2s; }
 .tl-playhead.on { opacity: 1; }
 .tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 40%, color-mix(in srgb, var(--tl-glow) 18%, transparent), transparent 75%); opacity: 0; transition: opacity .45s; }
 .tl-spot.on { opacity: 1; }
 .tl-ripple { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
-.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--th-dark) 50%, transparent); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
 .tl-bubble.out { opacity: 0; }
 .tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .tl-bubble b { font: 600 19px/1 var(--tl-serif); letter-spacing: .02em; }
 .tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
-.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px rgba(255, 230, 200, .35); transition: transform .1s; }
+.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px color-mix(in srgb, var(--th-light-warm) 35%, transparent); transition: transform .1s; }
 .tl-play:active { transform: scale(.94); }
 .tl-play:focus { outline: none; }
 .tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
@@ -146,7 +150,7 @@ body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: 
 .tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes pulse { 0% { fill: color-mix(in srgb, var(--tl-glow) 55%, transparent); } 100% { fill: rgba(90, 52, 16, .1); } }
+@keyframes pulse { 0% { fill: color-mix(in srgb, var(--tl-glow) 55%, transparent); } 100% { fill: var(--tl-cell); } }
 @keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
 
@@ -182,7 +186,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   <header style="display:grid;gap:10px">
     <span class="tagline">组件 3 / 10 · 显示类 · 直接画在画面上</span>
     <h1>节拍格</h1>
-    <p class="lede">讲节奏时用。蓝色虚线框住的就是一个节拍格组件：一张纸条，上面是一条线上的音符和休止符，每个音占的宽度和它的时值成正比；下面的色条是每个音占多长；最下面的木尺按拍号分成一拍一拍。它的外观全由自己定，不随外面变。框外面的暖光背景、标题、几个节拍格怎么排、下面的指令按钮，都不属于它。</p>
+    <p class="lede">讲节奏时用。蓝色虚线框住的就是一个节拍格组件：一张纸条，上面是一条线上的音符和休止符，每个音占的宽度和它的时值成正比；下面的色条是每个音占多长；最下面的木尺按拍号分成一拍一拍。它的形状和大小由自己定，颜色全部取自主题常量，不随外面变。框外面的暖光背景、标题、几个节拍格怎么排、下面的指令按钮，都不属于它。</p>
     <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
   </header>
 
@@ -230,10 +234,10 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
           <tr><td>输入</td><td>一小节的 ABC 谱（和乐谱组件同一种写法，音高只用来发声）；拍号和拍的分组（可以不给，也可以是问号）；模式：讲题（点了发声、弹出名称）或练习（只显示流程标好的东西，点了没有反应，不给提示）；速度；有没有播放按钮；下面的名称（原文）。</td></tr>
-          <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色都由节拍格自己定，不从外面继承；放在哪里都是同一个样子。</td></tr>
+          <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色，形状和大小都由节拍格自己定；颜色全部取自主题常量（纸、墨、强调色、错误色、木头、气泡、光和影），自己不写死任何颜色。换主题只换颜色，放在哪里都是同一个样子。</td></tr>
           <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
+          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个；颜色来自播放器设在画面上的主题常量。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里一般不出现，因为它本身就是提示；要出现时只显示，不作答。</td></tr>
         </tbody>
@@ -244,6 +248,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../engine/theme.js"></script>
 <script src="sound.js"></script>
 <script>
 /* ============================================================
@@ -253,6 +259,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
    label, spotlight, caption, play, stop, clear. Events (via
    onEvent): tileTap, beatTap, blankTap, countStep, playStart,
    playEnd. Sound goes through the injected source, lectures only.
+   Colours come from the theme constants (--th-<name>) set on the
+   page or stage around the grid.
    Time is counted in ticks: a semibreve is 6720 ticks, which divides
    evenly by every note value down to the hemidemisemiquaver and by
    triplets, quintuplets, sextuplets and septuplets.
@@ -968,95 +976,107 @@ BeatGrid.prototype.clear = function () {
 };
 
 /* ============================================================
-   Assembly: this page plays the role of the player. It wires the
+   Assembly: this page plays the role of the player. It applies the
+   theme file to the document before any grid is built, wires the
    grid's events to a caption and a log, and shows how the sound is
    doing; the grid never calls anything here directly.
    ============================================================ */
 (function () {
-  var stateEl = document.getElementById('sound-state');
-  var PHASE = { idle: '还没启用，点一下音符或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function () {
-    var s = SoundSource.status();
-    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
-  });
+  var THEME = '../content/themes/etude.yaml';
 
-  document.body.setAttribute('data-boundary', 'on');
-  window.tlEvents = [];
-  var logEl = document.getElementById('log');
-  var t0 = performance.now();
-  function log(ev) {
-    window.tlEvents.push(ev);
-    var line = document.createElement('div');
-    var t = ((performance.now() - t0) / 1000).toFixed(1);
-    var data = Object.assign({}, ev); delete data.type;
-    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
-    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  function start() {
+    var stateEl = document.getElementById('sound-state');
+    var PHASE = { idle: '还没启用，点一下音符或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+    SoundSource.watch(function () {
+      var s = SoundSource.status();
+      stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+    });
+
+    document.body.setAttribute('data-boundary', 'on');
+    window.tlEvents = [];
+    var logEl = document.getElementById('log');
+    var t0 = performance.now();
+    function log(ev) {
+      window.tlEvents.push(ev);
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type;
+      line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    }
+    function bubble(g, ev) {
+      if (ev.type === 'tileTap') {
+        var extra = ev.tuplet ? ev.tuplet + '-tuplet' : (ev.beats ? (ev.beats === 1 ? '1 beat' : ev.beats + ' beats') : '');
+        g.caption(ev.index, '<b>' + ev.name + '</b>' + (extra ? '<span>' + extra + '</span>' : ''));
+      } else if (ev.type === 'beatTap') g.captionBeat(ev.beat, '<b>beat ' + ev.beat + '</b><span>of ' + ev.of + '</span>');
+    }
+
+    var BAR = 'X:1\nL:1/16\nK:C clef=bass\nG,2A,2 B,2z2 D3C B,2|';
+    var main;
+    main = new BeatGrid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, sound: SoundSource, onEvent: function (ev) {
+      log(ev); bubble(main, ev);
+      if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(4, '<b>' + ev.total + '</b><span>semiquavers</span>'); }, 300);
+    } });
+
+    var commands = {
+      m24: function () { main.meter('2/4'); },
+      m34: function () { main.meter('3/4'); },
+      m78: function () { main.meter('7/8', [2, 2, 3]); },
+      unknown: function () { main.meter('?'); },
+      sub: function () { main.subdivide('1/16'); },
+      count: function () { main.clear(); main.count('1/16', 4, 4); },
+      label: function () { main.label(0, 'A'); main.label(3, 'B'); main.label(4, 'C'); },
+      spot: function () { if (!main.known()) main.meter('7/8', [2, 2, 3]); main.spotlight({ beats: [3, 3] }); },
+      play: function () { main.play(); },
+      clear: function () { main.clear(); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+
+    var modeBtn = document.getElementById('mode');
+    modeBtn.addEventListener('click', function () {
+      var practice = main.o.mode !== 'practice';
+      main.o.mode = practice ? 'practice' : 'lecture';
+      main.build();
+      modeBtn.setAttribute('aria-pressed', String(practice));
+      modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+      log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+    });
+
+    var others = [];
+    [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
+      var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
+      var g; g = new BeatGrid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      others.push(g);
+    });
+    [['2/4'], ['3/4'], ['7/8', [2, 2, 3]]].forEach(function (mt, i) {
+      var cell = document.createElement('div'); document.getElementById('g-three').appendChild(cell);
+      var g; g = new BeatGrid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      others.push(g);
+    });
+
+    var boundaryBtn = document.getElementById('toggle-boundary');
+    boundaryBtn.addEventListener('click', function () {
+      var on = document.body.getAttribute('data-boundary') !== 'on';
+      document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+      boundaryBtn.setAttribute('aria-pressed', String(on));
+    });
+
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
   }
-  function bubble(g, ev) {
-    if (ev.type === 'tileTap') {
-      var extra = ev.tuplet ? ev.tuplet + '-tuplet' : (ev.beats ? (ev.beats === 1 ? '1 beat' : ev.beats + ' beats') : '');
-      g.caption(ev.index, '<b>' + ev.name + '</b>' + (extra ? '<span>' + extra + '</span>' : ''));
-    } else if (ev.type === 'beatTap') g.captionBeat(ev.beat, '<b>beat ' + ev.beat + '</b><span>of ' + ev.of + '</span>');
-  }
 
-  var BAR = 'X:1\nL:1/16\nK:C clef=bass\nG,2A,2 B,2z2 D3C B,2|';
-  var main;
-  main = new BeatGrid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, sound: SoundSource, onEvent: function (ev) {
-    log(ev); bubble(main, ev);
-    if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(4, '<b>' + ev.total + '</b><span>semiquavers</span>'); }, 300);
-  } });
-
-  var commands = {
-    m24: function () { main.meter('2/4'); },
-    m34: function () { main.meter('3/4'); },
-    m78: function () { main.meter('7/8', [2, 2, 3]); },
-    unknown: function () { main.meter('?'); },
-    sub: function () { main.subdivide('1/16'); },
-    count: function () { main.clear(); main.count('1/16', 4, 4); },
-    label: function () { main.label(0, 'A'); main.label(3, 'B'); main.label(4, 'C'); },
-    spot: function () { if (!main.known()) main.meter('7/8', [2, 2, 3]); main.spotlight({ beats: [3, 3] }); },
-    play: function () { main.play(); },
-    clear: function () { main.clear(); }
-  };
-  document.querySelectorAll('[data-cmd]').forEach(function (b) {
-    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
-  });
-
-  var modeBtn = document.getElementById('mode');
-  modeBtn.addEventListener('click', function () {
-    var practice = main.o.mode !== 'practice';
-    main.o.mode = practice ? 'practice' : 'lecture';
-    main.build();
-    modeBtn.setAttribute('aria-pressed', String(practice));
-    modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
-    log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
-  });
-
-  var others = [];
-  [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
-    var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
-    var g; g = new BeatGrid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
-    others.push(g);
-  });
-  [['2/4'], ['3/4'], ['7/8', [2, 2, 3]]].forEach(function (mt, i) {
-    var cell = document.createElement('div'); document.getElementById('g-three').appendChild(cell);
-    var g; g = new BeatGrid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
-    others.push(g);
-  });
-
-  var boundaryBtn = document.getElementById('toggle-boundary');
-  boundaryBtn.addEventListener('click', function () {
-    var on = document.body.getAttribute('data-boundary') !== 'on';
-    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
-    boundaryBtn.setAttribute('aria-pressed', String(on));
-  });
-
-  var lastW = window.innerWidth, rt = null;
-  window.addEventListener('resize', function () {
-    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
-    clearTimeout(rt);
-    rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
-  });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
+  // A theme that fails to load is reported, and the grids are still built
+  // so the page stays usable while the problem is fixed.
+  ThemeConstants.load(THEME)
+    .then(function (t) { ThemeConstants.apply(document.documentElement, t); })
+    .catch(function (e) { console.error('主题没有加载：' + e.message); })
+    .then(start);
 })();
 </script>

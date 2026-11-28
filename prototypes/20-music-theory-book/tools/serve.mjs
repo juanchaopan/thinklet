@@ -1,41 +1,58 @@
-// Serves a prototype fragment and its sibling files (sound.js, piano.json)
-// over local HTTP, the way the artifact host does, and opens it in
-// Chromium. When the page shows the player's loading screen, it waits for
-// the "开始" button and taps it, as a child would; `loading` reports how
-// long that took and what the screen showed.
+// Serves a prototype page over local HTTP the way the artifact host does
+// (the page is a fragment wrapped in a document) and opens it in
+// Chromium. The whole prototype folder is served, and the page at its own
+// path in it (components/c3-beat-grid.html opens as
+// /components/c3-beat-grid.html), so a page reaches the engine and the
+// content (../engine/theme.js, ../content/themes/...) by the same
+// relative paths as when it is published; sound.js and piano.json, which
+// are published at the root, are found in components/. When the page
+// shows the loading screen, it waits for 开始 and taps it, as a child
+// would; `loading` reports how long that took and what the screen showed.
+// Usage as a module: openPage(page path in the prototype folder, width,
+// height, scale, { start }).
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { join, dirname } from 'node:path';
+import { join, dirname, normalize, relative, isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire('C:/Users/juanc/AI Projects/thinklet/package.json');
 const { chromium } = require('@playwright/test');
 
-const TYPES = { js: 'text/javascript', json: 'application/json', html: 'text/html; charset=utf-8' };
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const TYPES = { js: 'text/javascript', json: 'application/json', html: 'text/html; charset=utf-8', css: 'text/css', yaml: 'text/yaml; charset=utf-8', mp3: 'audio/mpeg', webp: 'image/webp', png: 'image/png' };
+
+function resolve(path) {
+  const direct = normalize(join(root, path));
+  if (!direct.startsWith(root)) return null;
+  if (existsSync(direct)) return direct;
+  const fallback = join(root, 'components', path);
+  return existsSync(fallback) ? fallback : null;
+}
 
 export async function openPage(file, width, height = 900, scale = 1, { start = true } = {}) {
-  const dir = dirname(file);
+  const page0 = (isAbsolute(file) ? relative(root, file) : file).replace(/\\/g, '/');
   const server = createServer((req, res) => {
-    const path = req.url.split('?')[0];
-    if (path === '/') {
+    const path = decodeURIComponent(req.url.split('?')[0]).slice(1);
+    if (path === page0) {
       res.setHeader('content-type', TYPES.html);
-      res.end('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{margin:0}</style></head><body>' + readFileSync(file, 'utf8') + '</body></html>');
+      res.end('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>body{margin:0}</style></head><body>' + readFileSync(join(root, page0), 'utf8') + '</body></html>');
       return;
     }
-    try {
-      const body = readFileSync(join(dir, path.slice(1)));
-      res.setHeader('content-type', TYPES[path.split('.').pop()] || 'application/octet-stream');
-      res.setHeader('content-length', body.length);
-      res.end(body);
-    } catch { res.statusCode = 404; res.end(); }
+    const f = resolve(path);
+    if (!f) { res.statusCode = 404; res.end(); return; }
+    const body = readFileSync(f);
+    res.setHeader('content-type', TYPES[f.split('.').pop()] || 'application/octet-stream');
+    res.setHeader('content-length', body.length);
+    res.end(body);
   }).listen(0);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage({ viewport: { width: Number(width), height }, deviceScaleFactor: scale });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   const t0 = Date.now();
-  await page.goto(`http://localhost:${server.address().port}/`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${server.address().port}/${page0}`, { waitUntil: 'networkidle' });
   let loading = null;
   if (start && await page.$('.pl-curtain')) {
     await page.waitForSelector('.pl-start', { timeout: 20000 });

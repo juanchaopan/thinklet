@@ -1,6 +1,11 @@
 // Checks the conclusion stack (a wheel) the way a child and a workflow
 // would use it, on the component page, in its tall board and in its
 // phone strip:
+// - the theme's constants reach the component: the page sets --th-* and
+//   a slip's ink is the theme's ink;
+// - a first conclusion pushed without a flight, with motion allowed,
+//   grows into view on its own within about a second (the wheel already
+//   stands where it goes, so nothing else moves the frames);
 // - pushing every conclusion with a flight: the flying copy only ever
 //   gets nearer its place, has hardly moved at 100 ms, lands on it, and
 //   the wheel ends turned to the newest, which stands in the middle at
@@ -46,7 +51,22 @@ const centred = (sh, what) => {
   }
 };
 
+await page.emulateMedia({ reducedMotion: 'no-preference' });
 await page.evaluate(() => window.scrollTo(0, 0));
+
+// A first conclusion pushed without a flight grows into view by itself.
+await page.evaluate(() => window.tlCmd.grow());
+await page.waitForTimeout(1000);
+const grown = await page.evaluate(() => Object.keys(window.tlStacks).map((k) => {
+  const s = window.tlStacks[k], el = s.els[s.order[0]];
+  return { k, n: s.order.length, a: el ? Number(el.style.opacity) : 0, seen: el ? getComputedStyle(el).visibility : 'none', ink: el ? getComputedStyle(el).color : '' };
+}));
+grown.forEach((g) => check(g.n === 1 && g.a > .95 && g.seen === 'visible', `${g.k}: a first conclusion pushed without a flight is not shown after 1 s (opacity ${g.a}, ${g.seen})`));
+const theme = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--th-ink').trim());
+check(theme === '#241a12', `the page does not set the theme's constants (--th-ink is "${theme}")`);
+check(grown.every((g) => g.ink === 'rgb(36, 26, 18)'), `a slip's ink is not the theme's ink (${grown.map((g) => g.ink).join(', ')})`);
+console.log(`grow: ${grown.map((g) => `${g.k} opacity ${g.a} ${g.seen}`).join(', ')}`);
+await page.evaluate(() => window.tlCmd.clear());
 
 // Push every conclusion with a flight, sampling the first flight.
 await page.evaluate(() => {

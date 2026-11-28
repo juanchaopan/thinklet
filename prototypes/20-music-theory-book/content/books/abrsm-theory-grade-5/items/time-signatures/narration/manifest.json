@@ -1,0 +1,207 @@
+{
+  "lines-read-question.mp3": {
+    "path": "lines.read.question",
+    "text": "这道题给了三小节节奏，(a)、(b)、(c)，每一小节都没有写拍号。",
+    "hash": "f7bf45172f3902e4"
+  },
+  "lines-read-ask.mp3": {
+    "path": "lines.read.ask",
+    "text": "我们要给每一小节，从三个拍号里选出正确的那一个。办法是：先量一共有多长，再看音符是怎么分组的。先看 (a)。",
+    "hash": "7e244d7a4a3c6173"
+  },
+  "parts-0-items-0-lines-item-look.mp3": {
+    "path": "parts.0.items.0.lines.item.look",
+    "text": "第一个是四分之三拍。",
+    "hash": "00be61019c064546"
+  },
+  "parts-0-items-0-lines-item-check.mp3": {
+    "path": "parts.0.items.0.lines.item.check",
+    "text": "放进去，长度正好是六个八分音符，长度是对的。",
+    "hash": "e25cf098a6b817d0"
+  },
+  "parts-0-items-0-lines-item-verdict.mp3": {
+    "path": "parts.0.items.0.lines.item.verdict",
+    "text": "可是四分之三拍的一拍是四分音符，八分音符应该两个两个连在一起；这里是三个一组，对不上。",
+    "hash": "b061d4410158e342"
+  },
+  "parts-0-items-1-lines-item-look.mp3": {
+    "path": "parts.0.items.1.lines.item.look",
+    "text": "第二个是八分之六拍。",
+    "hash": "ee2ea7f5efeb5138"
+  },
+  "parts-0-items-1-lines-item-check.mp3": {
+    "path": "parts.0.items.1.lines.item.check",
+    "text": "长度也是六个八分音符。",
+    "hash": "991bc4346f910a12"
+  },
+  "parts-0-items-1-lines-item-verdict.mp3": {
+    "path": "parts.0.items.1.lines.item.verdict",
+    "text": "它的一拍是附点四分音符，正好是三个八分音符一组，一共两拍。长度和分组都对上了。",
+    "hash": "2566d604e3319d59"
+  },
+  "parts-0-items-2-lines-item-look.mp3": {
+    "path": "parts.0.items.2.lines.item.look",
+    "text": "第三个是八分之五拍。",
+    "hash": "ca820fa58db143d1"
+  },
+  "parts-0-items-2-lines-item-check.mp3": {
+    "path": "parts.0.items.2.lines.item.check",
+    "text": "它只有五个八分音符那么长，这一小节多出来一个，放不下。",
+    "hash": "2c0fe486154f8b4f"
+  },
+  "parts-0-items-2-lines-item-verdict.mp3": {
+    "path": "parts.0.items.2.lines.item.verdict",
+    "text": "所以八分之五拍也不对。",
+    "hash": "21a1085134313875"
+  },
+  "parts-0-lines-measure-unit.mp3": {
+    "path": "parts.0.lines.measure.unit",
+    "text": "先看 (a) 这一小节。我们用最短的八分音符当尺子，一个一个地量。",
+    "hash": "3369557c845d9712"
+  },
+  "parts-0-lines-measure-total.mp3": {
+    "path": "parts.0.lines.measure.total",
+    "text": "一共是六个八分音符那么长。",
+    "hash": "6d6cfb6fce106d54"
+  },
+  "parts-0-lines-grouping-look.mp3": {
+    "path": "parts.0.lines.grouping.look",
+    "text": "再看符尾是怎么连的。",
+    "hash": "1889048a8f715321"
+  },
+  "parts-0-lines-grouping-kind.mp3": {
+    "path": "parts.0.lines.grouping.kind",
+    "text": "前三个八分音符连成一组，后面的四分音符加一个八分音符，也正好是三个八分音符长。三个一组，一共两组。",
+    "hash": "8c7e1923963e81e9"
+  },
+  "parts-0-lines-choose-ask.mp3": {
+    "path": "parts.0.lines.choose.ask",
+    "text": "现在请你选：(a) 是哪个拍号？在它的框里打勾。",
+    "hash": "81c8efd6ee9b42e2"
+  },
+  "parts-0-lines-choose-right.mp3": {
+    "path": "parts.0.lines.choose.right",
+    "text": "对了，就是八分之六拍。",
+    "hash": "5df13c2e08828e87"
+  },
+  "parts-0-lines-choose-hint.mp3": {
+    "path": "parts.0.lines.choose.hint",
+    "text": "再想一想：哪个拍号长度对，又是三个八分音符一组？",
+    "hash": "755396108b0cd79b"
+  },
+  "parts-0-lines-choose-demo.mp3": {
+    "path": "parts.0.lines.choose.demo",
+    "text": "我们一起来看，是八分之六拍。",
+    "hash": "6e8a73b5a43375bd"
+  },
+  "parts-1-items-0-lines-item-verdict.mp3": {
+    "path": "parts.1.items.0.lines.item.verdict",
+    "text": "四分之七拍要七个四分音符，也就是十四个八分音符那么长，这一小节只有七个，差得远。",
+    "hash": "bc9dac0895856b55"
+  },
+  "parts-1-items-1-lines-item-verdict.mp3": {
+    "path": "parts.1.items.1.lines.item.verdict",
+    "text": "八分之七拍正好七个八分音符，按两个、两个、三个分组，和符尾的连法一样。",
+    "hash": "1fb308f10e676346"
+  },
+  "parts-1-items-2-lines-item-verdict.mp3": {
+    "path": "parts.1.items.2.lines.item.verdict",
+    "text": "八分之六拍只有六个八分音符那么长，放不下。",
+    "hash": "4efc9d8ed472059c"
+  },
+  "parts-1-lines-measure-unit.mp3": {
+    "path": "parts.1.lines.measure.unit",
+    "text": "再看 (b)，它是低音谱号。还是用八分音符来量。",
+    "hash": "6dbe26e8e1029d0d"
+  },
+  "parts-1-lines-measure-total.mp3": {
+    "path": "parts.1.lines.measure.total",
+    "text": "一共是七个八分音符。七，不是三的倍数，也不是二的倍数。",
+    "hash": "98390b1edbbb1fb8"
+  },
+  "parts-1-lines-grouping-look.mp3": {
+    "path": "parts.1.lines.grouping.look",
+    "text": "看符尾：两个、两个，最后三个。",
+    "hash": "c9bad826945ea5a8"
+  },
+  "parts-1-lines-grouping-kind.mp3": {
+    "path": "parts.1.lines.grouping.kind",
+    "text": "拍子长短不一样，这叫不规则拍子。",
+    "hash": "99e5d4b65f6b533a"
+  },
+  "parts-1-lines-choose-ask.mp3": {
+    "path": "parts.1.lines.choose.ask",
+    "text": "请你选：(b) 是哪个拍号？",
+    "hash": "b19331d6bee16f85"
+  },
+  "parts-1-lines-choose-right.mp3": {
+    "path": "parts.1.lines.choose.right",
+    "text": "对了，是八分之七拍。",
+    "hash": "de666a09b1feca11"
+  },
+  "parts-1-lines-choose-hint.mp3": {
+    "path": "parts.1.lines.choose.hint",
+    "text": "先数一共几个八分音符，再看哪个拍号正好装下。",
+    "hash": "f9b93b0d17e1146f"
+  },
+  "parts-1-lines-choose-demo.mp3": {
+    "path": "parts.1.lines.choose.demo",
+    "text": "我们一起来看，是八分之七拍。",
+    "hash": "375e7c1c807c37d5"
+  },
+  "parts-2-items-0-lines-item-verdict.mp3": {
+    "path": "parts.2.items.0.lines.item.verdict",
+    "text": "前面三个音看着像三个一组，可它们是三连音，只占一个四分音符；八分之六拍要三个四分音符那么长，放不下这么多。",
+    "hash": "7ed19947d6c80c55"
+  },
+  "parts-2-items-1-lines-item-verdict.mp3": {
+    "path": "parts.2.items.1.lines.item.verdict",
+    "text": "四分之二拍是两个四分音符那么长：三连音一拍，后面两个八分音符一拍，正好。",
+    "hash": "a6adc41d94c71c88"
+  },
+  "parts-2-items-2-lines-item-verdict.mp3": {
+    "path": "parts.2.items.2.lines.item.verdict",
+    "text": "八分之三拍只有一个半四分音符那么长，这一小节多出来了。",
+    "hash": "e1e637b2462987b8"
+  },
+  "parts-2-lines-measure-unit.mp3": {
+    "path": "parts.2.lines.measure.unit",
+    "text": "最后看 (c)。前三个音上面有个 3，这是三连音：三个八分音符挤在一个四分音符的时间里。所以这次用四分音符来量。",
+    "hash": "d939b29997d6325b"
+  },
+  "parts-2-lines-measure-total.mp3": {
+    "path": "parts.2.lines.measure.total",
+    "text": "三连音一拍，后面两个八分音符一拍，一共两个四分音符。",
+    "hash": "89722c80403587b3"
+  },
+  "parts-2-lines-grouping-look.mp3": {
+    "path": "parts.2.lines.grouping.look",
+    "text": "看分组：三连音一组，后面两个八分音符一组。",
+    "hash": "577b720e535f35f0"
+  },
+  "parts-2-lines-grouping-kind.mp3": {
+    "path": "parts.2.lines.grouping.kind",
+    "text": "每一拍是一个四分音符，这是单拍子。",
+    "hash": "b988bf34fbe350c0"
+  },
+  "parts-2-lines-choose-ask.mp3": {
+    "path": "parts.2.lines.choose.ask",
+    "text": "请你选：(c) 是哪个拍号？",
+    "hash": "a3fffec91ea448c0"
+  },
+  "parts-2-lines-choose-right.mp3": {
+    "path": "parts.2.lines.choose.right",
+    "text": "对了，是四分之二拍。",
+    "hash": "5ecde6a3ac2f3907"
+  },
+  "parts-2-lines-choose-hint.mp3": {
+    "path": "parts.2.lines.choose.hint",
+    "text": "三连音只占一个四分音符。一共几个四分音符？",
+    "hash": "e8726860014a066e"
+  },
+  "parts-2-lines-choose-demo.mp3": {
+    "path": "parts.2.lines.choose.demo",
+    "text": "我们一起来看，是四分之二拍。",
+    "hash": "ddcd4bae32267918"
+  }
+}

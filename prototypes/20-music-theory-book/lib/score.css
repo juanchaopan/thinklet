@@ -1,24 +1,29 @@
-/* ---------- Score component: it defines its whole look here and takes nothing from the page ---------- */
+/* ---------- Score component: it defines its whole look here; every colour is a theme constant (--th-*) and nothing else comes from the page ---------- */
 .tl-score {
-  --tl-paper-a: #fffdf7;
-  --tl-paper-b: #f7efdf;
-  --tl-paper-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 2px 4px rgba(70, 45, 20, .08), 0 18px 40px -12px rgba(70, 45, 20, .30), 0 40px 80px -30px rgba(70, 45, 20, .35);
-  --tl-staff: rgba(58, 46, 34, .62);
-  --tl-notes: #1d1710;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .16);
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
-  --tl-caption: #2a2118;
+  --tl-paper-a: var(--th-sheet-a);
+  --tl-paper-b: var(--th-sheet-b);
+  --tl-light: var(--th-light);
+  --tl-paper-shadow: 0 1px 0 color-mix(in srgb, var(--th-light) 90%, transparent) inset, 0 2px 4px color-mix(in srgb, var(--th-shade) 8%, transparent), 0 18px 40px -12px color-mix(in srgb, var(--th-shade) 30%, transparent), 0 40px 80px -30px color-mix(in srgb, var(--th-shade) 35%, transparent);
+  /* Paper grain: a theme colour shown through a noise mask, so the grain follows the theme too. */
+  --tl-grain: color-mix(in srgb, var(--th-edge) 55%, var(--th-light));
+  --tl-grain-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");
+  --tl-staff: color-mix(in srgb, var(--th-staff) 62%, transparent);
+  --tl-notes: var(--th-ink-strong);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 16%, transparent);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-bubble-shadow: color-mix(in srgb, var(--th-dark) 45%, transparent);
+  --tl-caption: var(--th-caption);
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-paper { position: relative; flex: 1; display: flex; align-items: center; border-radius: 18px; padding: 14px 14px 6px; background:
-  radial-gradient(120% 90% at 15% 0%, rgba(255, 255, 255, .9), transparent 55%),
+  radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--tl-light) 90%, transparent), transparent 55%),
   linear-gradient(175deg, var(--tl-paper-a), var(--tl-paper-b));
   box-shadow: var(--tl-paper-shadow); }
-.tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .36  0 0 0 0 .25  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>"); }
+.tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply; background: var(--tl-grain);
+  -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
 .tl-compact .tl-paper { padding: 8px 8px 4px; border-radius: 14px; min-height: 104px; }
 .tl-svgbox { position: relative; width: 100%; touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .tl-svgbox svg { display: block; overflow: visible; }
@@ -33,19 +38,19 @@
 .tl-svgbox .tl-spot.on { opacity: 1; }
 .tl-svgbox .tl-ripple { fill: none; stroke: var(--tl-glow); stroke-width: 2; opacity: .8; transform-box: fill-box; transform-origin: center; animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.4); opacity: 0; } }
-.tl-svgbox .tl-slot { fill: rgba(255, 255, 255, .85); stroke: var(--tl-notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-svgbox .tl-slot { fill: color-mix(in srgb, var(--tl-light) 85%, transparent); stroke: var(--tl-notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
 /* HTML overlays positioned over the paper. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
-.tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--tl-serif); color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 70%, #fff), var(--tl-glow)); box-shadow: 0 4px 12px -2px var(--tl-glow-soft), 0 0 0 3px rgba(255, 255, 255, .8); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--tl-serif); color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 70%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 12px -2px var(--tl-glow-soft), 0 0 0 3px color-mix(in srgb, var(--tl-light) 80%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-count { position: absolute; margin: -12px 0 0 -12px; width: 24px; text-align: center; font: 600 20px/1 var(--tl-serif); color: var(--tl-glow); text-shadow: 0 0 12px var(--tl-glow-soft); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
-.tl-bubble { position: absolute; z-index: 4; transform: translate(-50%, -100%); margin-top: -10px; white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble { position: absolute; z-index: 4; transform: translate(-50%, -100%); margin-top: -10px; white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px var(--tl-bubble-shadow); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
 .tl-bubble.out { opacity: 0; }
 .tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .tl-bubble b { font: 600 20px/1 var(--tl-serif); letter-spacing: .02em; }
 .tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
 .tl-playhead { position: absolute; width: 3px; margin-left: -1.5px; border-radius: 3px; background: linear-gradient(var(--tl-glow), color-mix(in srgb, var(--tl-glow) 40%, transparent)); box-shadow: 0 0 14px 2px var(--tl-glow-soft), 0 0 4px var(--tl-glow); opacity: 0; transition: left .12s linear, top .2s, opacity .2s; }
 .tl-playhead.on { opacity: 1; }
-.tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 4px rgba(255, 255, 255, .7); transition: transform .1s; }
+.tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 4px color-mix(in srgb, var(--tl-light) 70%, transparent); transition: transform .1s; }
 .tl-play:active { transform: scale(.94); }
 .tl-play:focus { outline: none; }
 .tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }

@@ -2,9 +2,10 @@
    Fill-in component. Answers by writing, as on an exam paper: answer
    boxes set into the question's sentence (or stacked as the two numbers
    of a time signature, or in a row under a score), and a tray of keys
-   the question chooses. What the child writes appears in dark ink in a
-   handwriting; what the workflow lights or confirms is violet, what is
-   wrong brick red with a dashed edge and a cross.
+   the question chooses. What the child writes appears in ink in a
+   handwriting; what the workflow lights or confirms takes the theme's
+   accent, what is wrong its wrong colour with a dashed edge and a cross.
+   Every colour comes from the theme constants in the stylesheet.
    The component does not know the answer, nor what a valid number or
    chord is: the workflow tells it what to draw right or wrong.
    Inputs: shape ('line' | 'row'), tag, prompt (parts: {text} | {term} |
@@ -537,8 +538,8 @@ Fill.prototype.ripple = function (cx, cy) {
   setTimeout(function () { r.remove(); }, 600);
 };
 
-// A key pressed by the workflow in a lecture: it sinks and glows violet,
-// with a ripple at its centre.
+// A key pressed by the workflow in a lecture: it sinks and glows in the
+// accent, with a ripple at its centre.
 Fill.prototype.flash = function (kid) {
   var el = this.keyEls[kid]; if (!el || !this.padShown) return;
   el.classList.add('tl-fi-down', 'tl-fi-flash');

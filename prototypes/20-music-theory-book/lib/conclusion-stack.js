@@ -10,6 +10,8 @@
    A conclusion pushed with the place on screen it was reached flies from
    there: a lifted copy of its slip crosses to its place on the wheel
    while the wheel turns to it, and the slip shows once the copy lands.
+   Without that place it grows in its place while the wheel turns to it.
+   Colours come from the theme constants (--th-<name>) set around it.
    Inputs: items ({id: {parts: [{text} | {term} | {op} | {abc} | {gloss}],
    from: [ids], final}}), mode ('lecture' | 'practice').
    Commands: push, pushMs, set, focus, highlight, spotlight, mask,
@@ -264,7 +266,8 @@ ConclusionStack.prototype.frame = function () {
 };
 
 // The wheel's motion, one frame at a time: a glide to a conclusion, a
-// slip growing into its place, a slip flying in.
+// slip growing into its place, a slip flying in. Whatever starts one of
+// them calls kick, so it runs even when the others have nothing to do.
 ConclusionStack.prototype.kick = function () {
   var self = this;
   if (this.raf) return;
@@ -459,7 +462,9 @@ ConclusionStack.prototype.applyMasks = function (animated) {
 
 // The conclusion of this act joins the wheel after the others, and the
 // wheel turns to it. With opts.from (a rect on screen) it flies there
-// from that place; without, it grows in its place.
+// from that place; without, it grows in its place, and the frame loop is
+// kicked for the growth itself, since the wheel may already stand where
+// it is going (the first conclusion) and then has no glide to run.
 ConclusionStack.prototype.push = function (id, opts) {
   var self = this, from = opts && opts.from;
   if (!this.o.items[id] || this.order.indexOf(id) >= 0) return;
@@ -471,7 +476,11 @@ ConclusionStack.prototype.push = function (id, opts) {
   this.measure();
   if (ConclusionStack.still()) { this.anim = null; this.p = this.last(); this.frame(); this.settled(id, false); return; }
   if (from && from.width >= 0) this.fly(el, from);
-  else { el._grow = 0; el._growT0 = performance.now(); setTimeout(function () { self.settled(id, true); }, ConclusionStack.MOVE_MS); }
+  else {
+    el._grow = 0; el._growT0 = performance.now();
+    this.kick();
+    setTimeout(function () { self.settled(id, true); }, ConclusionStack.MOVE_MS);
+  }
   this.glide(this.last(), ConclusionStack.MOVE_MS);
 };
 // How long a push takes to come to rest, so whoever pushed can wait.

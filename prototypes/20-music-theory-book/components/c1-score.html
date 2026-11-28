@@ -47,27 +47,32 @@ p { margin: 0; }
 body[data-boundary="on"] .tl-score { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 20px; }
 body[data-boundary="on"] .tl-score::before { content: "乐谱组件"; position: absolute; top: -18px; left: 10px; z-index: 3; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
 
-/* ---------- Score component: it defines its whole look here and takes nothing from the page ---------- */
+/* ---------- Score component: it defines its whole look here; every colour is a theme constant (--th-*) and nothing else comes from the page ---------- */
 .tl-score {
-  --tl-paper-a: #fffdf7;
-  --tl-paper-b: #f7efdf;
-  --tl-paper-shadow: 0 1px 0 rgba(255, 255, 255, .9) inset, 0 2px 4px rgba(70, 45, 20, .08), 0 18px 40px -12px rgba(70, 45, 20, .30), 0 40px 80px -30px rgba(70, 45, 20, .35);
-  --tl-staff: rgba(58, 46, 34, .62);
-  --tl-notes: #1d1710;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .16);
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
-  --tl-caption: #2a2118;
+  --tl-paper-a: var(--th-sheet-a);
+  --tl-paper-b: var(--th-sheet-b);
+  --tl-light: var(--th-light);
+  --tl-paper-shadow: 0 1px 0 color-mix(in srgb, var(--th-light) 90%, transparent) inset, 0 2px 4px color-mix(in srgb, var(--th-shade) 8%, transparent), 0 18px 40px -12px color-mix(in srgb, var(--th-shade) 30%, transparent), 0 40px 80px -30px color-mix(in srgb, var(--th-shade) 35%, transparent);
+  /* Paper grain: a theme colour shown through a noise mask, so the grain follows the theme too. */
+  --tl-grain: color-mix(in srgb, var(--th-edge) 55%, var(--th-light));
+  --tl-grain-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");
+  --tl-staff: color-mix(in srgb, var(--th-staff) 62%, transparent);
+  --tl-notes: var(--th-ink-strong);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 16%, transparent);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-bubble-shadow: color-mix(in srgb, var(--th-dark) 45%, transparent);
+  --tl-caption: var(--th-caption);
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-paper { position: relative; flex: 1; display: flex; align-items: center; border-radius: 18px; padding: 14px 14px 6px; background:
-  radial-gradient(120% 90% at 15% 0%, rgba(255, 255, 255, .9), transparent 55%),
+  radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--tl-light) 90%, transparent), transparent 55%),
   linear-gradient(175deg, var(--tl-paper-a), var(--tl-paper-b));
   box-shadow: var(--tl-paper-shadow); }
-.tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .45  0 0 0 0 .36  0 0 0 0 .25  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>"); }
+.tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply; background: var(--tl-grain);
+  -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
 .tl-compact .tl-paper { padding: 8px 8px 4px; border-radius: 14px; min-height: 104px; }
 .tl-svgbox { position: relative; width: 100%; touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .tl-svgbox svg { display: block; overflow: visible; }
@@ -82,19 +87,19 @@ body[data-boundary="on"] .tl-score::before { content: "乐谱组件"; position: 
 .tl-svgbox .tl-spot.on { opacity: 1; }
 .tl-svgbox .tl-ripple { fill: none; stroke: var(--tl-glow); stroke-width: 2; opacity: .8; transform-box: fill-box; transform-origin: center; animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.4); opacity: 0; } }
-.tl-svgbox .tl-slot { fill: rgba(255, 255, 255, .85); stroke: var(--tl-notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-svgbox .tl-slot { fill: color-mix(in srgb, var(--tl-light) 85%, transparent); stroke: var(--tl-notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
 /* HTML overlays positioned over the paper. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
-.tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--tl-serif); color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 70%, #fff), var(--tl-glow)); box-shadow: 0 4px 12px -2px var(--tl-glow-soft), 0 0 0 3px rgba(255, 255, 255, .8); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--tl-serif); color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 70%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 12px -2px var(--tl-glow-soft), 0 0 0 3px color-mix(in srgb, var(--tl-light) 80%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-count { position: absolute; margin: -12px 0 0 -12px; width: 24px; text-align: center; font: 600 20px/1 var(--tl-serif); color: var(--tl-glow); text-shadow: 0 0 12px var(--tl-glow-soft); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
-.tl-bubble { position: absolute; z-index: 4; transform: translate(-50%, -100%); margin-top: -10px; white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .45); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble { position: absolute; z-index: 4; transform: translate(-50%, -100%); margin-top: -10px; white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px var(--tl-bubble-shadow); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
 .tl-bubble.out { opacity: 0; }
 .tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .tl-bubble b { font: 600 20px/1 var(--tl-serif); letter-spacing: .02em; }
 .tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
 .tl-playhead { position: absolute; width: 3px; margin-left: -1.5px; border-radius: 3px; background: linear-gradient(var(--tl-glow), color-mix(in srgb, var(--tl-glow) 40%, transparent)); box-shadow: 0 0 14px 2px var(--tl-glow-soft), 0 0 4px var(--tl-glow); opacity: 0; transition: left .12s linear, top .2s, opacity .2s; }
 .tl-playhead.on { opacity: 1; }
-.tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 4px rgba(255, 255, 255, .7); transition: transform .1s; }
+.tl-play { position: absolute; top: 10px; right: 10px; z-index: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 4px color-mix(in srgb, var(--tl-light) 70%, transparent); transition: transform .1s; }
 .tl-play:active { transform: scale(.94); }
 .tl-play:focus { outline: none; }
 .tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
@@ -138,7 +143,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
   <header style="display:grid;gap:10px">
     <span class="tagline">组件 1 / 10 · 显示类 · 直接画在画面上</span>
     <h1>乐谱</h1>
-    <p class="lede">讲题和练习里所有的谱都由它来画。蓝色虚线框住的就是一个乐谱组件：纸、纸上的谱、浮在上面的标签和气泡、右上角的播放按钮、短谱下面的名称。它的外观（纸、墨色、标亮的紫光）全由自己定，不随外面变。框外面的一切（暖光舞台、标题、几张谱怎么排、下面的指令按钮）都不属于它，由播放器和流程负责。谱上的术语用英皇考卷上的原文。</p>
+    <p class="lede">讲题和练习里所有的谱都由它来画。蓝色虚线框住的就是一个乐谱组件：纸、纸上的谱、浮在上面的标签和气泡、右上角的播放按钮、短谱下面的名称。它的样子（纸、墨色、标亮的紫光）由自己画，用到的颜色全部取自主题常量：换一个主题只换颜色，大小和行为不变。这一页用的是 etude 主题。框外面的一切（暖光舞台、标题、几张谱怎么排、下面的指令按钮）都不属于它，由播放器和流程负责。谱上的术语用英皇考卷上的原文。</p>
     <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
   </header>
 
@@ -201,10 +206,10 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
           <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写；乐器的全称和缩写也写在谱里）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。</td></tr>
-          <tr><td>外观</td><td>纸、墨色、标亮的光都由乐谱自己定，不从外面继承；放在什么舞台上都是同一个样子。</td></tr>
+          <tr><td>外观</td><td>纸、墨色、标亮的光都由乐谱自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ink-strong</code>、<code>--th-accent</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
           <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”（单独的模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”（单独的模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管；颜色来自主题。</td></tr>
           <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下。</td></tr>
           <tr><td>出现在哪里</td><td>直接画在讲题和练习的画面上。</td></tr>
         </tbody>
@@ -215,6 +220,8 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../engine/theme.js"></script>
 <script src="sound.js"></script>
 <script>
 /* ============================================================
@@ -223,6 +230,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
    label, slots, count, caption, play, stop, clear. Events (via
    onEvent): noteTap, blankTap, countStep, playStart, playEnd.
    Sound goes through the injected source, and only in lectures.
+   Colours are the theme constants (--th-*) set on the stage or page.
    ============================================================ */
 function Score(host, options) {
   this.host = host;
@@ -702,11 +710,14 @@ Score.prototype.clear = function () {
 };
 
 /* ============================================================
-   Assembly: this page plays the role of the player. It wires the
-   score's events to a caption and a log, and shows how the sound
-   is doing; the score never calls anything here directly.
+   Assembly: this page plays the role of the player. It sets the
+   theme's constants on the page, then builds the scores, wires their
+   events to a caption and a log, and shows how the sound is doing;
+   the score never calls anything here directly.
    ============================================================ */
 (function () {
+  var THEME = '../content/themes/etude.yaml';
+  var lede = document.querySelector('.lede');
   var stateEl = document.getElementById('sound-state');
   var PHASE = { idle: '还没启用，点一下谱或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
   SoundSource.watch(function () {
@@ -714,11 +725,17 @@ Score.prototype.clear = function () {
     stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
   });
 
-  if (!window.ABCJS) { document.querySelector('.lede').textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
+  if (!window.ABCJS) { lede.textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
+  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
   document.body.setAttribute('data-boundary', 'on');
 
-  var MAIN = 'X:1\nM:3/4\nL:1/8\nK:D\nd2 c2 B2 | A3 G F2 | E2 ^D2 =E2 | D6 |]';
-  document.getElementById('abc-main').textContent = MAIN;
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
   var logEl = document.getElementById('log');
   var t0 = performance.now();
   function log(ev) {
@@ -732,81 +749,88 @@ Score.prototype.clear = function () {
     if (ev.type === 'noteTap') score.caption(ev.index, '<b>' + ev.name + '</b><span>' + ev.en + '</span>');
   }
 
-  var main;
-  main = new Score(document.getElementById('main-score'), { abc: MAIN, playable: true, sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
+  // The scores are built only once the theme's constants are on the page,
+  // so their first frame already has its colours.
+  function start() {
+    var MAIN = 'X:1\nM:3/4\nL:1/8\nK:D\nd2 c2 B2 | A3 G F2 | E2 ^D2 =E2 | D6 |]';
+    document.getElementById('abc-main').textContent = MAIN;
 
-  var minis = [];
-  function mini(containerId, items) {
-    var holder = document.getElementById(containerId);
-    items.forEach(function (it) {
-      var cell = document.createElement('div'); holder.appendChild(cell);
-      var s; s = new Score(cell, { abc: it.abc, compact: true, caption: it.caption, sound: SoundSource, onEvent: function (ev) { nameBubble(s, ev); } });
-      minis.push(s);
+    var main;
+    main = new Score(document.getElementById('main-score'), { abc: MAIN, playable: true, sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
+
+    var minis = [];
+    function mini(containerId, items) {
+      var holder = document.getElementById(containerId);
+      items.forEach(function (it) {
+        var cell = document.createElement('div'); holder.appendChild(cell);
+        var s; s = new Score(cell, { abc: it.abc, compact: true, caption: it.caption, sound: SoundSource, onEvent: function (ev) { nameBubble(s, ev); } });
+        minis.push(s);
+      });
+    }
+    mini('g-clef', [
+      { abc: 'X:1\nL:1/2\nK:C clef=alto\nd2|]', caption: 'alto clef' },
+      { abc: 'X:1\nL:1/2\nK:C clef=alto\nD,2|]', caption: 'alto clef' },
+      { abc: 'X:1\nL:1/2\nK:C clef=tenor\nf2|]', caption: 'tenor clef' },
+      { abc: 'X:1\nL:1/2\nK:C clef=tenor\nA,,2|]', caption: 'tenor clef' }
+    ]);
+    mini('g-rare', [
+      { abc: 'X:1\nM:4/2\nL:1/4\nK:C\nC8|]', caption: 'breve' },
+      { abc: 'X:1\nM:4/4\nL:1/8\nK:C\nG7 A|]', caption: 'double-dotted minim' },
+      { abc: 'X:1\nM:2/4\nL:1/8\nK:C\n(3cde f2|]', caption: 'triplet' },
+      { abc: 'X:1\nM:6/8\nL:1/8\nK:C\n(2cd (2ef|]', caption: 'duplet' },
+      { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(5:4:5cdefg a4|]', caption: 'quintuplet' },
+      { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(6:4:6gfedcB c4|]', caption: 'sextuplet' },
+      { abc: 'X:1\nL:1/2\nK:C\n^^F2|]', caption: 'double sharp' },
+      { abc: 'X:1\nL:1/2\nK:C\n__B2|]', caption: 'double flat' },
+      { abc: 'X:1\nL:1/2\nK:F\n=B2|]', caption: 'natural' }
+    ]);
+    mini('g-orn', [
+      { abc: 'X:1\nL:1/2\nK:C\n!trill!c2|]', caption: 'trill' },
+      { abc: 'X:1\nL:1/2\nK:C\n!turn!d2|]', caption: 'turn' },
+      { abc: 'X:1\nL:1/2\nK:C\n!uppermordent!e2|]', caption: 'upper mordent' },
+      { abc: 'X:1\nL:1/2\nK:C\n!lowermordent!f2|]', caption: 'lower mordent' },
+      { abc: 'X:1\nL:1/2\nK:C\n{a}g2|]', caption: 'appoggiatura' },
+      { abc: 'X:1\nL:1/2\nK:C\n{/a}g2|]', caption: 'acciaccatura' }
+    ]);
+    mini('g-keys', [
+      { abc: 'X:1\nL:1/4\nK:F# clef=treble\nx4|]', caption: 'treble clef' },
+      { abc: 'X:1\nL:1/4\nK:F# clef=bass\nx4|]', caption: 'bass clef' },
+      { abc: 'X:1\nL:1/4\nK:F# clef=alto\nx4|]', caption: 'alto clef' },
+      { abc: 'X:1\nL:1/4\nK:F# clef=tenor\nx4|]', caption: 'tenor clef' }
+    ]);
+
+    var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin" snm="Vln."\nV:RH clef=treble name="Piano" snm="Pno."\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
+    var trio; trio = new Score(document.getElementById('trio-score'), { abc: TRIO, playable: true, sound: SoundSource, onEvent: function (ev) { nameBubble(trio, ev); } });
+    var trioSpot = false;
+    document.getElementById('trio-spot').addEventListener('click', function () {
+      trioSpot = !trioSpot; this.setAttribute('aria-pressed', String(trioSpot)); trio.spotlight(trioSpot ? 3 : null);
+    });
+
+    var commands = {
+      spotlight: function () { main.spotlight(2); },
+      labels: function () { main.label(1, 'A'); main.label(4, 'B'); main.label(6, 'C'); },
+      slots: function () { var at = main.slots([0, 3, 5, 7]); log({ type: '(作答框的位置交给作答组件)', boxes: at.length }); },
+      count: function () { main.clear(); main.count(); },
+      play: function () { main.clear(); main.spotlight(2); main.play(2); },
+      clear: function () { main.clear(); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(function () { [main, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
     });
   }
-  mini('g-clef', [
-    { abc: 'X:1\nL:1/2\nK:C clef=alto\nd2|]', caption: 'alto clef' },
-    { abc: 'X:1\nL:1/2\nK:C clef=alto\nD,2|]', caption: 'alto clef' },
-    { abc: 'X:1\nL:1/2\nK:C clef=tenor\nf2|]', caption: 'tenor clef' },
-    { abc: 'X:1\nL:1/2\nK:C clef=tenor\nA,,2|]', caption: 'tenor clef' }
-  ]);
-  mini('g-rare', [
-    { abc: 'X:1\nM:4/2\nL:1/4\nK:C\nC8|]', caption: 'breve' },
-    { abc: 'X:1\nM:4/4\nL:1/8\nK:C\nG7 A|]', caption: 'double-dotted minim' },
-    { abc: 'X:1\nM:2/4\nL:1/8\nK:C\n(3cde f2|]', caption: 'triplet' },
-    { abc: 'X:1\nM:6/8\nL:1/8\nK:C\n(2cd (2ef|]', caption: 'duplet' },
-    { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(5:4:5cdefg a4|]', caption: 'quintuplet' },
-    { abc: 'X:1\nM:2/4\nL:1/16\nK:C\n(6:4:6gfedcB c4|]', caption: 'sextuplet' },
-    { abc: 'X:1\nL:1/2\nK:C\n^^F2|]', caption: 'double sharp' },
-    { abc: 'X:1\nL:1/2\nK:C\n__B2|]', caption: 'double flat' },
-    { abc: 'X:1\nL:1/2\nK:F\n=B2|]', caption: 'natural' }
-  ]);
-  mini('g-orn', [
-    { abc: 'X:1\nL:1/2\nK:C\n!trill!c2|]', caption: 'trill' },
-    { abc: 'X:1\nL:1/2\nK:C\n!turn!d2|]', caption: 'turn' },
-    { abc: 'X:1\nL:1/2\nK:C\n!uppermordent!e2|]', caption: 'upper mordent' },
-    { abc: 'X:1\nL:1/2\nK:C\n!lowermordent!f2|]', caption: 'lower mordent' },
-    { abc: 'X:1\nL:1/2\nK:C\n{a}g2|]', caption: 'appoggiatura' },
-    { abc: 'X:1\nL:1/2\nK:C\n{/a}g2|]', caption: 'acciaccatura' }
-  ]);
-  mini('g-keys', [
-    { abc: 'X:1\nL:1/4\nK:F# clef=treble\nx4|]', caption: 'treble clef' },
-    { abc: 'X:1\nL:1/4\nK:F# clef=bass\nx4|]', caption: 'bass clef' },
-    { abc: 'X:1\nL:1/4\nK:F# clef=alto\nx4|]', caption: 'alto clef' },
-    { abc: 'X:1\nL:1/4\nK:F# clef=tenor\nx4|]', caption: 'tenor clef' }
-  ]);
 
-  var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin" snm="Vln."\nV:RH clef=treble name="Piano" snm="Pno."\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
-  var trio; trio = new Score(document.getElementById('trio-score'), { abc: TRIO, playable: true, sound: SoundSource, onEvent: function (ev) { nameBubble(trio, ev); } });
-  var trioSpot = false;
-  document.getElementById('trio-spot').addEventListener('click', function () {
-    trioSpot = !trioSpot; this.setAttribute('aria-pressed', String(trioSpot)); trio.spotlight(trioSpot ? 3 : null);
-  });
-
-  var commands = {
-    spotlight: function () { main.spotlight(2); },
-    labels: function () { main.label(1, 'A'); main.label(4, 'B'); main.label(6, 'C'); },
-    slots: function () { var at = main.slots([0, 3, 5, 7]); log({ type: '(作答框的位置交给作答组件)', boxes: at.length }); },
-    count: function () { main.clear(); main.count(); },
-    play: function () { main.clear(); main.spotlight(2); main.play(2); },
-    clear: function () { main.clear(); }
-  };
-  document.querySelectorAll('[data-cmd]').forEach(function (b) {
-    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
-  });
-
-  var boundaryBtn = document.getElementById('toggle-boundary');
-  boundaryBtn.addEventListener('click', function () {
-    var on = document.body.getAttribute('data-boundary') !== 'on';
-    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
-    boundaryBtn.setAttribute('aria-pressed', String(on));
-  });
-
-  var lastW = window.innerWidth, rt = null;
-  window.addEventListener('resize', function () {
-    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
-    clearTimeout(rt);
-    rt = setTimeout(function () { [main, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
+  ThemeConstants.load(THEME).then(function (theme) {
+    ThemeConstants.apply(document.documentElement, theme);
+    start();
+  }, function () {
+    lede.textContent = '主题没有加载出来，请刷新页面再试。';
   });
 })();
 </script>

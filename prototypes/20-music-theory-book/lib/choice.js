@@ -2,9 +2,11 @@
    Choice component. Answers by ticking, as on an exam paper: either a
    set of options, each a paper tile with a tick box (one or several may
    be picked), or a row of boxes under a score, each ticked or crossed.
-   The child's marks are drawn in dark ink; what the workflow lights or
-   confirms is violet, what is wrong brick red with a dashed edge and a
-   cross, an option ruled out has a red rule through it.
+   The child's marks are drawn in ink; what the workflow lights or
+   confirms is in the accent, what is wrong in the wrong colour with a
+   dashed edge and a cross, an option ruled out has a rule through it.
+   Every colour is a theme constant the stylesheet reads; the script
+   draws no colour of its own.
    The component does not know the answer: the workflow tells it what
    to draw right or wrong.
    Inputs: shape ('list' | 'marks'), tag, prompt (parts), options

@@ -1,18 +1,28 @@
 /* ---------- Fill-in component: it defines its whole look here and takes nothing from the page ---------- */
-/* The look follows the etude theme: the question's sentence in the serif with ivory answer boxes set into it, slightly sunk; what the child writes appears in dark ink in a handwriting, stroke by stroke, as with a pen on an exam paper; under it a tray of ivory keys with ebony keys for delete and next. Violet light for whatever the workflow lights or confirms, brick red with a dashed edge and a cross for what is wrong. */
+/* The look: the question's sentence in the serif with ivory answer boxes set into it, slightly sunk; what the child writes appears in ink in a handwriting, stroke by stroke, as with a pen on an exam paper; under it a tray of ivory keys with ebony keys for delete and next. The accent lights whatever the workflow lights or confirms; what is wrong gets the wrong colour, a dashed edge and a cross. Every colour is a theme constant (--th-<name>, set by the player or the component page); the component names none itself. The local names below say what each constant is used for here; a shade between two constants is a mix of the two. */
 .tl-fi {
-  --tl-paper-back: #dcc8a6;
-  --tl-paper-shadow: rgba(60, 38, 16, .45);
-  --tl-ink: #241a12;
-  --tl-ink-soft: #6b5238;
-  --tl-glow: #7b4dff;
-  --tl-glow-soft: rgba(123, 77, 255, .28);
-  --tl-glow-ink: #4b23c9;
-  --tl-wrong: #c8452f;
-  --tl-ivory: #fffdf8;
-  --tl-ebony: #2a211a;
-  --tl-bubble-bg: #2a2118;
-  --tl-bubble-ink: #fff8ec;
+  --tl-light: var(--th-light);
+  --tl-shade: var(--th-shade);
+  --tl-edge: var(--th-edge);
+  --tl-dark: var(--th-dark);
+  --tl-paper: var(--th-paper-b);
+  --tl-paper-back: var(--th-paper-back);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-wrong: var(--th-wrong);
+  --tl-ivory: var(--th-ivory);
+  --tl-ebony: var(--th-ebony);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  /* The tray's lit top edge, an ivory key's side, and an ebony key's top, foot and side. */
+  --tl-tray-top: color-mix(in srgb, var(--th-paper-b) 60%, var(--th-paper-back));
+  --tl-key-side: color-mix(in srgb, var(--th-paper-back) 80%, var(--th-edge));
+  --tl-ebony-top: color-mix(in srgb, var(--th-ebony) 92%, var(--th-light));
+  --tl-ebony-foot: color-mix(in srgb, var(--th-ebony) 70%, var(--th-dark));
+  --tl-ebony-side: color-mix(in srgb, var(--th-ebony) 30%, var(--th-dark));
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --tl-hand: "Caveat", "Segoe Print", "Bradley Hand", cursive;
   --tl-ease: cubic-bezier(.6, 0, .25, 1);
@@ -34,13 +44,13 @@
 .tl-fi-glue { white-space: nowrap; }
 /* Boxes on two lines of a sentence keep enough space between them for the seals and letters on their corners. */
 .tl-fi-field { position: relative; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 44px; padding: 0 6px; margin: 8px 2px; vertical-align: middle; border-radius: 6px; cursor: pointer;
-  border: 1.5px solid color-mix(in srgb, var(--tl-ink-soft) 75%, transparent); background: var(--tl-ivory); box-shadow: inset 0 1px 3px rgba(60, 38, 16, .24);
+  border: 1.5px solid color-mix(in srgb, var(--tl-ink-soft) 75%, transparent); background: var(--tl-ivory); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tl-shade) 24%, transparent);
   transition: border-color .3s, box-shadow .35s, opacity .45s, outline-color .3s, transform .15s; outline: 1.5px dashed transparent; outline-offset: 3px; }
 .tl-fi-field:focus { outline-color: transparent; }
 .tl-fi.kbd .tl-fi-field:focus-visible { outline: 2.5px solid var(--tl-glow); }
 .tl-fi-field.tl-fi-down { transform: scale(.96); }
-/* The box the keys write into: a soft violet edge and a blinking caret. */
-.tl-fi-field.tl-fi-cur { border-color: color-mix(in srgb, var(--tl-glow) 75%, transparent); box-shadow: inset 0 1px 3px rgba(60, 38, 16, .2), 0 0 0 3px var(--tl-glow-soft); }
+/* The box the keys write into: a soft accent edge and a blinking caret. */
+.tl-fi-field.tl-fi-cur { border-color: color-mix(in srgb, var(--tl-glow) 75%, transparent); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tl-shade) 20%, transparent), 0 0 0 3px var(--tl-glow-soft); }
 .tl-fi-ink { display: inline-flex; align-items: center; font: 600 32px/1 var(--tl-hand); color: var(--tl-ink); white-space: pre; transform: translateY(1px); }
 .tl-fi-tok { display: inline-block; transition: opacity .18s; }
 .tl-fi-write { animation: tl-fi-write .3s var(--tl-pen) both; }
@@ -49,46 +59,46 @@
 .tl-fi-cur .tl-fi-caret { opacity: 1; animation: tl-fi-blink 1.1s steps(1) infinite; }
 .tl-fi-locked .tl-fi-caret { display: none; }
 .tl-fi-locked .tl-fi-field { cursor: default; }
-/* A key that does not fit any more: the box flashes a dashed brick-red edge. */
+/* A key that does not fit any more: the box flashes a dashed edge in the wrong colour. */
 .tl-fi-field.tl-fi-full { border-color: var(--tl-wrong); outline-color: color-mix(in srgb, var(--tl-wrong) 60%, transparent); }
 /* Two boxes stacked, as the two numbers of a time signature, far enough apart that the lower one's seal stays clear of the upper one. */
 .tl-fi-stack { display: inline-grid; gap: 14px; justify-items: center; vertical-align: middle; margin: 8px 3px; }
 .tl-fi-stack .tl-fi-field { margin: 0; }
-/* Lit by the workflow: a violet ring and glow; spotlit, the rest dims. */
+/* Lit by the workflow: an accent ring and glow; spotlit, the rest dims. */
 .tl-fi-field.tl-lit { border-color: var(--tl-glow); box-shadow: 0 0 0 1.5px var(--tl-glow), 0 0 20px -2px var(--tl-glow-soft); }
 .tl-fi-field.tl-dim { opacity: .32; }
-/* Confirmed by the workflow: violet ring and a violet seal with a tick; or brick red, a dashed edge and a seal with a cross. */
+/* Confirmed by the workflow: an accent ring and an accent seal with a tick; or the wrong colour, a dashed edge and a seal with a cross. */
 .tl-fi-field.tl-fi-right { border-color: var(--tl-glow); box-shadow: 0 0 0 2px var(--tl-glow), 0 0 24px -2px var(--tl-glow-soft); }
 .tl-fi-field.tl-fi-wrong { border-color: var(--tl-wrong); outline-color: color-mix(in srgb, var(--tl-wrong) 60%, transparent); }
-.tl-fi-seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; pointer-events: none; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .9); }
-.tl-fi-seal svg { width: 13px; height: 13px; fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
-.tl-fi-seal.tl-fi-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, #fff), var(--tl-glow)); }
-.tl-fi-seal.tl-fi-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, #fff), var(--tl-wrong)); box-shadow: 0 4px 10px -2px rgba(200, 69, 47, .35), 0 0 0 2px rgba(255, 255, 255, .9); }
+.tl-fi-seal { position: absolute; top: -9px; right: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; pointer-events: none; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 90%, transparent); }
+.tl-fi-seal svg { width: 13px; height: 13px; fill: none; stroke: var(--tl-light); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.tl-fi-seal.tl-fi-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, var(--tl-light)), var(--tl-glow)); }
+.tl-fi-seal.tl-fi-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, var(--tl-light)), var(--tl-wrong)); box-shadow: 0 4px 10px -2px color-mix(in srgb, var(--tl-wrong) 35%, transparent), 0 0 0 2px color-mix(in srgb, var(--tl-light) 90%, transparent); }
 .tl-fi-pop { animation: tl-fi-pop .45s cubic-bezier(.2, 1.5, .4, 1) both; }
 /* A letter the workflow sticks on a box sits on its corner, covering nothing. */
-.tl-fi-badge { position: absolute; top: -9px; left: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); font-style: normal; color: #fff; pointer-events: none;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, #fff), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px rgba(255, 255, 255, .85); }
+.tl-fi-badge { position: absolute; top: -9px; left: -9px; z-index: 3; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); font-style: normal; color: var(--tl-light); pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); }
 /* A row of boxes under a score: each box stands under the note or bar it answers. */
 .tl-fi-strip { position: relative; height: 58px; }
 .tl-fi-strip .tl-fi-field { position: absolute; top: 7px; margin: 0; }
 /* The keys: ivory keys in a sunken tray, ebony keys for delete and next; the tray folds away once the answer is handed in, so the space above it lives inside the folding part. Numbers on the keys are lining figures, all one height. */
 .tl-fi-padwrap { overflow: hidden; padding: 0 2px; margin: 0 -2px; }
 .tl-fi-pad { display: grid; grid-template-columns: repeat(var(--kc, 6), var(--kw, 48px)); justify-content: center; gap: 8px; margin: 16px 0 4px; padding: 10px; border-radius: 14px;
-  background: linear-gradient(180deg, #e9dcc3, var(--tl-paper-back)); box-shadow: inset 0 1px 3px rgba(60, 38, 16, .3), inset 0 0 0 1px rgba(122, 88, 54, .16), 0 1px 0 rgba(255, 255, 255, .6); }
+  background: linear-gradient(180deg, var(--tl-tray-top), var(--tl-paper-back)); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tl-shade) 30%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 1px 0 color-mix(in srgb, var(--tl-light) 60%, transparent); }
 .tl-fi-key { appearance: none; border: 0; margin: 0; padding: 0; width: var(--kw, 48px); height: 48px; border-radius: 9px; display: grid; place-items: center; cursor: pointer; font: 600 23px/1 var(--tl-serif); font-variant-numeric: lining-nums; color: var(--tl-ebony);
-  background: linear-gradient(180deg, var(--tl-ivory), #f1e7d4); box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(122, 88, 54, .16), 0 3px 0 #c9b28a, 0 7px 10px -6px var(--tl-paper-shadow);
+  background: linear-gradient(180deg, var(--tl-ivory), var(--tl-paper)); box-shadow: inset 0 1px 0 var(--tl-light), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 3px 0 var(--tl-key-side), 0 7px 10px -6px var(--tl-paper-shadow);
   transition: transform .08s, box-shadow .08s; }
-.tl-fi-key.tl-fi-ebony { color: #fff8ec; background: linear-gradient(180deg, #3d3128, #1d1611); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 3px 0 #0d0906, 0 7px 10px -6px rgba(0, 0, 0, .6); }
+.tl-fi-key.tl-fi-ebony { color: var(--tl-ivory); background: linear-gradient(180deg, var(--tl-ebony-top), var(--tl-ebony-foot)); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 14%, transparent), 0 3px 0 var(--tl-ebony-side), 0 7px 10px -6px color-mix(in srgb, var(--tl-dark) 60%, transparent); }
 .tl-fi-key svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.tl-fi-key.tl-fi-down { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(122, 88, 54, .16), 0 1px 0 #c9b28a, 0 3px 6px -4px var(--tl-paper-shadow); }
-.tl-fi-key.tl-fi-ebony.tl-fi-down { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 1px 0 #0d0906, 0 3px 6px -4px rgba(0, 0, 0, .6); }
-/* A key the workflow presses in a lecture glows violet, so the child sees which one. */
-.tl-fi-key.tl-fi-flash { box-shadow: inset 0 1px 0 #fff, 0 0 0 2px var(--tl-glow), 0 0 18px var(--tl-glow-soft), 0 1px 0 #c9b28a; }
+.tl-fi-key.tl-fi-down { transform: translateY(2px); box-shadow: inset 0 1px 0 var(--tl-light), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 1px 0 var(--tl-key-side), 0 3px 6px -4px var(--tl-paper-shadow); }
+.tl-fi-key.tl-fi-ebony.tl-fi-down { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 14%, transparent), 0 1px 0 var(--tl-ebony-side), 0 3px 6px -4px color-mix(in srgb, var(--tl-dark) 60%, transparent); }
+/* A key the workflow presses in a lecture glows in the accent, so the child sees which one. */
+.tl-fi-key.tl-fi-flash { box-shadow: inset 0 1px 0 var(--tl-light), 0 0 0 2px var(--tl-glow), 0 0 18px var(--tl-glow-soft), 0 1px 0 var(--tl-key-side); }
 .tl-fi-key:focus { outline: none; }
 .tl-fi.kbd .tl-fi-key:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 3px; }
 /* Room the fill-in makes under its sentence for a bubble, so a bubble covers nothing. */
 .tl-fi-room { position: relative; height: 0; }
-.tl-fi-bubble { position: absolute; top: 4px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .5); transition: opacity .2s; }
+.tl-fi-bubble { position: absolute; top: 4px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--tl-dark) 50%, transparent); transition: opacity .2s; }
 .tl-fi-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .tl-fi-layer { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
 .tl-fi-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-fi-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
