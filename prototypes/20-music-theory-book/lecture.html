@@ -63,8 +63,8 @@ th { color: var(--ink-muted); font-weight: 700; }
   <div class="proto-head"><span class="tagline">只有原型有</span><button type="button" class="btn" id="proto-close">收起</button></div>
   <p class="lede">这是在确认<b>声明式的流程和题目</b>，以及<b>每个组件独立成一个文件夹</b>：引擎按题目用到的组件名去读每个组件的 <code>component.json</code>，连同它依赖的组件（声音、钢琴、控件的玻璃外观）一起加载。书里的题是第 1 题 · 判断拍号。</p>
   <ul class="try">
-    <li>换个窗口大小（或转手机）：排法跟着屏幕换，每个组件都在自己的区域里。</li>
-    <li>点右上角的换题按钮：下拉的题目列表盖在所有东西上面，谱和拍尺都挡不住它。</li>
+    <li>换个窗口大小（或转手机）：排法跟着屏幕换，一个区域放一个组件，按区域的设置缩放和对齐。打开“显示区域和组件边界”能看到每个区域。</li>
+    <li>点右上角的换题按钮：换题所在的区域在排法里写在最后，所以它的下拉列表盖在谱和拍尺上面。</li>
     <li>一项一项地对完、轮到选的时候，拍尺缩进结论板；选对以后，选项缩进它得出的那条结论。</li>
     <li>往回总是可以；轮到你作答而还没答过时，下一幕和后面的部分都按不了。</li>
   </ul>
@@ -111,16 +111,16 @@ th { color: var(--ink-muted); font-weight: 700; }
    the loading screen it reads the book, its items, the items' workflows
    and themes from the content folder (the stand-in for object storage),
    loads the components those items put on stage with all they need,
-   lets them preload, and prepares every spoken value's recording. It
-   runs the chosen item full screen when 开始 is tapped, stands in for the
-   book's page the close button leads to, and shows what the engine
-   traces in a drawer only the prototype has. Example items that belong
-   to no book live outside the content folder, in examples/. None of
-   this is the engine.
+   lets them preload, and has each item's engine prepare what its
+   components' inputs name (the recordings). It runs the chosen item
+   full screen when 开始 is tapped, stands in for the book's page the
+   close button leads to, and shows what the engine traces in a drawer
+   only the prototype has. Example items that belong to no book live
+   outside the content folder, in examples/. None of this is the engine.
    ============================================================ */
 (function () {
   var CONTENT = 'content/', BOOK = 'abrsm-theory-grade-5', EXAMPLES = ['count-demo'];
-  var data = { book: null, items: {}, workflows: {}, themes: {}, lines: {}, components: [] };
+  var data = { book: null, items: {}, workflows: {}, themes: {}, components: [] };
   var engine = null, currentName = null, screenNote = '还没开始';
 
   function yaml(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url + ' ' + r.status); return r.text(); }).then(function (t) { return jsyaml.load(t); }); }
@@ -137,7 +137,7 @@ th { color: var(--ink-muted); font-weight: 700; }
   }
 
   // The loading screen's bar: the files a tenth, the components' preloads
-  // most of it, the recordings the rest.
+  // most of it, what the items' components prepare the rest.
   function share(progress, from, to) {
     return function (f, text) { progress(f === null || f === undefined ? null : from + (to - from) * f, text); };
   }
@@ -166,19 +166,15 @@ th { color: var(--ink-muted); font-weight: 700; }
       }).then(function () { return list; });
     }).then(function (list) {
       currentName = data.book.items[0].name;
-      var all = [];
-      list.forEach(function (it) {
-        var spoken = LessonParams.paths(data.workflows[it.doc.workflow].params, it.doc.params, 'speech');
-        var folder = itemBase(it) + it.doc.params.narration + '/';
-        Object.keys(spoken).forEach(function (path) {
-          var v = spoken[path];
-          all.push({ item: it.name, id: path, text: typeof v === 'string' ? v : v.text, url: folder + LessonParams.fileOf(path) });
+      progress(.75, '准备题目要用的录音');
+      var rest = share(progress, .75, 1), parts = list.map(function () { return 0; });
+      return Promise.all(list.map(function (it, i) {
+        return engineFor(it.name, null).prepare(function (f, text) {
+          if (f === null || f === undefined) { rest(null, text); return; }
+          parts[i] = f / list.length;
+          rest(parts.reduce(function (a, b) { return a + b; }, 0), text);
         });
-      });
-      return NarrationBar.prepare(all, share(progress, .75, 1)).then(function (prepared) {
-        list.forEach(function (it) { data.lines[it.name] = []; });
-        prepared.forEach(function (l, i) { data.lines[all[i].item].push(l); });
-      });
+      }));
     });
   });
   PlayerLoading.onStart(function () { renderExamples(); renderLoaded(); run(currentName); });
@@ -238,30 +234,36 @@ th { color: var(--ink-muted); font-weight: 700; }
     box.appendChild(back);
   }
 
+  // An engine for an item, on a stage (or none, only to prepare it).
+  function engineFor(name, stage) {
+    var it = data.items[name], item = it.doc;
+    var book = it.example ? [it] : data.book.items.map(function (x) { return data.items[x.name]; });
+    return new LectureEngine({
+      workflow: data.workflows[item.workflow], item: item, name: name, theme: data.themes[item.theme],
+      base: new URL(itemBase(it), location.href).href,
+      book: book.map(function (x) { return { name: x.name, no: x.no, title: x.title }; }),
+      stage: stage, onTrace: trace,
+      onLeave: function () { document.getElementById('book-mock').hidden = false; },
+      onPick: function (id) { window.lxRun(id); }
+    });
+  }
+
   function run(name) {
     currentName = name;
     if (engine) engine.destroy();
     logEl.innerHTML = ''; t0 = performance.now(); window.lxTrace = [];
     var it = data.items[name], item = it.doc, wf = data.workflows[item.workflow];
-    var book = it.example ? [it] : data.book.items.map(function (x) { return data.items[x.name]; });
     document.getElementById('now-book').textContent = it.example ? '示例题，不在书里' : data.book.title;
     renderBinds(wf, item);
     var stage = document.getElementById('stage');
     stage.innerHTML = '';
-    engine = new LectureEngine({
-      workflow: wf, item: item, name: name, theme: data.themes[item.theme],
-      book: book.map(function (x) { return { name: x.name, no: x.no, title: x.title }; }),
-      stage: stage, lines: data.lines[name], onTrace: trace,
-      onLeave: function () { document.getElementById('book-mock').hidden = false; },
-      onPick: function (id) { window.lxRun(id); }
-    });
+    engine = engineFor(name, stage);
     window.lxEngine = engine;
     var pr = document.getElementById('problems');
     pr.hidden = !engine.problems.length;
     pr.textContent = engine.problems.join('；');
     if (engine.problems.length) { stage.innerHTML = '<div class="lx-curtain">题目文件对不上流程：' + engine.problems.join('；') + '</div>'; return; }
     engine.start();
-    if (engine.bar) engine.bar.unlock();
     showScreen();
   }
   window.lxRun = function (name) { if (data.items[name]) run(name); };
@@ -276,6 +278,5 @@ th { color: var(--ink-muted); font-weight: 700; }
   document.body.setAttribute('data-boundary', 'off');
   var bb = document.getElementById('boundary');
   bb.addEventListener('click', function () { var on = document.body.getAttribute('data-boundary') !== 'on'; document.body.setAttribute('data-boundary', on ? 'on' : 'off'); bb.setAttribute('aria-pressed', String(on)); });
-  ['pointerup', 'touchend', 'keydown'].forEach(function (t) { document.addEventListener(t, function () { if (engine && engine.bar) engine.bar.unlock(); }, { capture: true, passive: true }); });
 })();
 </script>

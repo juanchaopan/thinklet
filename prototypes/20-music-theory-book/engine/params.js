@@ -7,10 +7,12 @@
 
    LessonParams.check(decl, params)     problems, [] when none
    LessonParams.paths(decl, params, t)  {path: value} of every value of type t
+   LessonParams.locate(decl, params, base)  the params with every folder
+                                        and file as a full address from
+                                        the item's address `base`
    LessonParams.get(root, path)         a value by its path (a.b.0.c)
    LessonParams.ref(ref, scope)         a `$name.rest` reference: {value, path}
    LessonParams.holds(when, scope)      whether a `when` condition holds
-   LessonParams.fileOf(path)            the recording file name for a path
 
    A path names a value from the item's params down: lines.read.question,
    parts.0.lines.measure.unit. Map keys may themselves hold dots
@@ -123,7 +125,26 @@ var LessonParams = (function () {
     return out;
   }
 
-  function fileOf(path) { return String(path).replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
+  // A copy of the params in which every folder (ending in /) and file is
+  // a full address, so a component can fetch it wherever the item lives.
+  function locate(decl, params, base) {
+    function value(spec, v) {
+      if (v === undefined || v === null) return v;
+      var t = typeOf(spec);
+      if (t === 'folder' && typeof v === 'string') return new URL(v.replace(/\/?$/, '/'), base).href;
+      if (t === 'file' && typeof v === 'string') return new URL(v, base).href;
+      if (t === 'list' && Array.isArray(v)) return v.map(function (el) { return object(spec.each, el); });
+      if (t === 'map' && spec.of !== undefined && v && typeof v === 'object') { var m = {}; Object.keys(v).forEach(function (k) { m[k] = value({ type: spec.of }, v[k]); }); return m; }
+      return v;
+    }
+    function object(fields, obj) {
+      if (!fields || !obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+      var out = {};
+      Object.keys(obj).forEach(function (k) { out[k] = fields[k] ? value(fields[k], obj[k]) : obj[k]; });
+      return out;
+    }
+    return object(decl || {}, params || {});
+  }
 
-  return { check: check, paths: paths, get: get, ref: ref, holds: holds, fileOf: fileOf, typeOf: typeOf };
+  return { check: check, paths: paths, locate: locate, get: get, ref: ref, holds: holds, typeOf: typeOf };
 })();

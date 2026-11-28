@@ -1,7 +1,7 @@
 <title>按键填空组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* Layout: a lit stage shaped like a practice screen: a stand-in score on top (not part of this prototype), the fill-in under it (the component, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the fill-in emits. Then the other looks of the same component (a time signature, chords named under a score, a phone-width question), a lecture played through at phone width, and the interface table. The component's own look, its fonts and the components it needs come from its component.json; every rule of its stylesheet is under its own .tl-fi prefix, so the page's rules here and the component's never meet. */
+/* Layout: a lit stage shaped like a practice screen: a stand-in score on top (not part of this prototype), the fill-in under it (the component, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the fill-in emits. Then the other looks of the same component (a time signature, chords named under a score, a phone-width question, too little room), a lecture played through at phone width, and the interface table. The component's own look, its fonts and the components it needs come from its component.json; every rule of its stylesheet is under its own .tl-fi prefix, so the page's rules here and the component's never meet. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -144,6 +144,11 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <div id="g-count"></div>
         <div class="mini-tools"><button class="chip" type="button" data-g="count" data-act="check">核对</button><button class="chip" type="button" data-g="count" data-act="clear">清除</button></div>
       </div>
+      <div class="mini-stage phone">
+        <h3>放不下时：先把按键变小；还放不下，只留当前格子所在的那一句</h3>
+        <div id="g-tight"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="tight" data-act="small">矮一点（按键变小）</button><button class="chip" type="button" data-g="tight" data-act="tiny">更矮（只留这一句）</button><button class="chip" type="button" data-g="tight" data-act="loose">放得下</button></div>
+      </div>
     </div>
   </section>
 
@@ -166,9 +171,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>样子：句子里嵌格子（<code>line</code>）或谱下一排格子（<code>row</code>）。句子：一串片段，文字、术语（斜体）、一个格子，或上下叠的两个格子（拍号）；可以带小题号如 (a)。谱下一排：上面一句题干，加几个格子。每个格子有编号、最多写几个字、读屏用的名称。按键：题目给的一组（比如 0–9，或 I、II、IV、V、b、c），组件自己加上删除键，有几个格子时再加“下一格”。</td></tr>
           <tr><td>外观</td><td>句子用衬线字，格子是象牙色、微微凹进去；孩子写的字用深色墨水的手写体；按键是象牙色的键放在凹下去的托盘里，删除和下一格是乌木色的键，键上的数字一样高；亮起和“对”用强调色（紫色），“错”用砖红，说明放在深色气泡里。组件不写死任何颜色，全部取主题常量（<code>--th-…</code>，这一页用 <code>etude</code> 主题）；换一个主题，颜色跟着变，大小和动作不变。文字里的升降号用乐谱库的字形。</td></tr>
-          <tr><td>排法</td><td>组件自己定：句子按词换行，格子和它前面的词、后面的标点不分开，上下两行的格子之间留出角上印章和字母的地方；按键一样大，一行放得下就排成一行，放不下就平均分成几行。谱下一排格子按流程给的位置摆，每个格子对着谱上的一个和弦或小节；两个位置挨得太近时，格子往两边让开，不叠在一起，角上的印章也碰不到旁边的格子。</td></tr>
+          <tr><td>排法</td><td>组件自己定：句子按词换行，格子和它前面的词、后面的标点不分开，上下两行的格子之间留出角上印章和字母的地方；按键一样大，一行放得下就排成一行，放不下就平均分成几行。谱下一排格子按流程给的位置摆，每个格子对着谱上的一个和弦或小节；两个位置挨得太近时，格子往两边让开，不叠在一起，角上的印章也碰不到旁边的格子。流程给的地方太矮、放不下时，先把按键变小、尽量排成一行（键还是 44 像素高，手指按得到）；还放不下，只留当前格子所在的那一句，别的句子收起来，换到别的格子时跟着换句；地方够了再全部摆出来。</td></tr>
           <tr><td>动作</td><td>点格子：格子轻轻按下，边上亮起淡紫色，里面出现闪动的光标。按键：键往下沉一点再弹起，字从左往右一笔写出来（0.3 秒）；删掉的字 0.18 秒淡掉；格子写满后光标跳到下一个空格子；写不下了，格子边上闪一下砖红的虚线。讲题里流程按的键发紫光。核对：紫圈或砖红虚线边出现，角上的印章弹出来。弹出说明：先在句子下面让出地方（0.52 秒，起步很轻），气泡再弹出，下面的按键慢慢往下让；收起时气泡先淡掉，地方再慢慢合上。锁住：按键托盘慢慢收起来，光标消失。</td></tr>
-          <tr><td>指令</td><td><code>focus(格子)</code> 让按键写进这个格子；<code>fill({格子: 字})</code> 替孩子写好；<code>type(格子, 字)</code> 一个键一个键地按出来给孩子看；<code>highlight(格子…)</code>；<code>spotlight(格子…)</code>；<code>label({格子: 字母})</code>；<code>caption(格子, 文字)</code>，格子为空时收起；<code>check({格子: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 谱下一排格子摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code> 停下正在按的键；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>focus(格子)</code> 让按键写进这个格子；<code>fill({格子: 字})</code> 替孩子写好；<code>type(格子, 字)</code> 一个键一个键地按出来给孩子看；<code>highlight(格子…)</code>；<code>spotlight(格子…)</code>；<code>label({格子: 字母})</code>；<code>caption(格子, 文字)</code>，格子为空时收起；<code>check({格子: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 谱下一排格子摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code> 停下正在按的键；<code>clear()</code>；<code>fitView({宽, 高})</code> 告诉它最多能占多大地方，为空时按它自己的大小。</td></tr>
           <tr><td>事件</td><td><code>fieldTap</code>（哪个格子、第几个、里面写了什么）；<code>keyPress</code>（按了哪个键、写进哪个格子、这个格子现在写了什么、全部格子写了什么、有没有写进去）；<code>blankTap</code>。</td></tr>
           <tr><td>依赖</td><td>只用声音组件（sound），写在填空组件的 <code>component.json</code> 里，打开这一页时一起加载；不用服务。颜色来自主题常量，由播放器（这一页由页面自己）设在外层。谱下一排格子对着谱上哪几处，由流程从乐谱组件拿到位置再交给它，两个组件互不知道。哪个是答案由题目文件给，组件只画出来；写的是不是一个合法的数或和弦，也由流程按题目文件判断。</td></tr>
           <tr><td>声音</td><td>不弹音符：按下格子和按键时只有一下轻轻的触感声，由声音组件发出。按键不用琴声，免得和题目里的音混在一起。</td></tr>
@@ -192,13 +197,16 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
    component) and sets the etude theme's constants on the page, as the
    player sets them on the stage; on 开始 it draws stand-ins for the
    score above a fill-in, hands the fill-in the places of the chords
-   under a score and wires the events to a log. The fill-in calls
+   under a score, gives one fill-in too little room the way a layout
+   region would, and wires the events to a log. The fill-in calls
    nothing here directly.
    ============================================================ */
 // The theme file lives in content/themes at the prototype's root, two
 // folders above this page.
 var THEME_URL = '../../content/themes/etude.yaml';
 var COMPONENT = 'fill';
+// How much less room than it needs the "a little less" button gives.
+var SHORT_BY = 20;
 
 function assemble() {
   document.body.setAttribute('data-boundary', 'on');
@@ -245,9 +253,13 @@ function assemble() {
       fields: [{ id: 'c1', size: 3, name: 'chord 1' }, { id: 'c2', size: 3, name: 'chord 2' }, { id: 'c3', size: 3, name: 'chord 3' }, { id: 'c4', size: 3, name: 'chord 4' }],
       keys: ['I', 'II', 'IV', 'V', 'b', 'c'] },
     count: { shape: 'line', tag: '(d)', prompt: [{ text: 'A dotted crotchet lasts as long as ' }, { field: { id: 'n', size: 2, name: 'number of demisemiquavers' } }, { text: ' demisemiquavers.' }] },
+    tight: { shape: 'line', tag: '(e)', prompt: [
+      { text: 'A minim lasts as long as ' }, { field: { id: 'a', size: 1, name: 'crotchets in a minim' } },
+      { text: ' crotchets. A semibreve lasts as long as ' }, { field: { id: 'b', size: 1, name: 'crotchets in a semibreve' } }, { text: ' crotchets.' }
+    ] },
     run: { shape: 'line', prompt: [{ text: 'From ' }, { term: 'E♭' }, { text: ' up to ' }, { term: 'C' }, { text: ' there are ' }, { field: { id: 'n', size: 2, name: 'number of semitones' } }, { text: ' semitones.' }] }
   };
-  var ANSWER = { main: { high: '3', low: '1' }, meter: { top: '3', bottom: '4' }, chord: { c1: 'IV', c2: 'Ic', c3: 'V', c4: 'I' }, count: { n: '12' }, run: { n: '9' } };
+  var ANSWER = { main: { high: '3', low: '1' }, meter: { top: '3', bottom: '4' }, chord: { c1: 'IV', c2: 'Ic', c3: 'V', c4: 'I' }, count: { n: '12' }, tight: { a: '2', b: '4' }, run: { n: '9' } };
 
   // A fill-in as the lecture places it: a press on it sounds.
   var fills = {};
@@ -274,6 +286,7 @@ function assemble() {
   make('meter', 'g-meter');
   var chord = make('chord', 'g-chord');
   make('count', 'g-count');
+  make('tight', 'g-tight');
   var run = make('run', 'run-fill');
   // The workflow hands the fill-in the places of the chords on the score,
   // as pixels from the fill-in's own left edge.
@@ -302,10 +315,16 @@ function assemble() {
   document.querySelectorAll('[data-cmd]').forEach(function (b) {
     b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
   });
+  // The gallery's buttons; for the fill-in given too little room they
+  // play the layout region: a little less room than it needs, or very
+  // little.
   document.querySelectorAll('[data-g]').forEach(function (b) {
     b.addEventListener('click', function () {
       var name = b.getAttribute('data-g'), act = b.getAttribute('data-act'), f = fills[name];
       if (act === 'check') judge(name);
+      else if (act === 'small') { f.fitView(null); f.fitView({ width: f.host.clientWidth, height: f.host.offsetHeight - SHORT_BY }); }
+      else if (act === 'tiny') f.fitView({ width: f.host.clientWidth, height: 150 });
+      else if (act === 'loose') f.fitView(null);
       else if (act === 'caption') f.caption('c2', Fill.inline('G is in the bass: a second inversion'));
       else f.clear();
     });
@@ -335,9 +354,10 @@ function assemble() {
     boundaryBtn.setAttribute('aria-pressed', String(on));
   });
 
-  // A rebuild redraws every fill-in at its new width; what is written and
-  // every mark are state, so they come back. The boxes under the score
-  // are placed again from the score's new layout.
+  // A rebuild redraws every fill-in at its new width; what is written,
+  // every mark and the room it was given are state, so they come back.
+  // The boxes under the score are placed again from the score's new
+  // layout.
   var rebuild = function () { Object.keys(fills).forEach(function (k) { fills[k].build(); }); placeChords(); };
   var lastW = window.innerWidth, rt = null;
   window.addEventListener('resize', function () {

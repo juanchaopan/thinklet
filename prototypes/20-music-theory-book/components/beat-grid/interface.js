@@ -4,7 +4,10 @@
    what it shows as state. Its notes play on the piano component, and a
    press on it sounds (sound). Changing to another rhythm goes through
    the engine's crossfade (env.swap), so the new bar comes in where the
-   old one fades. In a hurry (a skipped scene) every mark is drawn at once.
+   old one fades; the new bar is given the room the old one had. Given
+   less room than its own size (fit), the grid folds its words away and
+   the region scales the rest (see beat-grid.js). In a hurry (a skipped
+   scene) every mark is drawn at once.
    Interfaces: point, count, meter, set, play.
    ============================================================ */
 (function () {
@@ -17,7 +20,7 @@
   }
   function GridI(host, input, env) {
     LessonComponents.Base.call(this);
-    this.host = host; this.input = input; this.env = env;
+    this.host = host; this.input = input; this.env = env; this.view = null;
     Sound.pressable(host);
     this.make(input.abc);
   }
@@ -31,6 +34,7 @@
       if (ev.type === 'countStep' && self.counting && ev.n === ev.total) { var done = self.counting; self.counting = null; setTimeout(done, 650); }
       if (ev.type === 'tileTap' || ev.type === 'beatTap') self.emit({ name: 'point.tap', raw: ev });
     } }));
+    if (this.view) this.c.fit(this.view);
     this.st = { abc: abc, meter: null, sub: [], counts: [], labels: [], hl: null };
   };
   GridI.prototype.sig = function (m) { return typeof m === 'object' && m ? [m.sig, m.group] : [m, undefined]; };
@@ -50,6 +54,7 @@
     if (name === 'set') { if (v === this.abc) return; if (hurry) { this.make(v); return; } this.env.swap(function () { self.make(v); }); return U.sleep(this.env.moveMs); }
     throw new Error('beat-grid: ' + name);
   };
+  GridI.prototype.fit = function (view) { this.view = view; this.c.fit(view); };
   GridI.prototype.stop = function () { this.c.stop(); if (this.counting) { var r = this.counting; this.counting = null; r(); } };
   GridI.prototype.getState = function () { return U.clone(this.st); };
   GridI.prototype.setState = function (s) {

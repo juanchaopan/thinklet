@@ -1,7 +1,7 @@
 <title>节拍格组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. The grid's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
+/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then a grid given less room than its own size, two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. The grid's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -66,6 +66,7 @@ button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2p
 .log .t { color: #8a80b8; }
 .sound-state { font-size: 13px; color: var(--ink-muted); }
 .sound-state b { color: var(--ink); }
+.room-note { font-size: 13px; color: var(--ink-muted); }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
@@ -109,6 +110,17 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   </section>
 
   <section class="panel">
+    <h2>放不下时</h2>
+    <p class="what">讲题时节拍格放在一个区域里。区域缩到最小还放不下时，会告诉节拍格它最多能占多高。一小节必须整条看见，所以节拍格不滚动，只把文字收起来：音符上方留给标记的空白、标记、木尺上的拍号数字、下面的名称都收起，色块、音符和拍线留着，整条变矮，剩下的由区域缩小。点“放得下”恢复原样。</p>
+    <div class="mini-stage"><div id="room-grid"></div></div>
+    <div class="chips">
+      <button class="chip" type="button" data-room="tight">只给它矮一点的高度</button>
+      <button class="chip" type="button" data-room="free">放得下</button>
+    </div>
+    <p class="room-note" id="room-note"></p>
+  </section>
+
+  <section class="panel">
     <h2>上下两个节拍格：三连音改写成复拍子</h2>
     <p class="what">考点 2 讲单拍子和复拍子互换时用。流程把同一段音的两种写法上下排好：<i>3/4</i> 里的 <i>triplet</i> 和 <i>9/8</i> 里的三个 <i>quaver</i> 占的长度一样，一拍对一拍。两个节拍格一样宽，拍子自然对齐。</p>
     <div class="mini-stage"><div class="stack" id="g-pair"></div></div>
@@ -128,10 +140,10 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>一小节的 ABC 谱（和乐谱组件同一种写法，音高只用来发声）；拍号和拍的分组（可以不给，也可以是问号）；模式：讲题（点了发声、弹出名称）或练习（只显示流程标好的东西，点了没有反应，不给提示）；速度；有没有播放按钮；下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色，形状和大小都由节拍格自己定；颜色全部取自主题常量（纸、墨、强调色、错误色、木头、气泡、光和影），自己不写死任何颜色。换主题只换颜色，放在哪里都是同一个样子。</td></tr>
-          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>；<code>fit(最多占多大)</code> 区域放不下时告诉它能占的宽和高，给空值时恢复原样。</td></tr>
           <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；音符在钢琴组件（piano）上弹响，和乐谱、键盘弹的是同一架钢琴；按下时的触感声由声音组件（sound）发出。这些都写在节拍格的 <code>component.json</code> 里，打开这一页时一起加载。颜色来自播放器设在画面上的主题常量。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
-          <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
+          <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行；高度不够时收起文字，再由区域缩小，一小节始终整条看见。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里一般不出现，因为它本身就是提示；要出现时只显示，不作答。</td></tr>
         </tbody>
       </table>
@@ -151,8 +163,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
    (abcjs, its fonts, the piano and sound components), preloads the
    piano's samples and applies the theme file to the document; on 开始
    it builds the grids, wires their events to a caption and a log, and
-   shows how the piano is doing. The grid never calls anything here
-   directly.
+   shows how the piano is doing. For the grid given less room it plays
+   the layout's part: it tells the grid the most room it may take. The
+   grid never calls anything here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
@@ -230,6 +243,22 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
     });
 
+    // A grid with labels and a caption, then less room than it takes.
+    var room; room = grid(document.getElementById('room-grid'), { abc: BAR, meter: '7/8', group: [2, 2, 3], caption: '(a)', onEvent: function (ev) { bubble(room, ev); } });
+    room.label(0, 'A'); room.label(3, 'B'); room.label(4, 'C'); room.subdivide('1/16');
+    var roomNote = document.getElementById('room-note');
+    function tell() { roomNote.textContent = '现在高 ' + room.host.offsetHeight + 'px' + (room.tight ? '（文字收起了）' : ''); }
+    var own = room.host.offsetHeight;
+    var roomCommands = {
+      tight: function () { room.fit({ width: room.host.clientWidth, height: own - 40 }); tell(); },
+      free: function () { room.fit(null); tell(); }
+    };
+    document.querySelectorAll('[data-room]').forEach(function (b) {
+      b.addEventListener('click', function () { roomCommands[b.getAttribute('data-room')](); });
+    });
+    tell();
+    window.demoRoomGrid = room;
+
     var others = [];
     [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
       var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
@@ -253,11 +282,11 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     window.addEventListener('resize', function () {
       if (window.innerWidth === lastW) return; lastW = window.innerWidth;
       clearTimeout(rt);
-      rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
+      rt = setTimeout(function () { [main, room].concat(others).forEach(function (g) { g.build(); }); }, 180);
     });
     // The grids measure their glyphs, so they are laid out again once the
     // manifest's fonts have arrived.
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main, room].concat(others).forEach(function (g) { g.build(); }); own = room.tight ? room.ownHeight : room.host.offsetHeight; tell(); });
   }
 })();
 </script>

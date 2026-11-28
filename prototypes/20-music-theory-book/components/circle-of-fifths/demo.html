@@ -88,7 +88,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给五度圈的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给五度圈的指令；记录框列出五度圈发出的事件。点一个调：那一格亮起来、响起这个调的主和弦、中间的谱换成它的调号、旁边弹出调名和升降号的个数，两秒后灯自己淡掉；点转盘外面的空处马上清掉；点中间的小圆牌，再听一遍这个调。走五度圈时每走一步多一个升号或降号，新加的那个在谱上是紫色的。播放时再按一下右上角的按钮，声音马上停下。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给五度圈的指令；记录框列出五度圈发出的事件。点一个调：那一格亮起来、响起这个调的主和弦、中间的谱换成它的调号、旁边弹出调名和升降号的个数，两秒后灯自己淡掉；点转盘外面的空处马上清掉；点中间的小圆牌，再听一遍这个调。走五度圈时每走一步多一个升号或降号，新加的那个在谱上是紫色的。播放时再按一下右上角的按钮，声音马上停下。“变小一点”模拟排法给它 420×440：转盘整个画小。“放不下时”只给 420×280：转盘只露出上面一段弧，选中的调在最上面，左右各三个调和中间的调号都看得见；换调时整个转盘转过去，把新的调转到最上面。“放得下”还给它自己的大小。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="walkSharp">从 C 顺时针走到 6 个升号</button>
       <button class="chip" type="button" data-cmd="walkFlat">从 C 逆时针走，转盘跟着转</button>
@@ -107,6 +107,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="play">播放</button>
       <button class="chip" type="button" data-cmd="stop">停</button>
       <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" data-cmd="smaller">变小一点（给 420×440）</button>
+      <button class="chip" type="button" data-cmd="narrow">放不下时（只给 420×280）</button>
+      <button class="chip" type="button" data-cmd="roomy">放得下</button>
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div>
     <div class="log" id="log" aria-live="polite" aria-label="五度圈发出的事件"></div>
@@ -131,6 +134,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
           <tr><td>事件</td><td><code>keyTap</code>（调、大调还是小调、调名、升号还是降号、几个、哪几个、关系大小调、调名是否遮着）；<code>hubTap</code>（中间显示的是哪个调）；<code>blankTap</code>；<code>walkStep</code>（走到第几步、一共几步、走到的调、这一步加上或去掉的升降号）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：五度圈的 <code>component.json</code> 写明需要它（还有乐谱库 abcjs），加载五度圈时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给五度圈。乐谱、键盘、音级梯用的也是它；颜色来自主题；五度圈不知道乐谱、键盘和作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>转盘放在谱的旁边还是下面、用大号还是小号，由流程决定；五度圈在给它的宽度里画一个尽量大的正圆，大号最宽 460，小号最宽 280。</td></tr>
+          <tr><td>放不下时</td><td>排法用 <code>fit({width, height})</code> 告诉它最多能占多大（<code>fit(null)</code> 还给它自己的大小）。转盘先整个画小，大号最小 300、小号最小 200；再放不下，就只露出转盘上面一段弧，到中间的调号为止：选中的调在最上面，左右各三个调都看得见；选中的调一变，整个转盘就转过去，把它转到最上面。转盘接着往下的那一边淡出。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习“认调号”时可以遮住调名和个数，只留中间的调号，答案交给作答组件。</td></tr>
         </tbody>
       </table>
@@ -228,7 +232,10 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       clef: function () { clefAt = (clefAt + 1) % clefs.length; main.clef(clefs[clefAt]); clefBtn.textContent = '换谱号（现在：' + clefs[clefAt] + '）'; },
       play: function () { main.play(); },
       stop: function () { main.stop(); },
-      clear: function () { main.clear(); }
+      clear: function () { main.clear(); },
+      smaller: function () { main.fit({ width: 420, height: 440 }); },
+      narrow: function () { main.fit({ width: 420, height: 280 }); },
+      roomy: function () { main.fit(null); }
     };
     document.querySelectorAll('[data-cmd]').forEach(function (b) {
       b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });

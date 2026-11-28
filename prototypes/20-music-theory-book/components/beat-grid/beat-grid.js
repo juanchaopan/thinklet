@@ -2,7 +2,7 @@
    Beat grid component. Inputs: abc (one bar), meter, group, mode
    ('lecture' | 'practice'), tempo (crotchets per minute), playable,
    caption, compact. Commands: meter, subdivide, count, highlight,
-   label, spotlight, caption, play, stop, clear. Events (via
+   label, spotlight, caption, play, stop, clear, fit. Events (via
    onEvent): tileTap, beatTap, blankTap, countStep, playStart,
    playEnd. Sound goes through the injected source, lectures only.
    Colours come from the theme constants (--th-<name>) set on the
@@ -10,6 +10,14 @@
    Time is counted in ticks: a semibreve is 6720 ticks, which divides
    evenly by every note value down to the hemidemisemiquaver and by
    triplets, quintuplets, sextuplets and septuplets.
+
+   A bar is always shown whole: the grid never scrolls. fit(view) gives
+   it the most room it may take ({width, height} in its own pixels, or
+   null for its own size). When its own size is taller than that, it
+   folds its words away (the room over the notes kept for labels, the
+   labels, the beat numbers and the caption) and keeps the coloured
+   blocks, the notes and the beat lines, so it is shorter; the region
+   scales what is left.
    ============================================================ */
 function BeatGrid(host, options) {
   this.host = host;
@@ -19,6 +27,8 @@ function BeatGrid(host, options) {
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
+  this.view = null;
+  this.tight = false;
   this.tiles = BeatGrid.parse(this.o.abc);
   this.notesEnd = this.tiles.reduce(function (a, t) { return Math.max(a, t.t0 + t.dur); }, 0);
   this.m = BeatGrid.meterOf(this.o.meter, this.o.group);
@@ -219,9 +229,10 @@ BeatGrid.prototype.layout = function (width) {
   return { rows: rows, per: per, k: k, gutter: gutter };
 };
 
-// Vertical positions inside a row, from the glyph scale.
+// Vertical positions inside a row, from the glyph scale; folded, the
+// room over the notes kept for labels goes.
 BeatGrid.prototype.metrics = function (k) {
-  var top = this.o.compact ? 22 : 28;
+  var top = this.tight ? (this.o.compact ? 6 : 8) : (this.o.compact ? 22 : 28);
   var lineY = top + 20 + 32 * k;
   var ribbonY = lineY + 19 * k, ribbonH = this.o.compact ? 9 : 12;
   var rulerY = ribbonY + ribbonH + 8, rulerH = this.o.compact ? 24 : 30;
@@ -232,6 +243,7 @@ BeatGrid.prototype.build = function () {
   var self = this;
   this.stop(); this.clearTap();
   this.host.classList.add('tl-bg');
+  this.host.classList.toggle('tl-tight', !!this.tight);
   this.host.innerHTML = '';
   this.card = document.createElement('div'); this.card.className = 'tl-card'; this.card.tabIndex = 0;
   this.card.setAttribute('role', 'group'); this.card.setAttribute('aria-label', '节拍格');
@@ -261,6 +273,30 @@ BeatGrid.prototype.build = function () {
   this.card.addEventListener('keydown', function (ev) { self.onKey(ev); });
   this.card.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd'); });
   this.restore();
+};
+
+// The room it is given: folded when its own size is taller than the
+// view, at its own size otherwise. Its own height is measured while it
+// stands at its own size, so a view that does not change leaves it as
+// it is.
+BeatGrid.prototype.fit = function (view) {
+  this.view = view && view.height > 0 ? { width: view.width, height: view.height } : null;
+  var own = this.tight ? this.ownHeight : this.host.offsetHeight;
+  var want = !!this.view && own > this.view.height + .5;
+  if (want === this.tight) return;
+  if (want) this.ownHeight = own;
+  this.tight = want;
+  this.build();
+};
+// Lays the grid out at its own size, then folds it when the view is
+// smaller than that.
+BeatGrid.prototype.relay = function () {
+  this.tight = false;
+  this.build();
+  if (!this.view || this.host.offsetHeight <= this.view.height + .5) return;
+  this.ownHeight = this.host.offsetHeight;
+  this.tight = true;
+  this.build();
 };
 
 BeatGrid.prototype.x = function (row, t) { return this.L.gutter + (t - row.t0) * this.L.per; };
@@ -529,7 +565,8 @@ BeatGrid.prototype.clearTap = function () {
 BeatGrid.prototype.where = function (i) {
   var tl = this.tiles[i]; if (!tl || tl.row === undefined || !this.rows[tl.row]) return null;
   var row = this.rows[tl.row], host = this.host.getBoundingClientRect(), b = row.el.getBoundingClientRect();
-  var ox = b.left - host.left, oy = b.top - host.top;
+  var k = host.width / (this.host.offsetWidth || 1) || 1;
+  var ox = (b.left - host.left) / k, oy = (b.top - host.top) / k;
   return { x: ox + tl.hx + tl.hw / 2, top: oy + this.M.top, lineY: oy + this.M.lineY, beamTop: oy + this.M.beamTop, rulerY: oy + this.M.rulerY };
 };
 
@@ -554,7 +591,7 @@ BeatGrid.prototype.restore = function () {
 BeatGrid.prototype.meter = function (sig, group) {
   this.m = BeatGrid.meterOf(sig, group);
   this.marks = this.marks.filter(function (mk) { return mk[0] === 'label'; });
-  this.build();
+  this.relay();
 };
 
 BeatGrid.prototype.highlight = function (is) {
@@ -629,14 +666,14 @@ BeatGrid.prototype.spotlight = function (range) {
   this.remember('spotlight', [range]);
   this.tiles.forEach(function (tl) { if (tl.t0 + tl.dur <= ta || tl.t0 >= tb) self.parts(tl.i).forEach(function (p) { p.classList.add('tl-dim'); }); });
   if (this.known()) this.host.querySelectorAll('.tl-cell').forEach(function (c) { var s = self.m.starts[Number(c.dataset.beat) - 1]; if (s < ta || s >= tb) c.classList.add('tl-dim'); });
-  var host = this.host.getBoundingClientRect();
+  var host = this.host.getBoundingClientRect(), k = host.width / (this.host.offsetWidth || 1) || 1;
   this.rows.forEach(function (row) {
     if (tb <= row.t0 || ta >= row.t1) return;
     var b = row.el.getBoundingClientRect();
     var a = self.x(row, Math.max(ta, row.t0)), z2 = self.x(row, Math.min(tb, row.t1));
     var sp = document.createElement('div'); sp.className = 'tl-spot';
-    sp.style.left = (b.left - host.left + a - 6) + 'px'; sp.style.width = (z2 - a + 12) + 'px';
-    sp.style.top = (b.top - host.top + self.M.beamTop - 14) + 'px'; sp.style.height = (self.M.rulerY + self.M.rulerH - self.M.beamTop + 20) + 'px';
+    sp.style.left = ((b.left - host.left) / k + a - 6) + 'px'; sp.style.width = (z2 - a + 12) + 'px';
+    sp.style.top = ((b.top - host.top) / k + self.M.beamTop - 14) + 'px'; sp.style.height = (self.M.rulerY + self.M.rulerH - self.M.beamTop + 20) + 'px';
     self.overlay.appendChild(sp);
     requestAnimationFrame(function () { requestAnimationFrame(function () { sp.classList.add('on'); }); });
   });
@@ -653,8 +690,8 @@ BeatGrid.prototype.caption = function (i, html) {
 };
 BeatGrid.prototype.captionBeat = function (b, html) {
   var cell = this.host.querySelector('.tl-cell[data-beat="' + b + '"]'); if (!cell) return;
-  var host = this.host.getBoundingClientRect(), r = cell.getBoundingClientRect();
-  this.bubbleAt(r.left - host.left + r.width / 2, r.top - host.top - 6, html);
+  var host = this.host.getBoundingClientRect(), r = cell.getBoundingClientRect(), k = host.width / (this.host.offsetWidth || 1) || 1;
+  this.bubbleAt((r.left - host.left + r.width / 2) / k, (r.top - host.top) / k - 6, html);
 };
 
 // Plays the bar at its tempo: notes sound for their real length (tied
@@ -720,4 +757,3 @@ BeatGrid.prototype.clear = function () {
   this.overlay.querySelectorAll('.tl-mark').forEach(function (e) { e.remove(); });
   this.rows.forEach(function (row) { row.marks.innerHTML = ''; });
 };
-

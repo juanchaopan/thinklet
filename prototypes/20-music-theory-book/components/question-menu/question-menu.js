@@ -4,13 +4,12 @@
    with its number. Picking one asks for that question; a touch outside
    the list or Esc closes it.
 
-   The list is a popover, so it opens on the browser's top layer, over
-   everything on the page whatever region or stacking order its button
-   is in, and nothing clips it. It hangs under the button toward the side
-   of the screen that has room: from the button's right edge when the
-   button is in the right half of the viewport, from its left edge
-   otherwise. It is then nudged so it stays inside the viewport, and it
-   scrolls when there is not room below for every question.
+   The list hangs under the button, inside the component: from the
+   button's right edge when the button is in the right half of the
+   screen, from its left edge otherwise, nudged sideways to stay on
+   screen, and it scrolls when there is not room below for every
+   question. What it lies over is up to where the component is placed:
+   it covers what is painted before it.
 
    Inputs: items [{id, no, title}], current (an id).
    Interface: questions. Commands: questions.set {items, current}.
@@ -22,15 +21,13 @@
     '.st-qm-btn{width:auto;min-width:64px;padding:0 10px 0 14px;border-radius:26px;grid-auto-flow:column;gap:2px}',
     '.st-qm-btn svg + svg{width:18px;height:18px;opacity:.75;transition:transform .26s var(--st-ease)}',
     '.st-qm-btn[aria-expanded="true"] svg + svg{transform:rotate(180deg)}',
-    '.st-qm-pop{position:fixed;inset:auto;margin:0;border:0;color:var(--st-text);overflow-y:auto;overscroll-behavior:contain;transform-origin:22px 0}',
-    '.st-qm-pop.st-qm-end{transform-origin:calc(100% - 22px) 0}',
-    '.st-qm-pop:not(:popover-open){display:none}',
+    '.st-qm-pop{position:absolute;left:0;top:calc(100% + 8px);z-index:1;color:var(--st-text);overflow-y:auto;overscroll-behavior:contain;transform-origin:22px 0}',
+    '.st-qm-pop.st-qm-end{left:auto;right:0;transform-origin:calc(100% - 22px) 0}',
+    '.st-qm-pop[hidden]{display:none}',
     '.st-qm-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
   ].join('');
-  // The list keeps this far from the viewport's edges.
+  // The list keeps this far from the screen's edges.
   var MARGIN = 16;
-  // The list's gap under the button.
-  var GAP = 8;
   // Below this height the list scrolls rather than shrinking further.
   var MIN_HEIGHT = 120;
   var OPEN_MS = 240, CLOSE_MS = 160;
@@ -45,7 +42,7 @@
     var root = document.createElement('div');
     root.className = 'st-qm';
     root.innerHTML = '<button type="button" class="st-btn st-glass st-qm-btn" aria-haspopup="true" aria-expanded="false" aria-label="换一道题">' + StageGlass.icon('list') + StageGlass.icon('down') + '</button>' +
-      '<div class="st-pop st-glass st-qm-pop" role="menu" popover="manual"></div>';
+      '<div class="st-pop st-glass st-qm-pop" role="menu" hidden></div>';
     host.appendChild(root);
     this.root = root; this.btn = root.querySelector('button'); this.pop = root.querySelector('.st-qm-pop');
     this.btn.addEventListener('click', function () { self.open(!self.isOpen); });
@@ -72,21 +69,19 @@
     }).join('');
     this.btn.disabled = this.st.items.length < 2;
   };
-  // Hangs the open list under the button on the side with room, shifted
-  // sideways into the viewport, its height capped to the room below.
+  // Hangs the open list from the side of the button with room, shifted
+  // sideways onto the screen, its height capped to the room below.
   Menu.prototype.place = function () {
     var pop = this.pop, s = pop.style;
     var vw = document.documentElement.clientWidth, vh = window.innerHeight;
     var r = this.btn.getBoundingClientRect();
-    var end = r.left + r.width / 2 > vw / 2;
-    pop.classList.toggle('st-qm-end', end);
-    s.maxHeight = '';
-    var w = pop.offsetWidth;
-    var x = end ? r.right - w : r.left;
-    s.left = Math.max(MARGIN, Math.min(x, vw - MARGIN - w)) + 'px';
-    s.top = (r.bottom + GAP) + 'px';
-    var room = vh - (r.bottom + GAP) - MARGIN;
-    if (pop.offsetHeight > room) s.maxHeight = Math.max(MIN_HEIGHT, room) + 'px';
+    pop.classList.toggle('st-qm-end', r.left + r.width / 2 > vw / 2);
+    s.maxHeight = ''; s.translate = '';
+    var p = pop.getBoundingClientRect();
+    var dx = p.left < MARGIN ? MARGIN - p.left : p.right > vw - MARGIN ? vw - MARGIN - p.right : 0;
+    if (dx) s.translate = dx.toFixed(1) + 'px 0';
+    var room = vh - p.top - MARGIN;
+    if (p.height > room) s.maxHeight = Math.max(MIN_HEIGHT, room) + 'px';
   };
   // Opens with a short drop and closes with a short lift; with reduced
   // motion it opens and closes at once.
@@ -98,17 +93,17 @@
     this.btn.setAttribute('aria-expanded', String(on));
     if (this.anim) { this.anim.cancel(); this.anim = null; }
     if (on) {
-      if (!pop.matches(':popover-open')) pop.showPopover();
+      pop.hidden = false;
       this.place();
       if (!still) pop.animate([{ opacity: 0, transform: 'translateY(-6px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: OPEN_MS, easing: 'cubic-bezier(.6, 0, .25, 1)' });
       var c = pop.querySelector('[aria-current="true"]') || pop.querySelector('.st-row');
       if (c) c.focus({ preventScroll: true });
       return;
     }
-    if (still || !pop.matches(':popover-open')) { if (pop.matches(':popover-open')) pop.hidePopover(); return; }
+    if (still || pop.hidden) { pop.hidden = true; return; }
     var self = this;
     this.anim = pop.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px) scale(.97)' }], { duration: CLOSE_MS, easing: 'ease-in', fill: 'forwards' });
-    this.anim.onfinish = function () { self.anim = null; if (!self.isOpen && pop.matches(':popover-open')) pop.hidePopover(); };
+    this.anim.onfinish = function () { self.anim = null; if (!self.isOpen) pop.hidden = true; };
   };
   Menu.prototype.call = function (name, v) {
     if (name !== 'questions.set') throw new Error('question-menu: ' + name);
@@ -122,7 +117,7 @@
     this.isOpen = false;
     this.btn.setAttribute('aria-expanded', 'false');
     if (this.anim) { this.anim.cancel(); this.anim = null; }
-    if (this.pop.matches(':popover-open')) this.pop.hidePopover();
+    this.pop.hidden = true;
   };
 
   LessonComponents.register('question-menu', {

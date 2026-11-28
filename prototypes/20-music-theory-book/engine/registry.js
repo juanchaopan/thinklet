@@ -18,19 +18,29 @@
 
    Each component's script registers it here under its name:
 
-     register(name, { interfaces, fluid, create(host, input, env), preload })
+     register(name, { interfaces, fluid, create(host, input, env),
+                      preload(progress), prepare(input, progress) })
 
    A component drawn on the stage has `create`, which returns an
    instance with:
-     call(name, value, ctx, extra)  an interface command, e.g. 'point.spotlight'
+     call(name, value, ctx, extra)  an interface command, e.g. 'point.spotlight';
+                                    one that takes time returns a promise
      on(fn)                         interface events, { name, ... }
      getState(), setState(state)    what it shows now, and set straight to it
      stop()                         stop sounds and anything moving
-   A component that draws nothing (a sound, an instrument) has no
-   `create`; the components that need it call it directly. One with
-   `preload(progress)` downloads what it needs before an item starts;
-   preload(names, progress) runs that for those components and all they
-   need. The engine finds components only through here, so it holds no
+     fit(view)                      the most room it may take, {width, height}
+                                    in its own pixels, or null for its own
+                                    size; it lays itself out to stay inside
+   A fluid component follows its width by itself; another is drawn again
+   when its width changes. A component that draws nothing (a sound, an
+   instrument) has no `create`; the components that need it call it
+   directly. `preload(progress)` downloads what a component needs whatever
+   it is given; preload(names, progress) runs it for those components and
+   all they need. `prepare(input, progress)` downloads what one set of
+   inputs names (an item's recordings); the lecture engine runs it for the
+   inputs its scenes will give, before the lecture starts, and the
+   component keeps what it prepared for when it is created with those
+   inputs. The engine finds components only through here, so it holds no
    code for any particular one.
    ============================================================ */
 var LessonComponents = (function () {
@@ -42,6 +52,7 @@ var LessonComponents = (function () {
   Base.prototype.stop = function () {};
   Base.prototype.getState = function () { return {}; };
   Base.prototype.setState = function () {};
+  Base.prototype.fit = function () {};
 
   function arr(x) { return x === undefined || x === null ? [] : [].concat(x); }
   function outside(url) { return /^[a-z]+:/i.test(url); }

@@ -1,7 +1,7 @@
 <title>选择组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* Layout: a lit stage shaped like a practice screen: a stand-in score on top (not part of this prototype), the choice under it (the component, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the choice emits. Then the other looks of the same component (staves, clefs, key signatures, true or false, a row of boxes under a score), a lecture played through at phone width, and the interface table. The component's own look, its fonts and the components it needs come from its component.json; every rule of its stylesheet is under its own .tl-ch prefix, so the page's rules here and the component's never meet. */
+/* Layout: a lit stage shaped like a practice screen: a stand-in score on top (not part of this prototype), the choice under it (the component, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the choice emits. Then the other looks of the same component (staves, clefs, key signatures, true or false, too little room, a row of boxes under a score), a lecture played through at phone width, and the interface table. The component's own look, its fonts and the components it needs come from its component.json; every rule of its stylesheet is under its own .tl-ch prefix, so the page's rules here and the component's never meet. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -153,6 +153,11 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <div id="g-tf"></div>
         <div class="mini-tools"><button class="chip" type="button" data-g="tf" data-act="check">核对</button><button class="chip" type="button" data-g="tf" data-act="clear">清除</button></div>
       </div>
+      <div class="mini-stage phone">
+        <h3>放不下时：给它的地方太矮，选项排成一行，讲到的那个在中间，可以左右拖</h3>
+        <div id="g-tight"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="tight" data-act="tight">放不下时（只给 120 高）</button><button class="chip" type="button" data-g="tight" data-act="next">讲到下一个选项</button><button class="chip" type="button" data-g="tight" data-act="loose">放得下</button></div>
+      </div>
       <div class="mini-stage">
         <h3>谱下面一排框（每个小节一个框，点一下勾、再点叉、再点清空）</h3>
         <div class="stand-in" id="marks-score"></div>
@@ -181,9 +186,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>样子：选项（<code>list</code>）或谱下一排框（<code>marks</code>）。题干（题目文件里写，原题的语言，可以带小题号如 (a)）。选项：每个有编号和内容，内容是一串片段：文字、术语（斜体）或一小段 ABC 谱（谱号、调号、几个音都用它写），可以带一句读屏用的名称；能选几个（默认一个）。一排框：几个框。模式：讲题或练习；速度。</td></tr>
           <tr><td>外观</td><td>纸片和纸纹、象牙色小方框、墨水的勾和叉、强调色的亮起和“对”、错误色的“错”和划线、深色气泡，样子都写在组件自己里面；用到的每一种颜色都取主题常量（<code>--th-…</code>），组件里不写死颜色，换主题就换颜色，大小和动作不变。这一页用 <code>etude</code> 主题：米色的纸、深褐的墨、紫色的光、砖红的错。谱和文字里的升降号用乐谱库的字形。</td></tr>
-          <tr><td>排法</td><td>组件自己定：先量每个选项本身多宽，一行放得下就全部并排（最多四个），放不下就两个一行，再放不下就一行一个；同一组一样宽、一样高。画成谱的选项竖着放，同一组的谱一样长。一排框按流程给的位置摆，每个框对着谱上的一个音或小节。</td></tr>
-          <tr><td>动作</td><td>点选项：纸片轻轻按下、抬起一点，墨水的勾一笔画出来（约 0.3 秒）；换选项时原来的勾淡掉。点框：勾或叉一笔一笔画出来。划掉：红线从左往右划过去，选项变淡。核对：紫圈或砖红虚线边出现，角上的印章弹出来。弹出说明：先在那一行下面让出地方（0.52 秒，起步很轻），气泡再弹出，后面的选项慢慢往下让，不被盖住；收起时气泡先淡掉，地方再慢慢合上。</td></tr>
-          <tr><td>指令</td><td><code>select(选项…)</code> 替孩子选；<code>strike(选项…)</code> 用红线划掉；<code>highlight(选项…)</code>；<code>spotlight(选项…)</code>；<code>label({选项: 字母})</code>；<code>caption(选项, 文字)</code>，选项为空时收起；<code>check({选项: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 一排框摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>play(选项)</code>、<code>stop()</code>；<code>clear()</code>。</td></tr>
+          <tr><td>排法</td><td>组件自己定：先量每个选项本身多宽，一行放得下就全部并排（最多四个），放不下就两个一行，再放不下就一行一个；同一组一样宽、一样高。流程给的地方太矮、放不下时，选项排成一行，正在讲的那个在中间，两边淡出，孩子可以左右拖；地方够了再变回原来的排法。画成谱的选项竖着放，同一组的谱一样长。一排框按流程给的位置摆，每个框对着谱上的一个音或小节。</td></tr>
+          <tr><td>动作</td><td>点选项：纸片轻轻按下、抬起一点，墨水的勾一笔画出来（约 0.3 秒）；换选项时原来的勾淡掉。点框：勾或叉一笔一笔画出来。划掉：红线从左往右划过去，选项变淡。核对：紫圈或砖红虚线边出现，角上的印章弹出来。弹出说明：先在那一行下面让出地方（0.52 秒，起步很轻），气泡再弹出，后面的选项慢慢往下让，不被盖住；收起时气泡先淡掉，地方再慢慢合上。排成一行时，换到另一个选项，整行滑过去（0.52 秒）。</td></tr>
+          <tr><td>指令</td><td><code>select(选项…)</code> 替孩子选；<code>strike(选项…)</code> 用红线划掉；<code>highlight(选项…)</code>；<code>spotlight(选项…)</code>；<code>label({选项: 字母})</code>；<code>caption(选项, 文字)</code>，选项为空时收起；<code>check({选项: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 一排框摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>play(选项)</code>、<code>stop()</code>；<code>clear()</code>；<code>fitView({宽, 高})</code> 告诉它最多能占多大地方，为空时按它自己的大小。</td></tr>
           <tr><td>事件</td><td><code>optionTap</code>（哪个、第几个、现在打勾没有、现在选了哪些、是不是已经划掉）；<code>boxTap</code>（第几个框、现在是勾、叉还是空、全部框的值）；<code>blankTap</code>。</td></tr>
           <tr><td>依赖</td><td>选项里的音符在钢琴组件（piano）上弹响，和其他组件弹的是同一架钢琴；按下时的触感声由声音组件（sound）发出。这些都写在选择组件的 <code>component.json</code> 里，打开这一页时一起加载。颜色由舞台（这一页上是页面本身）按主题文件设好的主题常量给。一排框对着谱上哪几处，由流程从乐谱组件的 <code>slots</code> 拿到位置再交给选择组件，两个组件互不知道。哪个是答案由题目文件给，组件只画出来。</td></tr>
           <tr><td>声音</td><td>讲题里，带音符的选项点了会响；练习里不响，免得声音成了提示。只有谱号、调号的选项不出声。</td></tr>
@@ -208,7 +213,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
    samples and sets the theme's constants on the page from the theme
    file; on 开始 it builds the choices. It draws stand-ins for the score
    above a choice, hands the choice the places of the score's answer
-   boxes, wires the events to a log and shows how the piano is doing;
+   boxes, gives one choice too little room the way a layout region
+   would, wires the events to a log and shows how the piano is doing;
    the choice calls nothing here directly.
    ============================================================ */
 var THEME_URL = '../../content/themes/etude.yaml';
@@ -320,6 +326,8 @@ function assemble() {
   var marksScore = standIn(document.getElementById('marks-score'), 'X:1\nM:6/8\nL:1/8\nK:F\ncde fga|cd efga|c3 f3|c4 de|]');
   var main = make('main', 'main-choice');
   make('key', 'g-key'); make('clef', 'g-clef'); make('snip', 'g-snip', 'lecture'); make('tf', 'g-tf');
+  make('tight', 'g-tight', 'practice', 'main');
+  var tightAt = 0;
   var marks = make('marks', 'g-marks');
   var run = make('run', 'run-choice', 'lecture', 'main');
   // The workflow hands the choice the places of the score's answer boxes
@@ -350,10 +358,16 @@ function assemble() {
   document.querySelectorAll('[data-cmd]').forEach(function (b) {
     b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
   });
+  // The gallery's buttons; for the choice given too little room they play
+  // the layout region (the room it gives) and the workflow (which option
+  // it talks about).
   document.querySelectorAll('[data-g]').forEach(function (b) {
     b.addEventListener('click', function () {
       var name = b.getAttribute('data-g'), act = b.getAttribute('data-act'), c = choices[name];
       if (act === 'check') judge(name);
+      else if (act === 'tight') c.fitView({ width: c.host.clientWidth, height: 120 });
+      else if (act === 'loose') c.fitView(null);
+      else if (act === 'next') { tightAt = (tightAt + 1) % c.tiles.length; c.spotlight([c.ids()[tightAt]]); }
       else if (act === 'caption') c.caption(1, Choice.inline('the beams hide the middle of the bar'));
       else c.clear();
     });
@@ -395,9 +409,10 @@ function assemble() {
     boundaryBtn.setAttribute('aria-pressed', String(on));
   });
 
-  // A rebuild redraws every choice at its new width; the selection and
-  // every mark are state, so they come back. The boxes under the score
-  // are placed again from the score's new layout.
+  // A rebuild redraws every choice at its new width; the selection,
+  // every mark and the room it was given are state, so they come back.
+  // The boxes under the score are placed again from the score's new
+  // layout.
   var rebuild = function () { Object.keys(choices).forEach(function (k) { choices[k].build(); }); placeMarks(); };
   var lastW = window.innerWidth, rt = null;
   window.addEventListener('resize', function () {

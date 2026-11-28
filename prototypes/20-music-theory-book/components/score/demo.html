@@ -1,7 +1,7 @@
 <title>乐谱组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
-/* Layout: a lit stage holds the score paper (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the score emits. Then one exam-style grid per notation need. The score's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
+/* Layout: a lit stage holds the score paper (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the score emits. Then a score given less room than its music, and one exam-style grid per notation need. The score's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -105,6 +105,17 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
   </section>
 
   <section class="panel">
+    <h2>放不下时</h2>
+    <p class="what">讲题时乐谱放在一个区域里。区域缩到最小还放不下整张谱时，会告诉乐谱它最多能占多高。这时乐谱只露出放得下的几整行，聚光的那一行留在中间，换到别的行时一次移一行；上面或下面还有谱的那一边淡出。点“放得下”恢复整张谱。</p>
+    <div class="mini-stage"><div id="room-score"></div></div>
+    <div class="chips">
+      <button class="chip" type="button" data-room="tight">只给它两行的高度</button>
+      <button class="chip" type="button" data-room="free">放得下</button>
+      <button class="chip" type="button" data-room="next">聚光下一小节</button>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>C 谱号上的加线音</h2>
     <p class="what">考点 6：和考卷 2.1 一样，一个谱号、一个音一张短谱。点音符听一听、看音名。短谱只有一个音，没有播放按钮，点音符就会发声。</p>
     <div class="mini-stage"><div class="gallery" id="g-clef"></div></div>
@@ -143,10 +154,10 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
         <tbody>
           <tr><td>输入</td><td>谱（ABC 记谱法，题目文件里写；乐器的全称和缩写也写在谱里）；模式：讲题（能播放、点音发声）或练习（不播放、点音不发声）；大小（整页或短谱）；短谱下面的名称（原文）。</td></tr>
           <tr><td>外观</td><td>纸、墨色、标亮的光都由乐谱自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ink-strong</code>、<code>--th-accent</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
-          <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>；<code>fit(最多占多大)</code> 区域放不下时告诉它能占的宽和高，给空值时恢复整张谱。</td></tr>
           <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符在钢琴组件（piano）上弹响，按下时的触感声由声音组件（sound）发出，两个都写在乐谱的 <code>component.json</code> 里，打开这一页时一起加载。乐谱只把音高交给弹它的乐器，不知道是钢琴还是别的乐器；作答框里填什么由作答组件管；颜色来自主题。</td></tr>
-          <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下。</td></tr>
+          <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下；区域给的高度放不下所有行时，只露出放得下的几整行，聚光的那一行在中间。</td></tr>
           <tr><td>出现在哪里</td><td>直接画在讲题和练习的画面上。</td></tr>
         </tbody>
       </table>
@@ -166,7 +177,9 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
    its fonts, the piano and sound components), preloads the piano's
    samples and sets the theme's constants on the page; on 开始 it builds
    the scores, wires their events to a caption and a log, and shows how
-   the piano is doing. The score never calls anything here directly.
+   the piano is doing. For the score given less room it plays the
+   layout's part: it tells the score the most room it may take. The
+   score never calls anything here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
@@ -217,6 +230,28 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
     document.getElementById('abc-main').textContent = MAIN;
     var main;
     main = score(document.getElementById('main-score'), { abc: MAIN, playable: true, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
+
+    // Sixteen bars, four lines on a wide page: more than two lines' room.
+    var ROOM = 'X:1\nM:3/4\nL:1/8\nK:G\nG2 B2 d2 | g4 f2 | e2 d2 c2 | B6 | A2 c2 e2 | d4 c2 | B2 A2 G2 | A6 |\nB2 d2 g2 | f4 e2 | d2 e2 f2 | g6 | e2 c2 A2 | d4 F2 | G2 B2 A2 | G6 |]';
+    var room; room = score(document.getElementById('room-score'), { abc: ROOM, onEvent: function (ev) { nameBubble(room, ev); } });
+    var roomBar = 0, BARS = 16;
+    var roomCommands = {
+      // The room two whole lines take wherever they stand, as the layout
+      // would give it.
+      tight: function () {
+        var b = room.bands(); if (b.length < 2) return;
+        var two = 0;
+        for (var s = 0; s + 1 < b.length; s++) two = Math.max(two, b[s + 1].bottom - b[s].top);
+        var chrome = room.host.offsetHeight - room.window.offsetHeight;
+        room.fit({ width: room.host.clientWidth, height: Math.ceil(chrome + two) + 2 });
+      },
+      free: function () { room.fit(null); },
+      next: function () { roomBar = roomBar % BARS + 1; room.spotlight(roomBar); }
+    };
+    document.querySelectorAll('[data-room]').forEach(function (b) {
+      b.addEventListener('click', function () { roomCommands[b.getAttribute('data-room')](); });
+    });
+    window.demoRoom = room;
 
     var minis = [];
     function mini(containerId, items) {
@@ -282,7 +317,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
     window.addEventListener('resize', function () {
       if (window.innerWidth === lastW) return; lastW = window.innerWidth;
       clearTimeout(rt);
-      rt = setTimeout(function () { [main, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
+      rt = setTimeout(function () { [main, room, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
     });
   }
 })();

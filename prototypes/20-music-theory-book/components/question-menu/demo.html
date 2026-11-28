@@ -17,7 +17,7 @@
       <tr><th>指令</th><td><code>questions.set {items, current}</code>：换题目列表或当前题</td></tr>
       <tr><th>事件</th><td><code>questions.pick {id}</code>：孩子选了另一道题</td></tr>
     </table>
-    <p class="note">只有一道题时按钮按不了。列表是一个 popover，打开在浏览器的顶层，舞台上不论哪一块、哪一层都盖不住它，也裁不掉它。玻璃、弹出列表、题号圈和图标来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着），按下的声音也是。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">只有一道题时按钮按不了。列表挂在按钮下面，是组件自己的一部分；它盖住舞台上的哪些东西，由排法里区域的先后决定：换题所在的区域写在谁后面，就盖在谁上面。玻璃、弹出列表、题号圈和图标来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着），按下的声音也是。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 

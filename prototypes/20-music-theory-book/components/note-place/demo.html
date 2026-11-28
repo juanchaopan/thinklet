@@ -131,10 +131,10 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     <p class="what">都是同一个组件，只是题目文件给的谱号、调号、给定音和要写几个音不一样。每个下面的「核对」按钮模拟流程交卷后核对；事件也记在上面的记录框里。</p>
     <div class="gallery">
       <div class="mini-stage">
-        <h3>一张谱上写几个音（中音谱号，没有调号）：有几个答案时，谱下的紫色短线表示按键作用在哪个音上，点哪一列就写在哪一列</h3>
+        <h3>一张谱上写几个音（中音谱号，没有调号）：有几个答案时，谱下的紫色短线表示按键作用在哪个音上，点哪一列就写在哪一列。“放不下时”模拟排法只给它 240 宽：谱不缩小，在纸上左右滑，按键作用的那一列停在中间；在谱上横着拖就滑，竖着拖还是移动音符</h3>
         <p class="rubric">Write these notes of D major.</p>
         <div id="g-multi"></div>
-        <div class="mini-tools"><button class="chip" type="button" data-g="multi" data-act="check">核对</button><button class="chip" type="button" data-g="multi" data-act="reveal">画出对的音</button><button class="chip" type="button" data-g="multi" data-act="clear">清除</button></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="multi" data-act="check">核对</button><button class="chip" type="button" data-g="multi" data-act="reveal">画出对的音</button><button class="chip" type="button" data-g="multi" data-act="clear">清除</button><button class="chip" type="button" data-g="multi" data-act="narrow">放不下时（只给 240 宽）</button><button class="chip" type="button" data-g="multi" data-act="roomy">放得下</button></div>
       </div>
       <div class="mini-stage phone">
         <h3>手机宽度，五个升号的调号：谱自己缩小到放得下</h3>
@@ -165,6 +165,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
           <tr><td>输入</td><td>谱号（高音、低音、中音、次中音）；调号；一列一列的音：给定的音（照谱上写的样子，如 <code>Eb4</code>），或要孩子写的答案（有编号，可以带一行写在它下面的字）；小题号如 (a)；谱下面的名称，如 <i>minor 6th</i>；能放到哪里（最低和最高，默认上下各三条加线）；有哪几个升降键（默认重降、降、还原、升、重升）；模式：讲题（放音符时发声）或练习（不发声）；讲题里音符在哪件乐器上响（<code>sound</code>）。</td></tr>
           <tr><td>外观</td><td>短谱由乐谱库画，谱号、调号、给定音、加线和乐谱组件一模一样；孩子写的音也用同一个全音符字形，深色墨水。纸、按键托盘、紫色的亮起和“对”、砖红的“错”、深色气泡，都由组件自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ivory</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
           <tr><td>排法</td><td>组件自己定：谱先按宽度排，调号很长、一行放不下时整张谱缩小到刚好放下；每两列之间尽量留出一个升降号加一个符头的地方，但谱不会小到手指点不准（一张谱上答案很多、屏幕又窄时会挤一些）；上下留出能放到的最高、最低处的地方。答案写在给定音的右边，每个答案右边再留一个位置，用来画对的音。几张短谱怎么排（两行两列，或手机上一列）由流程定。</td></tr>
+          <tr><td>放不下时</td><td>排法用 <code>fit({width, height})</code> 告诉它最多能占多大（<code>fit(null)</code> 还给它自己的大小）。这时谱不缩小：每一格保持手指点得准的大小，每两列之间留够地方；谱比给的宽度宽时，就在纸上左右滑，按键作用的那一列（孩子点的、流程聚焦、数音、弹出说明的那一列）停在中间。在谱上横着拖就滑，松手停到最近的一列在中间；竖着拖还是移动音符；有更多谱的一边淡出。</td></tr>
           <tr><td>动作</td><td>点谱：音符落到最近的线或间上（弹出来，0.3 秒），加线一条一条长出来；按住拖：音符跟着手指一格一格走，手指下的线或间亮一条淡紫色，松手时落定。按升降键：记号在音符前写出来，这个键保持按下的样子；再按一次去掉。没有音符时按升降键，这一列闪一下砖红的虚线框。数音：一个淡紫色的音从给定音往上一格一格走，每一格留下一个小点，旁边的数字跟着变，讲题里每一格响一声。核对：音符变紫、正上方弹出紫色的勾，或变成砖红、弹出叉；画出对的音时，紫色的音出现在右边。锁住：按键托盘慢慢收起来。</td></tr>
           <tr><td>指令</td><td><code>focus(答案)</code> 让按键作用在这个答案上；<code>write({答案: 音})</code> 替孩子写好；<code>press(答案, 记号)</code> 在讲题里按一下升降键给孩子看；<code>count(答案, 到哪个音)</code> 从给定音一格一格数上去，音为空时收起；<code>highlight(列…)</code>；<code>label({答案: 字母})</code>；<code>caption(答案, 文字)</code>，答案为空时收起；<code>check({答案: 对/错})</code>；<code>reveal({答案: 对的音})</code> 在旁边画出对的音；<code>lock(是/否)</code>；<code>play(答案)</code> 讲题里弹出给定音、答案，再一起弹；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code>；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>notePlace</code>（哪个答案；在第几线第几间；照谱上写的音，如 <code>C4</code>；算上调号以后实际的音，如 <code>C#4</code>；英文名；音高；怎么放的：点、拖或键盘）；<code>accidentalPress</code>（哪个记号、哪个答案、写上了没有、写完以后的音）；<code>noteErase</code>；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
@@ -308,6 +309,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         var name = b.getAttribute('data-g'), act = b.getAttribute('data-act'), c = comps[name];
         if (act === 'check') gverdicts[name] = judge(name);
         else if (act === 'reveal') { if (!gverdicts[name]) gverdicts[name] = judge(name); revealWrong(name, gverdicts[name]); }
+        else if (act === 'narrow') c.fit({ width: 240, height: 420 });
+        else if (act === 'roomy') c.fit(null);
         else { c.clear(); delete gverdicts[name]; }
       });
     });

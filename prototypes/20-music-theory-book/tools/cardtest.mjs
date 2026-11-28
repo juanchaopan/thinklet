@@ -64,7 +64,7 @@ for (const id of ['con-dolore', 'upper-mordent', 'oboe', 'clarinet']) {
     const m = window.tlMain, f = m.rowsShown().map((r) => r.field);
     m.highlight([f[0]]); m.spotlight([f[0], f[1]]); m.label({ [f[0]]: 'A', [f[1]]: 'B' });
     m.check(f[0], 'a claim that is fairly long', false); m.check(f[1], 'right', true);
-    if (m.strips.range) m.fit('range', 'G3', 'C5');
+    if (m.strips.range) m.span('range', 'G3', 'C5');
     m.caption(f[f.length - 1], 'a caption under the last row');
   });
   await page.waitForTimeout(600);

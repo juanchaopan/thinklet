@@ -45,9 +45,15 @@
 /* The small question's number sits in the paper's top corner, over the clef's column, where no note ever goes. */
 .tl-np-tag { position: absolute; top: 8px; left: 12px; z-index: 2; font: italic 600 19px/1.2 var(--tl-serif); color: var(--tl-ink-soft); pointer-events: none; }
 /* The stave: a finger anywhere on it puts the answer note on the line or space at that height, and dragging moves it, so the page does not scroll from here. */
-.tl-np-svgbox { position: relative; touch-action: none; cursor: pointer; outline: none; }
+.tl-np-svgbox { position: relative; touch-action: none; cursor: pointer; outline: none; --slide-a: 0; --slide-b: 0; }
 .tl-np-locked .tl-np-svgbox { cursor: default; touch-action: manipulation; }
 .tl-np-svgbox svg { display: block; overflow: visible; }
+/* The stave's track, the marks over it and the words under it move as one when the stave slides. */
+.tl-np-track, .tl-np-overlay, .tl-np-under { transition: transform .52s var(--tl-ease); }
+/* A stave wider than its view slides sideways inside the paper; an edge with more of it beyond fades (the mask only sets how much shows). */
+.tl-np-sliding .tl-np-paper { overflow-x: clip; overflow-y: visible; }
+.tl-np-sliding .tl-np-svgbox { -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 28px, #000 calc(100% - 28px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%);
+  mask-image: linear-gradient(90deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 28px, #000 calc(100% - 28px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%); }
 /* The score library keeps its drawing in a box of the drawing's proportions; notes may go above and below it, into the room the stave box keeps. */
 .tl-np-svgbox .abcjs-container { display: block !important; overflow: visible !important; }
 .tl-np-svgbox .abcjs-staff, .tl-np-svgbox .abcjs-bar, .tl-np-svgbox .abcjs-ledger { fill: var(--tl-staff); stroke: var(--tl-staff); }
@@ -127,3 +133,4 @@
 @keyframes tl-np-write { from { transform: translateX(-2px) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes tl-np-grow { from { transform: scaleX(0); } to { transform: none; } }
 @keyframes tl-np-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tl-np-track, .tl-np-overlay, .tl-np-under { transition: none; } }

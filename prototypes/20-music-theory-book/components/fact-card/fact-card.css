@@ -26,6 +26,7 @@
   --tl-grain: var(--th-edge);
   --tl-grain-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
   position: relative; min-width: 0; width: 100%; max-width: 460px; margin: 0 auto; perspective: 1400px;
 }
 .tl-fc-card { position: relative; border-radius: 7px; padding: 18px 20px 26px; color: var(--tl-ink); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; transform-origin: 50% 50%;
@@ -45,7 +46,13 @@
 .tl-fc-word svg, .tl-fc-val svg.tl-fc-acc, .tl-fc-name svg, .tl-fc-bubble svg.tl-fc-acc { fill: currentColor; }
 .tl-fc-head.tl-lit .tl-fc-word { color: var(--tl-glow-ink); text-shadow: 0 0 14px var(--tl-glow-soft); }
 .tl-fc-head.tl-dim, .tl-fc-row.tl-dim { opacity: .32; }
-.tl-fc-rows { display: grid; }
+/* The window shows the rows under the head; the rows move as one inside it. */
+.tl-fc-window { position: relative; --slide-a: 0; --slide-b: 0; }
+.tl-fc-rows { display: grid; transition: transform .52s var(--tl-ease); }
+/* Rows taller than their view slide up and down under the head; an edge with more rows beyond it fades (the mask only sets how much shows). */
+.tl-fc-sliding .tl-fc-window { overflow-x: visible; overflow-y: clip; touch-action: pan-x;
+  -webkit-mask-image: linear-gradient(180deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 24px, #000 calc(100% - 24px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%);
+  mask-image: linear-gradient(180deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 24px, #000 calc(100% - 24px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%); }
 .tl-fc-row { position: relative; display: grid; grid-template-columns: minmax(6.5em, 34%) 1fr; align-items: center; column-gap: 12px; min-height: 46px; padding: 8px 6px 8px 8px; margin: 0 -6px 0 -8px; border-bottom: 1px dotted var(--tl-rule); border-radius: 6px; transition: background-color .35s, box-shadow .35s, opacity .45s; }
 .tl-fc-row:last-child { border-bottom: 0; }
 .tl-fc-row:focus { outline: none; }
@@ -137,3 +144,4 @@
 @keyframes tl-fc-bubble { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes tl-fc-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
 @keyframes tl-fc-strike { to { background-size: 100% 2px; } }
+@media (prefers-reduced-motion: reduce) { .tl-fc-rows { transition: none; } }

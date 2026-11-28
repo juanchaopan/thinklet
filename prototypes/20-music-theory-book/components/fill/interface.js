@@ -2,7 +2,9 @@
    Fill-in: its capability interfaces. Turns interface calls into the
    fill-in's own commands and its key presses into interface events, and
    keeps what it shows as state. A press on it sounds (sound).
-   Interfaces: answer, point, set, positions.
+   Interfaces: answer, point, set, positions. fit(view) hands the
+   fill-in the room it is given: a compact tray first, then only the
+   sentence with the current box.
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
@@ -40,6 +42,7 @@
     throw new Error('fill: ' + name);
   };
   FillI.prototype.apply = function () { this.c.set({ values: this.st.values, checks: this.st.checks, spotlight: this.st.spotlight, focus: this.st.focus }); };
+  FillI.prototype.fit = function (view) { this.c.fitView(view); };
   FillI.prototype.stop = function () { if (this.c.stop) this.c.stop(); };
   FillI.prototype.getState = function () { return U.clone(this.st); };
   FillI.prototype.setState = function (s) {

@@ -3,7 +3,8 @@
    choice's own commands and its events into interface events, and keeps
    what it shows as state. Its notes play on the piano component, and a
    press on it sounds (sound). Interfaces: answer, point, strike, set,
-   play, positions.
+   play, positions. fit(view) hands the choice the room it is given:
+   options that do not fit it stand in one sliding row.
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
@@ -41,6 +42,7 @@
     throw new Error('choice: ' + name);
   };
   ChoiceI.prototype.apply = function () { this.c.set({ selected: this.st.selected, values: this.st.values, struck: this.st.struck, checks: this.st.checks, spotlight: this.st.spotlight }); };
+  ChoiceI.prototype.fit = function (view) { this.c.fitView(view); };
   ChoiceI.prototype.stop = function () { if (this.c.stop) this.c.stop(); };
   ChoiceI.prototype.getState = function () { return U.clone(this.st); };
   ChoiceI.prototype.setState = function (s) {

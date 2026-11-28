@@ -33,6 +33,7 @@
   --tl-glow-mid: color-mix(in srgb, var(--th-accent) 65%, var(--th-light));
   --tl-glow-deep: color-mix(in srgb, var(--th-accent-ink) 75%, var(--th-accent));
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-sl-case { position: relative; border-radius: 16px; padding: 16px 12px; overflow: hidden; touch-action: manipulation; -webkit-tap-highlight-color: transparent; color: var(--tl-ink);
@@ -41,7 +42,13 @@
 .tl-sl-case::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit; background: var(--tl-grain);
   -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
 .tl-sl-narrow.tl-sl-playable .tl-sl-case, .tl-sl-compact.tl-sl-playable .tl-sl-case { padding-top: 62px; }
-.tl-sl-frame { position: relative; z-index: 1; margin: 0 auto; transition: height .6s cubic-bezier(.3, .9, .3, 1); }
+/* The window shows the ladder; the frame holds the rungs and every mark on them, and moves as one. */
+.tl-sl-window { position: relative; z-index: 1; --slide-a: 0; --slide-b: 0; }
+.tl-sl-frame { position: relative; z-index: 1; margin: 0 auto; transition: height .6s cubic-bezier(.3, .9, .3, 1), transform .52s var(--tl-ease); }
+/* A ladder taller than its view slides up and down inside the window; an edge with more rungs beyond it fades (the mask only sets how much shows). */
+.tl-sl-sliding .tl-sl-window { overflow-x: visible; overflow-y: clip; touch-action: pan-x;
+  -webkit-mask-image: linear-gradient(180deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 28px, #000 calc(100% - 28px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%);
+  mask-image: linear-gradient(180deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 28px, #000 calc(100% - 28px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%); }
 .tl-sl-rail { position: absolute; width: 9px; border-radius: 5px; transition: top .6s cubic-bezier(.3, .9, .3, 1), height .6s cubic-bezier(.3, .9, .3, 1);
   background:
     repeating-linear-gradient(180deg, color-mix(in srgb, var(--th-wood-ink) 16%, transparent) 0 3px, transparent 3px 11px, color-mix(in srgb, var(--th-light-warm) 10%, transparent) 11px 13px, transparent 13px 23px),
@@ -118,3 +125,4 @@
 @keyframes tl-sl-bubble { from { transform: translate(-8px, -50%) scale(.85); opacity: 0; } to { transform: translate(0, -50%) scale(1); opacity: 1; } }
 @keyframes tl-sl-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
 @keyframes tl-sl-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .tl-sl-frame { transition: none; } }

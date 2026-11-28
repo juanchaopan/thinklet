@@ -88,7 +88,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给音级梯的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给音级梯的指令；记录框列出音级梯发出的事件。点一级横档：音名牌按下去、发声、旁边弹出音名和名称，两秒后自己淡掉；点梯子上下的空处马上清掉。换调和换小调形式时，横档滑到新的位置，变了的音名重新写一遍。播放时再按一下右上角的按钮，声音马上停下。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给音级梯的指令；记录框列出音级梯发出的事件。点一级横档：音名牌按下去、发声、旁边弹出音名和名称，两秒后自己淡掉；点梯子上下的空处马上清掉。换调和换小调形式时，横档滑到新的位置，变了的音名重新写一遍。播放时再按一下右上角的按钮，声音马上停下。“放不下时”模拟排法只给它 420×260 的地方：梯子先变矮、音名牌变小；还放不下就在框里上下滑，正在讲的那一级停在中间，有更多横档的一边淡出。“放得下”还给它自己的大小。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="steps">标 tone 和 semitone</button>
       <button class="chip" type="button" data-cmd="count">从 1 级数到 5 级</button>
@@ -104,6 +104,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="down">下行弹一遍</button>
       <button class="chip" type="button" data-cmd="stop">停</button>
       <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" data-cmd="narrow">放不下时（只给 420×260）</button>
+      <button class="chip" type="button" data-cmd="roomy">放得下</button>
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div>
     <div class="log" id="log" aria-live="polite" aria-label="音级梯发出的事件"></div>
@@ -128,6 +130,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
           <tr><td>事件</td><td><code>rungTap</code>（第几级、音名、音级名称、罗马数字、音高、音名是否遮着）；<code>blankTap</code>；<code>countStep</code>（数到第几、一共几级）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：音级梯的 <code>component.json</code> 写明需要它（还有乐谱库 abcjs），加载音级梯时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给音级梯。乐谱、键盘用的也是它；音级梯不知道乐谱、键盘和作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一架大梯子放在谱的旁边还是下面，几架小梯子怎么并排，由流程决定；音级梯只管自己这一架，在给它的宽度里居中，高度按半音的个数定。和弦的音超出画出的几级时，标在低八度的同一个音上；要往上叠着看，流程就多画几级。</td></tr>
+          <tr><td>放不下时</td><td>排法用 <code>fit({width, height})</code> 告诉它最多能占多大（<code>fit(null)</code> 还给它自己的大小）。梯子比给的高时，先把横档间距、音名牌和字一起缩小，最小到原来的四分之三；还放不下就在框里上下滑，正在讲的那一级（标亮、数到、弹到、聚光、说明的那一级）停在中间；手指或鼠标也能拖，松手停到最近的一级在中间；还有横档的一边淡出。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。它把音名和名称都写出来了，本身就是提示，练习里一般不出现。</td></tr>
         </tbody>
       </table>
@@ -202,6 +205,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     main = new ScaleLadder(document.getElementById('main-ladder'), { tonic: 'Eb', scale: 'major', playable: true, sound: Piano, onEvent: function (ev) {
       log(ev); nameBubble(main, ev);
     } });
+    window.tlMain = main;
 
     var commands = {
       steps: function () { main.steps(); },
@@ -217,7 +221,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       play: function () { main.play({ direction: 'up' }); },
       down: function () { main.play({ direction: 'down' }); },
       stop: function () { main.stop(); },
-      clear: function () { main.clear(); }
+      clear: function () { main.clear(); },
+      narrow: function () { main.fit({ width: 420, height: 260 }); },
+      roomy: function () { main.fit(null); }
     };
     document.querySelectorAll('[data-cmd]').forEach(function (b) {
       b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });

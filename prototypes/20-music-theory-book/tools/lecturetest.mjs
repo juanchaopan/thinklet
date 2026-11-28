@@ -5,8 +5,8 @@
 // and tries to tick an option before being asked. Checks:
 // the components were loaded by their manifests with what they need;
 // the question was read first with its text unfolded under the title and
-// folded after; the question menu's list opens over everything (nothing
-// on the stage covers it) and closes again; going back and tapping a
+// folded after; the question menu's list opens over what lies under it
+// (every row can be touched) and closes again; going back and tapping a
 // conclusion replayed an earlier scene; while the child is asked (and has
 // not answered), 下一幕 and the later segments cannot be pressed but going
 // back can; the skip went on; wrong attempts gave a retry and then the
@@ -16,7 +16,8 @@
 // the top right; at the end 下一幕 is gone and replay has come; no errors.
 // At every stop it checks the screen is a film frame (nothing scrolls;
 // every control on stage inside its region; in a region turned into a
-// wheel, the one in focus) and saves a screenshot.
+// wheel, the one in focus; the regions painted in the order the layout
+// writes them) and saves a screenshot.
 // Usage: node lecturetest.mjs <width> <out dir> [item name] [height]
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,15 +44,15 @@ const frame = (page) => page.evaluate(() => {
   document.querySelectorAll('.lx-stage, .lx-stage *').forEach((e) => {
     if (e.scrollLeft || e.scrollTop) bad.push('scrolled: ' + (e.className.baseVal ?? e.className));
     const cs = getComputedStyle(e);
-    if (e.matches(':popover-open')) return;
     if (/(auto|scroll)/.test(cs.overflowY + cs.overflowX) && (e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)) bad.push('scrolls inside: ' + (e.className.baseVal ?? e.className));
   });
   const E = window.lxEngine, L = E.layout;
+  StageLayout.order(L.cur.v).forEach((n, i) => { if (Number(L.regions[n].style.zIndex) !== i + 1) bad.push(`region ${n} is not painted in its written place ${i + 1}`); });
   let wheels = 0;
   Object.keys(L.where).forEach((name) => {
-    const s = E.slots[name], r = L.where[name], reg = L.regions[r], wheel = !!(L.wheels[r] && L.wheels[r].active);
+    const s = E.slots[name], r = L.where[name], reg = L.regions[r], top = L.topOf(r), wheel = !!(L.wheels[top] && L.wheels[top].active);
     if (wheel) wheels++;
-    if (!s || getComputedStyle(s).display === 'none' || parseFloat(getComputedStyle(s).opacity) < (wheel ? .95 : .3)) return;
+    if (!s || getComputedStyle(s).display === 'none' || parseFloat(getComputedStyle(reg).opacity) < (wheel ? .95 : .3)) return;
     const a = s.getBoundingClientRect(), b = reg.getBoundingClientRect();
     if (!a.width || !a.height) return;
     if (a.left < b.left - 3 || a.right > b.right + 3 || a.top < b.top - 3 || a.bottom > b.bottom + 3) bad.push(`${name} outside its region ${r} (${Math.round(a.left)},${Math.round(a.top)}..${Math.round(a.right)},${Math.round(a.bottom)} of ${Math.round(b.left)},${Math.round(b.top)}..${Math.round(b.right)},${Math.round(b.bottom)})`);
@@ -64,13 +65,13 @@ const frame = (page) => page.evaluate(() => {
   }
   const m = E.slots.menu.getBoundingClientRect(), x = E.slots.close.getBoundingClientRect();
   if (m.left < innerWidth / 2 || x.left < m.left) bad.push('question menu and close are not together at the top right');
-  const on = Object.keys(L.where).filter((n) => L.where[n] === 'main');
+  const on = Object.keys(L.where).filter((n) => L.topOf(L.where[n]) === 'main');
   const v = L.cur.v;
   return { bad, scale: L.scaleOf('main'), screen: typeof v.when === 'string' ? v.when : 'default', on, wheels };
 });
 
-// Opens the question menu and checks its list is on top: every row's
-// centre hits that row, even where the list lies over the stage's
+// Opens the question menu and checks its list lies over the stage: every
+// row's centre hits that row, even where the list lies over the stage's
 // components; then Esc closes it. A book with one item leaves the menu
 // unpressable, so the menu is given a second, stand-in entry for the
 // check and its own list back after.
@@ -81,7 +82,7 @@ async function menuOnTop(page) {
   await page.waitForTimeout(400);
   const r = await page.evaluate(() => {
     const pop = document.querySelector('[data-ctl="menu"] .st-qm-pop');
-    if (!pop || !pop.matches(':popover-open')) return { open: false };
+    if (!pop || pop.hidden) return { open: false };
     const rows = [...pop.querySelectorAll('.st-row')];
     const covered = rows.filter((row) => { const b = row.getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !hit || !row.contains(hit); }).map((row) => row.textContent);
     const p = pop.getBoundingClientRect();
@@ -93,8 +94,8 @@ async function menuOnTop(page) {
     if (r.covered.length) bad.push('question menu rows covered: ' + r.covered.join(', '));
     await page.keyboard.press('Escape');
     await page.waitForTimeout(400);
-    if (await page.$eval('[data-ctl="menu"] .st-qm-pop', (p) => p.matches(':popover-open'))) bad.push('Esc did not close the question menu');
-    console.log(`  menu: ${r.rows} rows open on the top layer, over ${r.under.join(', ') || 'nothing'}; ${r.covered.length} covered`);
+    if (!(await page.$eval('[data-ctl="menu"] .st-qm-pop', (p) => p.hidden))) bad.push('Esc did not close the question menu');
+    console.log(`  menu: ${r.rows} rows open over ${r.under.join(', ') || 'nothing'}; ${r.covered.length} covered`);
   }
   await page.evaluate((s) => window.lxEngine.inst.menu.call('questions.set', s), own);
   return bad;
@@ -107,7 +108,7 @@ async function runOne(name) {
   NEEDED.forEach((n) => { if (!loaded.includes(n)) fails.push(`component ${n} was not loaded with the components that need it`); });
   await page.evaluate((n) => window.lxRun(n), name);
   await page.waitForTimeout(300);
-  await page.evaluate(() => window.lxEngine.bar.rate(1.4));
+  await page.evaluate(() => window.lxEngine.bar.call('narrate.rate', 1.4));
   const script = SCRIPTS[name];
   let stops = 0, wentBack = false, tapped = false, skipped = false, triedEarly = false, waitsSeen = 0, attempt = 0, turn = 0, minScale = 9, screen = '', titleChecked = false, gateChecked = false, wheelStops = 0, menuChecked = false;
   const stages = new Set();

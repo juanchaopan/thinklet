@@ -1,10 +1,22 @@
 /* ============================================================
    Score component. Inputs: abc, mode ('lecture' | 'practice'),
    playable, compact, caption. Commands: spotlight, highlight,
-   label, slots, count, caption, play, stop, clear. Events (via
+   label, slots, count, caption, play, stop, clear, fit. Events (via
    onEvent): noteTap, blankTap, countStep, playStart, playEnd.
    Sound goes through the injected source, and only in lectures.
    Colours are the theme constants (--th-*) set on the stage or page.
+
+   The paper holds a window and, inside it, the sheet: the drawn music
+   with its overlays (marks, counts, bubbles, the playhead). Lines wrap
+   by the width the score is given. fit(view) gives it the most room it
+   may take ({width, height} in its own pixels, or null for its own
+   size): when the music is taller than that, the window shows as many
+   whole lines as fit wherever it stands, and the sheet moves one line
+   at a time so the line in focus (the bar in the spotlight, the notes
+   lit, counted, played or tapped) stays in the middle; an edge with
+   more music beyond it fades. Nothing scrolls: the sheet moves by a
+   transform, eased as the stage moves, and at once when the system
+   asks for reduced motion.
    ============================================================ */
 function Score(host, options) {
   this.host = host;
@@ -13,6 +25,9 @@ function Score(host, options) {
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
+  this.view = null;
+  this.roll = null;
+  this.focusLine = 0;
   this.build();
   this.render();
 }
@@ -46,11 +61,15 @@ Score.prototype.build = function () {
   if (this.o.compact) this.host.classList.add('tl-compact');
   this.host.innerHTML = '';
   this.paper = document.createElement('div'); this.paper.className = 'tl-paper';
+  this.window = document.createElement('div'); this.window.className = 'tl-window';
+  this.sheet = document.createElement('div'); this.sheet.className = 'tl-sheet';
   this.box = document.createElement('div'); this.box.className = 'tl-svgbox'; this.box.id = this.id;
   this.overlay = document.createElement('div'); this.overlay.className = 'tl-overlay';
   this.playhead = document.createElement('div'); this.playhead.className = 'tl-playhead';
   this.overlay.appendChild(this.playhead);
-  this.paper.appendChild(this.box); this.paper.appendChild(this.overlay);
+  this.sheet.appendChild(this.box); this.sheet.appendChild(this.overlay);
+  this.window.appendChild(this.sheet);
+  this.paper.appendChild(this.window);
   if (this.o.playable && this.o.mode === 'lecture') {
     this.playBtn = document.createElement('button');
     this.playBtn.type = 'button'; this.playBtn.className = 'tl-play'; this.playBtn.setAttribute('aria-label', '播放这段谱');
@@ -60,6 +79,13 @@ Score.prototype.build = function () {
   }
   this.host.appendChild(this.paper);
   if (this.o.caption) { var c = document.createElement('p'); c.className = 'tl-caption'; c.textContent = this.o.caption; this.host.appendChild(c); }
+  // The music changes height when its width changes; the window follows.
+  if (this.ro) this.ro.disconnect();
+  if (window.ResizeObserver) {
+    var h = 0;
+    this.ro = new ResizeObserver(function () { var nh = self.sheet.offsetHeight; if (nh !== h) { h = nh; self.frame(); } });
+    this.ro.observe(this.sheet);
+  }
 };
 
 // Lays the score out for the width it has, then lets the SVG fill that
@@ -90,7 +116,7 @@ Score.prototype.render = function () {
   this.svg.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd-focus'); });
   this.svg.addEventListener('blur', function () { self.host.classList.remove('kbd-focus'); });
   this.svg.addEventListener('pointerdown', function () { self.host.classList.remove('kbd-focus'); });
-  this.paper.addEventListener('pointerup', function (ev) { if (ev.target === self.paper) self.blankTap(); });
+  this.paper.addEventListener('pointerup', function (ev) { if (ev.target === self.paper || ev.target === self.window || ev.target === self.sheet) self.blankTap(); });
 };
 
 // The play button sits in the top right corner, so a playable score keeps
@@ -153,8 +179,8 @@ Score.prototype.pitchInfo = function (p, key, barAcc) {
 
 // Every pitched note in reading order, with its elements, the heads used for
 // hit testing, the drawn shapes without text (a note's group also holds its
-// text annotation, which can be wider than its neighbours), its bar, pitch,
-// ornament, grace notes and the key it is in.
+// text annotation, which can be wider than its neighbours), its bar, its
+// line, pitch, ornament, grace notes and the key it is in.
 Score.prototype.collect = function () {
   var self = this; var out = [];
   var keyOf = function (k) { var m = {}; ((k && k.accidentals) || []).forEach(function (a) { m[a.note.toUpperCase()] = a.acc; }); return m; };
@@ -174,11 +200,11 @@ Score.prototype.collect = function () {
             heads = heads.concat(Array.prototype.slice.call(e.querySelectorAll('.abcjs-notehead')));
             shapes = shapes.concat(e.tagName === 'path' ? [e] : Array.prototype.slice.call(e.querySelectorAll('path')));
           });
-          var m = /abcjs-mm(\d+)/.exec(elems[0].getAttribute('class') || '');
-          var v = /abcjs-v(\d+)/.exec(elems[0].getAttribute('class') || '');
+          var cls = elems[0].getAttribute('class') || '';
+          var m = /abcjs-mm(\d+)/.exec(cls), v = /abcjs-v(\d+)/.exec(cls), l = /\babcjs-l(\d+)\b/.exec(cls);
           var graces = (el.gracenotes || []).map(function (g) { var info = self.pitchInfo(g, key, null); info.crushed = !!g.acciaccatura; return info; });
           out.push({
-            index: out.length, bar: m ? Number(m[1]) : 0, voice: v ? v[1] : '0', elems: elems,
+            index: out.length, bar: m ? Number(m[1]) : 0, voice: v ? v[1] : '0', line: l ? Number(l[1]) : 0, elems: elems,
             heads: heads.length ? heads : elems, shapes: shapes.length ? shapes : elems,
             pitches: el.pitches.map(function (p) { return self.pitchInfo(p, key, barAcc); }),
             ornament: (el.decoration || []).filter(function (d) { return /trill|turn|mordent|pralltriller/.test(d); })[0] || null,
@@ -189,6 +215,75 @@ Score.prototype.collect = function () {
     });
   });
   this.notes = out;
+};
+
+/* ---------- room: whole lines in a window ---------- */
+
+Score.prototype.fit = function (view) {
+  this.view = view && view.height > 0 ? { width: view.width, height: view.height } : null;
+  this.frame();
+};
+
+// Each line's band on the sheet, in its own pixels: from halfway to the
+// line above to halfway to the line below (the sheet's top and bottom
+// for the first and last).
+Score.prototype.bands = function () {
+  if (!this.svg) return [];
+  var sr = this.sheet.getBoundingClientRect(), k = sr.height / (this.sheet.offsetHeight || 1) || 1, lines = {};
+  this.svg.querySelectorAll('[class]').forEach(function (e) {
+    var l = /\babcjs-l(\d+)\b/.exec(e.getAttribute('class')); if (!l) return;
+    var b = e.getBoundingClientRect(); if (!b.height && !b.width) return;
+    var top = (b.top - sr.top) / k, bottom = (b.bottom - sr.top) / k, n = Number(l[1]);
+    var x = lines[n] || (lines[n] = { top: Infinity, bottom: -Infinity });
+    x.top = Math.min(x.top, top); x.bottom = Math.max(x.bottom, bottom);
+  });
+  var list = Object.keys(lines).map(Number).sort(function (a, b) { return a - b; }).map(function (n) { return lines[n]; });
+  var H = this.sheet.offsetHeight;
+  return list.map(function (x, i) {
+    return { top: i ? (list[i - 1].bottom + x.top) / 2 : 0, bottom: i < list.length - 1 ? (x.bottom + list[i + 1].top) / 2 : H };
+  });
+};
+
+// Sizes the window to the room given: all the music when it fits, else
+// the most whole lines that fit wherever the window stands.
+Score.prototype.frame = function () {
+  var w = this.window;
+  if (!this.view || !this.svg) { this.unroll(); return; }
+  var chrome = this.host.offsetHeight - w.offsetHeight, room = this.view.height - chrome, H = this.sheet.offsetHeight;
+  var bands = this.bands(), n = bands.length;
+  if (n < 2 || H <= room) { this.unroll(); return; }
+  var span = function (s, k) { return bands[s + k - 1].bottom - bands[s].top; };
+  var most = function (k) { var m = 0; for (var s = 0; s + k <= n; s++) m = Math.max(m, span(s, k)); return m; };
+  var k = 1;
+  for (var t = n - 1; t >= 1; t--) if (most(t) <= room) { k = t; break; }
+  this.roll = { bands: bands, k: k, height: Math.ceil(most(k)) };
+  w.classList.add('tl-rolled');
+  w.style.height = this.roll.height + 'px';
+  this.show();
+};
+Score.prototype.unroll = function () {
+  this.roll = null;
+  this.window.classList.remove('tl-rolled', 'tl-more-up', 'tl-more-down');
+  this.window.style.height = '';
+  this.sheet.style.transform = '';
+};
+// Moves the sheet so the line in focus stands in the middle of the
+// window's lines.
+Score.prototype.show = function () {
+  var r = this.roll; if (!r) return;
+  var n = r.bands.length, k = r.k;
+  var start = Math.max(0, Math.min(n - k, (this.focusLine || 0) - Math.floor((k - 1) / 2)));
+  var top = r.bands[start].top, len = r.bands[start + k - 1].bottom - top;
+  var y = top - (r.height - len) / 2;
+  this.sheet.style.transform = y > .5 || y < -.5 ? 'translateY(' + (-y).toFixed(1) + 'px)' : '';
+  this.window.classList.toggle('tl-more-up', start > 0);
+  this.window.classList.toggle('tl-more-down', start + k < n);
+};
+// The line a note is on becomes the line in focus.
+Score.prototype.follow = function (n) {
+  if (!n || n.line === this.focusLine) return;
+  this.focusLine = n.line;
+  this.show();
 };
 
 // The diatonic neighbour of a note in its key: one letter up or down.
@@ -235,15 +330,16 @@ Score.prototype.staffAround = function (b) {
 // stem or flag, centred on its head.
 Score.prototype.above = function (n, gap) {
   var head = this.boxOf(n.heads); var body = this.boxOf(n.shapes); var st = this.staffAround(head);
-  return this.toPaper(head.cx, Math.min(st.top, body.y) - gap);
+  return this.toSheet(head.cx, Math.min(st.top, body.y) - gap);
 };
 
-// SVG user units to pixels inside the paper, for HTML overlays.
-Score.prototype.toPaper = function (x, y) {
+// SVG user units to pixels on the sheet, for HTML overlays; the sheet
+// moves with the music, so the overlays move with it.
+Score.prototype.toSheet = function (x, y) {
   var pt = this.svg.createSVGPoint(); pt.x = x; pt.y = y;
   var p = pt.matrixTransform(this.svg.getScreenCTM());
-  var r = this.paper.getBoundingClientRect();
-  return { x: p.x - r.left, y: p.y - r.top };
+  var r = this.sheet.getBoundingClientRect(), k = r.width / (this.sheet.offsetWidth || 1) || 1;
+  return { x: (p.x - r.left) / k, y: (p.y - r.top) / k };
 };
 
 Score.prototype.emit = function (type, data) { this.o.onEvent(Object.assign({ type: type }, data || {})); };
@@ -297,6 +393,7 @@ Score.prototype.tap = function (n) {
   this.clearTap();
   this.tapLit = [n.index];
   this.lit([n.index]);
+  this.follow(n);
   this.ripple(n);
   if (this.audible()) {
     var seq = this.realise(n);
@@ -337,10 +434,12 @@ Score.prototype.unlitAll = function () {
   this.svg.querySelectorAll('.tl-lit').forEach(function (e) { e.classList.remove('tl-lit'); e.removeAttribute('filter'); });
 };
 
-// Notes the workflow asked to keep lit stay lit after a tap fades.
+// Notes the workflow asked to keep lit stay lit after a tap fades; the
+// first of them brings its line into view.
 Score.prototype.highlight = function (indices) {
   var self = this; this.held = {};
   this.unlitAll(); indices.forEach(function (i) { self.held[i] = true; }); this.lit(indices);
+  if (indices.length) this.follow(this.notes[indices[0]]);
 };
 
 Score.prototype.notesOfBar = function (bar) { return this.notes.filter(function (n) { return n.bar === bar - 1; }); };
@@ -375,9 +474,10 @@ Score.prototype.label = function (index, text) {
 Score.prototype.caption = function (index, html) {
   this.overlay.querySelectorAll('.tl-bubble').forEach(function (e) { e.remove(); });
   var n = this.notes[index]; if (!n) return;
+  this.follow(n);
   var p = this.above(n, 4);
   var d = document.createElement('div'); d.className = 'tl-bubble'; d.innerHTML = html;
-  d.style.left = Math.max(70, Math.min(this.paper.clientWidth - 70, p.x)) + 'px'; d.style.top = p.y + 'px';
+  d.style.left = Math.max(70, Math.min(this.sheet.offsetWidth - 70, p.x)) + 'px'; d.style.top = p.y + 'px';
   this.overlay.appendChild(d);
 };
 
@@ -392,7 +492,7 @@ Score.prototype.slots = function (indices) {
     r.setAttribute('class', 'tl-mark tl-slot'); r.setAttribute('x', b.cx - 16); r.setAttribute('y', y);
     r.setAttribute('width', 32); r.setAttribute('height', 32); r.setAttribute('rx', 8); r.style.animationDelay = k * 70 + 'ms';
     self.svg.appendChild(r);
-    places.push(self.toPaper(b.cx, y + 16));
+    places.push(self.toSheet(b.cx, y + 16));
   });
   return places;
 };
@@ -403,7 +503,7 @@ Score.prototype.count = function (indices) {
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   list.forEach(function (idx, k) {
     self.timers.push(setTimeout(function () {
-      var n = self.notes[idx]; self.unlitAll(); self.lit([idx]);
+      var n = self.notes[idx]; self.unlitAll(); self.lit([idx]); self.follow(n);
       if (self.audible()) n.pitches.forEach(function (p) { self.note(p.midi, 0, .5, .6); });
       var p = self.above(n, 14);
       var d = document.createElement('div'); d.className = 'tl-count'; d.textContent = String(k + 1);
@@ -441,9 +541,10 @@ Score.prototype.play = function (bar) {
       self.lit([s.n.index]);
       self.timers.push(setTimeout(function () { self.unlitIndices([s.n.index]); }, Math.max(120, s.dur * 1000 - 40)));
       if (s.lead) {
+        self.follow(s.n);
         var b = self.boxOf(s.n.heads);
         var sys = self.systemAround(b);
-        var p1 = self.toPaper(b.cx, sys.top - 10); var p2 = self.toPaper(b.cx, sys.bottom + 10);
+        var p1 = self.toSheet(b.cx, sys.top - 10); var p2 = self.toSheet(b.cx, sys.bottom + 10);
         self.playhead.style.left = p1.x + 'px'; self.playhead.style.top = p1.y + 'px'; self.playhead.style.height = (p2.y - p1.y) + 'px';
         self.playhead.classList.add('on');
       }
@@ -482,4 +583,3 @@ Score.prototype.clear = function () {
   this.svg.querySelectorAll('.tl-mark').forEach(function (m) { m.remove(); });
   this.overlay.querySelectorAll('.tl-badge, .tl-count, .tl-bubble').forEach(function (m) { m.remove(); });
 };
-

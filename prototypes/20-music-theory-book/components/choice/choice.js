@@ -9,11 +9,24 @@
    draws no colour of its own.
    The component does not know the answer: the workflow tells it what
    to draw right or wrong.
+
+   Options stand in a grid of up to MAX_ROW in a row. Given a view
+   (fitView({width, height}), the most room it may take) that the grid
+   is too tall for, the options stand in one row instead, inside a
+   window as wide as the choice: the option in question (captioned,
+   else spotlit, else lit, else picked, else the first) stands in the
+   middle, the ones beside it fade toward the window's edges, and the
+   row slides to another option when the workflow points at it, when
+   the child drags or swipes it, or when the keyboard moves to it. A tap
+   on a partly seen option picks it and brings it to the middle. With
+   no view, or one the grid fits, the grid comes back. A row of boxes
+   under a score spans the score and is not changed by a view.
+
    Inputs: shape ('list' | 'marks'), tag, prompt (parts), options
    ([{id, parts: [{text} | {term} | {abc}], name}]), pick, boxes,
    mode ('lecture' | 'practice'), tempo.
    Commands: select, strike, highlight, spotlight, label, caption,
-   check, lock, place, set, play, stop, clear.
+   check, lock, place, set, play, stop, clear, fitView.
    Events (via onEvent): optionTap, boxTap, blankTap.
    Sound goes through the injected source, lectures only.
    ============================================================ */
@@ -34,8 +47,16 @@ function Choice(host, options) {
   this.xs = null;
   this.timers = [];
   this.voices = [];
+  this.view = null;
+  this.row = false;
+  this.at = null;
+  this.shift = 0;
+  this.press = null;
   host.classList.add('tl-ch', 'tl-ch-is-' + this.o.shape);
   host.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
+  host.addEventListener('pointermove', function (ev) { self.onMove(ev); });
+  host.addEventListener('pointerup', function (ev) { self.onUp(ev); });
+  host.addEventListener('pointercancel', function () { self.onCancel(); });
   host.addEventListener('keydown', function (ev) { self.onKey(ev); });
   host.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') host.classList.add('kbd'); });
   this.build();
@@ -49,6 +70,12 @@ Choice.MAX_ROW = 4;
 // from every target it is a tap on the blank.
 Choice.REACH_PX = 8;
 Choice.MARK_REACH_PX = 30;
+// In one row an option takes at most this share of the window, so the
+// ones beside it show; and at least this many pixels.
+Choice.ROW_SHARE = .72;
+Choice.ROW_MIN_PX = 120;
+// A press that moves this far sideways drags the row instead of tapping.
+Choice.DRAG_PX = 6;
 Choice.STAFF_SCALE = .8;
 Choice.LETTERS = 'CDEFGAB';
 Choice.STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -168,13 +195,15 @@ Choice.prototype.hold = function () {
 };
 
 // Redraws everything inside the host, e.g. after a change of width or
-// mode; the selection and every mark are state, so they come back.
+// mode; the selection, every mark and the view are state, so they come
+// back.
 Choice.prototype.build = function () {
   var self = this;
   this.stop();
   this.host.innerHTML = '';
   this.hold();
   this.inked = {}; this.sealed = {}; this.badged = {}; this.staffs = {};
+  this.row = false; this.host.classList.remove('tl-ch-row');
   if (this.o.prompt) {
     var stem = document.createElement('div'); stem.className = 'tl-ch-stem';
     stem.innerHTML = (this.o.tag ? '<span class="tl-ch-tag">' + Choice.esc(this.o.tag) + '</span>' : '') + '<span class="tl-ch-ask">' + Choice.partsHtml(this.o.prompt) + '</span>';
@@ -182,10 +211,12 @@ Choice.prototype.build = function () {
   }
   var ask = this.o.prompt ? Choice.words({ parts: [].concat(this.o.prompt), joined: true }) : '';
   if (this.isList()) {
+    this.win = document.createElement('div'); this.win.className = 'tl-ch-window';
     this.grid = document.createElement('div'); this.grid.className = 'tl-ch-opts';
     this.grid.setAttribute('role', this.o.pick > 1 ? 'group' : 'radiogroup');
     if (ask) this.grid.setAttribute('aria-label', ask);
-    this.host.appendChild(this.grid);
+    this.win.appendChild(this.grid);
+    this.host.appendChild(this.win);
     this.tiles = this.o.options.map(function (op) { var t = self.tile(op); self.grid.appendChild(t); return t; });
     this.evenStaves();
     this.layout();
@@ -207,6 +238,7 @@ Choice.prototype.build = function () {
   this.room = null;
   this.apply(false);
   this.placeCaption(false);
+  this.relayout();
 };
 
 // One option as a paper tile: its tick box, then its parts.
@@ -257,14 +289,67 @@ Choice.prototype.layout = function () {
     natural = Math.max(natural, Math.ceil(copy.getBoundingClientRect().width));
     copy.remove();
   });
+  this.natural = natural;
   var tries = (n <= Choice.MAX_ROW ? [n] : []).concat([2, 1]).filter(function (c) { return c <= n; });
   var cols = 1;
   for (var i = 0; i < tries.length; i++) { if (tries[i] * natural + (tries[i] - 1) * G <= W) { cols = tries[i]; break; } }
   this.cols = cols;
   this.grid.style.setProperty('--cols', String(cols));
+  this.evenHeights();
+};
+Choice.prototype.evenHeights = function () {
   this.tiles.forEach(function (t) { t.style.minHeight = ''; });
   var tall = Math.max.apply(null, this.tiles.map(function (t) { return t.offsetHeight; }).concat([0]));
   this.tiles.forEach(function (t) { t.style.minHeight = tall + 'px'; });
+};
+
+// The room the choice is given: the grid when it fits the view (or
+// there is no view), else one sliding row.
+Choice.prototype.fitView = function (view) {
+  this.view = view && view.width && view.height ? { width: view.width, height: view.height } : null;
+  this.relayout();
+};
+Choice.prototype.relayout = function () {
+  if (!this.isList()) return;
+  this.setRow(false);
+  if (!this.view || this.host.offsetHeight <= this.view.height + 1) return;
+  this.setRow(true);
+};
+Choice.prototype.setRow = function (on) {
+  if (on === this.row) return;
+  this.row = on;
+  this.host.classList.toggle('tl-ch-row', on);
+  if (on) {
+    var tw = Math.max(Choice.ROW_MIN_PX, Math.min(this.natural, Math.floor(this.win.clientWidth * Choice.ROW_SHARE)));
+    this.grid.style.setProperty('--tw', tw + 'px');
+    this.cols = this.tiles.length;
+    this.evenHeights();
+  } else {
+    this.grid.style.removeProperty('--tw');
+    this.grid.style.transform = '';
+    this.shift = 0;
+    this.layout();
+  }
+  this.placeCaption(false);
+  this.centre();
+};
+
+// Which option stands in the middle of the row: the one the child last
+// brought there, else the one in question (its caption is under the
+// middle).
+Choice.prototype.centreIndex = function () {
+  if (this.at !== null && this.at < this.tiles.length) return this.at;
+  var keys = (this.cap ? [this.cap.key] : []).concat(this.spot || [], this.held, this.selected), ids = this.ids();
+  for (var i = 0; i < keys.length; i++) { var k = ids.indexOf(keys[i]); if (k >= 0) return k; }
+  return 0;
+};
+// Slides the row so that option stands in the middle of the window.
+Choice.prototype.centre = function () {
+  if (!this.isList()) return;
+  if (!this.row) { this.grid.style.transform = ''; this.shift = 0; return; }
+  var t = this.tiles[this.centreIndex()]; if (!t) return;
+  this.shift = this.win.clientWidth / 2 - (t.offsetLeft + t.offsetWidth / 2);
+  this.grid.style.transform = 'translateX(' + this.shift.toFixed(1) + 'px)';
 };
 
 // Boxes under a score stand where the workflow says (centres in pixels
@@ -333,7 +418,7 @@ Choice.prototype.collect = function (vis) {
 
 // Applies the state to what is drawn. Ink already on the paper stays;
 // only a mark that changed is drawn (or fades) now, and only when
-// animated.
+// animated. In one row, the option in question slides to the middle.
 Choice.prototype.apply = function (animated) {
   var self = this, move = animated && !Choice.still();
   this.host.classList.toggle('tl-ch-locked', this.locked);
@@ -360,6 +445,7 @@ Choice.prototype.apply = function (animated) {
     }
     el.setAttribute('aria-disabled', String(self.locked || !!self.struck[key]));
   });
+  this.centre();
 };
 
 // The child's tick or cross in a box, drawn stroke by stroke like a pen;
@@ -396,19 +482,65 @@ Choice.prototype.badge = function (el, text, move) {
   el.appendChild(b);
 };
 
-// Taps: the target under the finger, or the nearest within a few pixels
-// (the gaps between tiles, the space around a small box); further away,
-// a tap on the blank (the stem, the margins).
+// A press: in one row it waits to see whether the finger drags the row
+// or taps; otherwise it is a tap at once.
 Choice.prototype.onPointer = function (ev) {
   this.host.classList.remove('kbd');
+  if (this.row && (ev.button === undefined || ev.button <= 0)) {
+    var r = this.host.getBoundingClientRect();
+    this.press = { x: ev.clientX, y: ev.clientY, id: ev.pointerId, base: this.shift, k: (r.width / (this.host.offsetWidth || 1)) || 1, moved: false };
+    return;
+  }
+  this.hit(ev);
+};
+Choice.prototype.onMove = function (ev) {
+  var p = this.press; if (!p) return;
+  var dx = ev.clientX - p.x, dy = ev.clientY - p.y;
+  if (!p.moved) {
+    if (Math.abs(dx) < Choice.DRAG_PX || Math.abs(dx) < Math.abs(dy)) return;
+    p.moved = true;
+    this.grid.classList.add('tl-ch-drag');
+    try { this.host.setPointerCapture(p.id); } catch (e) { /* the pointer is already gone */ }
+  }
+  ev.preventDefault();
+  this.shift = p.base + dx / p.k;
+  this.grid.style.transform = 'translateX(' + this.shift.toFixed(1) + 'px)';
+};
+// A drag ends with the option nearest the middle brought there; a press
+// that did not move is a tap.
+Choice.prototype.onUp = function (ev) {
+  var p = this.press; this.press = null;
+  if (!p) return;
+  if (!p.moved) { this.hit(ev); return; }
+  this.grid.classList.remove('tl-ch-drag');
+  var mid = this.win.clientWidth / 2, self = this, best = 0, dist = Infinity;
+  this.tiles.forEach(function (t, i) { var d = Math.abs(t.offsetLeft + t.offsetWidth / 2 + self.shift - mid); if (d < dist) { dist = d; best = i; } });
+  this.at = best;
+  this.centre();
+};
+Choice.prototype.onCancel = function () {
+  if (!this.press) return;
+  this.press = null;
+  this.grid.classList.remove('tl-ch-drag');
+  this.centre();
+};
+
+// Taps: the target under the finger, or the nearest within a few pixels
+// (the gaps between tiles, the space around a small box); further away,
+// a tap on the blank (the stem, the margins). In one row only what the
+// window shows can be tapped, and the option tapped comes to the middle.
+Choice.prototype.hit = function (ev) {
   var x = ev.clientX, y = ev.clientY, best = null, dist = Infinity, reach;
   if (this.isList()) {
     reach = Choice.REACH_PX;
-    this.tiles.forEach(function (t) {
-      var b = t.getBoundingClientRect();
-      var dx = Math.max(b.left - x, 0, x - b.right), dy = Math.max(b.top - y, 0, y - b.bottom), d = Math.hypot(dx, dy);
-      if (d < dist) { dist = d; best = t; }
-    });
+    var w = this.row ? this.win.getBoundingClientRect() : null;
+    if (!w || (x >= w.left && x <= w.right)) {
+      this.tiles.forEach(function (t) {
+        var b = t.getBoundingClientRect();
+        var dx = Math.max(b.left - x, 0, x - b.right), dy = Math.max(b.top - y, 0, y - b.bottom), d = Math.hypot(dx, dy);
+        if (d < dist) { dist = d; best = t; }
+      });
+    }
   } else {
     reach = Choice.MARK_REACH_PX;
     var sb = this.strip.getBoundingClientRect();
@@ -420,8 +552,10 @@ Choice.prototype.onPointer = function (ev) {
     }
   }
   if (!best || dist > reach) { this.emit('blankTap', {}); return; }
-  ev.preventDefault();
+  if (ev.cancelable) ev.preventDefault();
+  if (this.row) this.at = this.tiles.indexOf(best);
   this.tap(this.keyOf(best), ev);
+  if (this.row) this.centre();
 };
 
 Choice.prototype.onKey = function (ev) {
@@ -435,7 +569,8 @@ Choice.prototype.onKey = function (ev) {
   else if (ev.key === 'Escape') { this.emit('blankTap', {}); return; }
   if (!next || next === cur) return;
   ev.preventDefault();
-  cur.tabIndex = -1; next.tabIndex = 0; next.focus();
+  cur.tabIndex = -1; next.tabIndex = 0; next.focus({ preventScroll: true });
+  if (this.row) { this.at = list.indexOf(next); this.centre(); }
 };
 
 // A tap on an option ticks it (one pick: the tick moves here; several:
@@ -491,9 +626,10 @@ Choice.prototype.sound = function (id) {
 };
 
 // The caption in state, as a dark bubble under its option (or box). The
-// choice first opens room under that row, so the rows after it move down
-// and nothing is covered; then the bubble pops up in the room. Taken
-// away, the bubble fades first and then the room closes.
+// choice first opens room under that row (in one row, under the window,
+// with the captioned option in the middle), so what is under it moves
+// down and nothing is covered; then the bubble pops up in the room.
+// Taken away, the bubble fades first and then the room closes.
 Choice.prototype.placeCaption = function (animated) {
   var move = animated && !Choice.still(), C = Choice;
   var c = this.cap, el = c && this.elOf(c.key);
@@ -508,14 +644,15 @@ Choice.prototype.placeCaption = function (animated) {
   var room = document.createElement('div'); room.className = 'tl-ch-room';
   var b = document.createElement('div'); b.className = 'tl-ch-bubble'; b.innerHTML = c.html;
   room.appendChild(b);
-  if (this.isList()) {
+  if (this.isList() && this.row) this.host.insertBefore(room, this.win.nextSibling);
+  else if (this.isList()) {
     var i = this.tiles.indexOf(el), last = Math.min(this.tiles.length - 1, Math.floor(i / this.cols) * this.cols + this.cols - 1);
     this.grid.insertBefore(room, this.tiles[last].nextSibling);
   } else this.host.insertBefore(room, this.strip.nextSibling);
   var h = b.offsetHeight + 10, W = room.clientWidth, bw = b.offsetWidth;
   var rr = room.getBoundingClientRect(), er = el.getBoundingClientRect();
   var wide = this.isList() && !this.host.classList.contains('tl-ch-tall');
-  var vx = er.left - rr.left + (wide ? Math.min(er.width, 220) / 2 : er.width / 2);
+  var vx = this.row ? W / 2 : er.left - rr.left + (wide ? Math.min(er.width, 220) / 2 : er.width / 2);
   var left = Math.max(4, Math.min(W - 4 - bw, vx - bw / 2));
   b.style.left = left + 'px';
   b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
@@ -547,8 +684,8 @@ Choice.prototype.strike = function (list) {
   this.known(list).forEach(function (k) { self.struck[k] = true; var i = self.selected.indexOf(k); if (i >= 0) self.selected.splice(i, 1); });
   this.apply(true);
 };
-Choice.prototype.highlight = function (list) { this.held = this.known(list); this.apply(true); };
-Choice.prototype.spotlight = function (list) { var f = this.known(list); this.spot = f.length ? f : null; this.apply(true); };
+Choice.prototype.highlight = function (list) { this.held = this.known(list); this.at = null; this.apply(true); };
+Choice.prototype.spotlight = function (list) { var f = this.known(list); this.spot = f.length ? f : null; this.at = null; this.apply(true); };
 Choice.prototype.label = function (map) {
   var self = this; this.labels = {};
   Object.keys(map || {}).forEach(function (k) { var key = self.keyFor(k); if (self.known([key]).length) self.labels[key] = String(map[k]); });
@@ -568,10 +705,13 @@ Choice.prototype.check = function (map) {
 Choice.prototype.lock = function (on) { this.locked = on !== false; this.apply(true); };
 Choice.prototype.place = function (xs) { this.xs = xs ? xs.slice() : null; if (!this.isList()) { this.placeMarks(); this.placeCaption(false); } };
 // Shows a caption under an option or box; with no option, takes it away.
+// In one row the captioned option comes to the middle, over its bubble.
 Choice.prototype.caption = function (key, html) {
   var k = key === null || key === undefined ? [] : this.known([key]);
   this.cap = k.length ? { key: k[0], html: html } : null;
+  if (this.row) this.at = null;
   this.placeCaption(true);
+  this.centre();
 };
 Choice.prototype.play = function (id) { if (!this.audible() || !this.staffs[id] || !this.staffs[id].length) return; this.stop(); this.sound(id); };
 
@@ -590,6 +730,7 @@ Choice.prototype.set = function (s) {
   this.held = this.known(s.highlight);
   var sp = this.known(s.spotlight); this.spot = sp.length ? sp : null;
   this.locked = !!s.locked;
+  this.at = null;
   var ck = s.caption ? this.known([s.caption.key]) : [];
   this.cap = ck.length ? { key: ck[0], html: s.caption.html } : null;
   this.hold();
@@ -602,8 +743,7 @@ Choice.prototype.set = function (s) {
 Choice.prototype.stop = function () {
   (this.timers || []).forEach(clearTimeout); this.timers = [];
   this.silence();
-  this.host.querySelectorAll('.tl-ch-sounding').forEach(function (e) { e.classList.remove('tl-ch-sounding'); });
+  if (this.host) this.host.querySelectorAll('.tl-ch-sounding').forEach(function (e) { e.classList.remove('tl-ch-sounding'); });
 };
 
 Choice.prototype.clear = function () { this.set({}); };
-

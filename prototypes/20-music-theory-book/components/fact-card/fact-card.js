@@ -6,11 +6,20 @@
    Inputs: entries ({id: {head, tag, rows: [{field, label, text, abc,
    range: [low, high], note}]}}), entry, fields, mode ('lecture' |
    'practice'), tempo, playable, compact, caption.
-   Commands: show, highlight, spotlight, label, caption, check, fit,
+   Commands: show, highlight, spotlight, label, caption, check, span,
    mask, reveal, play, stop, clear.
    Events (via onEvent): rowTap, headTap, blankTap, playStart, playEnd.
    Sound goes through the injected source, lectures only.
    Colours are the theme constants (--th-*) set on the stage or page.
+
+   When it does not fit: fit(view) gives the most room it may take,
+   {width, height} in its own pixels (null: its own size again). The
+   card keeps the view's width; when its rows are taller than the room
+   left under the head, the head stays where it is and the rows slide
+   up and down under it, keeping what is being pointed at (the row a tap
+   lit, the held rows, the spotlight, the row last checked, spanned or
+   captioned) in view. A drag slides them, coming to rest with a row at
+   the top; an edge with more rows beyond it fades.
    ============================================================ */
 function FactCard(host, options) {
   this.host = host;
@@ -21,6 +30,8 @@ function FactCard(host, options) {
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
+  this.view = null;
+  this.viewKey = '';
   this.uid = 'tlfc' + (FactCard.count = (FactCard.count || 0) + 1);
   this.build();
 }
@@ -31,7 +42,7 @@ FactCard.LOW = 21;   // A0, the left end of every range strip
 FactCard.HIGH = 108; // C8, the right end
 FactCard.KEY_W = 10; // a white key's width in strip units
 // Lanes of the range strip, in strip units from the top: the range bar,
-// the band of a part being fitted, then the keys.
+// the band of a part being spanned, then the keys.
 FactCard.LANE = { bar: 3, barH: 7, band: 14, bandH: 11, keys: 30, height: 74, blackH: 27 };
 FactCard.TAP_FADE_MS = 2000;
 FactCard.STAFF_SCALE = { normal: .92, compact: .8 };
@@ -48,6 +59,70 @@ FactCard.midi = function (name) {
   return 12 * (Number(m[3]) + 1) + FactCard.STEP[m[1].toUpperCase()] + acc;
 };
 FactCard.pretty = function (name) { return String(name).replace(/^([A-Ga-g])#/, '$1♯').replace(/^([A-Ga-g])b(?=-?\d)/, '$1♭'); };
+
+// A window onto a strip longer than it, moved along one axis with
+// transforms: `parts` move together, `snap` picks where a drag comes to
+// rest. An edge with more beyond it fades (--slide-a, --slide-b on the
+// window). The owner passes its pointer events to grab, drag and drop,
+// and treats a press that never dragged as a tap. lag() is how far what
+// is drawn still is from where it is going, for placing things by it
+// while it moves.
+FactCard.Slide = function (win, parts, axis, snap) {
+  this.win = win; this.parts = parts; this.y = axis === 'y'; this.snap = snap || function (o) { return o; };
+  this.on = false; this.at = 0; this.len = 0; this.press = null;
+};
+FactCard.Slide.DRAG_PX = 8;
+FactCard.Slide.RUBBER = .35;
+FactCard.Slide.prototype.pos = function (e) { return this.y ? e.clientY : e.clientX; };
+FactCard.Slide.prototype.room = function () { return this.y ? this.win.clientHeight : this.win.clientWidth; };
+FactCard.Slide.prototype.max = function () { return Math.max(0, this.len - this.room()); };
+FactCard.Slide.prototype.clamp = function (o) { return Math.max(0, Math.min(this.max(), o)); };
+FactCard.Slide.prototype.set = function (on, len) { this.on = !!on; this.len = len || 0; this.place(this.on ? this.clamp(this.at) : 0, false); };
+FactCard.Slide.prototype.place = function (o, animated) {
+  var still = !animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var t = o ? (this.y ? 'translateY(' : 'translateX(') + (-o).toFixed(1) + 'px)' : '';
+  this.at = o;
+  this.parts.forEach(function (p) { p.style.transition = still ? 'none' : ''; p.style.transform = t; });
+  this.win.style.setProperty('--slide-a', this.on && o > 1 ? '1' : '0');
+  this.win.style.setProperty('--slide-b', this.on && o < this.max() - 1 ? '1' : '0');
+};
+FactCard.Slide.prototype.to = function (o, animated) { if (this.on) this.place(this.clamp(o), animated !== false); };
+// Keeps a..b in view: centred when it fits, from a when it does not.
+FactCard.Slide.prototype.show = function (a, b, animated) {
+  var room = this.room();
+  this.to(b - a <= room ? (a + b) / 2 - room / 2 : a, animated);
+};
+FactCard.Slide.prototype.lag = function () {
+  var t = getComputedStyle(this.parts[0]).transform;
+  if (!t || t === 'none') return -this.at;
+  var m = new DOMMatrixReadOnly(t);
+  return -(this.y ? m.m42 : m.m41) - this.at;
+};
+FactCard.Slide.prototype.grab = function (e) {
+  if (!this.on || e.button > 0) return false;
+  this.press = { p: this.pos(e), at: this.at, id: e.pointerId, moved: false };
+  return true;
+};
+FactCard.Slide.prototype.drag = function (e) {
+  var p = this.press; if (!p) return false;
+  var d = this.pos(e) - p.p;
+  if (!p.moved && Math.abs(d) > FactCard.Slide.DRAG_PX) {
+    p.moved = true;
+    try { this.win.setPointerCapture(p.id); } catch (err) { /* the pointer is already gone */ }
+  }
+  if (!p.moved) return false;
+  e.preventDefault();
+  var o = p.at - d, max = this.max();
+  if (o < 0) o *= FactCard.Slide.RUBBER; else if (o > max) o = max + (o - max) * FactCard.Slide.RUBBER;
+  this.place(o, false);
+  return true;
+};
+FactCard.Slide.prototype.drop = function () {
+  var p = this.press; this.press = null;
+  if (!p || !p.moved) return false;
+  this.to(this.snap(this.clamp(this.at)), true);
+  return true;
+};
 
 // Accidental glyphs drawn by the score library, so a flat in a name here
 // is the same shape as a flat on the score.
@@ -114,7 +189,7 @@ FactCard.prototype.rowsShown = function () {
 };
 FactCard.prototype.rowData = function (field) { return this.rowsShown().filter(function (r) { return r.field === field; })[0] || null; };
 FactCard.prototype.sounds = function (r) { return !!(r.range || (r.abc && this.staffs[r.field] && this.staffs[r.field].notes.length)); };
-FactCard.prototype.resetMarks = function () { this.held = []; this.spot = null; this.labels = {}; this.checks = {}; this.fits = {}; };
+FactCard.prototype.resetMarks = function () { this.held = []; this.spot = null; this.labels = {}; this.checks = {}; this.spans = {}; this.pointed = null; };
 
 // Every note the card sounds goes through here, so stop() can silence
 // the notes already scheduled ahead on the audio clock.
@@ -136,10 +211,29 @@ FactCard.prototype.build = function () {
   this.card = document.createElement('div'); this.card.className = 'tl-fc-card';
   this.host.appendChild(this.card);
   if (this.o.caption) { var cap = document.createElement('p'); cap.className = 'tl-fc-caption'; cap.textContent = this.o.caption; this.host.appendChild(cap); }
-  this.card.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
+  if (this.view) { var cs = this.card.style; cs.boxSizing = 'border-box'; cs.maxWidth = Math.floor(this.view.width) + 'px'; cs.marginInline = 'auto'; }
+  // While the rows slide, a press on them is a tap only if it never dragged.
+  var pressed = null;
+  this.card.addEventListener('pointerdown', function (ev) {
+    if (self.slide && self.win.contains(ev.target) && self.slide.grab(ev)) { pressed = ev; return; }
+    self.onPointer(ev);
+  });
+  this.card.addEventListener('pointermove', function (ev) { if (self.slide && self.slide.drag(ev)) pressed = null; });
+  this.card.addEventListener('pointerup', function () { var p = pressed; pressed = null; if (!(self.slide && self.slide.drop()) && p) self.onPointer(p); });
+  this.card.addEventListener('pointercancel', function () { pressed = null; if (self.slide) self.slide.drop(); });
   this.card.addEventListener('keydown', function (ev) { self.onKey(ev); });
   this.card.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd'); });
   this.render();
+};
+
+// The most room the card may take, or null for its own size; it is
+// drawn again only when that changes.
+FactCard.prototype.fit = function (view) {
+  var key = view ? Math.round(view.width) + 'x' + Math.round(view.height) : '';
+  if (key === this.viewKey) return;
+  this.viewKey = key;
+  this.view = view ? { width: view.width, height: view.height } : null;
+  this.build();
 };
 
 // Draws the current entry: head, rows, play button, then the marks.
@@ -151,8 +245,10 @@ FactCard.prototype.render = function () {
   this.head = document.createElement('div'); this.head.className = 'tl-fc-head'; this.head.tabIndex = -1;
   this.head.innerHTML = '<span class="tl-fc-tag">' + FactCard.esc(e.tag || '') + '</span><span class="tl-fc-word"><span class="tl-fc-text">' + FactCard.inline(e.head || '', headPx) + '</span></span>';
   this.card.appendChild(this.head);
+  this.win = document.createElement('div'); this.win.className = 'tl-fc-window';
   this.rowsEl = document.createElement('div'); this.rowsEl.className = 'tl-fc-rows';
-  this.card.appendChild(this.rowsEl);
+  this.win.appendChild(this.rowsEl);
+  this.card.appendChild(this.win);
   this.rowEls = {};
   rows.forEach(function (r, i) {
     var row = document.createElement('div');
@@ -179,8 +275,46 @@ FactCard.prototype.render = function () {
     this.card.appendChild(this.playBtn);
     this.playIcon(false);
   } else this.playBtn = null;
+  this.slide = new FactCard.Slide(this.win, [this.rowsEl], 'y', function (o) { return self.rest(o); });
+  this.reslide();
   this.applyMasks(false);
   this.apply();
+};
+
+// Within a view, the rows slide under the head when they are taller
+// than the room left for them.
+FactCard.prototype.reslide = function () {
+  var len = this.rowsEl.offsetHeight, room = 0;
+  if (this.view) {
+    var cs = getComputedStyle(this.card), cap = this.host.querySelector('.tl-fc-caption');
+    var head = this.head.offsetHeight + parseFloat(getComputedStyle(this.head).marginBottom);
+    room = Math.floor(this.view.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - head - (cap ? cap.offsetHeight + 10 : 0));
+  }
+  var sliding = !!this.view && len > room + 1;
+  this.card.classList.toggle('tl-fc-sliding', sliding);
+  this.win.style.height = sliding ? Math.max(46, room) + 'px' : '';
+  this.slide.set(sliding, len);
+};
+// Where sliding rows come to rest: with the nearest row at the top.
+FactCard.prototype.rest = function (o) {
+  var best = o, dist = Infinity;
+  [].forEach.call(this.rowsEl.children, function (row) { var d = Math.abs(row.offsetTop - o); if (d < dist) { dist = d; best = row.offsetTop; } });
+  return best;
+};
+// What is being pointed at: the row a tap lit, else the held rows, else
+// the spotlight, else the row a command last marked.
+FactCard.prototype.focusFields = function () {
+  var self = this;
+  var list = this.tapLit ? [this.tapLit] : this.held.length ? this.held : this.spot ? this.spot : this.pointed ? [this.pointed] : [];
+  return list.filter(function (f) { return f !== 'head' && self.rowEls[f]; });
+};
+// Slides the rows so these fields are in view.
+FactCard.prototype.follow = function (fields, animated) {
+  var self = this;
+  if (!this.slide || !this.slide.on || !fields.length) return;
+  var top = Infinity, bottom = -Infinity;
+  fields.forEach(function (f) { var r = self.rowEls[f]; top = Math.min(top, r.offsetTop); bottom = Math.max(bottom, r.offsetTop + r.offsetHeight); });
+  this.slide.show(top, bottom, animated);
 };
 
 // Draws a row's ABC on a short stave, cropped to what is drawn, at one
@@ -355,8 +489,9 @@ FactCard.prototype.applyMasks = function (animated) {
 };
 
 // Applies the marks held in state to the drawn card: lit rows (held and
-// the one a tap lit), the spotlight, badges, claims and fitted ranges.
-// Marks already drawn are kept, so their entrance plays only once.
+// the one a tap lit), the spotlight, badges, claims and spanned ranges.
+// Marks already drawn are kept, so their entrance plays only once. Rows
+// that slide bring what is being pointed at into view.
 FactCard.prototype.apply = function () {
   var self = this;
   var lit = this.held.slice(); if (this.tapLit) lit.push(this.tapLit);
@@ -386,15 +521,16 @@ FactCard.prototype.apply = function () {
       claim.setAttribute('aria-label', '说法“' + want.text + '”' + (want.holds ? '对' : '不对'));
       cell.appendChild(claim);
     }
-    self.drawFit(f);
+    self.drawSpan(f);
   });
+  if (this.slide && this.slide.on) { this.slide.len = this.rowsEl.offsetHeight; this.follow(this.focusFields()); }
 };
 
 // A part's range over the strip: a dashed band; the notes the instrument
 // cannot reach hatched in brick red; a verdict line under the strip.
-FactCard.prototype.drawFit = function (f) {
+FactCard.prototype.drawSpan = function (f) {
   var st = this.strips[f]; if (!st) return;
-  var want = this.fits[f], L = FactCard.LANE, layer = st.svg.querySelector('.tl-fc-bandlayer'), cell = this.rowEls[f].querySelector('.tl-fc-cell');
+  var want = this.spans[f], L = FactCard.LANE, layer = st.svg.querySelector('.tl-fc-bandlayer'), cell = this.rowEls[f].querySelector('.tl-fc-cell');
   var old = cell.querySelector('.tl-fc-verdict');
   var sig = want ? want.low + '|' + want.high : null;
   if (!want) { layer.innerHTML = ''; if (old) old.remove(); return; }
@@ -416,14 +552,15 @@ FactCard.prototype.drawFit = function (f) {
 };
 
 // Taps: the head; a row (rows touch, and a tap just outside a row's edge
-// goes to the nearer one); the margin under the last row is blank.
+// goes to the nearer one); the margin under the last row is blank, and
+// so is any place outside the window of rows that slide.
 FactCard.prototype.onPointer = function (ev) {
   this.host.classList.remove('kbd');
   var y = ev.clientY, rows = this.rowsEl.querySelectorAll('.tl-fc-row');
-  var headBox = this.head.getBoundingClientRect();
+  var headBox = this.head.getBoundingClientRect(), winBox = this.win.getBoundingClientRect();
   var target = null;
   if (y <= headBox.bottom + 2) target = 'head';
-  else {
+  else if (!this.slide.on || (y >= winBox.top && y <= winBox.bottom)) {
     var best = null, dist = Infinity;
     rows.forEach(function (row) { var b = row.getBoundingClientRect(); var d = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0; if (d < dist) { dist = d; best = row; } });
     if (best && dist <= 6) target = best.dataset.field;
@@ -443,7 +580,8 @@ FactCard.prototype.onKey = function (ev) {
   else if (ev.key === 'Escape') { this.blankTap(); return; }
   if (!next || next === cur) return;
   ev.preventDefault();
-  cur.tabIndex = -1; next.tabIndex = 0; next.focus();
+  cur.tabIndex = -1; next.tabIndex = 0; next.focus({ preventScroll: true });
+  this.pointed = next.dataset.field; this.follow([next.dataset.field]);
   if (this.o.mode === 'lecture') this.tap(next.dataset.field, null);
 };
 
@@ -542,21 +680,25 @@ FactCard.prototype.fieldsOf = function (list) {
 FactCard.prototype.highlight = function (fields) { this.held = this.fieldsOf(fields); this.apply(); };
 FactCard.prototype.spotlight = function (fields) { var f = this.fieldsOf(fields); this.spot = f.length ? f : null; this.apply(); };
 FactCard.prototype.label = function (map) { var self = this; this.labels = {}; Object.keys(map || {}).forEach(function (f) { if (self.rowEls[f]) self.labels[f] = String(map[f]); }); this.apply(); };
-FactCard.prototype.check = function (field, claim, holds) { if (!this.rowEls[field]) return; this.checks[field] = { text: String(claim), holds: !!holds }; this.apply(); };
-FactCard.prototype.fit = function (field, low, high) { if (!this.strips[field] || FactCard.midi(low) === null || FactCard.midi(high) === null) return; this.fits[field] = { low: low, high: high }; this.apply(); };
+FactCard.prototype.check = function (field, claim, holds) { if (!this.rowEls[field]) return; this.checks[field] = { text: String(claim), holds: !!holds }; this.pointed = field; this.apply(); };
+// Lays a part's range (lowest and highest note) over a range strip.
+FactCard.prototype.span = function (field, low, high) { if (!this.strips[field] || FactCard.midi(low) === null || FactCard.midi(high) === null) return; this.spans[field] = { low: low, high: high }; this.pointed = field; this.apply(); };
 
 // A dark bubble under a row (over it when there is no room below),
-// pointing at the row's value and kept inside the card.
+// pointing at the row's value and kept inside the card. Placed where the
+// row is going when the rows are still sliding.
 FactCard.prototype.caption = function (field, html, tapped) {
   var row = this.rowEls[field];
   this.over.querySelectorAll('.tl-fc-bubble').forEach(function (e) { e.remove(); });
   if (!row) return;
+  if (!tapped) { this.pointed = field; this.follow(this.focusFields()); }
   var b = document.createElement('div'); b.innerHTML = html;
   b.className = 'tl-fc-bubble';
   this.over.appendChild(b);
+  var lag = this.slide.on ? this.slide.lag() : 0;
   var card = this.card.getBoundingClientRect(), rb = row.getBoundingClientRect(), vb = row.querySelector('.tl-fc-val').getBoundingClientRect();
   var vx = vb.left - card.left + Math.min(vb.width, 160) / 2;
-  var rowTop = rb.top - card.top, rowBottom = rb.bottom - card.top;
+  var rowTop = rb.top + lag - card.top, rowBottom = rb.bottom + lag - card.top;
   var bw = b.offsetWidth, bh = b.offsetHeight;
   var below = rowBottom + bh + 10 <= card.height;
   b.className = 'tl-fc-bubble ' + (below ? 'tl-fc-below' : 'tl-fc-above') + (tapped ? ' tl-fc-tapped' : '');

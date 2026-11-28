@@ -5,7 +5,7 @@
 <main class="wrap">
   <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>题目标题 <code>question-title</code></h1>
-  <p class="lede">舞台上方居中的一块玻璃牌，圈起来的题号加题目的标题。它能在标题下展开题干：先是中文，下面是原题英文，字小一点、斜体。播放器在流程标出的那几幕（读题）展开它，之后收起；展开和收起时牌子的宽和高都平滑地变过去。它不发事件。</p>
+  <p class="lede">舞台上方居中的一块玻璃牌，圈起来的题号加题目的标题。它能在标题下展开题干：先是中文，下面是原题英文，字小一点、斜体。播放器在流程标出的那几幕（读题）展开它，之后收起；展开和收起时牌子的宽和高都平滑地变过去。它不发事件。放不下时：标题先变小，小到下限后末尾用省略号；展开的题干最多占屏幕高度的两成多，超过时先变小，小到下限后收起英文、只留中文。</p>
 
   <div id="demo"></div>
 
@@ -17,7 +17,7 @@
       <tr><th>指令</th><td><code>title.set {open}</code>：展开或收起题干</td></tr>
       <tr><th>事件</th><td>无</td></tr>
     </table>
-    <p class="note">没有题干时展开不起作用。英文题干的衬线字体写在它自己的 <code>component.json</code> 里。玻璃和题号圈来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着）。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">没有题干时展开不起作用。英文题干的衬线字体写在它自己的 <code>component.json</code> 里。玻璃和题号圈来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着）。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。“换成很长的题”只是这一页为了看放不下时的样子，重新放了一块牌子。</p>
   </section>
 </main>
 
@@ -27,13 +27,34 @@
 <script src="../../engine/loading.js"></script>
 <script src="../../engine/demo-kit.js"></script>
 <script>
-ControlsDemo.start({
-  id: 'question-title',
-  place: 'head',
-  input: { no: '1', title: '判断拍号', text: '下面每一小节都没有写拍号。给每一小节选出正确的拍号。', gloss: 'Tick the correct time signature for each of these bars.' },
-  commands: [
-    { key: 'open', label: '展开题干', code: 'title.set {open: true}', run: function (c) { c.call('title.set', { open: true }); } },
-    { key: 'fold', label: '收起题干', code: 'title.set {open: false}', run: function (c) { c.call('title.set', { open: false }); } }
-  ]
-});
+(function () {
+  var SHORT = { no: '1', title: '判断拍号', text: '下面每一小节都没有写拍号。给每一小节选出正确的拍号。', gloss: 'Tick the correct time signature for each of these bars.' };
+  var LONG = {
+    no: '12-3',
+    title: '把单拍子改写成复拍子，并写出每一小节的拍号',
+    text: '下面这段旋律用的是四二拍。把它改写成八分之六拍，使它听起来完全一样：每个四分音符改成附点四分音符，每个八分音符改成附点八分音符或三连音里的音，并在每一小节前写上新的拍号，最后检查每一小节的拍数是否正确。',
+    gloss: 'Rewrite the following melody in 6/8 so that it sounds exactly the same. Remember to put in the new time signature, and check that every bar adds up to the right number of beats.'
+  };
+  // Puts a new plaque in place of a copy on the page, for this page only.
+  function swap(input) {
+    return function (c) {
+      var host = c.root.parentNode, controls = window.demo.controls;
+      host.innerHTML = '';
+      var fresh = LessonComponents.get('question-title').create(host, input);
+      Object.keys(controls).forEach(function (k) { if (controls[k] === c) controls[k] = fresh; });
+    };
+  }
+
+  ControlsDemo.start({
+    id: 'question-title',
+    place: 'head',
+    input: SHORT,
+    commands: [
+      { key: 'open', label: '展开题干', code: 'title.set {open: true}', run: function (c) { c.call('title.set', { open: true }); } },
+      { key: 'fold', label: '收起题干', code: 'title.set {open: false}', run: function (c) { c.call('title.set', { open: false }); } },
+      { key: 'long', label: '换成很长的题', code: '（只有这一页）', run: swap(LONG) },
+      { key: 'short', label: '换回第 1 题', code: '（只有这一页）', run: swap(SHORT) }
+    ]
+  });
+})();
 </script>

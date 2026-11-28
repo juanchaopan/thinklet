@@ -10,18 +10,28 @@
 
    LectureEngine.componentsOf(workflow, item) names the components an
    item puts on stage; the page loads those (LessonComponents.load) and
-   what they preload before the engine starts. Whatever those components
-   need, such as a sound or an instrument, they use themselves; the
-   engine makes no sound.
+   what they preload. prepare(progress) then lets each component prepare
+   what the inputs it will be given name (a component with `prepare`),
+   before start() puts the first scene on stage. Whatever those
+   components need, such as a sound or an instrument, they use
+   themselves; the engine makes no sound.
+
+   The item's folder and file parameters are paths inside the item's
+   folder; the engine hands them to components as full addresses, from
+   the item's own address (`base`).
 
    Nothing in here knows a workflow, a scene, a parameter or a component.
-   What it does know is the engine's own vocabulary: the step kinds; the
-   `narrate` interface it speaks through (speech is skipped when a scene
-   is run in a hurry); the `answer` interface an await uses (answer.clear,
-   .check, .demo); the navigation interfaces it keeps up to date and
-   listens to (leave, questions, parts, back, forward, restart); and the
-   event `go.origin`, which any control may send with the path of a value
-   to go back to the scene that used it.
+   It reaches components only through the registry's contract (create,
+   prepare, call, on, getState, setState, stop, fit) and its own
+   vocabulary of interfaces: `narrate`, which it speaks through
+   (narrate.say settles when the line is over, narrate.wait while the
+   child has paused it, narrate.turn marks the child's turn, narrate.flag
+   shows a note; speech is skipped when a scene is run in a hurry);
+   `answer`, which an await uses (answer.clear, .check, .demo); the
+   navigation interfaces it keeps up to date and listens to (leave,
+   questions, parts, back, forward, restart); `positions`, which finds
+   an item inside a control; and the event `go.origin`, which any control
+   may send with the path of a value to go back to the scene that used it.
 
    Where the child may go: back always; on only past scenes that are done
    or that may be left before they are done (`forward: done` holds a scene
@@ -33,6 +43,8 @@ var LectureEngine = (function () {
   var U = LessonComponents.util, arr = U.arr, sleep = U.sleep;
   var P = LessonParams;
   var NAV = ['leave', 'questions', 'parts', 'back', 'forward', 'restart'];
+  var REGION_KEYS = ['fit', 'width', 'zoom', 'align', 'valign', 'maxWidth', 'maxHeight', 'over', 'regions', 'flow', 'grow', 'overflow'];
+  var FITS = ['none', 'fill', 'contain', 'width', 'height'];
   var FADE_OUT_MS = 300, FADE_IN_MS = 420, FADE_IN_DELAY = 180, EASE = 'cubic-bezier(.6, 0, .25, 1)';
 
   function still() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
@@ -42,6 +54,25 @@ var LectureEngine = (function () {
     var c = (wf.controls || {})[name] || {};
     return (item.components || {})[name] || c.component || null;
   }
+  // A layout variant's region settings: the layout's, each region's
+  // settings changed by what the variant writes for it.
+  function settings(L, v) {
+    var out = Object.assign({}, L.regions);
+    Object.keys(v.regions || {}).forEach(function (k) { out[k] = Object.assign({}, (L.regions || {})[k], v.regions[k]); });
+    return out;
+  }
+  // The regions of a layout variant a control can be placed in, and the
+  // split ones, which hold regions rather than a control.
+  function regionsOf(L, v) {
+    var regions = settings(L, v), leaves = {}, split = {};
+    StageLayout.order({ regions: regions, areas: v.areas }).forEach(function (n) {
+      var parts = arr((regions[n] || {}).regions);
+      if (!parts.length) { leaves[n] = true; return; }
+      split[n] = true;
+      parts.forEach(function (p) { leaves[p] = true; });
+    });
+    return { regions: regions, leaves: leaves, split: split };
+  }
 
   function Engine(opts) {
     var self = this, onTrace = opts.onTrace || function () {};
@@ -49,12 +80,11 @@ var LectureEngine = (function () {
     this.wf = opts.workflow; this.item = opts.item; this.stage = opts.stage;
     this.trace = function (kind, text) { if (!self.destroyed) onTrace(kind, text); };
     this.inst = {}; this.keys = {}; this.slots = {}; this.snap = {}; this.done = {}; this.origin = {}; this.left = {};
-    this.token = null; this.finished = false; this.destroyed = false; this.cursor = null;
-    this.base = this.baseScope();
+    this.token = null; this.finished = false; this.destroyed = false; this.cursor = null; this.bar = null;
     this.problems = this.check();
     if (this.problems.length) return;
+    this.base = this.baseScope();
     this.plan = this.expand();
-    this.build();
   }
 
   // Every component an item puts on stage, each once.
@@ -67,11 +97,13 @@ var LectureEngine = (function () {
   /* ---------- reading the files ---------- */
 
   // The names a reference can start from: the item's parameters (with
-  // their paths), and the context the engine gives: $item (its name and
-  // number in the book), $book (the book's items) and $paths (every value
-  // of a declared type, by path, e.g. $paths.speech).
+  // their paths, folders and files as full addresses), and the context
+  // the engine gives: $item (its name and number in the book), $book (the
+  // book's items) and $paths (every value of a declared type, by path,
+  // e.g. $paths.speech).
   Engine.prototype.baseScope = function () {
-    var self = this, s = {}, params = this.item.params || {}, wf = this.wf;
+    var self = this, s = {}, wf = this.wf;
+    var params = P.locate(wf.params, this.item.params || {}, this.opts.base || location.href);
     Object.keys(params).forEach(function (k) { s[k] = { value: params[k], path: k }; });
     var me = arr(this.opts.book).filter(function (b) { return b.name === self.opts.name; })[0] || {};
     s.item = { value: { name: this.opts.name, no: me.no }, path: null };
@@ -117,21 +149,37 @@ var LectureEngine = (function () {
     });
     if (!talk) out.push('流程里没有实现 narrate 的占位（字幕）');
     var layouts = wf.layouts || {};
+    Object.keys(layouts).forEach(function (ln) {
+      var L = layouts[ln];
+      arr(L.variants).forEach(function (v, vi) {
+        var where = '排法 ' + ln + ' 第 ' + (vi + 1) + ' 种', regions = settings(L, v), cols = -1;
+        arr(v.areas).forEach(function (r) { var cells = String(r).trim().split(/\s+/); if (cols >= 0 && cells.length !== cols) out.push(where + '的区域图每行列数不同'); cols = cells.length; });
+        Object.keys(regions).forEach(function (r) {
+          Object.keys(regions[r]).forEach(function (k) { if (REGION_KEYS.indexOf(k) < 0) out.push(where + '的区域 ' + r + ' 有不认识的设置 ' + k); });
+          if (regions[r].fit !== undefined && FITS.indexOf(regions[r].fit) < 0) out.push(where + '的区域 ' + r + ' 的 fit 应该是 ' + FITS.join('、') + ' 之一');
+        });
+        if (typeof v.when === 'string' && !(wf.screens || {})[v.when]) out.push('排法 ' + ln + ' 用的屏幕 ' + v.when + ' 没有定义');
+      });
+      var vs = arr(L.variants), last = vs[vs.length - 1];
+      if (last && last.when !== undefined) out.push('排法 ' + ln + ' 的最后一种具体排法要不写条件，兜底');
+    });
     Object.keys(wf.scenes || {}).forEach(function (sn) {
       var s = wf.scenes[sn], L = layouts[s.layout];
       if (!L) { out.push('幕 ' + sn + ' 的排法 ' + s.layout + ' 不存在'); return; }
       var place = Object.assign({}, L.place, s.place);
-      arr(L.variants).forEach(function (v, vi) {
-        var names = {}, cols = -1;
-        arr(v.areas).forEach(function (r) { var cells = String(r).trim().split(/\s+/); if (cols >= 0 && cells.length !== cols) out.push('排法 ' + s.layout + ' 第 ' + (vi + 1) + ' 种的区域图每行列数不同'); cols = cells.length; cells.forEach(function (c) { if (c !== '.') names[c] = true; }); });
-        var regions = Object.assign({}, L.regions, v.regions);
-        Object.keys(regions).forEach(function (r) { if (regions[r].over && names[regions[r].over]) names[r] = true; });
-        if (typeof v.when === 'string' && !(wf.screens || {})[v.when]) out.push('排法 ' + s.layout + ' 用的屏幕 ' + v.when + ' 没有定义');
-        Object.keys(place).forEach(function (r) { if (arr(place[r]).length && !names[r]) out.push('幕 ' + sn + ' 往区域 ' + r + ' 放东西，排法 ' + s.layout + ' 第 ' + (vi + 1) + ' 种没有这个区域'); });
+      Object.keys(place).forEach(function (r) {
+        var list = arr(place[r]);
+        if (list.length > 1) out.push('幕 ' + sn + ' 往区域 ' + r + ' 放了 ' + list.length + ' 个组件，一个区域只放一个');
+        list.forEach(function (c) { if (!isRef(c) && !controls[c]) out.push('幕 ' + sn + ' 放的 ' + c + ' 不是流程声明的占位'); });
       });
-      Object.keys(place).forEach(function (r) { arr(place[r]).forEach(function (c) { if (!isRef(c) && !controls[c]) out.push('幕 ' + sn + ' 放的 ' + c + ' 不是流程声明的占位'); }); });
-      var vs = arr(L.variants), last = vs[vs.length - 1];
-      if (last && last.when !== undefined) out.push('排法 ' + s.layout + ' 的最后一种具体排法要不写条件，兜底');
+      arr(L.variants).forEach(function (v, vi) {
+        var R = regionsOf(L, v);
+        Object.keys(place).forEach(function (r) {
+          if (!arr(place[r]).length) return;
+          if (R.split[r]) out.push('幕 ' + sn + ' 往区域 ' + r + ' 放东西，排法 ' + s.layout + ' 第 ' + (vi + 1) + ' 种把它分成了几个区域，要放进其中一个');
+          else if (!R.leaves[r]) out.push('幕 ' + sn + ' 往区域 ' + r + ' 放东西，排法 ' + s.layout + ' 第 ' + (vi + 1) + ' 种没有这个区域');
+        });
+      });
       Object.keys(s.exit || {}).forEach(function (c) { var to = s.exit[c].to, t = to && typeof to === 'object' ? to.control : to; if (t && !controls[t]) out.push('幕 ' + sn + ' 的动作目标 ' + t + ' 不存在'); });
     });
     (function scan(list) { arr(list).forEach(function (e) { var n = typeof e === 'string' ? e : e.scene; if (n && !(wf.scenes || {})[n]) out.push('顺序里的幕 ' + n + ' 不存在'); if (e && e.sequence) scan(e.sequence); }); })(wf.sequence);
@@ -176,6 +224,33 @@ var LectureEngine = (function () {
     return out;
   };
 
+  // Lets every component prepare what its inputs name, for each set of
+  // inputs a scene of the lecture will give it; progress(fraction 0..1 or
+  // null when unknown, text) adds them up.
+  Engine.prototype.prepare = function (progress) {
+    var self = this, tell = progress || function () {}, jobs = [], seen = {};
+    if (this.problems.length) return Promise.resolve();
+    this.plan.forEach(function (sc) {
+      Object.keys(self.wf.controls).forEach(function (n) {
+        var id = self.componentOf(n), d = id && LessonComponents.get(id);
+        if (!d || !d.prepare) return;
+        var inp = self.inputsOf(n, sc.scope), key = id + '|' + JSON.stringify(inp.value);
+        if (inp.absent || seen[key]) return;
+        seen[key] = true;
+        jobs.push(function (part) { return d.prepare(inp.value, part); });
+      });
+    });
+    if (!jobs.length) { tell(1); return Promise.resolve(); }
+    var parts = jobs.map(function () { return 0; });
+    return Promise.all(jobs.map(function (job, i) {
+      return job(function (f, text) {
+        if (f === null || f === undefined) { tell(null, text); return; }
+        parts[i] = f / jobs.length;
+        tell(parts.reduce(function (a, b) { return a + b; }, 0), text);
+      });
+    }));
+  };
+
   /* ---------- the stage ---------- */
 
   Engine.prototype.build = function () {
@@ -190,7 +265,7 @@ var LectureEngine = (function () {
       present: function (n) { return !!self.inst[n] && !self.left[n]; },
       fluid: function (n) { var d = LessonComponents.get(self.componentOf(n)); return !!(d && d.fluid); },
       relayout: function (n) { self.redraw(n); },
-      box: function (n, size) { var a = self.inst[n]; if (a && a.box) a.box(size); },
+      fit: function (n, view) { var a = self.inst[n]; if (a) a.fit(view); },
       itemRect: function (n, ref) { var a = self.inst[n]; if (!a || a.interfaces.indexOf('positions') < 0) return null; return a.call('positions.rect', ref); },
       trace: function (n, m, hit) { self.trace('call', n + ' 下台：' + (m.kind === 'fly' ? '飞向' + (typeof m.to === 'object' ? m.to.control + ' 里的一项' : m.to) + (hit ? '' : '（找不到目标，淡出）') : '淡出')); },
       problem: function (t) { self.trace('error', t); }
@@ -228,12 +303,12 @@ var LectureEngine = (function () {
   };
   Engine.prototype.mount = function (n, id, input) {
     var self = this, slot = this.slots[n], host = slot.querySelector('.lx-host');
-    if (this.inst[n]) { this.inst[n].stop(); this.inst[n] = null; }
+    if (this.inst[n]) { this.inst[n].stop(); if (this.inst[n] === this.bar) this.bar = null; this.inst[n] = null; }
     host.innerHTML = '';
+    this.layout.forget(n);
     if (!id) return;
-    var def = LessonComponents.get(id), extra = {};
-    if (def.interfaces.indexOf('narrate') >= 0) extra = { lines: this.opts.lines };
-    var a = def.create(host, Object.assign({}, input, extra), { moveMs: StageLayout.MOVE_MS, swap: function (fn) { return self.crossfade(n, fn); } });
+    var def = LessonComponents.get(id);
+    var a = def.create(host, Object.assign({}, input), { moveMs: StageLayout.MOVE_MS, swap: function (fn) { return self.crossfade(n, fn); } });
     a.binding = id; a.interfaces = def.interfaces; a.inputs = input;
     a.on(function (ev) { self.onEvent(n, ev); });
     this.inst[n] = a;
@@ -248,6 +323,7 @@ var LectureEngine = (function () {
     var state = a.getState();
     this.mount(n, a.binding, a.inputs);
     this.inst[n].setState(state);
+    this.layout.fit();
     this.trace('screen', n + ' 按新的宽度重画');
   };
   // New content for a component on stage: the old drawing lifts a little
@@ -311,6 +387,10 @@ var LectureEngine = (function () {
     var no = function (e) { self.trace('screen', '浏览器没有让它全屏（' + ((e && e.message) || e || '没有说原因') + '），画面占满整个窗口'); };
     try { var p = req.call(el, { navigationUI: 'hide' }); if (p && p.then) p.then(function () { self.trace('screen', '全屏了'); }, no); } catch (e) { no(e); }
   };
+
+  /* ---------- the narrator ---------- */
+
+  Engine.prototype.narrate = function (cmd, v) { return this.bar ? this.bar.call('narrate.' + cmd, v) : Promise.resolve(); };
 
   /* ---------- where the child may go ---------- */
 
@@ -397,13 +477,15 @@ var LectureEngine = (function () {
     return t;
   };
 
+  // Steps run one after another; before each, the lecture waits while
+  // the child has paused the narrator.
   Engine.prototype.runSteps = function (steps, sc, token) {
     var self = this, i = 0, list = arr(steps);
     function next() {
       if (i >= list.length) return Promise.resolve();
       var s = list[i++];
       if (s.when && !P.holds(s.when, sc.scope)) return next();
-      var gate = token.hurry || !self.bar ? Promise.resolve() : self.bar.whenRunning();
+      var gate = token.hurry ? Promise.resolve() : self.narrate('wait');
       return self.guard(gate, token).then(function () { return self.runStep(s, sc, token); }).then(next);
     }
     return next();
@@ -433,23 +515,28 @@ var LectureEngine = (function () {
   // One interface command. A call to a placeholder with nothing on stage,
   // or whose argument is a reference that resolves to nothing, is not
   // made. The value's path goes along (ctx.ref), and the scene is
-  // remembered as where that value was used. A region turning as a wheel
-  // turns to the placeholder a step acts on.
+  // remembered as where that value was used. A narrate command is
+  // skipped in a hurry; one about a value says which by its path, the
+  // name the narrator knows its recording by. A region turning as a
+  // wheel turns to the placeholder a step acts on.
   Engine.prototype.runDo = function (d, sc, token) {
-    var self = this, n = this.val(d.control, sc.scope), a = this.inst[n];
+    var n = this.val(d.control, sc.scope), a = this.inst[n];
     if (!a) return Promise.resolve();
     var r = 'with' in d ? (isRef(d.with) ? this.ref(d.with, sc.scope) : { value: d.with, path: null }) : { value: undefined, path: null };
     if (isRef(d.with) && r.value === undefined) return Promise.resolve();
     if (r.path) this.origin[r.path] = sc.g;
-    if (d.call === 'narrate.say') {
-      if (token.hurry || !r.path) return Promise.resolve();
-      this.trace('say', r.path + '：' + (typeof r.value === 'string' ? r.value : r.value.text));
-      return this.guard(a.say(r.path), token).then(function () { return self.guard(a.whenRunning(), token); });
+    var ctx = { hurry: token.hurry, ref: r.path };
+    if (d.call.indexOf('narrate.') === 0) {
+      if (token.hurry) return Promise.resolve();
+      this.trace('say', (r.path || d.call) + '：' + (typeof r.value === 'string' ? r.value : r.value && r.value.text || ''));
+      var said = a.call(d.call, r.path || r.value, ctx);
+      return d.wait ? this.guard(said, token) : Promise.resolve();
     }
     var fromName = d.from ? this.val(d.from, sc.scope) : null, from = fromName ? this.layout.rectOf(fromName) : null;
     this.layout.focus(n);
     this.trace('call', n + '（' + a.binding + '）. ' + d.call + (r.value !== undefined ? ' ' + JSON.stringify(r.value).slice(0, 120) : '') + (from && !token.hurry ? '，从 ' + fromName + ' 飞过来' : ''));
-    var p = a.call(d.call, r.value, { hurry: token.hurry, ref: r.path, from: from && !token.hurry ? from : null });
+    ctx.from = from && !token.hurry ? from : null;
+    var p = a.call(d.call, r.value, ctx);
     return d.wait ? this.guard(p, token) : Promise.resolve();
   };
 
@@ -473,13 +560,13 @@ var LectureEngine = (function () {
     a.call('answer.clear', { item: item });
     var live = function (on) { slot.inert = !on; self.updateNav(); };
     function once() {
-      if (self.bar) self.bar.turn(true);
+      self.narrate('turn', true);
       self.trace('act', '等孩子：' + n + ' 的 ' + w.event + (item !== null ? '（' + item + '）' : '') + '，算对：' + accept.join(' / '));
       var waiting = new Promise(function (res) { self.waiting = { control: n, event: w.event, item: item, resolve: res }; });
       live(true);
       return self.guard(waiting, token).then(function (ev) {
         live(false);
-        if (self.bar) self.bar.turn(false);
+        self.narrate('turn', false);
         var value = String(ev.value);
         if (accept.indexOf(value) >= 0) {
           a.call('answer.check', { item: item, value: ev.value }, ctx, true);
@@ -502,33 +589,36 @@ var LectureEngine = (function () {
 
   /* ---------- snapshots ---------- */
 
+  // What every control shows as a scene begins; the navigation controls
+  // are set by where the child is, so they are left out.
   Engine.prototype.snapshot = function () {
     var self = this, s = {};
     Object.keys(this.inst).forEach(function (n) {
       var a = self.inst[n];
-      if (a && !a.interfaces.some(function (i) { return NAV.indexOf(i) >= 0 || i === 'narrate'; })) s[n] = a.getState();
+      if (a && !a.interfaces.some(function (i) { return NAV.indexOf(i) >= 0; })) s[n] = a.getState();
     });
-    return { roles: s, line: this.bar ? this.bar.current : null };
+    return s;
   };
   // Sets the stage straight to how a scene began; the picture brightens
   // from a dim, so the jump is not a cut.
   Engine.prototype.restore = function (snap, sc) {
     var self = this;
     this.compose(sc, false);
-    Object.keys(snap.roles).forEach(function (n) { if (self.inst[n]) self.inst[n].setState(snap.roles[n]); });
-    if (this.bar) this.bar.set({ line: snap.line });
+    Object.keys(snap).forEach(function (n) { if (self.inst[n]) self.inst[n].setState(snap[n]); });
     if (!still()) this.frame.animate([{ opacity: .55 }, { opacity: 1 }], { duration: FADE_IN_MS, easing: EASE });
   };
   Engine.prototype.stopAll = function () {
     var self = this;
     this.waiting = null; this.resolveNext = null;
-    if (this.bar) { this.bar.stop(); this.bar.turn(false); }
-    Object.keys(this.inst).forEach(function (n) { if (self.inst[n] && self.inst[n] !== self.bar) self.inst[n].stop(); });
+    Object.keys(this.inst).forEach(function (n) { if (self.inst[n]) self.inst[n].stop(); });
+    this.narrate('turn', false);
   };
 
   /* ---------- the lecture's course ---------- */
 
   Engine.prototype.start = function () {
+    if (this.problems.length) return;
+    this.build();
     this.fullscreen();
     this.go(0, 'start');
   };
@@ -542,7 +632,7 @@ var LectureEngine = (function () {
     var self = this, sc = this.plan[g], prev = this.cursor ? this.plan[this.cursor.g] : null;
     if (this.token) this.token.abort();
     this.stopAll();
-    if (this.bar) this.bar.flag(null);
+    this.narrate('flag', null);
     var token = this.token = this.newToken(how === 'skip');
     this.cursor = { g: g, phase: 'run' };
     if (how === 'back' || (how === 'skip' && this.snap[g])) this.restore(this.snap[g], sc);
@@ -573,7 +663,7 @@ var LectureEngine = (function () {
   // comes in. The stage stays as it is; the close control leads back.
   Engine.prototype.finish = function () {
     this.finished = true;
-    if (this.bar) this.bar.flag('讲完了');
+    this.narrate('flag', '讲完了');
     this.updateNav();
     this.trace('done', '这道讲题讲完了');
   };

@@ -76,26 +76,33 @@ screens:
 
 layouts:
   stage:
-    # What each region holds unless a scene says otherwise.
+    # The one control each region holds unless a scene says otherwise.
     place:
-      parts: [segments]
-      exits: [menu, close]
-      title: [title]
-      board: [board]
-      strip: [material]
-      main: []
-      pop: []
-      dock: [prev, narrator, next, replay]
+      parts: segments
+      title: title
+      board: board
+      strip: material
+      prev: prev
+      narrator: narrator
+      next: next
+      replay: replay
+      menu: menu
+      close: close
     # Region settings every variant shares; a variant may change them.
+    # Regions are painted in the order written here, each over those
+    # before it: the rule over the middle, the question list over all.
+    # The middle is split into three regions scaled as one, so the ruler
+    # and what is compared with it line up beat for beat; the dock and
+    # the exits are split into one region per button.
     regions:
-      parts: { flow: row, align: start }
-      exits: { flow: row, align: end }
-      title: { flow: row, align: center }
-      board: { fit: fill, layer: 3 }
+      parts: { align: start }
+      title: { align: center }
+      board: { fit: fill }
       strip: { fit: contain, width: 320, zoom: [0.4, 1], maxHeight: 22% }
-      main: { fit: contain, width: 760, zoom: [0.6, 1.4], overflow: wheel }
-      pop: { over: main, fit: contain, width: 520, zoom: [0.6, 1], layer: 4 }
-      dock: { flow: row, grow: narrator, maxWidth: 1100 }
+      main: { regions: [lead, match, answer], flow: column, fit: contain, width: 760, zoom: [0.6, 1.4], overflow: wheel }
+      pop: { over: main, fit: contain, width: 520, zoom: [0.6, 1] }
+      dock: { regions: [prev, narrator, next, replay], flow: row, grow: narrator, maxWidth: 1100 }
+      exits: { regions: [menu, close], flow: row, align: end }
     # Grid tracks are CSS track sizes; one with a comma is quoted.
     variants:
       - when: wide
@@ -147,7 +154,7 @@ scenes:
   read:
     title: 读题
     layout: stage
-    place: { strip: [], main: [material] }
+    place: { strip: null, lead: material }
     state: { title: { open: true } }
     steps:
       - do: { control: narrator, call: narrate.say, with: $lines.read.question, wait: true }
@@ -157,7 +164,7 @@ scenes:
     title: 找拍
     layout: stage
     when: { has: $part.meter }
-    place: { main: [ruler] }
+    place: { lead: ruler }
     steps:
       - together:
           - do: { control: narrator, call: narrate.say, with: $part.lines.beat.read, wait: true }
@@ -173,7 +180,7 @@ scenes:
   target-beat:
     title: 改写成的拍子
     layout: stage
-    place: { main: [ruler, compare] }
+    place: { lead: ruler, match: compare }
     steps:
       - together:
           - do: { control: narrator, call: narrate.say, with: $part.lines.target.unit, wait: true }
@@ -184,7 +191,7 @@ scenes:
   measure:
     title: 量一共多长
     layout: stage
-    place: { main: [ruler] }
+    place: { lead: ruler }
     steps:
       - together:
           - do: { control: narrator, call: narrate.say, with: $part.lines.measure.unit, wait: true }
@@ -196,7 +203,7 @@ scenes:
   grouping:
     title: 看怎么分组
     layout: stage
-    place: { main: [ruler] }
+    place: { lead: ruler }
     steps:
       - together:
           - do: { control: narrator, call: narrate.say, with: $part.lines.grouping.look, wait: true }
@@ -210,7 +217,7 @@ scenes:
     title: 这种拍子怎么写
     layout: stage
     when: { has: $part.conclusions.rule }
-    place: { main: [ruler], pop: [rule] }
+    place: { lead: ruler, pop: rule }
     steps:
       - together:
           - do: { control: narrator, call: narrate.say, with: $part.lines.rule.open, wait: true }
@@ -220,7 +227,7 @@ scenes:
   cut:
     title: 按拍切开
     layout: stage
-    place: { main: [ruler] }
+    place: { lead: ruler }
     steps:
       - do: { control: narrator, call: narrate.say, with: $part.lines.cut.lines, wait: true }
       - do: { control: ruler, call: count.run, with: $part.beat, wait: true }
@@ -230,7 +237,7 @@ scenes:
     title: 一项一项地对
     layout: stage
     params: { on: { default: ruler } }
-    place: { main: [ruler, compare, answer] }
+    place: { lead: ruler, match: compare, answer: answer }
     # When the child is asked to choose next, the ruler has done its work:
     # it folds into the conclusion board.
     exit:
@@ -270,7 +277,7 @@ scenes:
   choose:
     title: 选出来
     layout: stage
-    place: { main: [answer] }
+    place: { answer: answer }
     forward: done
     steps:
       - together:
@@ -297,7 +304,7 @@ scenes:
   fill:
     title: 写出来
     layout: stage
-    place: { main: [ruler, answer] }
+    place: { lead: ruler, answer: answer }
     forward: done
     steps:
       - together:

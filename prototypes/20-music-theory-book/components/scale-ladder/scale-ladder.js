@@ -10,6 +10,15 @@
    the injected source, lectures only.
    Its look is scale-ladder.css; colours come from the theme constants
    (--th-<name>) set on the page or stage around the ladder.
+
+   When it does not fit: fit(view) gives the most room it may take,
+   {width, height} in its own pixels (null: its own size again). A ladder
+   taller than the view first gets smaller, its rungs closer and its
+   cards and names smaller, down to MIN_SHRINK of its size. Still too
+   tall, it slides up and down inside the view, keeping the step in play
+   (held, counted, played, spotlit, captioned) in the middle; a drag
+   slides it and it comes to rest with a rung in the middle; an edge with
+   more rungs beyond it fades.
    ============================================================ */
 function ScaleLadder(host, options) {
   this.host = host;
@@ -22,6 +31,9 @@ function ScaleLadder(host, options) {
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
+  this.view = null;
+  this.viewKey = '';
+  this.interest = null;
   this.build();
 }
 ScaleLadder.LETTERS = 'CDEFGAB';
@@ -38,12 +50,70 @@ ScaleLadder.ACC_WORD = { '2': ' double sharp', '1': ' sharp', '-1': ' flat', '-2
 ScaleLadder.ACC_TEXT = { '2': '𝄪', '1': '♯', '-1': '♭', '-2': '𝄫' };
 ScaleLadder.TAP_FADE_MS = 2000;
 ScaleLadder.MOVE_MS = 600;
+// Within a view the ladder shrinks to no less than this share of its size.
+ScaleLadder.MIN_SHRINK = .75;
 
 ScaleLadder.parseTonic = function (t) {
   var L = ScaleLadder.LETTERS.indexOf(t.charAt(0).toUpperCase());
   var rest = t.slice(1), acc = 0;
   for (var i = 0; i < rest.length; i++) { var c = rest.charAt(i); if (c === '#' || c === '♯') acc++; else if (c === 'b' || c === '♭') acc--; }
   return { L: L, acc: acc };
+};
+
+// A window onto a strip longer than it, moved along one axis with
+// transforms: `parts` move together, `snap` picks where a drag comes to
+// rest. An edge with more beyond it fades (--slide-a, --slide-b on the
+// window). The owner passes its pointer events to grab, drag and drop,
+// and treats a press that never dragged as a tap.
+ScaleLadder.Slide = function (win, parts, axis, snap) {
+  this.win = win; this.parts = parts; this.y = axis === 'y'; this.snap = snap || function (o) { return o; };
+  this.on = false; this.at = 0; this.len = 0; this.press = null;
+};
+ScaleLadder.Slide.DRAG_PX = 8;
+ScaleLadder.Slide.RUBBER = .35;
+ScaleLadder.Slide.prototype.pos = function (e) { return this.y ? e.clientY : e.clientX; };
+ScaleLadder.Slide.prototype.room = function () { return this.y ? this.win.clientHeight : this.win.clientWidth; };
+ScaleLadder.Slide.prototype.max = function () { return Math.max(0, this.len - this.room()); };
+ScaleLadder.Slide.prototype.clamp = function (o) { return Math.max(0, Math.min(this.max(), o)); };
+ScaleLadder.Slide.prototype.set = function (on, len) { this.on = !!on; this.len = len || 0; this.place(this.on ? this.clamp(this.at) : 0, false); };
+ScaleLadder.Slide.prototype.place = function (o, animated) {
+  var still = !animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var t = o ? (this.y ? 'translateY(' : 'translateX(') + (-o).toFixed(1) + 'px)' : '';
+  this.at = o;
+  this.parts.forEach(function (p) { p.style.transition = still ? 'none' : ''; p.style.transform = t; });
+  this.win.style.setProperty('--slide-a', this.on && o > 1 ? '1' : '0');
+  this.win.style.setProperty('--slide-b', this.on && o < this.max() - 1 ? '1' : '0');
+};
+ScaleLadder.Slide.prototype.to = function (o, animated) { if (this.on) this.place(this.clamp(o), animated !== false); };
+// Keeps a..b in view: centred when it fits, from a when it does not.
+ScaleLadder.Slide.prototype.show = function (a, b, animated) {
+  var room = this.room();
+  this.to(b - a <= room ? (a + b) / 2 - room / 2 : a, animated);
+};
+ScaleLadder.Slide.prototype.grab = function (e) {
+  if (!this.on || e.button > 0) return false;
+  this.press = { p: this.pos(e), at: this.at, id: e.pointerId, moved: false };
+  return true;
+};
+ScaleLadder.Slide.prototype.drag = function (e) {
+  var p = this.press; if (!p) return false;
+  var d = this.pos(e) - p.p;
+  if (!p.moved && Math.abs(d) > ScaleLadder.Slide.DRAG_PX) {
+    p.moved = true;
+    try { this.win.setPointerCapture(p.id); } catch (err) { /* the pointer is already gone */ }
+  }
+  if (!p.moved) return false;
+  e.preventDefault();
+  var o = p.at - d, max = this.max();
+  if (o < 0) o *= ScaleLadder.Slide.RUBBER; else if (o > max) o = max + (o - max) * ScaleLadder.Slide.RUBBER;
+  this.place(o, false);
+  return true;
+};
+ScaleLadder.Slide.prototype.drop = function () {
+  var p = this.press; this.press = null;
+  if (!p || !p.moved) return false;
+  this.to(this.snap(this.clamp(this.at)), true);
+  return true;
 };
 
 // Accidental glyphs drawn by the score library, so a sharp here is the
@@ -131,6 +201,13 @@ ScaleLadder.prototype.degree = function (d, descending) {
 
 ScaleLadder.prototype.range = function () { var r = []; for (var d = this.o.from; d <= this.o.to; d++) r.push(d); return r; };
 
+// The semitones from the lowest rung to the highest in the current key and form.
+ScaleLadder.prototype.semis = function () {
+  var self = this, lo = Infinity, hi = -Infinity;
+  this.range().forEach(function (d) { var s = self.degree(d, self.descending).semis; lo = Math.min(lo, s); hi = Math.max(hi, s); });
+  return hi - lo;
+};
+
 // Columns and spacing. Rung spacing is a fixed number of pixels per
 // semitone, the same for every ladder of one size, so ladders shown side
 // by side line up rung for rung. A small ladder hangs its name cards over
@@ -158,6 +235,20 @@ ScaleLadder.prototype.layout = function (width) {
   return L;
 };
 
+// Within a view: the height the ladder may take, and its rungs, cards
+// and names made smaller when the whole ladder would be taller, down to
+// MIN_SHRINK of their size.
+ScaleLadder.prototype.shrink = function (L) {
+  var cs = getComputedStyle(this.case), cap = this.host.querySelector('.tl-sl-caption');
+  var room = this.view.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - (cap ? cap.offsetHeight + 10 : 0);
+  var span = this.semis(), need = 2 * L.margin + L.cardH + span * L.unit;
+  if (need > room) {
+    var k = Math.max(ScaleLadder.MIN_SHRINK, (room - 2 * L.margin) / (need - 2 * L.margin));
+    L.unit *= k; L.cardH = Math.round(L.cardH * k); L.nameSize = Math.round(L.nameSize * k);
+  }
+  L.room = Math.max(L.cardH * 3, Math.floor(room));
+};
+
 ScaleLadder.prototype.build = function () {
   var self = this;
   this.stop(); this.clearTap();
@@ -167,14 +258,19 @@ ScaleLadder.prototype.build = function () {
   this.host.classList.toggle('tl-sl-playable', playable);
   this.host.innerHTML = '';
   this.case = document.createElement('div'); this.case.className = 'tl-sl-case';
+  this.win = document.createElement('div'); this.win.className = 'tl-sl-window';
   this.frame = document.createElement('div'); this.frame.className = 'tl-sl-frame';
-  this.case.appendChild(this.frame);
+  this.win.appendChild(this.frame);
+  this.case.appendChild(this.win);
   this.host.appendChild(this.case);
   if (this.o.caption) { var cap = document.createElement('p'); cap.className = 'tl-sl-caption'; cap.textContent = this.o.caption; this.host.appendChild(cap); }
+  if (this.view) { var cs = this.case.style; cs.boxSizing = 'border-box'; cs.maxWidth = Math.floor(this.view.width) + 'px'; cs.width = '100%'; cs.alignSelf = 'center'; }
 
-  var width = Math.max(70, (this.host.clientWidth || 300) - (this.o.compact ? 8 : 24));
+  var outer = this.view ? Math.min(this.view.width, this.host.clientWidth || this.view.width) : (this.host.clientWidth || 300);
+  var width = Math.max(70, outer - (this.o.compact ? 8 : 24));
   var L = this.L = this.layout(width);
   this.host.classList.toggle('tl-sl-narrow', L.narrow);
+  if (this.view) this.shrink(L);
   this.frame.style.width = L.total + 'px';
   this.frame.style.setProperty('--tl-name-size', L.nameSize + 'px');
   this.rails = [L.railL, L.railR].map(function (x) {
@@ -198,6 +294,7 @@ ScaleLadder.prototype.build = function () {
   this.overlay.innerHTML = '<svg aria-hidden="true"></svg>';
   this.braces = this.overlay.querySelector('svg');
   this.frame.appendChild(this.overlay);
+  this.slide = new ScaleLadder.Slide(this.win, [this.frame], 'y', function (o) { return self.rest(o); });
 
   if (playable) {
     this.playBtn = document.createElement('button');
@@ -210,14 +307,31 @@ ScaleLadder.prototype.build = function () {
 
   this.place(false);
   var first = this.rungs[this.o.from]; if (first) first.tabIndex = 0;
-  this.case.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
+  // While the ladder slides, a press is a tap only if it never dragged.
+  var pressed = null;
+  this.case.addEventListener('pointerdown', function (ev) { if (self.slide.grab(ev)) { pressed = ev; return; } self.onPointer(ev); });
+  this.case.addEventListener('pointermove', function (ev) { if (self.slide.drag(ev)) pressed = null; });
+  this.case.addEventListener('pointerup', function () { var p = pressed; pressed = null; if (!self.slide.drop() && p) self.onPointer(p); });
+  this.case.addEventListener('pointercancel', function () { pressed = null; self.slide.drop(); });
   this.case.addEventListener('keydown', function (ev) { self.onKey(ev); });
   this.case.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd'); });
   this.restore();
+  if (this.interest) this.follow(this.interest, false);
+};
+
+// The most room the ladder may take, or null for its own size; it is
+// drawn again only when that changes.
+ScaleLadder.prototype.fit = function (view) {
+  var key = view ? Math.round(view.width) + 'x' + Math.round(view.height) : '';
+  if (key === this.viewKey) return;
+  this.viewKey = key;
+  this.view = view ? { width: view.width, height: view.height } : null;
+  this.build();
 };
 
 // Puts every rung at its height for the current key and form and writes
 // its names. With `animated`, rungs slide and changed names are re-inked.
+// A ladder taller than its view slides inside it.
 ScaleLadder.prototype.place = function (animated) {
   var self = this, L = this.L;
   var info = {}, lo = Infinity, hi = -Infinity;
@@ -236,6 +350,11 @@ ScaleLadder.prototype.place = function (animated) {
     var tech = r.querySelector('.tl-sl-tech'); if (tech) self.write(tech, self.masked.technical[d] ? null : g.technical, animated, false);
     r.setAttribute('aria-label', '第 ' + d + ' 级 ' + (self.masked.name[d] ? '音名未知' : g.spoken) + (self.masked.technical[d] ? '' : '，' + g.technical) + (self.masked.numeral[d] ? '' : '，' + g.numeral + (self.suffix[d] || '')));
   });
+  var sliding = !!this.view && height > L.room + 1;
+  this.case.classList.toggle('tl-sl-sliding', sliding);
+  this.win.style.height = sliding ? L.room + 'px' : '';
+  this.slide.set(sliding, height);
+  if (sliding && this.interest) this.follow(this.interest, animated);
 };
 
 // Writes one cell. null shows the dashed question box. A cell whose
@@ -251,6 +370,24 @@ ScaleLadder.prototype.write = function (el, html, animated, isCard) {
 ScaleLadder.prototype.yOf = function (d) {
   var L = this.L, g = this.info[d];
   return L.margin + L.cardH / 2 + (this.span.hi - g.semis) * L.unit;
+};
+
+// Where a sliding ladder comes to rest: with the rung nearest the middle
+// of the view in the middle.
+ScaleLadder.prototype.rest = function (o) {
+  var self = this, mid = o + this.slide.room() / 2, best = o, dist = Infinity;
+  this.range().forEach(function (d) { var y = self.yOf(d), dd = Math.abs(y - mid); if (dd < dist) { dist = dd; best = y - self.slide.room() / 2; } });
+  return best;
+};
+// Slides the ladder so these steps are in the middle of the view.
+ScaleLadder.prototype.follow = function (ds, animated) {
+  var self = this;
+  ds = (ds || []).filter(function (d) { return self.rungs[d]; });
+  if (!ds.length) return;
+  this.interest = ds;
+  if (!this.slide.on) return;
+  var ys = ds.map(function (d) { return self.yOf(d); }), half = this.L.cardH;
+  this.slide.show(Math.min.apply(null, ys) - half, Math.max.apply(null, ys) + half, animated);
 };
 
 // Taps pick the nearest rung by height. Between the top and bottom rungs
@@ -276,7 +413,8 @@ ScaleLadder.prototype.onKey = function (ev) {
     ev.preventDefault();
     var next = d + (ev.key === 'ArrowUp' ? 1 : -1);
     if (!this.rungs[next]) return;
-    cur.tabIndex = -1; this.rungs[next].tabIndex = 0; this.rungs[next].focus();
+    cur.tabIndex = -1; this.rungs[next].tabIndex = 0; this.rungs[next].focus({ preventScroll: true });
+    this.follow([next]);
     if (this.o.mode === 'lecture') this.tap(next);
   } else if (ev.key === 'Enter' || ev.key === ' ') {
     ev.preventDefault(); if (this.o.mode === 'lecture') this.tap(d);
@@ -338,6 +476,7 @@ ScaleLadder.prototype.highlight = function (ds) {
   this.unlit(Object.keys(this.held).map(Number));
   var held = {}; ds.forEach(function (d) { held[d] = true; }); this.held = held;
   this.lit(ds);
+  this.follow(ds);
 };
 
 ScaleLadder.prototype.label = function (map) {
@@ -394,6 +533,7 @@ ScaleLadder.prototype.count = function (from, to) {
       var d = from + dir * (n - 1), g = self.info[d];
       self.unlit(self.range().filter(function (k) { return !self.held[k]; }));
       self.lit([d]); self.press(d, 160);
+      self.follow([d]);
       if (self.audible()) self.note(g.midi, 0, .5, .65);
       var c = document.createElement('span'); c.className = 'tl-sl-count tl-sl-mark'; c.textContent = String(n);
       c.style.left = L.railR + L.railW + 10 + 'px';
@@ -488,11 +628,13 @@ ScaleLadder.prototype.spotlight = function (ds) {
   s.style.left = L.ladX - 20 + 'px'; s.style.width = L.ladW + 40 + 'px'; s.style.top = top + 'px'; s.style.height = bottom - top + 'px';
   this.overlay.appendChild(s);
   requestAnimationFrame(function () { requestAnimationFrame(function () { s.classList.add('on'); }); });
+  this.follow(ds);
 };
 
 ScaleLadder.prototype.caption = function (d, html) {
   this.frame.querySelectorAll('.tl-sl-bubble').forEach(function (e) { e.remove(); });
   if (!this.rungs[d]) return;
+  this.follow([d]);
   var L = this.L, b = document.createElement('div'); b.className = 'tl-sl-bubble'; b.innerHTML = html;
   var x = L.cardX + L.cardW / 2 + 14;
   b.style.left = x + 'px'; b.style.top = this.yOf(d) + 'px';
@@ -525,6 +667,7 @@ ScaleLadder.prototype.play = function (opts) {
       self.note(g.midi, t, dur * .95, .75);
       self.timers.push(setTimeout(function () {
         self.press(d, Math.max(120, dur * 1000 - 60)); self.lit([d]);
+        self.follow([d]);
         self.timers.push(setTimeout(function () { if (!self.held[d]) self.unlit([d]); }, Math.max(120, dur * 1000 - 40)));
       }, t * 1000));
       t += dur;
@@ -554,7 +697,7 @@ ScaleLadder.prototype.stop = function () {
 
 ScaleLadder.prototype.clear = function () {
   this.stop(); this.clearTap(); this.spotlight(null); this.clearChord(); this.clearSteps();
-  this.marks = []; this.held = {};
+  this.marks = []; this.held = {}; this.interest = null;
   this.masked = { name: {}, numeral: {}, technical: {} };
   var self = this;
   this.range().forEach(function (d) { self.rungs[d].classList.remove('tl-lit'); });

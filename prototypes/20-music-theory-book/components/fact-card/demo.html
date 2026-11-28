@@ -106,7 +106,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给知识卡的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给知识卡的指令；记录框列出知识卡发出的事件。点一行：这一行亮起来，有说明的弹出说明，两秒后自己淡掉；点到谱或音域条会响（装饰音按实际弹法响，音域条先响最低音再响最高音）；点卡片下边的空白处马上清掉。换卡时卡片翻过去再翻回来。播放时再按一下右上角的按钮，声音马上停下。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给知识卡的指令；记录框列出知识卡发出的事件。点一行：这一行亮起来，有说明的弹出说明，两秒后自己淡掉；点到谱或音域条会响（装饰音按实际弹法响，音域条先响最低音再响最高音）；点卡片下边的空白处马上清掉。换卡时卡片翻过去再翻回来。播放时再按一下右上角的按钮，声音马上停下。“放不下时”模拟排法只给它 400×300 的地方：名称那一行不动，下面的各项在名称下面上下滑，正在指着的那一项（亮着、聚光、刚核对或刚比过音域的）滑到看得见的地方，有更多项的一边淡出。“放得下”还给它自己的大小。</p>
     <div class="chip-group"><span>换卡</span><div class="chips">
       <button class="chip" type="button" data-cmd="showTerm">术语 con dolore</button>
       <button class="chip" type="button" data-cmd="showOrnament">装饰音 upper mordent</button>
@@ -120,8 +120,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="caption">在第一项下面弹出说明</button>
       <button class="chip" type="button" data-cmd="checkFalse">核对“oboe 是单簧片”</button>
       <button class="chip" type="button" data-cmd="checkTrue">核对“oboe 是木管”</button>
-      <button class="chip" type="button" data-cmd="fitIn">oboe 能不能奏 D4–E5</button>
-      <button class="chip" type="button" data-cmd="fitOut">oboe 能不能奏 G3–C5</button>
+      <button class="chip" type="button" data-cmd="spanIn">oboe 能不能奏 D4–E5</button>
+      <button class="chip" type="button" data-cmd="spanOut">oboe 能不能奏 G3–C5</button>
     </div></div>
     <div class="chip-group"><span>遮住和写出</span><div class="chips">
       <button class="chip" type="button" data-cmd="maskHead">遮住名称（看弹法认装饰音）</button>
@@ -133,6 +133,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="play">播放</button>
       <button class="chip" type="button" data-cmd="stop">停</button>
       <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" data-cmd="narrow">放不下时（只给 400×300）</button>
+      <button class="chip" type="button" data-cmd="roomy">放得下</button>
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div></div>
     <div class="log" id="log" aria-live="polite" aria-label="知识卡发出的事件"></div>
@@ -166,10 +168,11 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         <tbody>
           <tr><td>输入</td><td>一叠卡片的内容（题目文件里写）：每张有编号、名称、类别，和若干项；每项有项目名、内容，内容是文字、一小段 ABC 谱，或音域（最低音和最高音），可以带一句点了才弹出的说明。显示哪一张；只显示哪几项（不给就全显示）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应）；速度；是否有播放按钮；小号；下面的名称（原文）；音符在哪件乐器上响（<code>sound</code>）。</td></tr>
           <tr><td>外观</td><td>卡纸的纹理、折角、双线、小型大写的项目名、斜体的名称、标亮的紫光、深色的说明气泡、音域条的象牙和乌木琴键，都由知识卡自己画，不从外面的样式继承；画风和其他组件一样。用到的每一种颜色都是主题常量（<code>--th-paper-a</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。谱、谱号、装饰音记号和名称里的升降号都用乐谱库画出来的字形。</td></tr>
-          <tr><td>指令</td><td><code>show(卡)</code> 翻到另一张（遮住的项换卡后仍遮着，其他标记清掉）；<code>highlight(项…)</code>；<code>spotlight(项…)</code>；<code>label({项: 文字})</code> 在项目名前面贴 A、B、C；<code>caption(项, 文字)</code> 在这一项下面弹出说明；<code>check(项, 说法, 对不对)</code> 把题目里的说法贴在这一项旁边，对的打紫色的勾，错的用砖红色划掉并打叉；<code>fit(项, 最低音, 最高音)</code> 在音域条上画出一段的音域，超出的部分是砖红色的斜纹，并写明在不在音域里；<code>mask(项… 或 'head')</code> 用纸条遮住；<code>reveal(…)</code> 纸条滑走、写出来；<code>play()</code> 按顺序响出卡上所有会响的项；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
+          <tr><td>指令</td><td><code>show(卡)</code> 翻到另一张（遮住的项换卡后仍遮着，其他标记清掉）；<code>highlight(项…)</code>；<code>spotlight(项…)</code>；<code>label({项: 文字})</code> 在项目名前面贴 A、B、C；<code>caption(项, 文字)</code> 在这一项下面弹出说明；<code>check(项, 说法, 对不对)</code> 把题目里的说法贴在这一项旁边，对的打紫色的勾，错的用砖红色划掉并打叉；<code>span(项, 最低音, 最高音)</code> 在音域条上画出一段的音域，超出的部分是砖红色的斜纹，并写明在不在音域里；<code>mask(项… 或 'head')</code> 用纸条遮住；<code>reveal(…)</code> 纸条滑走、写出来；<code>play()</code> 按顺序响出卡上所有会响的项；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>rowTap</code>（哪张卡、哪一项、项目名、文字内容、音域的最低最高音、是否遮着）；<code>headTap</code>（哪张卡、名称、是否遮着）；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：知识卡的 <code>component.json</code> 写明需要它（还有乐谱库 abcjs），加载知识卡时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给知识卡。乐谱、键盘、音级梯、五度圈用的也是它；颜色来自主题；知识卡不知道乐谱、选择题和别的组件的存在。说法对不对由题目文件给，知识卡只负责画出来；音域比得出来，由知识卡自己算。</td></tr>
           <tr><td>谁决定排版</td><td>卡片放在哪里、几张上下排、放不放进弹出层、用大号还是小号，由流程决定；卡片占满给它的宽度，最宽 460。</td></tr>
+          <tr><td>放不下时</td><td>排法用 <code>fit({width, height})</code> 告诉它最多能占多大（<code>fit(null)</code> 还给它自己的大小）。卡片占给它的宽度；各项加起来比名称下面剩的地方高时，名称那一行不动，下面的各项上下滑，把正在指着的那一项（点亮的、亮着的、聚光的、刚核对、刚比过音域或刚弹出说明的）滑到看得见的地方；手指或鼠标也能拖，松手停到一项的开头；还有项的一边淡出。</td></tr>
           <tr><td>出现在哪里</td><td>讲术语、装饰音、乐器的讲题里直接画在画面上；讲谱例时由流程放进弹出层，孩子点到谱上的术语才出现。练习里一般不出现，要用时流程先遮住会泄露答案的项（比如只留弹法、遮住名称）。</td></tr>
         </tbody>
       </table>
@@ -288,15 +291,17 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       caption: function () { var r = main.rowsShown()[0]; main.caption(r.field, FactCard.inline(r.note || r.text || r.label, 17)); },
       checkFalse: function () { onCard('oboe', function () { main.check('reed', 'single reed', false); }); },
       checkTrue: function () { onCard('oboe', function () { main.check('family', 'woodwind', true); }); },
-      fitIn: function () { onCard('oboe', function () { main.fit('range', 'D4', 'E5'); }); },
-      fitOut: function () { onCard('oboe', function () { main.fit('range', 'G3', 'C5'); }); },
+      spanIn: function () { onCard('oboe', function () { main.span('range', 'D4', 'E5'); }); },
+      spanOut: function () { onCard('oboe', function () { main.span('range', 'G3', 'C5'); }); },
       maskHead: function () { onCard('upper-mordent', function () { main.mask('head'); }); },
       maskMeaning: function () { main.mask('meaning'); },
       revealHead: function () { main.reveal('head'); },
       revealAll: function () { main.reveal(); },
       play: function () { main.play(); },
       stop: function () { main.stop(); },
-      clear: function () { main.clear(); }
+      clear: function () { main.clear(); },
+      narrow: function () { main.fit({ width: 400, height: 300 }); },
+      roomy: function () { main.fit(null); }
     };
     document.querySelectorAll('[data-cmd]').forEach(function (b) {
       b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
@@ -313,13 +318,13 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     });
 
     // Four small cards stacked by the workflow, each keeping only its range
-    // and fitted against the part's range.
+    // and compared with the part's range.
     var compareHost = document.getElementById('compare'), compare = [];
     ['flute', 'oboe', 'bassoon', 'trumpet'].forEach(function (id, i) {
       var el = document.createElement('div'); el.id = 'cmp-' + id; compareHost.appendChild(el);
       var c = new FactCard(el, { entries: deck, entry: id, fields: ['range'], compact: true, sound: Piano, onEvent: log });
       c.label({ range: 'ABCD'.charAt(i) });
-      c.fit('range', 'F2', 'D4');
+      c.span('range', 'F2', 'D4');
       compare.push(c);
     });
 

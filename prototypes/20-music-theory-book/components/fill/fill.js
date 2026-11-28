@@ -8,11 +8,21 @@
    Every colour comes from the theme constants in the stylesheet.
    The component does not know the answer, nor what a valid number or
    chord is: the workflow tells it what to draw right or wrong.
+
+   Given a view (fitView({width, height}), the most room it may take)
+   it is too tall for, it first makes the tray compact: smaller keys in
+   one row (two when one is not wide enough), still tall enough to
+   press. Still too tall, it shows only the sentence that holds the box
+   the keys write into (for a row under a score, the row without its
+   sentence); the other sentences fold away and come back as the
+   current box moves to them. With no view, or one it fits, everything
+   shows at its own size.
+
    Inputs: shape ('line' | 'row'), tag, prompt (parts: {text} | {term} |
    {field: {id, size, name}} | {stack: [field, field]}), fields (row
    shape: [{id, size, name}]), keys (labels, e.g. '0'-'9' or 'IV').
    Commands: focus, fill, type, highlight, spotlight, label, caption,
-   check, lock, place, set, stop, clear.
+   check, lock, place, set, stop, clear, fitView.
    Events (via onEvent): fieldTap, keyPress, blankTap.
    ============================================================ */
 function Fill(host, options) {
@@ -30,6 +40,9 @@ function Fill(host, options) {
   this.locked = false;
   this.xs = null;
   this.timers = [];
+  this.view = null;
+  this.compact = false;
+  this.folded = false;
   this.cur = this.list.length ? this.list[0].id : null;
   host.classList.add('tl-fi', 'tl-fi-is-' + this.o.shape);
   host.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
@@ -48,6 +61,14 @@ Fill.KEY_W = 48;
 Fill.KEY_W_NARROW = 44;
 Fill.KEY_GAP = 8;
 Fill.PAD_INSET = 10;
+// The compact tray: keys at most this wide, at least the narrower width
+// to stay in one row, closer together in a thinner tray.
+Fill.COMPACT_W = 44;
+Fill.COMPACT_MIN_W = 30;
+Fill.COMPACT_GAP = 4;
+Fill.COMPACT_INSET = 6;
+// What ends a sentence, for showing only the one with the current box.
+Fill.SENTENCE_END = /[。！？；.!?;]/;
 // Boxes under a score keep at least this much space between them, so the
 // seal or letter on one box's corner stays clear of the box beside it.
 Fill.BOX_GAP = 12;
@@ -171,29 +192,33 @@ Fill.prototype.hold = function () {
 };
 
 // Redraws everything inside the host, e.g. after a change of width; what
-// is written and every mark are state, so they come back.
+// is written, every mark and the view are state, so they come back.
 Fill.prototype.build = function () {
   var self = this;
   this.stop();
   this.host.innerHTML = '';
   this.hold();
   this.inked = {}; this.sealed = {}; this.badged = {}; this.fieldEls = {}; this.keyEls = {};
+  this.compact = false; this.folded = false;
+  this.host.classList.remove('tl-fi-compact');
   var stem = document.createElement('div'); stem.className = 'tl-fi-stem';
   if (this.o.tag) stem.innerHTML = '<span class="tl-fi-tag">' + Fill.esc(this.o.tag) + '</span>';
   var line = document.createElement('div'); line.className = 'tl-fi-line';
   stem.appendChild(line);
+  this.stem = null;
   if (this.isLine()) {
     this.sentence(line);
     this.host.appendChild(stem);
     this.anchor = stem;
   } else {
-    if (this.o.prompt) { line.innerHTML = this.partsHtml(this.o.prompt); this.host.appendChild(stem); }
+    if (this.o.prompt) { line.innerHTML = this.partsHtml(this.o.prompt); this.host.appendChild(stem); this.stem = stem; }
     this.strip = document.createElement('div'); this.strip.className = 'tl-fi-strip'; this.strip.setAttribute('role', 'group');
     if (this.o.prompt) this.strip.setAttribute('aria-label', line.textContent);
     this.list.forEach(function (f) { self.strip.appendChild(self.box(f, Fill.width(f.size))); });
     this.host.appendChild(this.strip);
     this.anchor = this.strip;
   }
+  this.sentences = [].slice.call(line.querySelectorAll('.tl-fi-sent'));
   this.padWrap = document.createElement('div'); this.padWrap.className = 'tl-fi-padwrap';
   this.pad = document.createElement('div'); this.pad.className = 'tl-fi-pad'; this.pad.setAttribute('role', 'group'); this.pad.setAttribute('aria-label', 'Keys');
   this.keys = this.keySet();
@@ -216,6 +241,7 @@ Fill.prototype.build = function () {
   this.placeBoxes();
   this.apply(false);
   this.placeCaption(false);
+  this.relayout();
 };
 
 Fill.prototype.partsHtml = function (parts) {
@@ -225,14 +251,24 @@ Fill.prototype.partsHtml = function (parts) {
   }).join('');
 };
 
-// The sentence with its boxes. A box is kept on one line with the word
-// before it and any stop or comma right after it, so a line never breaks
-// between "bar" and its box.
+// A text part cut at the ends of its sentences; each piece knows
+// whether a sentence ends with it.
+Fill.splitSentences = function (p) {
+  var s = String(p.term || p.text || ''), E = Fill.SENTENCE_END.source;
+  var chunks = s.match(new RegExp('[^' + E.slice(1, -1) + ']*' + E + '+\\s*|[^' + E.slice(1, -1) + ']+$', 'g')) || [s];
+  return chunks.map(function (c) {
+    return { cls: p.term ? 'tl-fi-term' : 'tl-fi-text', s: c, lead: '', tail: '', end: new RegExp(E + '\\s*$').test(c) };
+  });
+};
+
+// The sentence with its boxes, in spans one per sentence. A box is kept
+// on one line with the word before it and any stop or comma right after
+// it, so a line never breaks between "bar" and its box.
 Fill.prototype.sentence = function (line) {
-  var self = this;
-  var pieces = [].concat(this.o.prompt || []).map(function (p) {
-    if (p.field || p.stack) return { box: p };
-    return { cls: p.term ? 'tl-fi-term' : 'tl-fi-text', s: String(p.term || p.text || ''), lead: '', tail: '' };
+  var self = this, pieces = [];
+  [].concat(this.o.prompt || []).forEach(function (p) {
+    if (p.field || p.stack) pieces.push({ box: p });
+    else pieces = pieces.concat(Fill.splitSentences(p));
   });
   pieces.forEach(function (it, i) {
     if (it.box) return;
@@ -241,14 +277,20 @@ Fill.prototype.sentence = function (line) {
     if (next && next.box && (m = it.s.match(/\S+\s*$/))) { it.tail = m[0]; it.s = it.s.slice(0, it.s.length - m[0].length); }
   });
   var span = function (cls, s) { var e = document.createElement('span'); e.className = cls; e.innerHTML = Fill.inline(s); return e; };
+  var sent = null;
+  var into = function () { if (!sent) { sent = document.createElement('span'); sent.className = 'tl-fi-sent'; line.appendChild(sent); } return sent; };
   pieces.forEach(function (it, i) {
-    if (!it.box) { if (it.s) line.appendChild(span(it.cls, it.s)); return; }
+    if (!it.box) {
+      if (it.s) into().appendChild(span(it.cls, it.s));
+      if (it.end && !it.tail) sent = null;
+      return;
+    }
     var g = document.createElement('span'); g.className = 'tl-fi-glue';
     var prev = pieces[i - 1], next = pieces[i + 1];
     if (prev && !prev.box && prev.tail) g.appendChild(span(prev.cls, prev.tail));
     g.appendChild(self.boxes(it.box));
     if (next && !next.box && next.lead) g.appendChild(span(next.cls, next.lead));
-    line.appendChild(g);
+    into().appendChild(g);
   });
 };
 
@@ -277,16 +319,65 @@ Fill.prototype.box = function (f, w) {
 };
 
 // Keys are all one size; they go in one row when it fits, else in rows
-// of nearly equal length.
+// of nearly equal length. A compact tray puts smaller keys in one row,
+// or in two when even the narrowest keys do not fit in one.
 Fill.prototype.layoutPad = function () {
-  var W = this.padWrap.clientWidth - 4 - 2 * Fill.PAD_INSET, G = Fill.KEY_GAP, n = this.keys.length;
-  var kw = Fill.KEY_W, fit = function (w) { return Math.max(1, Math.floor((W + G) / (w + G))); };
-  var max = fit(kw);
-  if (max < n && fit(Fill.KEY_W_NARROW) >= n) { kw = Fill.KEY_W_NARROW; max = n; }
-  var rows = Math.ceil(n / max), cols = Math.ceil(n / rows);
+  var n = this.keys.length, kw, cols;
+  if (this.compact) {
+    var G2 = Fill.COMPACT_GAP, W2 = this.padWrap.clientWidth - 4 - 2 * Fill.COMPACT_INSET;
+    var width = function (c) { return Math.min(Fill.COMPACT_W, Math.floor((W2 + G2) / c - G2)); };
+    cols = width(n) >= Fill.COMPACT_MIN_W ? n : Math.ceil(n / 2);
+    kw = Math.max(Fill.COMPACT_MIN_W, width(cols));
+  } else {
+    var W = this.padWrap.clientWidth - 4 - 2 * Fill.PAD_INSET, G = Fill.KEY_GAP, fit = function (w) { return Math.max(1, Math.floor((W + G) / (w + G))); };
+    kw = Fill.KEY_W;
+    var max = fit(kw);
+    if (max < n && fit(Fill.KEY_W_NARROW) >= n) { kw = Fill.KEY_W_NARROW; max = n; }
+    var rows = Math.ceil(n / max);
+    cols = Math.ceil(n / rows);
+  }
   this.cols = cols;
   this.pad.style.setProperty('--kc', String(cols));
   this.pad.style.setProperty('--kw', kw + 'px');
+};
+
+// The room the fill-in is given: everything at its own size when it
+// fits the view (or there is no view), else a compact tray, else only
+// the sentence with the current box.
+Fill.prototype.fitView = function (view) {
+  this.view = view && view.width && view.height ? { width: view.width, height: view.height } : null;
+  this.relayout();
+};
+// The height the fill-in needs as it is drawn now, with the tray at its
+// full height whenever it is shown, even while it is still opening.
+Fill.prototype.need = function () {
+  var w = this.padWrap;
+  return this.host.offsetHeight - w.offsetHeight + (this.padShown ? w.scrollHeight : 0);
+};
+Fill.prototype.relayout = function () {
+  if (!this.padWrap) return;
+  this.setMode(false, false);
+  if (!this.view || this.need() <= this.view.height + 1) return;
+  this.setMode(true, false);
+  if (this.need() <= this.view.height + 1) return;
+  this.setMode(true, true);
+};
+Fill.prototype.setMode = function (compact, folded) {
+  if (compact !== this.compact) {
+    this.compact = compact;
+    this.host.classList.toggle('tl-fi-compact', compact);
+    this.layoutPad();
+  }
+  this.folded = folded;
+  this.foldSentences();
+};
+// Folded, only the sentence with the current box shows (a row under a
+// score shows without its sentence).
+Fill.prototype.foldSentences = function () {
+  var self = this, cur = this.cur && this.fieldEls[this.cur];
+  if (this.stem) this.stem.hidden = this.folded;
+  var any = (this.sentences || []).some(function (s) { return cur && s.contains(cur); });
+  (this.sentences || []).forEach(function (s, i) { s.hidden = self.folded && (any ? !s.contains(cur) : i > 0); });
 };
 
 // Boxes under a score stand where the workflow says (centres in pixels
@@ -307,6 +398,8 @@ Fill.prototype.placeBoxes = function () {
 
 // Applies the state to what is drawn. Ink already on the paper stays;
 // only what changed is written (or fades) now, and only when animated.
+// Then it takes the room it is given again, as the current box or the
+// tray may have changed.
 Fill.prototype.apply = function (animated) {
   var self = this, move = animated && !Fill.still();
   this.host.classList.toggle('tl-fi-locked', this.locked);
@@ -327,6 +420,7 @@ Fill.prototype.apply = function (animated) {
     el.setAttribute('aria-readonly', String(self.locked));
   });
   this.showPad(!this.locked, move);
+  if (this.view) this.relayout();
 };
 
 // What is written in a box, piece by piece: pieces already there stay,
@@ -394,6 +488,7 @@ Fill.prototype.onPointer = function (ev) {
     var best = null, dist = Infinity;
     els.forEach(function (e) {
       var b = e.getBoundingClientRect();
+      if (!b.width && !b.height) return;
       var d = Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom));
       if (d < dist) { dist = d; best = e; }
     });
@@ -633,6 +728,7 @@ Fill.prototype.caption = function (key, html) {
   var k = key === null || key === undefined ? [] : this.known([key]);
   this.cap = k.length ? { key: k[0], html: html } : null;
   this.placeCaption(true);
+  if (this.view) this.relayout();
 };
 
 // Shows exactly this state with nothing moving, the way the fill-in stood
@@ -655,10 +751,10 @@ Fill.prototype.set = function (s) {
   this.hold();
   this.apply(false);
   this.placeCaption(false);
+  if (this.view) this.relayout();
 };
 
 // Stops keys the workflow is still pressing; what is written stays.
 Fill.prototype.stop = function () { (this.timers || []).forEach(clearTimeout); this.timers = []; };
 
 Fill.prototype.clear = function () { this.set({}); };
-

@@ -38,6 +38,7 @@
   --tl-ebony-edge: color-mix(in srgb, var(--th-ebony) 93%, var(--th-light));
   --tl-ebony-lip: color-mix(in srgb, var(--th-ebony) 97%, var(--th-light));
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-case { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border-radius: 20px; padding: 0 12px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
@@ -46,6 +47,13 @@
     repeating-linear-gradient(91deg, color-mix(in srgb, var(--tl-dark) 7%, transparent) 0 2px, transparent 2px 7px, color-mix(in srgb, var(--th-light-warm) 4%, transparent) 7px 9px, transparent 9px 15px),
     linear-gradient(180deg, var(--tl-wood-top) 0%, var(--tl-wood-mid) 55%, var(--tl-wood-low) 100%);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--th-light-warm) 35%, transparent), inset 0 -3px 8px color-mix(in srgb, var(--tl-dark) 45%, transparent), 0 2px 3px color-mix(in srgb, var(--tl-soot) 30%, transparent), 0 26px 50px -18px color-mix(in srgb, var(--tl-soot) 60%, transparent); }
+/* The window shows the keys; the track holds them and the marks drawn over them, and moves as one. */
+.tl-window { position: relative; max-width: 100%; --slide-a: 0; --slide-b: 0; }
+.tl-track { position: relative; transition: transform .52s var(--tl-ease); }
+/* A row longer than its view slides sideways inside the window; an edge with more keys beyond it fades (the mask only sets how much shows). */
+.tl-sliding .tl-window { overflow-x: clip; overflow-y: visible; touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 32px, #000 calc(100% - 32px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%);
+  mask-image: linear-gradient(90deg, rgb(0 0 0 / calc(1 - var(--slide-a))) 0, #000 32px, #000 calc(100% - 32px), rgb(0 0 0 / calc(1 - var(--slide-b))) 100%); }
 /* Rows start at the same left edge, so a wrapped keyboard reads as one instrument continuing on the next line. */
 .tl-rows { display: flex; flex-direction: column; align-items: flex-start; }
 .tl-row { position: relative; }
@@ -75,7 +83,7 @@
   background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-white .tl-badge { bottom: 34px; }
 .tl-black .tl-badge { bottom: 12px; width: 22px; height: 22px; margin-left: -11px; font-size: 14px; }
-/* Overlays positioned over the whole keyboard. */
+/* Overlays positioned over the keys, moving with them. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 .tl-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .tl-arc { fill: none; stroke: color-mix(in srgb, var(--tl-glow) 55%, var(--tl-light)); stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--tl-glow)); stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw .55s cubic-bezier(.3, .8, .3, 1) forwards; }
@@ -103,3 +111,4 @@
 @keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .tl-track { transition: none; } }

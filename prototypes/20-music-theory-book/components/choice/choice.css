@@ -39,7 +39,14 @@
 .tl-ch-tag { flex: none; font: italic 600 19px/1.3 var(--tl-serif); color: var(--tl-ink-soft); }
 .tl-ch-ask .tl-ch-term { font-style: italic; font-weight: 600; }
 .tl-ch-stem svg.tl-ch-acc, .tl-ch-body svg.tl-ch-acc, .tl-ch-bubble svg.tl-ch-acc { fill: currentColor; }
+.tl-ch-window { position: relative; }
 .tl-ch-opts { position: relative; display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); gap: 12px; align-items: stretch; }
+/* Options that do not fit the room the choice is given stand in one row in a window as wide as the choice: the row slides so the option in question stands in the middle, and the options beside it fade toward the window's edges (a mask: only its opacity counts). The window keeps room above and below for the seals and letters on the tiles' corners. */
+.tl-ch-row .tl-ch-window { overflow: hidden; overflow: clip; padding: 14px 0; margin: -14px 0 0; touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(90deg, transparent, var(--tl-dark) 16%, var(--tl-dark) 84%, transparent); mask-image: linear-gradient(90deg, transparent, var(--tl-dark) 16%, var(--tl-dark) 84%, transparent); }
+.tl-ch-row .tl-ch-opts { display: flex; width: max-content; gap: 12px; transition: transform var(--tl-move); }
+.tl-ch-row .tl-ch-opts.tl-ch-drag { transition: none; }
+.tl-ch-row .tl-ch-opt { flex: none; width: var(--tw, 200px); }
 .tl-ch-opt { position: relative; box-sizing: border-box; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 12px; min-height: 56px; padding: 10px 16px 10px 13px; border-radius: 8px; cursor: pointer;
   background: radial-gradient(90% 80% at 30% 0%, color-mix(in srgb, var(--tl-light) 70%, transparent), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
   box-shadow: inset 0 1px 0 var(--tl-sheen-soft), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 12%, transparent), 0 2px 3px color-mix(in srgb, var(--tl-shade) 10%, transparent), 0 12px 20px -12px var(--tl-paper-shadow);
@@ -114,4 +121,4 @@
 @keyframes tl-ch-draw { to { stroke-dashoffset: 0; } }
 @keyframes tl-ch-pop { from { transform: scale(.3); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes tl-ch-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
-
+@media (prefers-reduced-motion: reduce) { .tl-ch-row .tl-ch-opts { transition: none; } }

@@ -88,7 +88,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
 
   <section class="panel sim">
     <h2>模拟流程：发给键盘的指令</h2>
-    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给键盘的指令；记录框列出键盘发出的事件。点琴键：琴键按下去、发声、上方弹出音名，两秒后自己淡掉；点木头琴身马上清掉。窄屏上键盘按八度换成两行，琴键不缩小。播放时再按一下播放按钮，声音马上停下。</p>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给键盘的指令；记录框列出键盘发出的事件。点琴键：琴键按下去、发声、上方弹出音名，两秒后自己淡掉；点木头琴身马上清掉。窄屏上键盘按八度换成两行，琴键不缩小。播放时再按一下播放按钮，声音马上停下。“放不下时”模拟排法只给它 360×300 的地方：键盘保持一排、琴键不缩小，左右滑，停下时左边对齐一个 C；标亮、数半音、弹奏、聚光时它自己滑到要看的键；有更多键的一边淡出。“放得下”还给它自己的大小。</p>
     <div class="chips">
       <button class="chip" type="button" data-cmd="scale">标出 E♭ major（1–8）</button>
       <button class="chip" type="button" data-cmd="steps">标 tone 和 semitone</button>
@@ -98,6 +98,8 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <button class="chip" type="button" data-cmd="enh">等音：F♯ = G♭</button>
       <button class="chip" type="button" data-cmd="spot">聚光 C4–C5</button>
       <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" data-cmd="narrow">放不下时（只给 360×300）</button>
+      <button class="chip" type="button" data-cmd="roomy">放得下</button>
       <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
     </div>
     <div class="log" id="log" aria-live="polite" aria-label="键盘发出的事件"></div>
@@ -122,6 +124,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
           <tr><td>事件</td><td><code>keyTap</code>（键、音名、所有等音写法）；<code>blankTap</code>；<code>countStep</code>（第几个半音、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
           <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：键盘的 <code>component.json</code> 写明需要它，加载键盘时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给键盘。乐谱用的也是它；键盘不知道乐谱、作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一架大键盘还是一行几架小键盘，由流程决定；键盘只管自己这一架，宽度不够时按八度换行。</td></tr>
+          <tr><td>放不下时</td><td>排法用 <code>fit({width, height})</code> 告诉它最多能占多大（<code>fit(null)</code> 还给它自己的大小）。这时键盘保持一排，琴键保持手指按得到的宽度；比给的宽度长就左右滑，停在左边对齐一个 C 的地方，并自己滑到正在用的键（标亮、数到、弹到、聚光、说明的键）；手指或鼠标也能拖，松手停到最近的八度；还有键的一边淡出。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里只在题目需要时出现，只显示，不作答。</td></tr>
         </tbody>
       </table>
@@ -198,6 +201,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       log(ev); nameBubble(main, ev);
       if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(ev.midi, '<b>' + ev.total + '</b><span>semitones</span>'); }, 300);
     } });
+    window.tlMain = main;
 
     var commands = {
       scale: function () {
@@ -215,7 +219,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       count: function () { main.clear(); main.spelling({ 68: 'A♭' }); main.count(60, 68); },
       enh: function () { main.clear(); main.highlight([66]); main.caption(66, '<b>F♯ = G♭</b><span>enharmonic</span>'); },
       spot: function () { main.spotlight(60, 72); },
-      clear: function () { main.clear(); }
+      clear: function () { main.clear(); },
+      narrow: function () { main.fit({ width: 360, height: 300 }); },
+      roomy: function () { main.fit(null); }
     };
     document.querySelectorAll('[data-cmd]').forEach(function (b) {
       b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });

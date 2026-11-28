@@ -6,7 +6,9 @@
    counted within a bar: the bar the value names, else the bar last put
    in the spotlight. The score's drawing scales with the width it is
    given (fluid), so it is not drawn again when it moves to a wider or
-   narrower place. Interfaces: point, play, positions.
+   narrower place. Given less room than its music (fit), it shows whole
+   lines and keeps the line in focus in the middle (see score.js).
+   Interfaces: point, play, positions.
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
@@ -43,6 +45,7 @@
     if (name === 'positions.rect') { var r = this.host.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; }
     throw new Error('score: ' + name);
   };
+  ScoreI.prototype.fit = function (view) { this.c.fit(view); };
   ScoreI.prototype.stop = function () { if (this.c.stop) this.c.stop(); };
   ScoreI.prototype.getState = function () { return U.clone(this.st); };
   ScoreI.prototype.setState = function (s) {

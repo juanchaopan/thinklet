@@ -4,12 +4,14 @@
 // parts.0.lines.measure.unit...). Each is recorded with edge-tts
 // (Xiaoxiao, default rate and pitch) into the folder the item's
 // `narration` parameter names, under a file named by its path, and a
-// manifest there records what each file says. A recording whose words did
-// not change is kept; one that moved to another path is copied rather
-// than recorded again. Recordings no value uses any more are deleted.
-// A spoken value may be a string, or {text, say} when the voice should
-// read `say`. The engine's parameter code is loaded as the browser loads
-// it, so the tool and the player find the same values.
+// manifest there records, for each file, the path of the value it says
+// and its words; the narration component finds its recordings through
+// that manifest. A recording whose words did not change is kept; one
+// that moved to another path is copied rather than recorded again.
+// Recordings no value uses any more are deleted. A spoken value may be a
+// string, or {text, say} when the voice should read `say`. The engine's
+// parameter code is loaded as the browser loads it, so the tool and the
+// player find the same values.
 // Usage: node narrate-item.mjs <content folder> <book> <item>
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, copyFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -21,19 +23,22 @@ import vm from 'node:vm';
 
 const YAML = createRequire('C:/Users/juanc/AI Projects/thinklet/node_modules/.pnpm/yaml@2.9.1/node_modules/yaml/package.json')('yaml');
 const here = dirname(fileURLToPath(import.meta.url));
-const sandbox = {};
+const sandbox = { URL };
 vm.runInNewContext(readFileSync(join(here, '..', 'engine', 'params.js'), 'utf8') + '\nthis.LessonParams = LessonParams;', sandbox);
 const { LessonParams } = sandbox;
 
 const VOICE = 'zh-CN-XiaoxiaoNeural';
 const PACKAGE = 'edge-tts==7.3.1';
 
+// The recording's file name for a value's path.
+export function fileOf(path) { return String(path).replace(/[^A-Za-z0-9]+/g, '-') + '.mp3'; }
+
 // Every spoken value of an item: {path, text, say, file}.
 export function spokenLines(workflow, item) {
   const found = LessonParams.paths(workflow.params, item.params, 'speech');
   return Object.entries(found).map(([path, v]) => {
     const l = typeof v === 'string' ? { text: v } : v;
-    return { path, text: l.text, say: l.say, file: LessonParams.fileOf(path) };
+    return { path, text: l.text, say: l.say, file: fileOf(path) };
   });
 }
 

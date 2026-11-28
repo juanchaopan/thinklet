@@ -16,6 +16,16 @@
    check, reveal, lock, play, set, stop, clear.
    Events (via onEvent): notePlace, accidentalPress, noteErase,
    blankTap, playStart, playEnd.
+
+   When it does not fit: fit(view) gives the most room it may take,
+   {width, height} in its own pixels (null: its own size again). Within
+   a view the stave keeps its steps a finger can hit and its columns
+   their room, rather than shrinking; a stave wider than the view slides
+   sideways, column by column, with the column in play in the middle:
+   the one the keys act on, or the one being counted or captioned. A
+   sideways drag on the stave slides it and it comes to rest with a
+   column in the middle; an up-and-down drag still moves the note. An
+   edge with more of the stave beyond it fades.
    ============================================================ */
 function NotePlace(host, options) {
   var self = this;
@@ -42,6 +52,9 @@ function NotePlace(host, options) {
   this.drag = null;
   this.timers = [];
   this.voices = [];
+  this.view = null;
+  this.viewKey = '';
+  this.slide = null;
   this.cur = this.answers[0] || null;
   host.classList.add('tl-np');
   host.addEventListener('pointerdown', function (ev) { self.onPointer(ev); });
@@ -71,7 +84,8 @@ NotePlace.HIGH_POS = 15;
 // Pixels per drawing unit of the score library the component aims for:
 // a step (a line to the next space) of about ten pixels, so a finger
 // lands where it means. A long key signature or many columns make it
-// smaller, never below the minimum.
+// smaller, never below the minimum; within a view it stays and the
+// stave slides instead.
 NotePlace.PX_PER_UNIT = 2.5;
 NotePlace.MIN_PX_PER_UNIT = 1.5;
 // Two columns stand at least this far apart (centre to centre), room for
@@ -93,6 +107,9 @@ NotePlace.KEY_W_NARROW = 44;
 NotePlace.KEY_GAP = 8;
 NotePlace.PAD_INSET = 10;
 NotePlace.KEY_REACH_PX = 8;
+// A drag on a sliding stave that goes this far sideways, more than up or
+// down, slides the stave instead of moving the note.
+NotePlace.SWIPE_PX = 10;
 NotePlace.MOVE_MS = 520;
 NotePlace.EASE = 'cubic-bezier(.6, 0, .25, 1)';
 NotePlace.BUBBLE_FADE_MS = 200;
@@ -113,6 +130,65 @@ NotePlace.svg = function (tag, attrs) {
   var e = document.createElementNS(NotePlace.SVGNS, tag);
   Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
   return e;
+};
+
+// A window onto a strip longer than it, moved along one axis with
+// transforms: `parts` move together, `snap` picks where a drag comes to
+// rest. An edge with more beyond it fades (--slide-a, --slide-b on the
+// window). The owner passes its pointer events to grab, drag and drop,
+// and treats a press that never dragged as a tap. lag() is how far what
+// is drawn still is from where it is going, for placing things by it
+// while it moves.
+NotePlace.Slide = function (win, parts, axis, snap) {
+  this.win = win; this.parts = parts; this.y = axis === 'y'; this.snap = snap || function (o) { return o; };
+  this.on = false; this.at = 0; this.len = 0; this.press = null;
+};
+NotePlace.Slide.DRAG_PX = 8;
+NotePlace.Slide.RUBBER = .35;
+NotePlace.Slide.prototype.pos = function (e) { return this.y ? e.clientY : e.clientX; };
+NotePlace.Slide.prototype.room = function () { return this.y ? this.win.clientHeight : this.win.clientWidth; };
+NotePlace.Slide.prototype.max = function () { return Math.max(0, this.len - this.room()); };
+NotePlace.Slide.prototype.clamp = function (o) { return Math.max(0, Math.min(this.max(), o)); };
+NotePlace.Slide.prototype.set = function (on, len) { this.on = !!on; this.len = len || 0; this.place(this.on ? this.clamp(this.at) : 0, false); };
+NotePlace.Slide.prototype.place = function (o, animated) {
+  var still = !animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var t = o ? (this.y ? 'translateY(' : 'translateX(') + (-o).toFixed(1) + 'px)' : '';
+  this.at = o;
+  this.parts.forEach(function (p) { p.style.transition = still ? 'none' : ''; p.style.transform = t; });
+  this.win.style.setProperty('--slide-a', this.on && o > 1 ? '1' : '0');
+  this.win.style.setProperty('--slide-b', this.on && o < this.max() - 1 ? '1' : '0');
+};
+NotePlace.Slide.prototype.to = function (o, animated) { if (this.on) this.place(this.clamp(o), animated !== false); };
+NotePlace.Slide.prototype.lag = function () {
+  var t = getComputedStyle(this.parts[0]).transform;
+  if (!t || t === 'none') return -this.at;
+  var m = new DOMMatrixReadOnly(t);
+  return -(this.y ? m.m42 : m.m41) - this.at;
+};
+NotePlace.Slide.prototype.grab = function (e) {
+  if (!this.on || e.button > 0) return false;
+  this.press = { p: this.pos(e), at: this.at, id: e.pointerId, moved: false };
+  return true;
+};
+NotePlace.Slide.prototype.drag = function (e) {
+  var p = this.press; if (!p) return false;
+  var d = this.pos(e) - p.p;
+  if (!p.moved && Math.abs(d) > NotePlace.Slide.DRAG_PX) {
+    p.moved = true;
+    try { this.win.setPointerCapture(p.id); } catch (err) { /* the pointer is already gone */ }
+  }
+  if (!p.moved) return false;
+  e.preventDefault();
+  var o = p.at - d, max = this.max();
+  if (o < 0) o *= NotePlace.Slide.RUBBER; else if (o > max) o = max + (o - max) * NotePlace.Slide.RUBBER;
+  this.place(o, false);
+  return true;
+};
+NotePlace.Slide.prototype.drop = function () {
+  var p = this.press; this.press = null;
+  if (!p || !p.moved) return false;
+  this.to(this.snap(this.clamp(this.at)), true);
+  return true;
 };
 
 // A pitch as the question writes it: a letter, an accidental (bb, b, n,
@@ -248,20 +324,35 @@ NotePlace.prototype.hold = function () {
   this.release = requestAnimationFrame(function () { self.release = requestAnimationFrame(function () { self.host.classList.remove('tl-np-still'); }); });
 };
 
+// The most room the component may take, or null for its own size; it is
+// drawn again only when that changes.
+NotePlace.prototype.fit = function (view) {
+  var key = view ? Math.round(view.width) + 'x' + Math.round(view.height) : '';
+  if (key === this.viewKey) return;
+  this.viewKey = key;
+  this.view = view ? { width: view.width, height: view.height } : null;
+  this.build();
+};
+
 // Redraws everything inside the host, e.g. after a change of width; what
-// is written and every mark are state, so they come back.
+// is written and every mark are state, so they come back. The score
+// library draws into `drawing`, a box whose height follows the width of
+// what holds it, so the stave's width is set on `track` around it.
 NotePlace.prototype.build = function () {
   var self = this;
   this.stop();
   this.drag = null;
   this.host.innerHTML = '';
+  this.host.style.maxWidth = this.view ? Math.floor(this.view.width) + 'px' : '';
   this.hold();
   this.paper = document.createElement('div'); this.paper.className = 'tl-np-paper';
   if (this.o.tag) { var tag = document.createElement('div'); tag.className = 'tl-np-tag'; tag.textContent = this.o.tag; this.paper.appendChild(tag); }
   this.box = document.createElement('div'); this.box.className = 'tl-np-svgbox'; this.box.tabIndex = 0;
   this.box.setAttribute('role', 'group');
+  this.track = document.createElement('div'); this.track.className = 'tl-np-track';
   this.drawing = document.createElement('div');
-  this.box.appendChild(this.drawing);
+  this.track.appendChild(this.drawing);
+  this.box.appendChild(this.track);
   this.paper.appendChild(this.box);
   this.overlay = document.createElement('div'); this.overlay.className = 'tl-np-overlay';
   this.paper.appendChild(this.overlay);
@@ -271,6 +362,10 @@ NotePlace.prototype.build = function () {
     this.underEl = document.createElement('div'); this.underEl.className = 'tl-np-under';
     this.paper.appendChild(this.underEl);
   } else this.underEl = null;
+  this.host.classList.toggle('tl-np-sliding', this.sliding);
+  this.slide = new NotePlace.Slide(this.box, [this.track, this.overlay].concat(this.underEl ? [this.underEl] : []), 'x', function (o) { return self.rest(o); });
+  this.slide.set(this.sliding, this.needW);
+  this.showCol(this.cur, false);
   this.anchor = this.paper;
   if (this.o.name) {
     var nm = document.createElement('div'); nm.className = 'tl-np-name'; nm.innerHTML = NotePlace.inline(this.o.name);
@@ -313,11 +408,14 @@ NotePlace.prototype.centres = function () {
 // ten pixels apart; when the clef, key and columns do not fit at that
 // size, so that two columns would stand closer than an accidental and a
 // head, it is drawn again a little smaller each time, until they fit or
-// the stave reaches its smallest size. The box then keeps room above
-// and below for the highest and lowest place a note may go.
+// the stave reaches its smallest size. Within a view it is drawn wider
+// instead, at the size it aims for, and slides when wider than the view.
+// The box then keeps room above and below for the highest and lowest
+// place a note may go.
 NotePlace.prototype.render = function () {
   var self = this, W = Math.max(160, this.box.clientWidth || 300), N = NotePlace;
-  var units = W / N.PX_PER_UNIT, most = W / N.MIN_PX_PER_UNIT, abc = this.abc();
+  var units = W / N.PX_PER_UNIT, most = this.view ? Infinity : W / N.MIN_PX_PER_UNIT, abc = this.abc();
+  this.track.style.width = '';
   for (var attempt = 0; attempt < 6; attempt++) {
     this.visual = ABCJS.renderAbc(this.drawing, abc, { add_classes: true, responsive: 'resize', staffwidth: units, paddingtop: 0, paddingbottom: 0, paddingleft: 0, paddingright: 0 })[0];
     var xs = this.centres(), gap = Infinity;
@@ -325,6 +423,9 @@ NotePlace.prototype.render = function () {
     if (gap >= N.MIN_GAP_UNITS || units >= most) break;
     units = Math.min(most, units + (N.MIN_GAP_UNITS - gap) * xs.length);
   }
+  this.needW = Math.ceil(units * N.PX_PER_UNIT);
+  this.sliding = !!this.view && this.needW > W + 1;
+  this.track.style.width = this.sliding ? this.needW + 'px' : '';
   this.svg = this.drawing.querySelector('svg');
   this.svg.removeAttribute('tabindex');
   this.keyAlter = {};
@@ -394,11 +495,15 @@ NotePlace.prototype.noteShape = function () {
 };
 
 NotePlace.prototype.yOf = function (pos) { return this.bottomY - pos * this.step; };
-// Drawing units to pixels inside the paper, for the HTML marks.
-NotePlace.prototype.toPaper = function (x, y) {
+// Drawing units to a point on screen, and to pixels inside an element
+// (the marks' overlay, the words under the columns), which move with
+// the stave when it slides.
+NotePlace.prototype.screenAt = function (x, y) {
   var pt = this.svg.createSVGPoint(); pt.x = x; pt.y = y;
-  var p = pt.matrixTransform(this.svg.getScreenCTM());
-  var r = this.paper.getBoundingClientRect();
+  return pt.matrixTransform(this.svg.getScreenCTM());
+};
+NotePlace.prototype.within = function (el, x, y) {
+  var p = this.screenAt(x, y), r = el.getBoundingClientRect();
   return { x: p.x - r.left, y: p.y - r.top };
 };
 NotePlace.prototype.fromScreen = function (cx, cy) {
@@ -411,6 +516,19 @@ NotePlace.prototype.colAt = function (cx) {
   var x = this.fromScreen(cx, 0).x, self = this, best = this.answers[0], d = Infinity;
   this.answers.forEach(function (id) { var e = Math.abs(self.cx[id] - x); if (e < d) { d = e; best = id; } });
   return best;
+};
+
+// Where a sliding stave comes to rest: with the nearest column in the
+// middle of the view.
+NotePlace.prototype.rest = function (o) {
+  var self = this, half = this.slide.room() / 2, best = o, dist = Infinity;
+  this.cols.forEach(function (c) { var x = self.cx[c.id] * self.k - half, d = Math.abs(x - o); if (d < dist) { dist = d; best = x; } });
+  return best;
+};
+// Slides the stave so a column is in the middle.
+NotePlace.prototype.showCol = function (id, animated) {
+  if (!this.slide || !this.slide.on || !id || this.cx[id] === undefined) return;
+  this.slide.to(this.cx[id] * this.k - this.slide.room() / 2, animated);
 };
 
 // Keys are all one size; they go in one row when it fits, else in rows
@@ -433,8 +551,7 @@ NotePlace.prototype.placeUnder = function () {
   this.cols.forEach(function (c) {
     if (!c.under) return;
     var s = document.createElement('span'); s.innerHTML = NotePlace.inline(c.under);
-    var p = self.toPaper(self.cx[c.id], 0), u = self.underEl.offsetLeft;
-    s.style.left = (p.x - u).toFixed(1) + 'px';
+    s.style.left = self.within(self.underEl, self.cx[c.id], 0).x.toFixed(1) + 'px';
     self.underEl.appendChild(s);
   });
 };
@@ -487,10 +604,12 @@ NotePlace.prototype.land = function (shape, x, pos, acc) {
   shape.body.classList.add('tl-np-pop');
 };
 
-// Applies the state to what is drawn.
+// Applies the state to what is drawn; a sliding stave brings the column
+// the keys act on to the middle.
 NotePlace.prototype.apply = function (animated) {
   var self = this, move = animated && !NotePlace.still();
   this.host.classList.toggle('tl-np-locked', this.locked);
+  this.showCol(this.cur, animated);
   this.answers.forEach(function (id) {
     var el = self.colEls[id], v = self.values[id], x = self.cx[id];
     var dragging = self.drag && self.drag.id === id;
@@ -535,36 +654,37 @@ NotePlace.prototype.apply = function (animated) {
 
 // Seals right over the answer notes, letters higher above them (never
 // lower than just over the stave), and the caret under the column the
-// keys act on when there are several.
+// keys act on when there are several. They sit in the overlay, which
+// slides with the stave.
 NotePlace.prototype.marksHtml = function (move) {
-  var self = this, N = NotePlace;
+  var self = this, N = NotePlace, over = this.overlay;
   this.answers.forEach(function (id) {
     var v = self.values[id], verdict = self.verdict[id];
     var seal = v && (verdict === true || verdict === false) ? (verdict ? 'yes' : 'no') : null;
     var key = seal ? seal + ':' + v.pos : null;
-    var old = self.overlay.querySelector('.tl-np-seal[data-id="' + id + '"]');
+    var old = over.querySelector('.tl-np-seal[data-id="' + id + '"]');
     if (old && old.dataset.k !== key) { old.remove(); old = null; }
     if (seal && !old) {
       var s = document.createElement('span'); s.className = 'tl-np-seal tl-np-' + seal + (move ? ' tl-np-pop' : ''); s.dataset.id = id; s.dataset.k = key;
       s.innerHTML = seal === 'yes' ? N.SEAL_YES : N.SEAL_NO;
-      var p = self.toPaper(self.cx[id], self.yOf(v.pos) - N.HEAD_RISE);
+      var p = self.within(over, self.cx[id], self.yOf(v.pos) - N.HEAD_RISE);
       s.style.left = p.x.toFixed(1) + 'px'; s.style.top = (p.y - N.SEAL_GAP_PX).toFixed(1) + 'px';
-      self.overlay.appendChild(s);
+      over.appendChild(s);
     }
-    var text = self.labels[id] || null, ob = self.overlay.querySelector('.tl-np-badge[data-id="' + id + '"]');
+    var text = self.labels[id] || null, ob = over.querySelector('.tl-np-badge[data-id="' + id + '"]');
     if (ob && ob.textContent !== text) { ob.remove(); ob = null; }
     if (text) {
-      if (!ob) { ob = document.createElement('span'); ob.className = 'tl-np-badge' + (move ? ' tl-np-pop' : ''); ob.dataset.id = id; ob.textContent = text; ob.setAttribute('aria-hidden', 'true'); self.overlay.appendChild(ob); }
+      if (!ob) { ob = document.createElement('span'); ob.className = 'tl-np-badge' + (move ? ' tl-np-pop' : ''); ob.dataset.id = id; ob.textContent = text; ob.setAttribute('aria-hidden', 'true'); over.appendChild(ob); }
       var at = Math.max(N.BADGE_MIN_POS, (v ? v.pos : 0) + N.BADGE_STEPS);
-      var q = self.toPaper(self.cx[id], self.yOf(at));
+      var q = self.within(over, self.cx[id], self.yOf(at));
       ob.style.left = q.x.toFixed(1) + 'px'; ob.style.top = q.y.toFixed(1) + 'px';
     }
   });
-  var caret = this.overlay.querySelector('.tl-np-caret');
+  var caret = over.querySelector('.tl-np-caret');
   var showCaret = this.answers.length > 1 && !this.locked && this.cur;
   if (!showCaret) { if (caret) caret.remove(); return; }
-  if (!caret) { caret = document.createElement('span'); caret.className = 'tl-np-caret'; this.overlay.appendChild(caret); }
-  var c = this.toPaper(this.cx[this.cur], this.yOf(this.lo) + 5);
+  if (!caret) { caret = document.createElement('span'); caret.className = 'tl-np-caret'; over.appendChild(caret); }
+  var c = this.within(over, this.cx[this.cur], this.yOf(this.lo) + 5);
   caret.style.left = c.x.toFixed(1) + 'px'; caret.style.top = c.y.toFixed(1) + 'px';
 };
 
@@ -597,7 +717,8 @@ NotePlace.prototype.silence = function () { (this.voices || []).forEach(function
 // ---------- The child's input ----------
 // Taps: a key (the nearest within a few pixels, so the gaps between keys
 // count), else the stave (anywhere on it: the note goes to the nearest
-// answer column, at the height of the finger), else the blank.
+// answer column, at the height of the finger), else the blank. A locked
+// stave can still be slid.
 NotePlace.prototype.onPointer = function (ev) {
   var self = this, x = ev.clientX, y = ev.clientY;
   this.host.classList.remove('kbd');
@@ -613,12 +734,12 @@ NotePlace.prototype.onPointer = function (ev) {
   var r = this.box.getBoundingClientRect();
   if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
     ev.preventDefault();
-    if (this.locked || !this.answers.length) return;
+    if (this.locked || !this.answers.length) { this.slide.grab(ev); return; }
     this.box.focus({ preventScroll: true });
     var id = this.colAt(x), pos = this.posAt(y);
     this.stopCount();
     this.cur = id;
-    this.drag = { id: id, pos: pos, pointer: ev.pointerId, moved: false };
+    this.drag = { id: id, pos: pos, pointer: ev.pointerId, moved: false, x0: x, y0: y, button: ev.button };
     try { this.host.setPointerCapture(ev.pointerId); } catch (e) { /* the pointer is already gone */ }
     this.apply(true);
     return;
@@ -626,17 +747,31 @@ NotePlace.prototype.onPointer = function (ev) {
   this.emit('blankTap', {});
 };
 
+// Moving the finger moves the note one line or space at a time. On a
+// sliding stave, a press that first goes sideways slides the stave and
+// puts no note down.
 NotePlace.prototype.onMove = function (ev) {
-  if (!this.drag || ev.pointerId !== this.drag.pointer) return;
+  if (this.slide && this.slide.press) { this.slide.drag(ev); return; }
+  var d = this.drag;
+  if (!d || ev.pointerId !== d.pointer) return;
+  var dx = ev.clientX - d.x0, dy = ev.clientY - d.y0;
+  if (this.slide.on && !d.moved && Math.abs(dx) > NotePlace.SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    this.drag = null;
+    this.apply(true);
+    this.slide.grab({ clientX: d.x0, clientY: d.y0, button: d.button, pointerId: d.pointer });
+    this.slide.drag(ev);
+    return;
+  }
   var pos = this.posAt(ev.clientY);
-  if (pos === this.drag.pos) return;
-  this.drag.pos = pos; this.drag.moved = true;
+  if (pos === d.pos) return;
+  d.pos = pos; d.moved = true;
   this.apply(true);
 };
 
 // The note lands where the finger lets go, keeping the accidental it
-// had; a cancelled drag puts nothing down.
+// had; a cancelled drag puts nothing down. A slide comes to rest.
 NotePlace.prototype.onUp = function (ev, cancelled) {
+  if (this.slide && this.slide.press) { this.slide.drop(); return; }
   var d = this.drag;
   if (!d || ev.pointerId !== d.pointer) return;
   this.drag = null;
@@ -797,7 +932,8 @@ NotePlace.prototype.stopCount = function () {
 // The caption in state, as a dark bubble under the stave pointing at its
 // answer. The component first opens room under the stave, so the keys
 // move down and nothing is covered; then the bubble pops up. Taken away,
-// the bubble fades first and then the room closes.
+// the bubble fades first and then the room closes. On a sliding stave it
+// points where its column is going.
 NotePlace.prototype.placeCaption = function (animated) {
   var move = animated && !NotePlace.still(), N = NotePlace;
   var c = this.cap;
@@ -814,8 +950,8 @@ NotePlace.prototype.placeCaption = function (animated) {
   room.appendChild(b);
   this.host.insertBefore(room, this.anchor.nextSibling);
   var h = b.offsetHeight + 14, W = room.clientWidth, bw = b.offsetWidth;
-  var rr = room.getBoundingClientRect(), pr = this.paper.getBoundingClientRect();
-  var vx = this.toPaper(this.cx[c.id], 0).x + pr.left - rr.left;
+  var lag = this.slide && this.slide.on ? this.slide.lag() : 0;
+  var vx = this.screenAt(this.cx[c.id], 0).x + lag - room.getBoundingClientRect().left;
   var left = Math.max(4, Math.min(W - 4 - bw, vx - bw / 2));
   b.style.left = left + 'px';
   b.style.setProperty('--ax', Math.max(12, Math.min(bw - 12, vx - left)) + 'px');
@@ -874,6 +1010,7 @@ NotePlace.prototype.count = function (id, to, opts) {
   var from = opts.from ? this.toValue(opts.from) : null;
   var start = from ? from.pos : this.startPos(id), n = Math.abs(end.pos - start) + 1, dir = end.pos >= start ? 1 : -1;
   var gap = opts.gapMs || NotePlace.COUNT_GAP_MS;
+  this.showCol(id, true);
   this.counted = { id: id, from: start, to: end.pos, n: 0, walking: true };
   for (var i = 1; i <= n; i++) (function (i) {
     self.timers.push(setTimeout(function () {
@@ -915,6 +1052,7 @@ NotePlace.prototype.lock = function (on) { this.locked = on !== false; this.drag
 // Shows a caption under an answer; with no answer, takes it away.
 NotePlace.prototype.caption = function (id, html) {
   this.cap = id !== null && id !== undefined && this.isAnswer(id) ? { id: String(id), html: html } : null;
+  if (this.cap) this.showCol(this.cap.id, true);
   this.placeCaption(true);
 };
 // Plays the given note, then the answer, then both together (lectures).

@@ -37,6 +37,9 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 90%, transparent), 0 2px 4px color-mix(in srgb, var(--tl-shade) 8%, transparent), 0 18px 40px -12px var(--tl-paper-shadow); }
 .tl-cf-case::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit; background: var(--tl-grain);
   -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
+/* The window shows the dial; showing an arc, it shows the dial's top down to just under the hub, and the edge where the dial goes on fades (the mask only sets how much shows). */
+.tl-cf-window { position: relative; z-index: 1; }
+.tl-cf-arc .tl-cf-window { overflow: clip; -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(180deg, #000 calc(100% - 14px), transparent); }
 .tl-cf-dial { position: relative; z-index: 1; margin: 0 auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
 .tl-cf-spin { position: absolute; inset: 0; transition: transform var(--tl-turn); }
 .tl-cf-still .tl-cf-spin, .tl-cf-still .tl-cf-up { transition: none !important; }
@@ -133,3 +136,4 @@
 @keyframes tl-cf-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
 @keyframes tl-cf-draw { to { stroke-dashoffset: 0; } }
 @keyframes tl-cf-march { to { stroke-dashoffset: -22; } }
+@media (prefers-reduced-motion: reduce) { .tl-cf-spin, .tl-cf-up, .tl-cf-count { transition: none; } }

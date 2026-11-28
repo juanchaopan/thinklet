@@ -16,6 +16,8 @@
   --tl-bubble-shadow: color-mix(in srgb, var(--th-dark) 45%, transparent);
   --tl-caption: var(--th-caption);
   --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  /* How far an edge with more music beyond it fades. */
+  --tl-fade: 26px;
   position: relative; min-width: 0; display: flex; flex-direction: column;
 }
 .tl-paper { position: relative; flex: 1; display: flex; align-items: center; border-radius: 18px; padding: 14px 14px 6px; background:
@@ -25,6 +27,14 @@
 .tl-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply; background: var(--tl-grain);
   -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
 .tl-compact .tl-paper { padding: 8px 8px 4px; border-radius: 14px; min-height: 104px; }
+/* The window the music shows through; with less room than the music, it holds whole lines and the sheet moves behind it. */
+.tl-window { position: relative; width: 100%; min-width: 0; }
+.tl-window.tl-rolled { overflow: hidden; overflow: clip; --tl-fade-top: 0px; --tl-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 var(--tl-fade-top), #000 calc(100% - var(--tl-fade-bottom)), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 var(--tl-fade-top), #000 calc(100% - var(--tl-fade-bottom)), transparent 100%); }
+.tl-window.tl-more-up { --tl-fade-top: var(--tl-fade); }
+.tl-window.tl-more-down { --tl-fade-bottom: var(--tl-fade); }
+.tl-sheet { position: relative; width: 100%; transition: transform .52s cubic-bezier(.6, 0, .25, 1); }
 .tl-svgbox { position: relative; width: 100%; touch-action: manipulation; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .tl-svgbox svg { display: block; overflow: visible; }
 .tl-svgbox svg:focus, .tl-svgbox svg:focus-visible { outline: none; }
@@ -39,7 +49,7 @@
 .tl-svgbox .tl-ripple { fill: none; stroke: var(--tl-glow); stroke-width: 2; opacity: .8; transform-box: fill-box; transform-origin: center; animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.4); opacity: 0; } }
 .tl-svgbox .tl-slot { fill: color-mix(in srgb, var(--tl-light) 85%, transparent); stroke: var(--tl-notes); stroke-opacity: .55; stroke-width: 1.4; transform-box: fill-box; transform-origin: center; animation: pop .4s cubic-bezier(.1, .9, .2, 1) both; }
-/* HTML overlays positioned over the paper. */
+/* HTML overlays positioned over the sheet, so they move with the music. */
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
 .tl-badge { position: absolute; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%; display: grid; place-items: center; font: 600 17px/1 var(--tl-serif); color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 70%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 12px -2px var(--tl-glow-soft), 0 0 0 3px color-mix(in srgb, var(--tl-light) 80%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
 .tl-count { position: absolute; margin: -12px 0 0 -12px; width: 24px; text-align: center; font: 600 20px/1 var(--tl-serif); color: var(--tl-glow); text-shadow: 0 0 12px var(--tl-glow-soft); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
@@ -59,4 +69,4 @@
 @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
-
+@media (prefers-reduced-motion: reduce) { .tl-sheet { transition: none; } }

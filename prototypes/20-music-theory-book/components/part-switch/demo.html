@@ -5,7 +5,7 @@
 <main class="wrap">
   <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>小题切换 <code>part-switch</code></h1>
-  <p class="lede">讲题顶上一条玻璃，按流程分出的几段各一个短标签：读题、(a)、(b)、(c)……当前这段垫着一块紫色，换段时紫色滑过去。孩子还不能去的段变暗、按不了。孩子按另一段就发出 <code>parts.pick</code>，由播放器跳过去。只有一段或没有分段时它不出现。</p>
+  <p class="lede">讲题顶上一条玻璃，按流程分出的几段各一个短标签：读题、(a)、(b)、(c)……当前这段垫着一块紫色，换段时紫色滑过去。孩子还不能去的段变暗、按不了。孩子按另一段就发出 <code>parts.pick</code>，由播放器跳过去。只有一段或没有分段时它不出现。段多到放不下时，玻璃条保持给它的宽度，里面那一排标签左右滑，当前段滑到中间，两头还有段的一边淡出；孩子可以用手指左右拨。</p>
 
   <div id="demo"></div>
 
@@ -17,7 +17,7 @@
       <tr><th>指令</th><td><code>parts.set {items, current}</code>：换当前段，或哪几段能去</td></tr>
       <tr><th>事件</th><td><code>parts.pick {index}</code>：孩子按了另一段</td></tr>
     </table>
-    <p class="note">像 (a) 这样的标签用衬线斜体，这款字体写在它自己的 <code>component.json</code> 里。左右方向键在能按的段之间移动。玻璃、缓急和按下的声音来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着）。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">像 (a) 这样的标签用衬线斜体，这款字体写在它自己的 <code>component.json</code> 里。左右方向键在能按的段之间移动，移到的段滑进视野。拨动不会按下标签。滑动用变形移动，不出现滚动条；系统设置了“减少动态效果”时直接到位。玻璃、缓急和按下的声音来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着）。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 
@@ -29,20 +29,23 @@
 <script>
 (function () {
   var PARTS = ['读题', '(a)', '(b)', '(c)'];
+  var MANY = ['读题', '(a)', '(b)', '(c)', '(d)', '(e)', '(f)', '(g)', '(h)', '(i)', '复习一遍'];
   // The parts up to `last` can be gone to; the rest wait.
-  function upTo(last) { return PARTS.map(function (l, i) { return { label: l, enabled: i <= last }; }); }
+  function upTo(list, last) { return list.map(function (l, i) { return { label: l, enabled: i <= last }; }); }
 
   ControlsDemo.start({
     id: 'part-switch',
     place: 'top',
-    input: { items: upTo(PARTS.length), current: 0 },
-    note: '在舞台上按另一段，看它发出的事件；换不换过去由播放器决定，所以要用下面的指令让它换。',
+    input: { items: upTo(PARTS, PARTS.length), current: 0 },
+    note: '在舞台上按另一段，看它发出的事件；换不换过去由播放器决定，所以要用下面的指令让它换。“很多段”在手机宽度上放不下，看它怎么滑。',
     commands: [
-      { key: 'hold', label: '到 (a)，等孩子作答（后面的按不了）', code: 'parts.set {current: 1, items}', run: function (c) { c.call('parts.set', { current: 1, items: upTo(1) }); } },
-      { key: 'partb', label: '到小题 (b)', code: 'parts.set {current: 2, items}', run: function (c) { c.call('parts.set', { current: 2, items: upTo(2) }); } },
-      { key: 'partc', label: '到小题 (c)', code: 'parts.set {current: 3, items}', run: function (c) { c.call('parts.set', { current: 3, items: upTo(3) }); } },
-      { key: 'single', label: '只有一段（不出现）', code: 'parts.set {items: [读题]}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(0).slice(0, 1) }); } },
-      { key: 'again', label: '从头再来', code: 'parts.set {current: 0, items}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(PARTS.length) }); } }
+      { key: 'hold', label: '到 (a)，等孩子作答（后面的按不了）', code: 'parts.set {current: 1, items}', run: function (c) { c.call('parts.set', { current: 1, items: upTo(PARTS, 1) }); } },
+      { key: 'partb', label: '到小题 (b)', code: 'parts.set {current: 2, items}', run: function (c) { c.call('parts.set', { current: 2, items: upTo(PARTS, 2) }); } },
+      { key: 'partc', label: '到小题 (c)', code: 'parts.set {current: 3, items}', run: function (c) { c.call('parts.set', { current: 3, items: upTo(PARTS, 3) }); } },
+      { key: 'many', label: '很多段，到 (e)', code: 'parts.set {current: 5, items: 11 段}', run: function (c) { c.call('parts.set', { current: 5, items: upTo(MANY, 5) }); } },
+      { key: 'manyEnd', label: '很多段，到最后一段', code: 'parts.set {current: 10, items: 11 段}', run: function (c) { c.call('parts.set', { current: 10, items: upTo(MANY, 10) }); } },
+      { key: 'single', label: '只有一段（不出现）', code: 'parts.set {items: [读题]}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(PARTS, 0).slice(0, 1) }); } },
+      { key: 'again', label: '从头再来', code: 'parts.set {current: 0, items}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(PARTS, PARTS.length) }); } }
     ]
   });
 })();

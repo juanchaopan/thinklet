@@ -11,6 +11,15 @@
    Events (via onEvent): keyTap, hubTap, blankTap, walkStep, playStart,
    playEnd. Sound goes through the injected source, lectures only.
    Colours are the theme constants (--th-*) set on the stage or page.
+
+   When it does not fit: fit(view) gives the most room it may take,
+   {width, height} in its own pixels (null: its own size again). A dial
+   larger than the view is first drawn smaller, down to MIN_DIAL. Below
+   that it shows only an arc: the top of the dial down to the hub, so
+   the current key at the top and the three keys on each side of it are
+   in view with the key signature; whenever the key changes the whole
+   dial turns to bring it to the top. The edge where the dial goes on
+   fades.
    ============================================================ */
 function CircleOfFifths(host, options) {
   this.host = host;
@@ -27,6 +36,9 @@ function CircleOfFifths(host, options) {
   this.timers = [];
   this.tapTimers = [];
   this.voices = [];
+  this.view = null;
+  this.viewKey = '';
+  this.arc = false;
   this.uid = 'tlcf' + (CircleOfFifths.count = (CircleOfFifths.count || 0) + 1);
   if (this.current) this.held[this.current] = true;
   this.build();
@@ -42,6 +54,12 @@ CircleOfFifths.R = { out: 186, bezel: 164, mid: 124, hub: 86, major: 144, minor:
 CircleOfFifths.TAP_FADE_MS = 2000;
 CircleOfFifths.STEP_MS = 1100;
 CircleOfFifths.SVG = 'http://www.w3.org/2000/svg';
+// Within a view the whole dial is drawn no smaller than this; below it
+// the dial shows an arc.
+CircleOfFifths.MIN_DIAL = { normal: 300, compact: 200 };
+// The share of the dial's height an arc shows: from the top to just
+// under the hub.
+CircleOfFifths.ARC_SHOW = (200 + CircleOfFifths.R.hub + 6) / 400;
 
 // The key with s sharps (s > 0) or -s flats (s < 0). Each sharp moves the
 // tonic up a fifth (four letters, seven semitones), each flat down a fifth
@@ -160,6 +178,20 @@ CircleOfFifths.prototype.chord = function (k, delay, dur, velocity) {
   [0, k.mode === 'minor' ? 3 : 4, 7].forEach(function (iv, i) { self.note(root + iv, delay + i * .035, dur, velocity); });
 };
 
+// The dial's size: as large as its width allows, at most its natural
+// size; within a view, as large as the view allows, and below MIN_DIAL
+// an arc that shows the top of a larger dial.
+CircleOfFifths.prototype.size = function (avail, besides) {
+  var natural = Math.floor(Math.min(avail, this.o.compact ? 280 : 460));
+  this.arc = false;
+  if (!this.view) return natural;
+  var floor = Math.min(natural, CircleOfFifths.MIN_DIAL[this.o.compact ? 'compact' : 'normal']);
+  var room = this.view.height - besides, whole = Math.floor(Math.min(natural, room));
+  if (whole >= floor) return whole;
+  this.arc = true;
+  return Math.floor(Math.min(natural, Math.max(floor, room / CircleOfFifths.ARC_SHOW)));
+};
+
 CircleOfFifths.prototype.build = function () {
   var self = this, R = CircleOfFifths.R, P = CircleOfFifths.polar;
   this.stop(); this.clearTap();
@@ -169,12 +201,26 @@ CircleOfFifths.prototype.build = function () {
   this.host.innerHTML = '';
   this.case = document.createElement('div'); this.case.className = 'tl-cf-case';
   this.host.appendChild(this.case);
-  var avail = Math.max(200, (this.host.clientWidth || 340) - 24);
-  var W = Math.floor(Math.min(avail, this.o.compact ? 280 : 460));
+  if (this.view) { var cs = this.case.style; cs.boxSizing = 'border-box'; cs.maxWidth = Math.floor(this.view.width) + 'px'; cs.width = '100%'; cs.alignSelf = 'center'; }
+  this.win = document.createElement('div'); this.win.className = 'tl-cf-window';
+  this.case.appendChild(this.win);
+  var legend = document.createElement('div'); legend.className = 'tl-cf-legend';
+  var ringIcon = function (outer) {
+    return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" style="fill:var(--tl-wood-ring)"/><circle cx="10" cy="10" r="7.4" style="fill:' + (outer ? 'var(--tl-glow)' : 'var(--tl-paper-a)') + '"/><circle cx="10" cy="10" r="5.2" style="fill:' + (outer ? 'var(--tl-paper-b)' : 'var(--tl-glow)') + '"/><circle cx="10" cy="10" r="3.2" style="fill:var(--tl-ivory)"/></svg>';
+  };
+  legend.innerHTML = '<span>' + ringIcon(true) + 'Major keys</span><span>' + ringIcon(false) + 'relative minor keys</span>';
+  this.case.appendChild(legend);
+  if (this.o.caption) { var cap = document.createElement('p'); cap.className = 'tl-cf-caption'; cap.textContent = this.o.caption; this.host.appendChild(cap); }
+  var outer = this.view ? Math.min(this.view.width, this.host.clientWidth || this.view.width) : (this.host.clientWidth || 340);
+  var avail = Math.max(200, outer - 24);
+  var besides = 24 + legend.offsetHeight + 10 + (cap ? cap.offsetHeight + 10 : 0);
+  var W = this.size(avail, besides);
   var u = this.u = W / 400;
+  this.case.classList.toggle('tl-cf-arc', this.arc);
+  this.win.style.height = this.arc ? Math.round(W * CircleOfFifths.ARC_SHOW) + 'px' : '';
   this.dial = document.createElement('div'); this.dial.className = 'tl-cf-dial tl-cf-still';
   this.dial.style.width = W + 'px'; this.dial.style.height = W + 'px'; this.dial.style.setProperty('--u', u.toFixed(4));
-  this.case.appendChild(this.dial);
+  this.win.appendChild(this.dial);
   this.spin = document.createElement('div'); this.spin.className = 'tl-cf-spin';
   this.dial.appendChild(this.spin);
   var bezel = document.createElement('div'); bezel.className = 'tl-cf-bezel';
@@ -238,14 +284,6 @@ CircleOfFifths.prototype.build = function () {
   this.over = document.createElement('div'); this.over.className = 'tl-cf-over';
   this.dial.appendChild(this.over);
 
-  var legend = document.createElement('div'); legend.className = 'tl-cf-legend';
-  var ringIcon = function (outer) {
-    return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" style="fill:var(--tl-wood-ring)"/><circle cx="10" cy="10" r="7.4" style="fill:' + (outer ? 'var(--tl-glow)' : 'var(--tl-paper-a)') + '"/><circle cx="10" cy="10" r="5.2" style="fill:' + (outer ? 'var(--tl-paper-b)' : 'var(--tl-glow)') + '"/><circle cx="10" cy="10" r="3.2" style="fill:var(--tl-ivory)"/></svg>';
-  };
-  legend.innerHTML = '<span>' + ringIcon(true) + 'Major keys</span><span>' + ringIcon(false) + 'relative minor keys</span>';
-  this.case.appendChild(legend);
-  if (this.o.caption) { var cap = document.createElement('p'); cap.className = 'tl-cf-caption'; cap.textContent = this.o.caption; this.host.appendChild(cap); }
-
   if (playable) {
     this.playBtn = document.createElement('button');
     this.playBtn.type = 'button'; this.playBtn.className = 'tl-cf-play';
@@ -260,14 +298,38 @@ CircleOfFifths.prototype.build = function () {
   this.dial.addEventListener('keydown', function (ev) { self.onKey(ev); });
   this.dial.addEventListener('keyup', function (ev) { if (ev.key === 'Tab') self.host.classList.add('kbd'); });
 
+  var cur = this.current ? this.keys[this.current] : null;
+  if (this.arc && this.onDial(cur)) this.rot = this.angleFor(cur);
   this.writeLabels(false);
   this.turn(false);
   this.refresh();
   this.renderHub(false);
   this.restore();
-  var cur = this.current ? this.keys[this.current] : null;
   this.labels[this.onDial(cur) ? cur.mode + cur.pos : 'major0'].tabIndex = 0;
   requestAnimationFrame(function () { requestAnimationFrame(function () { self.dial.classList.remove('tl-cf-still'); }); });
+};
+
+// The most room the dial may take, or null for its own size; it is
+// drawn again only when that changes.
+CircleOfFifths.prototype.fit = function (view) {
+  var key = view ? Math.round(view.width) + 'x' + Math.round(view.height) : '';
+  if (key === this.viewKey) return;
+  this.viewKey = key;
+  this.view = view ? { width: view.width, height: view.height } : null;
+  this.build();
+};
+
+// The dial's angle that puts a key at the top, the shorter way round
+// from where it stands.
+CircleOfFifths.prototype.angleFor = function (k) {
+  var target = -k.pos * 30;
+  return this.rot + ((target - this.rot) % 360 + 540) % 360 - 180;
+};
+// Showing an arc, the dial turns so the current key is at the top.
+CircleOfFifths.prototype.keepTop = function () {
+  var k = this.current ? this.keys[this.current] : null;
+  if (!this.arc || !this.onDial(k) || this.angleFor(k) === this.rot) return;
+  this.rotate(k.id);
 };
 
 // Writes every name and count. A masked one shows the dashed question
@@ -323,6 +385,7 @@ CircleOfFifths.prototype.turn = function (animated) {
 
 // Recomputes which wedges are lit, trailed, dimmed and chosen from the
 // state: held keys, the key a tap lit, the walk's trail and the spotlight.
+// Showing an arc, it turns the current key to the top.
 CircleOfFifths.prototype.refresh = function () {
   var self = this, lit = {}, chosen = {};
   var ids = Object.keys(this.held);
@@ -350,6 +413,7 @@ CircleOfFifths.prototype.refresh = function () {
       self.haloLayer.appendChild(p);
     });
   });
+  this.keepTop();
 };
 
 // Draws the key signature of the shown key on a short stave, cropped
@@ -415,7 +479,7 @@ CircleOfFifths.prototype.onKey = function (ev) {
   else if (ev.key === 'Escape') { this.blankTap(); return; }
   if (!next) return;
   ev.preventDefault();
-  cur.tabIndex = -1; this.labels[next].tabIndex = 0; this.labels[next].focus();
+  cur.tabIndex = -1; this.labels[next].tabIndex = 0; this.labels[next].focus({ preventScroll: true });
   if (this.o.mode === 'lecture') this.tap(this.labels[next].querySelector('.tl-cf-line').dataset.key);
 };
 
@@ -487,6 +551,7 @@ CircleOfFifths.prototype.highlight = function (ids) {
 CircleOfFifths.prototype.show = function (id) {
   var k = this.key(id); this.current = k ? k.id : null; this.newest = false;
   this.renderHub(false); this.hubTurn();
+  this.keepTop();
 };
 
 // Walks round the circle from a key, one fifth a step: clockwise adds a
@@ -636,9 +701,8 @@ CircleOfFifths.prototype.caption = function (id, html) {
 
 // Turns the dial so a key sits at the top, the shorter way round.
 CircleOfFifths.prototype.rotate = function (id) {
-  var k = this.key(id), target = k ? -k.pos * 30 : 0;
-  var delta = ((target - this.rot) % 360 + 540) % 360 - 180;
-  this.rot += delta;
+  var k = this.key(id);
+  this.rot = k ? this.angleFor(k) : this.rot + ((0 - this.rot) % 360 + 540) % 360 - 180;
   this.over.querySelectorAll('.tl-cf-bubble').forEach(function (b) { b.remove(); });
   this.turn(true);
 };

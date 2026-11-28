@@ -99,9 +99,12 @@
 .tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
 .tl-play svg { width: 18px; height: 18px; fill: currentColor; }
 .tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
+/* Folded for a small view: the words go (labels, beat numbers, the caption), the blocks, notes and beat lines stay, closer together. */
+.tl-bg.tl-tight .tl-card { padding: 6px 8px 8px; }
+.tl-bg.tl-tight .tl-rows { gap: 6px; }
+.tl-bg.tl-tight .tl-badge, .tl-bg.tl-tight .tl-beatno, .tl-bg.tl-tight .tl-caption { display: none; }
 @keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pulse { 0% { fill: color-mix(in srgb, var(--tl-glow) 55%, transparent); } 100% { fill: var(--tl-cell); } }
 @keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
 @keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
-

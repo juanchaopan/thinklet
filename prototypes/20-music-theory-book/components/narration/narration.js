@@ -13,34 +13,49 @@
    play it tries again. To hear a line again from its start while it is
    being said, the child drags the progress line to its left end.
 
-   The player tells it which line to say (say returns a promise that
-   settles when the line is over), when it is the child's turn (turn),
-   and while it is paused the player waits (whenRunning). Dragging the
-   progress line moves within the current line only: while the line is
-   still being said the lecture waits for it to end; after it ended, the
-   line is heard again from there and nothing moves on. A line that
-   cannot play (blocked, broken, not started in 8 seconds, taken away by
-   the system) stays on screen and waits for the child to press play; it
-   is never skipped. Muted, lines still play silently so the lecture
-   keeps its pace.
+   The subtitle shows at most two rows of text. A longer line scrolls up
+   one row at a time as it is said, so the row being heard stays in
+   view; the row that leaves fades at the top edge. A row's height is
+   read from the line itself, whose size follows the band's width.
 
-   Each line is a recording played by one HTMLAudioElement, so a slower
-   or faster speed keeps the pitch, and a phone's silent switch does not
-   mute it. The portrait's halo follows a loudness envelope measured
-   when the recordings are prepared.
+   The player tells it which line to say (narrate.say settles when the
+   line is over), when it is the child's turn (narrate.turn), and waits
+   while the child has paused it (narrate.wait). Dragging the progress
+   line moves within the current line only: while the line is still being
+   said the lecture waits for it to end; after it ended, the line is
+   heard again from there and nothing moves on. A line that cannot play
+   (blocked, broken, not started in 8 seconds, taken away by the system)
+   stays on screen and waits for the child to press play; it is never
+   skipped. Muted, lines still play silently so the lecture keeps its
+   pace.
+
+   Its recordings: the input `folder` is the item's narration folder,
+   whose manifest.json names, for each recording, the path of the value
+   it says and its words. prepare(input) downloads every recording there
+   and measures its length and its loudness envelope (the portrait's halo
+   follows it); a bar created for that folder uses what was prepared. A
+   line is said by that path. Each line plays through one
+   HTMLAudioElement, so a slower or faster speed keeps the pitch, and a
+   phone's silent switch does not mute it. Phones let such an element
+   play only after it has played inside a touch, so every touch, click
+   and key press readies spare elements with a silent clip, and a new
+   bar takes one of those.
 
    The glass, the round buttons, the easing and the press sound come
    from stage-glass (StageGlass, component.json needs it). Every colour
    is a theme constant (--th-<name>) or one of stage-glass's aliases for
-   them (--st-*).
+   them (--st-*). Its buttons stay at least 44px in each direction.
 
    Its portrait is its own: teacher.webp beside this script, found from
    where this script is served, unless the input gives another.
 
-   Inputs: buttons (pause, rate), lines [{id, text, url, duration, env}],
-   portrait, rate, muted.
-   Interface: narrate. Commands (methods): say, turn, flag, pause,
-   resume, seek, rate, mute, set, stop, clear, unlock, whenRunning.
+   Inputs: folder, buttons (pause, rate), portrait, rate, muted; or, in
+   place of folder, lines [{id, text, url, duration, env}] measured with
+   NarrationBar.measure.
+   Interface: narrate. Commands: narrate.say (a path), narrate.wait,
+   narrate.turn (on), narrate.flag (text or null), narrate.pause,
+   narrate.resume, narrate.rate (speed), narrate.mute (on), narrate.clear.
+   State: { line }.
    Events: narrate.lineStart, narrate.lineEnd, narrate.lineFail,
    narrate.lineRetry, narrate.replay, narrate.seek, narrate.pause,
    narrate.resume, narrate.rate.
@@ -55,8 +70,11 @@ var NarrationBar = (function () {
   var INTERRUPT_CHECK_MS = 300;
   var FADE_OUT_MS = 340;
   var LINE_HEIGHT = 1.55;
-  var MIN_LINES = 2;
+  var ROWS = 2;
+  var SPARE = 2;
   var SILENT = null;
+  var PREPARED = {};
+  var spare = [];
 
   // An alpha variant of a theme constant.
   function th(name, pct) { return 'color-mix(in srgb,var(--th-' + name + ') ' + pct + '%,transparent)'; }
@@ -82,13 +100,15 @@ var NarrationBar = (function () {
     '.st-nb-flag[data-kind="fail"]{background:' + th('alert', 25) + ';color:var(--th-alert-ink)}',
     '.st-nb-mute svg{width:14px;height:14px}',
     '@keyframes st-nb-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}',
-    '.st-nb-lines{grid-area:lines;position:relative;min-width:0;overflow:hidden;transition:height .52s var(--st-ease)}',
+    '.st-nb-lines{grid-area:lines;position:relative;min-width:0;overflow:hidden;overflow:clip;transition:height .52s var(--st-ease)}',
     '.st-nb-lines.st-nb-still{transition:none}',
-    '.st-nb-line{margin:0;font-size:17px;line-height:' + LINE_HEIGHT + ';letter-spacing:.01em;text-wrap:pretty}',
+    // A line longer than the two rows scrolls up; the top edge fades.
+    '.st-nb-lines.st-nb-rolled{-webkit-mask-image:linear-gradient(180deg,transparent,#000 40%);mask-image:linear-gradient(180deg,transparent,#000 40%)}',
+    '.st-nb-line{margin:0;font-size:17px;line-height:' + LINE_HEIGHT + ';letter-spacing:.01em;text-wrap:pretty;transition:transform .52s var(--st-ease)}',
     '.st-nb-line.st-nb-enter{animation:st-nb-up .52s var(--st-ease) both}',
     '.st-nb-line.st-nb-leave{position:absolute;left:0;right:0;top:0;animation:st-nb-out .34s ease-in both}',
-    '@keyframes st-nb-up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}',
-    '@keyframes st-nb-out{to{transform:translateY(-12px);opacity:0}}',
+    '@keyframes st-nb-up{from{translate:0 14px;opacity:0}to{translate:0 0;opacity:1}}',
+    '@keyframes st-nb-out{to{translate:0 -12px;opacity:0}}',
     '.st-nb-seek{grid-area:seek;position:relative;display:flex;align-items:center;height:36px;margin:-10px 0 -10px;min-width:0;cursor:pointer;touch-action:none}',
     '.st-nb-seek:focus{outline:none}.st-nb-seek:focus-visible{outline:2px solid var(--st-glow);outline-offset:-6px;border-radius:8px}',
     '.st-nb-seek[aria-disabled="true"]{pointer-events:none;opacity:.45}',
@@ -118,7 +138,8 @@ var NarrationBar = (function () {
     '@container (max-width:400px){.st-nb-body{grid-template-areas:"face lines lines" "seek seek ctl";row-gap:0;column-gap:8px;padding:9px 8px 4px 9px;align-items:start}',
     '.st-nb-face{width:34px;height:34px;margin-top:2px}.st-nb-line{font-size:15px}',
     '.st-nb-meta{position:absolute;top:-11px;left:46px;min-height:0;pointer-events:none}',
-    '.st-nb-seek{margin:0 0 0 4px;height:44px;align-self:center}.st-nb-ctl{align-self:center}.st-nb-ctl .st-btn{width:42px;height:44px}.st-nb-disc{width:38px;height:38px}}'
+    '.st-nb-seek{margin:0 0 0 4px;height:44px;align-self:center}.st-nb-ctl{align-self:center}.st-nb-ctl .st-btn{width:44px;height:44px}.st-nb-disc{width:38px;height:38px}}',
+    '@media (prefers-reduced-motion:reduce){.st-nb-line{transition:none}}'
   ].join('');
 
   var ICON = {
@@ -153,6 +174,20 @@ var NarrationBar = (function () {
     return SILENT;
   }
 
+  // Keeps SPARE audio elements that have played inside a gesture, so a
+  // bar created later in that gesture, or after it, may play on its own.
+  function ready() {
+    while (spare.length < SPARE) {
+      var a = new Audio();
+      a.preload = 'auto'; a.src = silentUrl();
+      spare.push(a);
+      var p = a.play();
+      (function (el) { if (p && p.then) p.then(function () { if (spare.indexOf(el) >= 0) el.pause(); }, function () { var i = spare.indexOf(el); if (i >= 0) spare.splice(i, 1); }); })(a);
+    }
+  }
+  function take() { return spare.shift() || new Audio(); }
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (t) { document.addEventListener(t, ready, { capture: true, passive: true }); });
+
   // Loudness of a recording every ENV_STEP_S seconds, 0..1, scaled so the
   // loud parts of this line reach about 1.
   function envelope(buffer) {
@@ -167,9 +202,9 @@ var NarrationBar = (function () {
     return out.map(function (x) { return top < 1e-4 ? 0 : Math.min(1, x / top); });
   }
 
-  // Downloads every line's recording ({id, text, url}) and measures its
-  // length and loudness, as the loading screen does before a lecture.
-  function prepare(lines, onProgress) {
+  // Downloads recordings ({id, text, url}) and measures each one's length
+  // and loudness.
+  function measure(lines, onProgress) {
     var C = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     var ctx = new C(1, 2, 44100);
     var done = 0;
@@ -187,21 +222,39 @@ var NarrationBar = (function () {
     }));
   }
 
-  function Bar(host, options) {
+  // Every recording a narration folder's manifest names, measured once
+  // per folder.
+  function prepare(input, onProgress) {
+    var folder = input && input.folder;
+    if (!folder) return Promise.resolve();
+    if (PREPARED[folder]) return PREPARED[folder];
+    var p = fetch(folder + 'manifest.json').then(function (r) {
+      if (!r.ok) throw new Error('narration ' + folder + 'manifest.json ' + r.status);
+      return r.json();
+    }).then(function (m) {
+      return measure(Object.keys(m).map(function (file) { return { id: m[file].path, text: m[file].text, url: folder + file }; }), onProgress);
+    });
+    PREPARED[folder] = p;
+    p.catch(function () { if (PREPARED[folder] === p) delete PREPARED[folder]; });
+    return p;
+  }
+
+  function Bar(host, options, lines) {
     LessonComponents.Base.call(this);
     injectStyle();
     this.host = host;
-    this.o = Object.assign({ portrait: '', buttons: ['pause', 'rate'], lines: [], rate: 1, muted: false }, options);
+    this.o = Object.assign({ portrait: '', buttons: ['pause', 'rate'], rate: 1, muted: false }, options);
     this.lines = {};
     var self = this;
-    this.o.lines.forEach(function (l) { self.lines[l.id] = l; });
+    (lines || []).forEach(function (l) { self.lines[l.id] = l; });
     this.current = null; this.pending = null; this.last = null;
     this.active = false; this.started = false; this.failed = null; this.deferred = false;
     this.paused = false; this.turnOn = false; this.flagText = null; this.dragging = false;
     this.rateValue = clampRate(this.o.rate); this.muted = !!this.o.muted;
     this.runWaiters = [];
-    this.playToken = 0; this.timer = 0; this.raf = 0; this.lv = 0; this.unlocked = false; this.currentUrl = '';
-    this.audio = new Audio();
+    this.playToken = 0; this.timer = 0; this.raf = 0; this.lv = 0; this.currentUrl = ''; this.row = -1;
+    this.audio = take();
+    this.audio.pause();
     this.audio.preload = 'auto';
     this.audio.preservesPitch = true; this.audio.webkitPreservesPitch = true;
     this.build();
@@ -209,7 +262,7 @@ var NarrationBar = (function () {
     this.render();
   }
   Bar.prototype = Object.create(LessonComponents.Base.prototype);
-  Bar.prepare = prepare;
+  Bar.measure = measure;
   Bar.RATE_MIN = RATE_MIN; Bar.RATE_MAX = RATE_MAX;
   Bar.PORTRAIT = PORTRAIT;
 
@@ -252,7 +305,7 @@ var NarrationBar = (function () {
     this.pop = q('.st-nb-pop'); this.slider = q('.st-nb-slider'); this.rateBox = q('.st-nb-ratebox');
     q('.st-nb-face img').src = this.o.portrait || PORTRAIT;
     this.linesBox.classList.add('st-nb-still');
-    this.linesBox.style.height = this.minHeight() + 'px';
+    this.linesBox.style.height = this.rowsHeight() + 'px';
 
     el.addEventListener('click', function (e) {
       var b = e.target.closest('[data-act]');
@@ -318,17 +371,34 @@ var NarrationBar = (function () {
   };
 
   Bar.prototype.line = function () { var id = this.failed ? this.failed.id : (this.current || this.last); return id ? this.lines[id] : null; };
-  Bar.prototype.minHeight = function () {
-    return Math.ceil(parseFloat(getComputedStyle(this.linesBox).fontSize || '17') * LINE_HEIGHT * MIN_LINES);
+  // One row of the subtitle, read from the line shown (its size follows
+  // the band's width); before any line, from the band's own font size.
+  Bar.prototype.rowHeight = function () {
+    var p = this.currentLineEl(), lh = p ? parseFloat(getComputedStyle(p).lineHeight) : NaN;
+    return lh > 0 ? lh : parseFloat(getComputedStyle(this.linesBox).fontSize || '17') * LINE_HEIGHT;
   };
+  Bar.prototype.rowsHeight = function () { return Math.ceil(this.rowHeight() * ROWS); };
   Bar.prototype.currentLineEl = function () {
     var all = this.linesBox.querySelectorAll('.st-nb-line:not(.st-nb-leave)');
     return all[all.length - 1] || null;
   };
   Bar.prototype.fitLines = function () {
-    var p = this.currentLineEl();
     this.linesBox.classList.add('st-nb-still');
-    this.linesBox.style.height = Math.max(this.minHeight(), p ? p.offsetHeight : 0) + 'px';
+    this.linesBox.style.height = this.rowsHeight() + 'px';
+    this.row = -1;
+    this.roll(this.shownFraction || 0);
+  };
+  // Keeps the row being heard (by the fraction of the line said) in the
+  // two rows the subtitle shows.
+  Bar.prototype.roll = function (f) {
+    this.shownFraction = f;
+    var p = this.currentLineEl(); if (!p) return;
+    var lh = this.rowHeight(), n = Math.max(1, Math.round(p.offsetHeight / lh));
+    var row = n <= ROWS ? 0 : Math.max(0, Math.min(n - ROWS, Math.floor(clamp01(f) * n) - (ROWS - 1)));
+    if (row === this.row) return;
+    this.row = row;
+    p.style.transform = row ? 'translateY(' + (-row * lh).toFixed(1) + 'px)' : '';
+    this.linesBox.classList.toggle('st-nb-rolled', row > 0);
   };
   Bar.prototype.showLine = function (text, animate) {
     var box = this.linesBox, cur = this.currentLineEl();
@@ -338,25 +408,23 @@ var NarrationBar = (function () {
     p.className = 'st-nb-line';
     p.textContent = text;
     box.appendChild(p);
-    var h = Math.max(this.minHeight(), p.offsetHeight);
+    this.row = -1;
+    box.classList.remove('st-nb-rolled');
     if (animate && !StageGlass.still()) {
-      box.style.height = box.getBoundingClientRect().height + 'px';
-      void box.offsetHeight;
-      box.classList.remove('st-nb-still');
-      box.style.height = h + 'px';
       Array.prototype.forEach.call(olds, function (o) { o.classList.remove('st-nb-enter'); o.classList.add('st-nb-leave'); setTimeout(function () { o.remove(); }, FADE_OUT_MS); });
       p.classList.add('st-nb-enter');
     } else {
       Array.prototype.forEach.call(olds, function (o) { o.remove(); });
-      box.classList.add('st-nb-still');
-      box.style.height = h + 'px';
     }
+    box.style.height = this.rowsHeight() + 'px';
+    this.roll(0);
   };
   Bar.prototype.fill = function (f) {
     f = clamp01(f);
     this.fillEl.style.transform = 'scaleX(' + f.toFixed(4) + ')';
     this.knobEl.style.left = (f * 100).toFixed(2) + '%';
     this.seekEl.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+    this.roll(f);
   };
 
   Bar.prototype.bindAudio = function () {
@@ -381,17 +449,6 @@ var NarrationBar = (function () {
         if (token === self.playToken && self.active && !self.paused && !self.failed && self.started && a.paused && !a.ended) self.fail('interrupted');
       }, INTERRUPT_CHECK_MS);
     });
-  };
-
-  // Plays a silent clip inside the child's touch so later lines may start
-  // on their own on phones.
-  Bar.prototype.unlock = function () {
-    if (this.unlocked || this.active) return;
-    var self = this, a = this.audio;
-    this.unlocked = true;
-    a.src = silentUrl();
-    var p = a.play();
-    if (p && p.then) p.then(function () { if (!self.active) a.pause(); }, function () { self.unlocked = false; });
   };
 
   Bar.prototype.kick = function () {
@@ -591,7 +648,20 @@ var NarrationBar = (function () {
   };
   Bar.prototype.getState = function () { return { line: this.current }; };
   Bar.prototype.setState = function (s) { this.set(s); };
-  Bar.prototype.call = function (name) { throw new Error('narration: ' + name); };
+  Bar.prototype.call = function (name, v) {
+    switch (name) {
+      case 'narrate.say': return this.say(v);
+      case 'narrate.wait': return this.whenRunning();
+      case 'narrate.turn': this.turn(v); return;
+      case 'narrate.flag': this.flag(v); return;
+      case 'narrate.pause': this.pause(); return;
+      case 'narrate.resume': this.resume(); return;
+      case 'narrate.rate': this.rate(v); return;
+      case 'narrate.mute': this.mute(v); return;
+      case 'narrate.clear': this.clear(); return;
+    }
+    throw new Error('narration: ' + name);
+  };
 
   Bar.prototype.render = function (still) {
     var st = this.failed ? 'failed' : this.paused ? 'paused' : this.active ? 'speaking' : this.turnOn ? 'turn' : 'idle';
@@ -637,7 +707,14 @@ var NarrationBar = (function () {
 
   LessonComponents.register('narration', {
     interfaces: ['narrate'],
-    create: function (host, input) { return new Bar(host, input); }
+    prepare: prepare,
+    create: function (host, input) {
+      var o = Object.assign({}, input), lines = o.lines;
+      delete o.lines; delete o.folder;
+      var bar = new Bar(host, o, lines);
+      if (!lines && input && input.folder && PREPARED[input.folder]) PREPARED[input.folder].then(function (ls) { ls.forEach(function (l) { bar.lines[l.id] = l; }); bar.render(); });
+      return bar;
+    }
   });
   return Bar;
 })();
