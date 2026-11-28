@@ -4,8 +4,8 @@
 // lights fade and blank taps clear; that bubbles stay inside the card and
 // badges, claims and verdicts cover no text; that masks survive a change of
 // card; that practice taps do nothing; that the stacked strips line up; that
-// rows sound and a playback stops; and that the page does not scroll
-// sideways.
+// rows sound on the piano and a playback stops; and that the page does not
+// scroll sideways.
 // Usage: node cardtest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 
@@ -94,8 +94,8 @@ await page.evaluate(() => window.tlMain.reveal());
 await page.waitForTimeout(700);
 console.log(`after turning to the ornament card: slips ${masked} (head and meaning), head tap reports hidden ${headEv.hidden} and name ${headEv.head}; after reveal slips ${await page.$$eval('#main-card .tl-fc-slip', (s) => s.length)}`);
 
-// Sound: a tapped stave plays its notes played out; play stops.
-await page.evaluate(() => { window.__notes = []; const p = SoundSource.play; SoundSource.play = function (m, d, dur) { window.__notes.push([m, +(d || 0).toFixed(3), +dur.toFixed(3)]); return p.apply(this, arguments); }; });
+// Sound: a tapped stave plays its notes played out on the piano; play stops.
+await page.evaluate(() => { window.__notes = []; const p = Piano.play; Piano.play = function (m, d, dur) { window.__notes.push([m, +(d || 0).toFixed(3), +dur.toFixed(3)]); return p.apply(this, arguments); }; });
 const sign = await page.$eval('#main-card .tl-fc-row[data-field="sign"]', (r) => { const b = r.getBoundingClientRect(); return { x: b.left + b.width * .7, y: b.top + b.height / 2 }; });
 await page.mouse.click(sign.x, sign.y);
 const signNotes = await page.evaluate(() => window.__notes.splice(0));
@@ -137,6 +137,6 @@ await page.click('#sheet-close');
 console.log(`pop-up card "${pop.head}" ${pop.w} wide, lit rows ${pop.lit}`);
 
 const scroll = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
-console.log(`page width ${scroll.sw} for a ${scroll.iw} wide window; sound ${await page.evaluate(() => SoundSource.status().phase)}`);
+console.log(`page width ${scroll.sw} for a ${scroll.iw} wide window; piano ${await page.evaluate(() => Piano.status().phase)}`);
 if (errors.length) console.log('errors:', errors.join(' | '));
 await close();

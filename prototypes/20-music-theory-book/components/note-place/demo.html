@@ -1,9 +1,7 @@
 <title>在谱上放音符</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
-<link rel="stylesheet" href="note-place.css">
 <style>
-/* Layout: a lit stage shaped like a practice screen: the question's instruction on top (the player's), four short staves in a grid (one component each, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the components emit. Then other looks of the same component (several answers on one stave, a key with many sharps at phone width), a lecture played through at phone width with sound, and the interface table. The component's own look is in note-place.css; this page sets the theme's constants it draws with. */
+/* Layout: a lit stage shaped like a practice screen: the question's instruction on top (the player's), four short staves in a grid (one component each, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the components emit. Then other looks of the same component (several answers on one stave, a key with many sharps at phone width), a lecture played through at phone width with sound, and the interface table. The component's own look and fonts come with it (its component.json); this page sets the theme's constants it draws with. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -164,13 +162,13 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <table>
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td>输入</td><td>谱号（高音、低音、中音、次中音）；调号；一列一列的音：给定的音（照谱上写的样子，如 <code>Eb4</code>），或要孩子写的答案（有编号，可以带一行写在它下面的字）；小题号如 (a)；谱下面的名称，如 <i>minor 6th</i>；能放到哪里（最低和最高，默认上下各三条加线）；有哪几个升降键（默认重降、降、还原、升、重升）；模式：讲题（放音符时发声）或练习（不发声）。</td></tr>
+          <tr><td>输入</td><td>谱号（高音、低音、中音、次中音）；调号；一列一列的音：给定的音（照谱上写的样子，如 <code>Eb4</code>），或要孩子写的答案（有编号，可以带一行写在它下面的字）；小题号如 (a)；谱下面的名称，如 <i>minor 6th</i>；能放到哪里（最低和最高，默认上下各三条加线）；有哪几个升降键（默认重降、降、还原、升、重升）；模式：讲题（放音符时发声）或练习（不发声）；讲题里音符在哪件乐器上响（<code>sound</code>）。</td></tr>
           <tr><td>外观</td><td>短谱由乐谱库画，谱号、调号、给定音、加线和乐谱组件一模一样；孩子写的音也用同一个全音符字形，深色墨水。纸、按键托盘、紫色的亮起和“对”、砖红的“错”、深色气泡，都由组件自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ivory</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
           <tr><td>排法</td><td>组件自己定：谱先按宽度排，调号很长、一行放不下时整张谱缩小到刚好放下；每两列之间尽量留出一个升降号加一个符头的地方，但谱不会小到手指点不准（一张谱上答案很多、屏幕又窄时会挤一些）；上下留出能放到的最高、最低处的地方。答案写在给定音的右边，每个答案右边再留一个位置，用来画对的音。几张短谱怎么排（两行两列，或手机上一列）由流程定。</td></tr>
           <tr><td>动作</td><td>点谱：音符落到最近的线或间上（弹出来，0.3 秒），加线一条一条长出来；按住拖：音符跟着手指一格一格走，手指下的线或间亮一条淡紫色，松手时落定。按升降键：记号在音符前写出来，这个键保持按下的样子；再按一次去掉。没有音符时按升降键，这一列闪一下砖红的虚线框。数音：一个淡紫色的音从给定音往上一格一格走，每一格留下一个小点，旁边的数字跟着变，讲题里每一格响一声。核对：音符变紫、正上方弹出紫色的勾，或变成砖红、弹出叉；画出对的音时，紫色的音出现在右边。锁住：按键托盘慢慢收起来。</td></tr>
           <tr><td>指令</td><td><code>focus(答案)</code> 让按键作用在这个答案上；<code>write({答案: 音})</code> 替孩子写好；<code>press(答案, 记号)</code> 在讲题里按一下升降键给孩子看；<code>count(答案, 到哪个音)</code> 从给定音一格一格数上去，音为空时收起；<code>highlight(列…)</code>；<code>label({答案: 字母})</code>；<code>caption(答案, 文字)</code>，答案为空时收起；<code>check({答案: 对/错})</code>；<code>reveal({答案: 对的音})</code> 在旁边画出对的音；<code>lock(是/否)</code>；<code>play(答案)</code> 讲题里弹出给定音、答案，再一起弹；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code>；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>notePlace</code>（哪个答案；在第几线第几间；照谱上写的音，如 <code>C4</code>；算上调号以后实际的音，如 <code>C#4</code>；英文名；音高；怎么放的：点、拖或键盘）；<code>accidentalPress</code>（哪个记号、哪个答案、写上了没有、写完以后的音）；<code>noteErase</code>；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>谱由乐谱库（abcjs）画；发声交给“音源”，组件不知道用的是钢琴还是别的乐器；颜色来自主题。哪个是答案由题目文件给，流程拿事件里“实际的音”和题目文件比，组件只画出对错。</td></tr>
+          <tr><td>依赖</td><td>谱由乐谱库（abcjs）画；发声只调用交给它的乐器（<code>sound</code>）的 <code>play</code>，组件不知道用的是钢琴还是别的乐器。它的 <code>component.json</code> 写明需要乐谱库和 <code>piano</code> 组件，加载它时先加载这两样，开始前下载好钢琴采样，这一页再把 piano 交给讲题里的那张谱。颜色来自主题。哪个是答案由题目文件给，流程拿事件里“实际的音”和题目文件比，组件只画出对错。</td></tr>
           <tr><td>声音</td><td>讲题里，音符落定、数音的每一格、<code>play</code> 都用钢琴发声；练习里不发声，免得孩子靠听来找音。</td></tr>
           <tr><td>出现在哪里</td><td>练习里是作答的组件，直接画在画面上，一小题一张短谱。讲题里也可以用：一格一格数给孩子看，替孩子写出答案，或者让孩子自己试。</td></tr>
         </tbody>
@@ -180,24 +178,33 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="note-place.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
    Assembly: this page plays the role of the player, the workflow and
-   the question file. It sets the theme's constants on the page, then
-   lays out one short stave per small question, wires the events to a
-   log and checks answers against the question file; the components
-   call nothing here directly.
+   the question file. Behind the loading screen it loads the
+   note-placing component with everything its component.json needs, lets
+   the piano download its samples and sets the theme's constants on the
+   page; on 开始 it lays out one short stave per small question, wires
+   the events to a log and checks answers against the question file.
+   The components call nothing here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
-  var lede = document.querySelector('.lede');
-  if (!window.ABCJS) { lede.textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
-  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+  var COMPONENT = 'note-place';
+
+  PlayerLoading.need(function (progress) {
+    var theme = ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); });
+    var parts = LessonComponents.load([COMPONENT], '../').then(function () {
+      return LessonComponents.preload([COMPONENT], progress);
+    });
+    return Promise.all([theme, parts]);
+  });
+  PlayerLoading.onStart(start);
+
   document.body.setAttribute('data-boundary', 'on');
   window.tlEvents = [];
   var logEl = document.getElementById('log');
@@ -221,7 +228,10 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     boundaryBtn.setAttribute('aria-pressed', String(on));
   });
 
-  // Everything that draws waits for the theme: the staves read its constants.
+  // The staves are built on 开始, once the component is loaded, the
+  // piano's samples are ready and the theme's constants are on the page,
+  // so their first frame already has its colours and the lecture's first
+  // note plays on time.
   function start() {
     // The question files would hold: adapted examples, not copied exam
     // items. What is right lives in the question file too; here it is in
@@ -235,7 +245,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       d: { tag: '(d)', clef: 'bass', key: 'C', columns: [{ given: 'E2' }, { id: 'n' }], name: 'diminished 7th' },
       multi: { clef: 'alto', key: 'C', columns: [{ id: 's', under: 'subdominant' }, { id: 'd', under: 'dominant' }, { id: 'l', under: 'leading note' }], name: 'D major' },
       sharps: { tag: '(e)', clef: 'treble', key: 'B', columns: [{ given: 'G4' }, { id: 'n' }], name: 'diminished 5th' },
-      run: { clef: 'treble', key: 'C', columns: [{ given: 'Eb4' }, { id: 'n' }], name: 'minor 6th', mode: 'lecture', sound: SoundSource }
+      run: { clef: 'treble', key: 'C', columns: [{ given: 'Eb4' }, { id: 'n' }], name: 'minor 6th', mode: 'lecture', sound: Piano }
     };
     var ANSWER = { a: { n: 'D5' }, b: { n: 'D#3' }, c: { n: 'Bb5' }, d: { n: 'Db3' }, multi: { s: 'G', d: 'A', l: 'C#' }, sharps: { n: 'D5' }, run: { n: 'Cb5' } };
     var REVEAL = { a: { n: 'D5' }, b: { n: 'D#3' }, c: { n: 'B5' }, d: { n: 'Db3' }, multi: { s: 'G3', d: 'A3', l: 'C#4' }, sharps: { n: 'Dn5' }, run: { n: 'Cb5' } };
@@ -335,12 +345,5 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebuild);
   }
-
-  ThemeConstants.load(THEME).then(function (theme) {
-    ThemeConstants.apply(document.documentElement, theme);
-    start();
-  }, function () {
-    lede.textContent = '主题没有加载出来，请刷新页面再试。';
-  });
 })();
 </script>

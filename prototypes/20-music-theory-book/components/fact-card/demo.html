@@ -1,9 +1,7 @@
 <title>知识卡组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
-<link rel="stylesheet" href="fact-card.css">
 <style>
-/* Layout: a lit stage holds one fact card (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the card emits. Then four small cards stacked by the workflow to compare ranges, a card the workflow opens in a pop-up, and the interface table. The component's own look is in fact-card.css; this page sets the theme's constants it draws with. */
+/* Layout: a lit stage holds one fact card (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the card emits. Then four small cards stacked by the workflow to compare ranges, a card the workflow opens in a pop-up, and the interface table. The component's own look and fonts come with it (its component.json); this page sets the theme's constants it draws with. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -166,43 +164,51 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <table>
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td>输入</td><td>一叠卡片的内容（题目文件里写）：每张有编号、名称、类别，和若干项；每项有项目名、内容，内容是文字、一小段 ABC 谱，或音域（最低音和最高音），可以带一句点了才弹出的说明。显示哪一张；只显示哪几项（不给就全显示）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应）；速度；是否有播放按钮；小号；下面的名称（原文）。</td></tr>
+          <tr><td>输入</td><td>一叠卡片的内容（题目文件里写）：每张有编号、名称、类别，和若干项；每项有项目名、内容，内容是文字、一小段 ABC 谱，或音域（最低音和最高音），可以带一句点了才弹出的说明。显示哪一张；只显示哪几项（不给就全显示）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应）；速度；是否有播放按钮；小号；下面的名称（原文）；音符在哪件乐器上响（<code>sound</code>）。</td></tr>
           <tr><td>外观</td><td>卡纸的纹理、折角、双线、小型大写的项目名、斜体的名称、标亮的紫光、深色的说明气泡、音域条的象牙和乌木琴键，都由知识卡自己画，不从外面的样式继承；画风和其他组件一样。用到的每一种颜色都是主题常量（<code>--th-paper-a</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。谱、谱号、装饰音记号和名称里的升降号都用乐谱库画出来的字形。</td></tr>
           <tr><td>指令</td><td><code>show(卡)</code> 翻到另一张（遮住的项换卡后仍遮着，其他标记清掉）；<code>highlight(项…)</code>；<code>spotlight(项…)</code>；<code>label({项: 文字})</code> 在项目名前面贴 A、B、C；<code>caption(项, 文字)</code> 在这一项下面弹出说明；<code>check(项, 说法, 对不对)</code> 把题目里的说法贴在这一项旁边，对的打紫色的勾，错的用砖红色划掉并打叉；<code>fit(项, 最低音, 最高音)</code> 在音域条上画出一段的音域，超出的部分是砖红色的斜纹，并写明在不在音域里；<code>mask(项… 或 'head')</code> 用纸条遮住；<code>reveal(…)</code> 纸条滑走、写出来；<code>play()</code> 按顺序响出卡上所有会响的项；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>rowTap</code>（哪张卡、哪一项、项目名、文字内容、音域的最低最高音、是否遮着）；<code>headTap</code>（哪张卡、名称、是否遮着）；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”，和乐谱、键盘、音级梯、五度圈用的是同一个；颜色来自主题；知识卡不知道乐谱、选择题和别的组件的存在。说法对不对由题目文件给，知识卡只负责画出来；音域比得出来，由知识卡自己算。</td></tr>
+          <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：知识卡的 <code>component.json</code> 写明需要它（还有乐谱库 abcjs），加载知识卡时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给知识卡。乐谱、键盘、音级梯、五度圈用的也是它；颜色来自主题；知识卡不知道乐谱、选择题和别的组件的存在。说法对不对由题目文件给，知识卡只负责画出来；音域比得出来，由知识卡自己算。</td></tr>
           <tr><td>谁决定排版</td><td>卡片放在哪里、几张上下排、放不放进弹出层、用大号还是小号，由流程决定；卡片占满给它的宽度，最宽 460。</td></tr>
           <tr><td>出现在哪里</td><td>讲术语、装饰音、乐器的讲题里直接画在画面上；讲谱例时由流程放进弹出层，孩子点到谱上的术语才出现。练习里一般不出现，要用时流程先遮住会泄露答案的项（比如只留弹法、遮住名称）。</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。打开页面时的加载页是播放器的，和其他组件的原型共用。</p>
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="fact-card.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
    Assembly: this page plays the role of the player and the question
-   file. It sets the theme's constants on the page, then holds the deck,
-   builds the cards, wires their events to a log, and shows how the
-   sound is doing; no card calls anything here directly.
+   file. Behind the loading screen it loads the fact card component with
+   everything its component.json needs, lets the piano download its
+   samples and sets the theme's constants on the page; on 开始 it holds
+   the deck, builds the cards, wires their events to a log, and shows how
+   the piano is doing. No card calls anything here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
-  var lede = document.querySelector('.lede');
+  var COMPONENT = 'fact-card';
   var stateEl = document.getElementById('sound-state');
-  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function () {
-    var s = SoundSource.status();
+  var PHASE = { idle: '还没加载', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  function showSound(s) {
     stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
-  });
+  }
 
-  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+  PlayerLoading.need(function (progress) {
+    var theme = ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); });
+    var parts = LessonComponents.load([COMPONENT], '../').then(function () {
+      Piano.watch(showSound);
+      return LessonComponents.preload([COMPONENT], progress);
+    });
+    return Promise.all([theme, parts]);
+  });
+  PlayerLoading.onStart(start);
 
   // The deck a question file would hold: adapted examples, not copied
   // exam items.
@@ -258,9 +264,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     boundaryBtn.setAttribute('aria-pressed', String(on));
   });
 
-  // Everything that draws waits for the theme: the cards read its constants.
+  // The cards are built on 开始, once the component is loaded, the
+  // piano's samples are ready and the theme's constants are on the page,
+  // so their first frame already has its colours and its first note
+  // plays on time.
   function start() {
-    var main = new FactCard(document.getElementById('main-card'), { entries: deck, entry: 'con-dolore', playable: true, sound: SoundSource, onEvent: log });
+    var main = new FactCard(document.getElementById('main-card'), { entries: deck, entry: 'con-dolore', playable: true, sound: Piano, onEvent: log });
     var QUESTION = { 'con-dolore': '<i>con dolore</i> 是什么意思？', 'upper-mordent': '括号里写出来的是哪种装饰音？', oboe: '<i>oboe</i> 是单簧片乐器吗？', clarinet: '<i>clarinet in B♭</i> 是移调乐器吗？' };
     var qEl = document.getElementById('stage-q');
     function showCard(id) { if (main.entryId !== id) main.show(id); qEl.innerHTML = QUESTION[id]; }
@@ -308,7 +317,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     var compareHost = document.getElementById('compare'), compare = [];
     ['flute', 'oboe', 'bassoon', 'trumpet'].forEach(function (id, i) {
       var el = document.createElement('div'); el.id = 'cmp-' + id; compareHost.appendChild(el);
-      var c = new FactCard(el, { entries: deck, entry: id, fields: ['range'], compact: true, sound: SoundSource, onEvent: log });
+      var c = new FactCard(el, { entries: deck, entry: id, fields: ['range'], compact: true, sound: Piano, onEvent: log });
       c.label({ range: 'ABCD'.charAt(i) });
       c.fit('range', 'F2', 'D4');
       compare.push(c);
@@ -319,7 +328,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     document.querySelectorAll('[data-term]').forEach(function (b) {
       b.addEventListener('click', function () {
         sheet.hidden = false;
-        if (!pop) pop = new FactCard(document.getElementById('pop-card'), { entries: deck, entry: b.dataset.term, sound: SoundSource, onEvent: log });
+        if (!pop) pop = new FactCard(document.getElementById('pop-card'), { entries: deck, entry: b.dataset.term, sound: Piano, onEvent: log });
         else if (pop.entryId !== b.dataset.term) { pop.build(); pop.show(b.dataset.term); }
         else pop.build();
         pop.highlight(['meaning']);
@@ -339,12 +348,5 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (c) { c.build(); }); });
   }
-
-  ThemeConstants.load(THEME).then(function (theme) {
-    ThemeConstants.apply(document.documentElement, theme);
-    start();
-  }, function () {
-    lede.textContent = '主题没有加载出来，请刷新页面再试。';
-  });
 })();
 </script>

@@ -1,0 +1,14 @@
+{
+  "needs": [
+    "sound"
+  ],
+  "scripts": [
+    "https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js",
+    "conclusion-stack.js",
+    "interface.js"
+  ],
+  "styles": [
+    "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap",
+    "conclusion-stack.css"
+  ]
+}

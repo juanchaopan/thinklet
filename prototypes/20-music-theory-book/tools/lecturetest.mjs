@@ -3,18 +3,20 @@
 // (wrong answers first where the script says so), goes back a scene once,
 // taps a conclusion on the board once, skips one scene before it ends,
 // and tries to tick an option before being asked. Checks:
+// the components were loaded by their manifests with what they need;
 // the question was read first with its text unfolded under the title and
-// folded after; going back and tapping a conclusion replayed an earlier
-// scene; while the child is asked (and has not answered), 下一幕 and the
-// later segments cannot be pressed but going back can; the skip went on;
-// wrong attempts gave a retry and then the demonstration; conclusions
-// flew to the board and something folded into the board; the board has
-// room and shows exactly the conclusions it holds after every press; the
-// question menu and close sit together at the top right; at the end
-// 下一幕 is gone and replay has come; no errors. At every stop it checks
-// the screen is a film frame (nothing scrolls; every control on stage
-// inside its region; in a region turned into a wheel, the one in focus)
-// and saves a screenshot.
+// folded after; the question menu's list opens over everything (nothing
+// on the stage covers it) and closes again; going back and tapping a
+// conclusion replayed an earlier scene; while the child is asked (and has
+// not answered), 下一幕 and the later segments cannot be pressed but going
+// back can; the skip went on; wrong attempts gave a retry and then the
+// demonstration; conclusions flew to the board and something folded into
+// the board; the board has room and shows exactly the conclusions it
+// holds after every press; the question menu and close sit together at
+// the top right; at the end 下一幕 is gone and replay has come; no errors.
+// At every stop it checks the screen is a film frame (nothing scrolls;
+// every control on stage inside its region; in a region turned into a
+// wheel, the one in focus) and saves a screenshot.
 // Usage: node lecturetest.mjs <width> <out dir> [item name] [height]
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,11 +27,13 @@ mkdirSync(out, { recursive: true });
 const HEIGHT = Number(h) || (Number(width) < 600 ? 844 : 900);
 
 const NEXT = '[data-ctl="next"] button', PREV = '[data-ctl="prev"] button', REPLAY = '[data-ctl="replay"] button';
+const MENU = '[data-ctl="menu"] .st-qm-btn';
+const NEEDED = ['sound', 'piano', 'stage-glass'];
 
 // Each turn lists the answers tried in order; the last one is repeated.
 const SCRIPTS = {
-  'time-signatures': { turns: [['68'], ['78'], ['24']], wrong: false, back: 3, tap: 5, skip: null, fold: true },
-  'count-demo': { turns: [['5', '4'], ['6']], wrong: true, back: null, tap: null, skip: '读题', fold: false }
+  'time-signatures': { turns: [['68'], ['78'], ['24']], wrong: false, back: 3, tap: 5, skip: null, fold: true, menu: 2 },
+  'count-demo': { turns: [['5', '4'], ['6']], wrong: true, back: null, tap: null, skip: '读题', fold: false, menu: null }
 };
 
 const frame = (page) => page.evaluate(() => {
@@ -39,6 +43,7 @@ const frame = (page) => page.evaluate(() => {
   document.querySelectorAll('.lx-stage, .lx-stage *').forEach((e) => {
     if (e.scrollLeft || e.scrollTop) bad.push('scrolled: ' + (e.className.baseVal ?? e.className));
     const cs = getComputedStyle(e);
+    if (e.matches(':popover-open')) return;
     if (/(auto|scroll)/.test(cs.overflowY + cs.overflowX) && (e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)) bad.push('scrolls inside: ' + (e.className.baseVal ?? e.className));
   });
   const E = window.lxEngine, L = E.layout;
@@ -64,14 +69,47 @@ const frame = (page) => page.evaluate(() => {
   return { bad, scale: L.scaleOf('main'), screen: typeof v.when === 'string' ? v.when : 'default', on, wheels };
 });
 
+// Opens the question menu and checks its list is on top: every row's
+// centre hits that row, even where the list lies over the stage's
+// components; then Esc closes it. A book with one item leaves the menu
+// unpressable, so the menu is given a second, stand-in entry for the
+// check and its own list back after.
+async function menuOnTop(page) {
+  const bad = [];
+  const own = await page.evaluate(() => { const m = window.lxEngine.inst.menu, s = { items: m.st.items, current: m.st.current }; if (s.items.length < 2) m.call('questions.set', { items: s.items.concat([{ id: '__stand-in', no: '2', title: '（测试用的第二道题）' }]) }); return s; });
+  await page.click(MENU);
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const pop = document.querySelector('[data-ctl="menu"] .st-qm-pop');
+    if (!pop || !pop.matches(':popover-open')) return { open: false };
+    const rows = [...pop.querySelectorAll('.st-row')];
+    const covered = rows.filter((row) => { const b = row.getBoundingClientRect(); const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return !hit || !row.contains(hit); }).map((row) => row.textContent);
+    const p = pop.getBoundingClientRect();
+    const under = [...document.querySelectorAll('.lx-slot')].filter((s) => { const b = s.getBoundingClientRect(); return b.width && !(b.right < p.left || b.left > p.right || b.bottom < p.top || b.top > p.bottom) && s.getAttribute('data-ctl') !== 'menu'; }).map((s) => s.getAttribute('data-ctl'));
+    return { open: true, rows: rows.length, covered, under };
+  });
+  if (!r.open) bad.push('the question menu list did not open');
+  else {
+    if (r.covered.length) bad.push('question menu rows covered: ' + r.covered.join(', '));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(400);
+    if (await page.$eval('[data-ctl="menu"] .st-qm-pop', (p) => p.matches(':popover-open'))) bad.push('Esc did not close the question menu');
+    console.log(`  menu: ${r.rows} rows open on the top layer, over ${r.under.join(', ') || 'nothing'}; ${r.covered.length} covered`);
+  }
+  await page.evaluate((s) => window.lxEngine.inst.menu.call('questions.set', s), own);
+  return bad;
+}
+
 async function runOne(name) {
   const { page, errors, close } = await openLecture('lecture.html', width, HEIGHT);
   const fails = [];
+  const loaded = await page.evaluate(() => LessonComponents.ids());
+  NEEDED.forEach((n) => { if (!loaded.includes(n)) fails.push(`component ${n} was not loaded with the components that need it`); });
   await page.evaluate((n) => window.lxRun(n), name);
   await page.waitForTimeout(300);
   await page.evaluate(() => window.lxEngine.bar.rate(1.4));
   const script = SCRIPTS[name];
-  let stops = 0, wentBack = false, tapped = false, skipped = false, triedEarly = false, waitsSeen = 0, attempt = 0, turn = 0, minScale = 9, screen = '', titleChecked = false, gateChecked = false, wheelStops = 0;
+  let stops = 0, wentBack = false, tapped = false, skipped = false, triedEarly = false, waitsSeen = 0, attempt = 0, turn = 0, minScale = 9, screen = '', titleChecked = false, gateChecked = false, wheelStops = 0, menuChecked = false;
   const stages = new Set();
   const tr = () => page.evaluate(() => window.lxTrace.map((x) => x.kind + '|' + x.text));
   const opened = () => page.$eval('.st-qt-more', (m) => !m.hidden);
@@ -139,6 +177,10 @@ async function runOne(name) {
       if (f.wheels) wheelStops++;
       f.bad.forEach((b) => fails.push(`stop ${stops}: ${b}`));
       await page.screenshot({ path: join(out, `${name}-${width}x${HEIGHT}-${String(stops).padStart(2, '0')}.png`) });
+      if (script.menu && !menuChecked && stops === script.menu) {
+        menuChecked = true;
+        (await menuOnTop(page)).forEach((b) => fails.push(`stop ${stops}: ${b}`));
+      }
       if (script.back && !wentBack && stops === script.back) {
         wentBack = true;
         const before = (await tr()).filter((x) => x.startsWith('scene|')).length;
@@ -184,6 +226,7 @@ async function runOne(name) {
   }
   if (script.back && !kinds('nav').some((n) => n.startsWith('回到上一幕'))) fails.push('上一幕 was not pressed');
   if (script.skip && !kinds('scene').some((n) => n.includes('跳过'))) fails.push('no scene was skipped');
+  if (script.menu && !menuChecked) fails.push('the question menu was not tried');
   const flights = kinds('call').filter((c) => c.includes('飞过来'));
   if (!flights.length) fails.push('no conclusion flew to the board');
   const folds = kinds('call').filter((c) => c.includes('下台：飞向'));

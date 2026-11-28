@@ -2,7 +2,7 @@
 // names that degree; then checks taps between rungs, blank taps clear,
 // lights fade, every command runs without errors, the small ladders line
 // up rung for rung, the raised degrees of the minor forms sit higher,
-// nothing overlaps sideways, and the sound source is ready.
+// nothing overlaps sideways, and the piano is ready.
 // Usage: node laddertest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 

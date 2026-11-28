@@ -1,7 +1,7 @@
 // Taps every key of the main keyboard and checks the keyTap event names
 // that key; then checks blank taps clear, lights fade, commands run without
-// errors, keyboards in one gallery are the same size, and the sound source
-// reaches the ready state.
+// errors, keyboards in one gallery are the same size, and the piano reaches
+// the ready state.
 // Usage: node keytest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 

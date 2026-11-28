@@ -1,7 +1,9 @@
-/* The look every control's demo page shares: the page itself, a mock
-   lecture stage (lit frame) with rows where the workflow puts controls,
-   the same stage at phone width, the command buttons, the event log and
-   the interface table. The stage is the player's, not the controls'. */
+/* The bench every control's demo page shares, part of the engine: the
+   page itself, a mock lecture stage (lit frame) with rows where the
+   workflow puts controls, the same stage at phone width, the command
+   buttons, the event log, the interface table, and the specimen grid a
+   look's own page (stage-glass) lays its parts out on. The stage and the
+   bench colours are the player's, not the controls'. */
 :root {
   --canvas: #f7f4ef; --surface: #ffffff; --line: #ebe6dc; --ink: #161a2b; --ink-soft: #4b5168; --ink-muted: #6a6e7e; --boundary: #2f6bff;
   --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
@@ -48,3 +50,13 @@ code { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 .middle { display: grid; place-items: center; margin: 0 16px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; }
 body[data-boundary="on"] .ctl { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 16px; }
 body[data-boundary="on"] .ctl::before { content: attr(data-ctl); position: absolute; top: -12px; left: 4px; z-index: 50; font: 700 10px/1 var(--font); color: #fff; background: var(--boundary); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }
+
+/* ---------- Specimens: a look's parts laid out on the lit frame ---------- */
+.bench { border-radius: 26px; background: var(--lit); padding: 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); align-items: start; gap: 26px 22px; min-width: 0; box-sizing: border-box; box-shadow: 0 20px 50px -24px rgba(40, 24, 10, .5); }
+.bench > div { display: grid; gap: 10px; min-width: 0; }
+.bench h3 { color: rgba(70, 48, 26, .75); }
+.specimens { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px 22px; }
+.specimen { display: grid; justify-items: center; gap: 8px; min-width: 0; }
+.specimen > small { font-size: 12px; color: rgba(70, 48, 26, .75); font-family: var(--mono); }
+.chip { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 18px; }
+.face { padding: 14px 18px; border-radius: 22px; max-width: 420px; font-size: 17px; line-height: 1.55; }

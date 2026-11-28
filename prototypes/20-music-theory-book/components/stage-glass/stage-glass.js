@@ -1,20 +1,31 @@
 /* ============================================================
-   Controls kit: the code the lecture's controls share. It is not a
-   component. The controls are the components every lecture and practice
-   has whatever the question's own theme is, all of the stage theme:
-   close, question-menu, part-switch, question-title, scene-prev,
-   narration, scene-next and replay, each in its own folder beside this
-   one. They share one look, the subtitle's: dark glass that reads on any
-   stage, warm white ink, violet light, round icon buttons with no words
-   under them.
+   Stage glass (placed nowhere by itself). The look and the parts the
+   lecture's controls are built from: close, question-menu, part-switch,
+   question-title, scene-prev, narration, scene-next and replay each need
+   this component (component.json) and add only what is their own. The
+   look is the subtitle's: dark glass that reads on any stage, warm white
+   ink, violet light, round icon buttons with no words under them. Its
+   class names start with st-.
 
-   Every colour comes from the theme's constants (--th-<name>, see
-   engine/theme.js), set on the stage or the page; the --st-* names below
-   are the stage theme's short aliases for them. Here, as StageTheme: the
-   glass, the round icon button, the popup list, the number ring, the
-   icons, and the theme's motion. Each control adds only what is its own.
+   Every colour comes from the theme's constants (--th-<name>), set on
+   the stage or the page; the --st-* names are this look's short aliases
+   for them.
+
+   As StageGlass:
+     ui(host)          makes host one of these controls: the look's
+                       aliases and font, and a press sound (sound) on
+                       anything in it that can be pressed
+     icon(name)        an icon: close, prev, next, replay, list, down
+     esc(text)         text made safe to put in HTML
+     still()           true when the system asks for reduced motion
+     show(el, on, animated)  shows or hides an element so the eye sees
+                       it come and go
+     button(name, opts)      registers a round icon button component
+   Classes: st-glass (the glass face), st-btn (the round icon button,
+   st-ready when it calls to be pressed), st-pop and st-row (a list that
+   drops from a control), st-no (a number in a ring), st-enter (coming in).
    ============================================================ */
-var StageTheme = (function () {
+var StageGlass = (function () {
   var CSS = [
     '.st-ui{--st-glass:var(--th-glass);--st-glass-hi:var(--th-glass-hi);--st-edge:color-mix(in srgb,var(--th-light) 10%,transparent);',
     '--st-text:var(--th-glass-ink);--st-soft:color-mix(in srgb,var(--th-glass-ink) 66%,transparent);',
@@ -42,9 +53,8 @@ var StageTheme = (function () {
     // Coming in and going out: grows from a little smaller and fades.
     '.st-enter{animation:st-enter .52s var(--st-ease) both}',
     '@keyframes st-enter{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}',
-    // A list that drops from a control, closed by a touch outside or Esc.
-    '.st-pop{position:absolute;z-index:40;min-width:220px;max-width:min(360px,calc(100vw - 32px));padding:8px;border-radius:18px;transform-origin:22px 0;transition:opacity .2s,transform .26s var(--st-ease)}',
-    '.st-pop[hidden]{display:block;opacity:0;transform:translateY(-6px) scale(.97);pointer-events:none;visibility:hidden}',
+    // A list that drops from a control: at least 220px of rows inside its padding.
+    '.st-pop{min-width:220px;max-width:min(360px,calc(100vw - 32px));padding:8px;border-radius:18px}',
     '.st-pop .st-row{appearance:none;border:0;margin:0;font:inherit;color:var(--st-text);background:transparent;cursor:pointer;display:flex;width:100%;align-items:center;gap:10px;min-height:46px;padding:0 12px;border-radius:12px;font-size:15px;text-align:left}',
     '.st-pop .st-row:hover{background:var(--st-hover)}',
     '.st-pop .st-row[aria-current="true"]{background:var(--st-mark);font-weight:800}',
@@ -65,8 +75,13 @@ var StageTheme = (function () {
   };
 
   function inject() {
-    if (document.getElementById('st-theme-style')) return;
-    var s = document.createElement('style'); s.id = 'st-theme-style'; s.textContent = CSS; document.head.appendChild(s);
+    if (document.getElementById('st-glass-style')) return;
+    var s = document.createElement('style'); s.id = 'st-glass-style'; s.textContent = CSS; document.head.appendChild(s);
+  }
+  function ui(host) {
+    inject();
+    host.classList.add('st-ui');
+    Sound.pressable(host);
   }
   function icon(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>'; }
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -88,15 +103,14 @@ var StageTheme = (function () {
   }
 
   // A round icon button component: one press event, and a state the
-  // player sets (enabled, ready, shown). The words are for screen readers
+  // engine sets (enabled, ready, shown). The words are for screen readers
   // only; the face shows the icon alone.
   function IconButton(host, opts) {
     LessonComponents.Base.call(this);
-    inject();
+    ui(host);
     var self = this;
     this.iface = opts.iface;
     this.st = { enabled: opts.enabled !== false, ready: false, shown: opts.shown !== false };
-    host.classList.add('st-ui');
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'st-btn st-glass ' + (opts.cls || '');
@@ -122,13 +136,14 @@ var StageTheme = (function () {
   IconButton.prototype.getState = function () { return Object.assign({}, this.st); };
   IconButton.prototype.setState = function (s) { Object.assign(this.st, s || {}); this.apply(false); };
 
-  // Registers a round icon button as a component of the stage theme.
-  function button(id, opts) {
-    LessonComponents.register(id, {
-      theme: 'stage', interfaces: [opts.iface],
+  // Registers a round icon button component under its name.
+  function button(name, opts) {
+    LessonComponents.register(name, {
+      interfaces: [opts.iface],
       create: function (host, input) { return new IconButton(host, Object.assign({}, opts, input || {})); }
     });
   }
 
-  return { inject: inject, icon: icon, esc: esc, still: still, show: show, IconButton: IconButton, button: button };
+  LessonComponents.register('stage-glass', {});
+  return { inject: inject, ui: ui, icon: icon, esc: esc, still: still, show: show, IconButton: IconButton, button: button };
 })();

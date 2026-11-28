@@ -1,7 +1,8 @@
 // Taps every tile of the main beat grid and checks the tileTap event names
 // that tile; taps every beat cell; checks blank taps clear, lights fade,
 // commands run without errors, grids in one group are the same size, the
-// page does not scroll sideways, and the sound source reaches ready.
+// page does not scroll sideways, and the piano the notes play on reaches
+// ready.
 // Usage: node beattest.mjs <fragment.html> [width] [shot.png]
 import { openPage } from './serve.mjs';
 

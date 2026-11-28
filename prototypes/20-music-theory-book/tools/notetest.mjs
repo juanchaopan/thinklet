@@ -4,8 +4,8 @@
 // accidental keys, the keyboard, the key signature in what a note sounds
 // like, lock, verdicts and the right note shown beside a wrong one (marks
 // clear of each other), counting and stopping it, a state drawn with
-// nothing moving, a rebuild keeping state with one event per tap, sound
-// only in lectures, and no console errors.
+// nothing moving, a rebuild keeping state with one event per tap, the
+// piano sounding only in lectures, and no console errors.
 // Usage: node notetest.mjs <width>
 import { openPage } from './serve.mjs';
 
@@ -261,9 +261,10 @@ ok(!missed.length, 'taps landing on the wrong place: ' + missed.join(' '));
   ok((await since(n0)).length === 1, 'one tap after rebuilds gives more than one event');
 }
 
-// ---------- Sound only in lectures ----------
+// ---------- The piano sounds only in lectures ----------
 {
-  await page.evaluate(() => { window.__plays = 0; const p = SoundSource.play; SoundSource.play = function () { window.__plays++; return p.apply(this, arguments); }; });
+  ok(await page.evaluate(() => Piano.status().phase) === 'ready', 'piano not ready after 开始');
+  await page.evaluate(() => { window.__plays = 0; const p = Piano.play; Piano.play = function () { window.__plays++; return p.apply(this, arguments); }; });
   await show('a');
   const q = await point('a', 'n', 4);
   await tapXY(q.x, q.y);

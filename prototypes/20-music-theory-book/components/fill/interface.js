@@ -1,14 +1,15 @@
 /* ============================================================
-   Fill-in (etude): its capability interfaces. Turns interface calls into
-   the fill-in's own commands and its key presses into interface events,
-   and keeps what it shows as state. Interfaces: answer, point, set,
-   positions.
+   Fill-in: its capability interfaces. Turns interface calls into the
+   fill-in's own commands and its key presses into interface events, and
+   keeps what it shows as state. A press on it sounds (sound).
+   Interfaces: answer, point, set, positions.
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
   function FillI(host, input) {
     LessonComponents.Base.call(this);
     var self = this;
+    Sound.pressable(host);
     this.c = new Fill(host, Object.assign({}, input, { onEvent: function (ev) {
       if (ev.type !== 'keyPress') return;
       self.st.values = Object.assign({}, ev.values);
@@ -45,5 +46,5 @@
     this.st = U.clone(Object.assign({ values: {}, checks: {}, spotlight: [], focus: null }, s || {}));
     this.apply();
   };
-  LessonComponents.register('fill', { theme: 'etude', interfaces: ['answer', 'point', 'set', 'positions'], create: function (h, i, e) { return new FillI(h, i, e); } });
+  LessonComponents.register('fill', { interfaces: ['answer', 'point', 'set', 'positions'], create: function (h, i) { return new FillI(h, i); } });
 })();

@@ -1,0 +1,9 @@
+{
+  "needs": [
+    "stage-glass"
+  ],
+  "scripts": [
+    "replay.js"
+  ],
+  "styles": []
+}

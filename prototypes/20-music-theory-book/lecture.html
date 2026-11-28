@@ -1,11 +1,5 @@
 <title>讲题原型</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Caveat:wght@600&display=swap">
-<link rel="stylesheet" href="components/score/score.css">
-<link rel="stylesheet" href="components/beat-grid/beat-grid.css">
-<link rel="stylesheet" href="components/conclusion-stack/conclusion-stack.css">
-<link rel="stylesheet" href="components/choice/choice.css">
-<link rel="stylesheet" href="components/fill/fill.css">
 <style>
 /* Layout: the lecture is the engine's full-screen stage, laid out by the item's workflow. A drawer that only this prototype has (opened from the dashed button at the bottom left) shows what the files say and what the engine does; a stand-in for the book's page shows where the close button leads. */
 :root {
@@ -67,20 +61,20 @@ th { color: var(--ink-muted); font-weight: 700; }
 <button type="button" class="proto-open" id="proto-open" aria-controls="proto-drawer" aria-expanded="false">原型说明</button>
 <aside class="proto-drawer" id="proto-drawer" aria-label="原型说明">
   <div class="proto-head"><span class="tagline">只有原型有</span><button type="button" class="btn" id="proto-close">收起</button></div>
-  <p class="lede">这是在确认<b>声明式的流程和题目</b>：舞台按流程的排法分成区域，按屏幕大小换排法；幕与幕之间留下的东西滑过去，离开的淡出或飞进结论板；颜色全部来自主题。书里的题是第 1 题 · 判断拍号。</p>
+  <p class="lede">这是在确认<b>声明式的流程和题目</b>，以及<b>每个组件独立成一个文件夹</b>：引擎按题目用到的组件名去读每个组件的 <code>component.json</code>，连同它依赖的组件（声音、钢琴、控件的玻璃外观）一起加载。书里的题是第 1 题 · 判断拍号。</p>
   <ul class="try">
     <li>换个窗口大小（或转手机）：排法跟着屏幕换，每个组件都在自己的区域里。</li>
+    <li>点右上角的换题按钮：下拉的题目列表盖在所有东西上面，谱和拍尺都挡不住它。</li>
     <li>一项一项地对完、轮到选的时候，拍尺缩进结论板；选对以后，选项缩进它得出的那条结论。</li>
-    <li>中间放不下时，几个组件变成转盘：焦点上的正常大小，两头变小变淡，可以滑动。</li>
     <li>往回总是可以；轮到你作答而还没答过时，下一幕和后面的部分都按不了。</li>
   </ul>
   <div class="toolbar">
     <button type="button" class="btn" id="restart">从头再讲</button>
     <button type="button" class="btn" id="boundary" aria-pressed="false">显示区域和组件边界</button>
   </div>
-  <h2>别的书里的题</h2>
-  <p class="lede">“流程示例”不是给孩子的书，里面的题只用来证明同一个流程能讲另一种部分。</p>
-  <div class="toolbar" id="others"></div>
+  <h2>示例题</h2>
+  <p class="lede">不是书里的题，也不放进内容的存储，只留在原型里，用来证明同一个流程不改代码也能讲另一种部分。</p>
+  <div class="toolbar" id="examples"></div>
   <h2>画面</h2>
   <dl class="kv">
     <dt>全屏</dt><dd id="now-full">—</dd>
@@ -97,98 +91,97 @@ th { color: var(--ink-muted); font-weight: 700; }
   <h2>占位和组件</h2>
   <p class="problems" id="problems" hidden></p>
   <table><thead><tr><th>占位</th><th>要的接口</th><th>组件</th></tr></thead><tbody id="binds"></tbody></table>
+  <h2>加载的组件</h2>
+  <p class="lede" id="loaded">—</p>
   <h2>引擎做了什么</h2>
   <div class="log" id="log" aria-live="off"></div>
 </aside>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
-<script src="engine/sound.js"></script>
 <script src="engine/registry.js"></script>
 <script src="engine/params.js"></script>
 <script src="engine/theme.js"></script>
 <script src="engine/wheel.js"></script>
 <script src="engine/layout.js"></script>
-<script src="components/controls-kit/controls-kit.js"></script>
-<script src="components/close/close.js"></script>
-<script src="components/question-menu/question-menu.js"></script>
-<script src="components/part-switch/part-switch.js"></script>
-<script src="components/question-title/question-title.js"></script>
-<script src="components/scene-prev/scene-prev.js"></script>
-<script src="components/narration/narration.js"></script>
-<script src="components/scene-next/scene-next.js"></script>
-<script src="components/replay/replay.js"></script>
-<script src="components/score/score.js"></script>
-<script src="components/score/interface.js"></script>
-<script src="components/beat-grid/beat-grid.js"></script>
-<script src="components/beat-grid/interface.js"></script>
-<script src="components/conclusion-stack/conclusion-stack.js"></script>
-<script src="components/conclusion-stack/interface.js"></script>
-<script src="components/choice/choice.js"></script>
-<script src="components/choice/interface.js"></script>
-<script src="components/fill/fill.js"></script>
-<script src="components/fill/interface.js"></script>
 <script src="engine/lecture.js"></script>
+<script src="engine/loading.js"></script>
 <script>
 /* ============================================================
-   Prototype shell: plays the part of the app around the engine. It reads
-   the books, their items, the items' workflows and themes from the
-   content folder (the stand-in for object storage) during the loading
-   screen, prepares every spoken value's recording, runs the chosen item
-   full screen when 开始 is tapped, stands in for the book's page the close
-   button leads to, and shows what the engine traces in a drawer only the
-   prototype has. None of this is the engine.
+   Prototype shell: plays the part of the app around the engine. During
+   the loading screen it reads the book, its items, the items' workflows
+   and themes from the content folder (the stand-in for object storage),
+   loads the components those items put on stage with all they need,
+   lets them preload, and prepares every spoken value's recording. It
+   runs the chosen item full screen when 开始 is tapped, stands in for the
+   book's page the close button leads to, and shows what the engine
+   traces in a drawer only the prototype has. Example items that belong
+   to no book live outside the content folder, in examples/. None of
+   this is the engine.
    ============================================================ */
 (function () {
-  var CONTENT = 'content/', BOOKS = ['abrsm-theory-grade-5', 'workflow-examples'];
-  var data = { books: {}, items: {}, workflows: {}, themes: {}, lines: {} };
+  var CONTENT = 'content/', BOOK = 'abrsm-theory-grade-5', EXAMPLES = ['count-demo'];
+  var data = { book: null, items: {}, workflows: {}, themes: {}, lines: {}, components: [] };
   var engine = null, currentName = null, screenNote = '还没开始';
 
   function yaml(url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error(url + ' ' + r.status); return r.text(); }).then(function (t) { return jsyaml.load(t); }); }
-  function itemBase(it) { return CONTENT + 'books/' + it.book + '/items/' + it.name + '/'; }
+  function itemBase(it) { return it.example ? 'examples/' + it.name + '/' : CONTENT + 'books/' + BOOK + '/items/' + it.name + '/'; }
 
-  // A book's items in its order: each unit's lecture, then its practices,
-  // numbered by unit.
-  function itemsOf(book, doc) {
+  // The book's items in its order: each unit's lecture, then its
+  // practices, numbered by unit.
+  function itemsOf(doc) {
     var out = [];
     (doc.units || []).forEach(function (u, i) {
-      [u.lecture].concat(u.practices || []).forEach(function (n, k) { out.push({ book: book, name: n, no: String(i + 1) + (k ? '-' + k : '') }); });
+      [u.lecture].concat(u.practices || []).forEach(function (n, k) { out.push({ name: n, no: String(i + 1) + (k ? '-' + k : '') }); });
     });
     return out;
   }
 
+  // The loading screen's bar: the files a tenth, the components' preloads
+  // most of it, the recordings the rest.
+  function share(progress, from, to) {
+    return function (f, text) { progress(f === null || f === undefined ? null : from + (to - from) * f, text); };
+  }
+
   PlayerLoading.need(function (progress) {
     progress(0, '读书本、题目、流程和主题');
-    return Promise.all(BOOKS.map(function (b) { return yaml(CONTENT + 'books/' + b + '/book.yaml'); })).then(function (docs) {
-      var list = [];
-      BOOKS.forEach(function (b, i) { data.books[b] = { title: docs[i].title, items: itemsOf(b, docs[i]) }; list = list.concat(data.books[b].items); });
-      return Promise.all(list.map(function (it) { return yaml(itemBase(it) + 'item.yaml'); })).then(function (docs2) {
-        list.forEach(function (it, i) { it.doc = docs2[i]; it.title = docs2[i].params.title; data.items[it.name] = it; });
+    return yaml(CONTENT + 'books/' + BOOK + '/book.yaml').then(function (doc) {
+      data.book = { title: doc.title, items: itemsOf(doc) };
+      var list = data.book.items.concat(EXAMPLES.map(function (n) { return { name: n, no: '例', example: true }; }));
+      return Promise.all(list.map(function (it) { return yaml(itemBase(it) + 'item.yaml'); })).then(function (docs) {
+        list.forEach(function (it, i) { it.doc = docs[i]; it.title = docs[i].params.title; data.items[it.name] = it; });
         var wfs = {}, ths = {};
         list.forEach(function (it) { wfs[it.doc.workflow] = true; ths[it.doc.theme] = true; });
         return Promise.all([
           Promise.all(Object.keys(wfs).map(function (w) { return yaml(CONTENT + 'workflows/' + w + '.yaml').then(function (d) { data.workflows[w] = d; }); })),
           Promise.all(Object.keys(ths).map(function (t) { return ThemeConstants.load(CONTENT + 'themes/' + t + '.yaml').then(function (d) { data.themes[t] = d; }); }))
-        ]).then(function () {
-          currentName = data.books[BOOKS[0]].items[0].name;
-          var all = [];
-          list.forEach(function (it) {
-            var spoken = LessonParams.paths(data.workflows[it.doc.workflow].params, it.doc.params, 'speech');
-            var folder = itemBase(it) + it.doc.params.narration + '/';
-            Object.keys(spoken).forEach(function (path) {
-              var v = spoken[path];
-              all.push({ item: it.name, id: path, text: typeof v === 'string' ? v : v.text, url: folder + LessonParams.fileOf(path) });
-            });
-          });
-          return NarrationBar.prepare(all, progress).then(function (prepared) {
-            list.forEach(function (it) { data.lines[it.name] = []; });
-            prepared.forEach(function (l, i) { data.lines[all[i].item].push(l); });
-          });
+        ]).then(function () { return list; });
+      });
+    }).then(function (list) {
+      progress(.1, '加载组件');
+      var names = [];
+      list.forEach(function (it) { LectureEngine.componentsOf(data.workflows[it.doc.workflow], it.doc).forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); }); });
+      return LessonComponents.load(names).then(function (loaded) {
+        data.components = loaded;
+        return LessonComponents.preload(names, share(progress, .1, .75));
+      }).then(function () { return list; });
+    }).then(function (list) {
+      currentName = data.book.items[0].name;
+      var all = [];
+      list.forEach(function (it) {
+        var spoken = LessonParams.paths(data.workflows[it.doc.workflow].params, it.doc.params, 'speech');
+        var folder = itemBase(it) + it.doc.params.narration + '/';
+        Object.keys(spoken).forEach(function (path) {
+          var v = spoken[path];
+          all.push({ item: it.name, id: path, text: typeof v === 'string' ? v : v.text, url: folder + LessonParams.fileOf(path) });
         });
+      });
+      return NarrationBar.prepare(all, share(progress, .75, 1)).then(function (prepared) {
+        list.forEach(function (it) { data.lines[it.name] = []; });
+        prepared.forEach(function (l, i) { data.lines[all[i].item].push(l); });
       });
     });
   });
-  PlayerLoading.onStart(function () { renderOthers(); run(currentName); });
+  PlayerLoading.onStart(function () { renderExamples(); renderLoaded(); run(currentName); });
 
   var logEl = document.getElementById('log'), t0 = performance.now();
   var KIND = { scene: '幕', say: '说', call: '指令', event: '事件', act: '作答', next: '下一幕', nav: '切换', bar: '字幕', screen: '画面', done: '完', error: '出错' };
@@ -224,17 +217,25 @@ th { color: var(--ink-muted); font-weight: 700; }
       tb.appendChild(tr);
     });
   }
-  // Buttons for the items of the books after the first.
-  function renderOthers() {
-    var box = document.getElementById('others'); box.innerHTML = '';
-    BOOKS.slice(1).forEach(function (b) {
-      data.books[b].items.forEach(function (it) {
-        var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn';
-        btn.textContent = data.books[b].title + '：' + it.title;
-        btn.addEventListener('click', function () { openDrawer(false); run(it.name); });
-        box.appendChild(btn);
-      });
+  // Every component on the page, each with the components it needs.
+  function renderLoaded() {
+    document.getElementById('loaded').textContent = data.components.map(function (n) {
+      var needs = LessonComponents.needsOf(n);
+      return n + (needs.length ? '（要 ' + needs.join('、') + '）' : '');
+    }).join('；');
+  }
+  function renderExamples() {
+    var box = document.getElementById('examples'); box.innerHTML = '';
+    EXAMPLES.forEach(function (n) {
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn';
+      btn.textContent = data.items[n].title;
+      btn.addEventListener('click', function () { openDrawer(false); run(n); });
+      box.appendChild(btn);
     });
+    var back = document.createElement('button'); back.type = 'button'; back.className = 'btn';
+    back.textContent = '回到书里的题';
+    back.addEventListener('click', function () { openDrawer(false); run(data.book.items[0].name); });
+    box.appendChild(back);
   }
 
   function run(name) {
@@ -242,14 +243,15 @@ th { color: var(--ink-muted); font-weight: 700; }
     if (engine) engine.destroy();
     logEl.innerHTML = ''; t0 = performance.now(); window.lxTrace = [];
     var it = data.items[name], item = it.doc, wf = data.workflows[item.workflow];
-    document.getElementById('now-book').textContent = data.books[it.book].title;
+    var book = it.example ? [it] : data.book.items.map(function (x) { return data.items[x.name]; });
+    document.getElementById('now-book').textContent = it.example ? '示例题，不在书里' : data.book.title;
     renderBinds(wf, item);
     var stage = document.getElementById('stage');
     stage.innerHTML = '';
     engine = new LectureEngine({
       workflow: wf, item: item, name: name, theme: data.themes[item.theme],
-      book: data.books[it.book].items.map(function (x) { return { name: x.name, no: x.no, title: x.title }; }),
-      stage: stage, sound: SoundSource, lines: data.lines[name], portrait: 'assets/teacher.webp', onTrace: trace,
+      book: book.map(function (x) { return { name: x.name, no: x.no, title: x.title }; }),
+      stage: stage, lines: data.lines[name], onTrace: trace,
       onLeave: function () { document.getElementById('book-mock').hidden = false; },
       onPick: function (id) { window.lxRun(id); }
     });

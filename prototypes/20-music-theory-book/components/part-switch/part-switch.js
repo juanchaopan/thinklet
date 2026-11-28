@@ -1,5 +1,5 @@
 /* ============================================================
-   Part switch (stage theme). A glass bar of short labels, one per part
+   Part switch. A glass bar (stage-glass) of short labels, one per part
    of the question as the workflow divides it (reading the question,
    (a), (b), (c)...); the current part sits in a violet disc that glides
    to the part picked. A part the child may not go to yet is dimmed and
@@ -25,11 +25,10 @@
 
   function Switch(host, input) {
     LessonComponents.Base.call(this);
-    StageTheme.inject();
+    StageGlass.ui(host);
     if (!document.getElementById('st-ps-style')) { var s = document.createElement('style'); s.id = 'st-ps-style'; s.textContent = CSS; document.head.appendChild(s); }
     var self = this;
     this.st = { items: [], current: 0 };
-    host.classList.add('st-ui');
     var root = document.createElement('div');
     root.className = 'st-ps st-glass'; root.setAttribute('role', 'tablist'); root.setAttribute('aria-label', '小题');
     root.innerHTML = '<i class="st-ps-dot st-still" aria-hidden="true"></i>';
@@ -52,7 +51,7 @@
   }
   Switch.prototype = Object.create(LessonComponents.Base.prototype);
   // Words that read like a tag, such as (a), are set in the serif italic.
-  function label(t) { t = String(t); return /^\(?[a-z0-9]+\)?$/i.test(t) ? '<span class="st-tag">' + StageTheme.esc(t) + '</span>' : StageTheme.esc(t); }
+  function label(t) { t = String(t); return /^\(?[a-z0-9]+\)?$/i.test(t) ? '<span class="st-tag">' + StageGlass.esc(t) + '</span>' : StageGlass.esc(t); }
   Switch.prototype.render = function () {
     var self = this, items = this.st.items;
     var key = items.map(function (it) { return it.label; }).join('|');
@@ -92,7 +91,7 @@
   Switch.prototype.setState = function (s) { Object.assign(this.st, s || {}); this.render(); this.place(false); };
 
   LessonComponents.register('part-switch', {
-    theme: 'stage', interfaces: ['parts'],
+    interfaces: ['parts'],
     create: function (host, input) { return new Switch(host, input); }
   });
 })();

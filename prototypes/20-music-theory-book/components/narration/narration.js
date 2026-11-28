@@ -1,10 +1,11 @@
 /* ============================================================
-   Subtitle (stage theme). The band along the bottom of a lecture: the
-   teacher's portrait (no name), the line being said as a subtitle with a
-   progress line the child can drag to hear part of this line again, and
-   the child's buttons for this line only: play and pause, and the speed
-   on a vertical slider. Which buttons show is set by the workflow file.
-   It never steps to another line or scene; the stage's scene buttons do.
+   Subtitle, built on stage-glass. The band along the bottom of a
+   lecture: the teacher's portrait (no name), the line being said as a
+   subtitle with a progress line the child can drag to hear part of this
+   line again, and the child's buttons for this line only: play and
+   pause, and the speed on a vertical slider. Which buttons show is set
+   by the workflow file. It never steps to another line or scene; the
+   stage's scene buttons do.
 
    The play button: while the line is said it pauses; paused, it goes on;
    once the line is over (the child's turn, or waiting for the next
@@ -28,8 +29,13 @@
    mute it. The portrait's halo follows a loudness envelope measured
    when the recordings are prepared.
 
-   Every colour is a theme constant (--th-<name>) or one of the stage
-   theme's aliases for them in StageTheme (controls-kit/controls-kit.js).
+   The glass, the round buttons, the easing and the press sound come
+   from stage-glass (StageGlass, component.json needs it). Every colour
+   is a theme constant (--th-<name>) or one of stage-glass's aliases for
+   them (--st-*).
+
+   Its portrait is its own: teacher.webp beside this script, found from
+   where this script is served, unless the input gives another.
 
    Inputs: buttons (pause, rate), lines [{id, text, url, duration, env}],
    portrait, rate, muted.
@@ -40,6 +46,8 @@
    narrate.resume, narrate.rate.
    ============================================================ */
 var NarrationBar = (function () {
+  var SCRIPT = document.currentScript && document.currentScript.src;
+  var PORTRAIT = SCRIPT ? new URL('teacher.webp', SCRIPT).href : 'teacher.webp';
   var RATE_MIN = 0.6, RATE_MAX = 1.4, RATE_STEP = 0.05, RATE_SNAP = 0.03;
   var SEEK_KEY_S = 2;
   var START_TIMEOUT_MS = 8000;
@@ -127,8 +135,10 @@ var NarrationBar = (function () {
   }
   function clamp01(f) { return Math.max(0, Math.min(1, f)); }
 
+  // The look's styles go on the page before the band's own, so the
+  // band's rules for its buttons win over the look's at equal weight.
   function injectStyle() {
-    StageTheme.inject();
+    StageGlass.inject();
     if (document.getElementById('st-nb-style')) return;
     var s = document.createElement('style'); s.id = 'st-nb-style'; s.textContent = CSS; document.head.appendChild(s);
   }
@@ -201,13 +211,14 @@ var NarrationBar = (function () {
   Bar.prototype = Object.create(LessonComponents.Base.prototype);
   Bar.prepare = prepare;
   Bar.RATE_MIN = RATE_MIN; Bar.RATE_MAX = RATE_MAX;
+  Bar.PORTRAIT = PORTRAIT;
 
   Bar.prototype.fire = function (type, data) { this.emit(Object.assign({ name: 'narrate.' + type }, data || {})); };
   Bar.prototype.has = function (c) { return this.o.buttons.indexOf(c) >= 0; };
 
   Bar.prototype.build = function () {
     var self = this;
-    this.host.classList.add('st-ui');
+    StageGlass.ui(this.host);
     var el = document.createElement('div');
     el.className = 'st-nb';
     el.setAttribute('role', 'region');
@@ -239,7 +250,7 @@ var NarrationBar = (function () {
     this.linesBox = q('.st-nb-lines'); this.fillEl = q('.st-nb-fill'); this.seekEl = q('.st-nb-seek'); this.knobEl = q('.st-nb-knob');
     this.btn = {}; Array.prototype.forEach.call(el.querySelectorAll('[data-act]'), function (b) { self.btn[b.getAttribute('data-act')] = b; });
     this.pop = q('.st-nb-pop'); this.slider = q('.st-nb-slider'); this.rateBox = q('.st-nb-ratebox');
-    q('.st-nb-face img').src = this.o.portrait || '';
+    q('.st-nb-face img').src = this.o.portrait || PORTRAIT;
     this.linesBox.classList.add('st-nb-still');
     this.linesBox.style.height = this.minHeight() + 'px';
 
@@ -328,7 +339,7 @@ var NarrationBar = (function () {
     p.textContent = text;
     box.appendChild(p);
     var h = Math.max(this.minHeight(), p.offsetHeight);
-    if (animate && !StageTheme.still()) {
+    if (animate && !StageGlass.still()) {
       box.style.height = box.getBoundingClientRect().height + 'px';
       void box.offsetHeight;
       box.classList.remove('st-nb-still');
@@ -625,7 +636,7 @@ var NarrationBar = (function () {
   };
 
   LessonComponents.register('narration', {
-    theme: 'stage', interfaces: ['narrate'],
+    interfaces: ['narrate'],
     create: function (host, input) { return new Bar(host, input); }
   });
   return Bar;

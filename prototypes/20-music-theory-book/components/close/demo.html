@@ -1,9 +1,9 @@
 <title>关闭 close</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+<link rel="stylesheet" href="../../engine/demo-kit.css">
 
 <main class="wrap">
-  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>关闭 <code>close</code></h1>
   <p class="lede">每道讲题左上角的圆形按钮，上面一个叉。孩子按它就离开讲题、回到书本那一页。它自己不做离开这件事，只发出 <code>leave.press</code>，由播放器接到“回到书本”上。外形照字幕条：深色玻璃、暖白的叉，按钮上不写字。</p>
 
@@ -17,16 +17,15 @@
       <tr><th>指令</th><td>无（流程不改它的样子）</td></tr>
       <tr><th>事件</th><td><code>leave.press</code>：孩子按了它</td></tr>
     </table>
-    <p class="note">它是控件共用部分 <code>controls-kit/controls-kit.js</code> 里的圆形图标按钮（<code>StageTheme.button</code>），自己只写图标和读屏文字“回到书本”。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">它是 <code>stage-glass</code> 组件的圆形图标按钮（<code>StageGlass.button</code>），自己只写图标和读屏文字“回到书本”。它的 <code>component.json</code> 在 <code>needs</code> 里写着 <code>stage-glass</code>，所以载入它时，玻璃的样子和按下的声音（<code>sound</code>）跟着载入。这一页先显示引擎的载入画面，按“开始”后搭出两份。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../controls-kit/controls-kit.js"></script>
-<script src="close.js"></script>
-<script src="../controls-kit/demo-kit.js"></script>
+<script src="../../engine/loading.js"></script>
+<script src="../../engine/demo-kit.js"></script>
 <script>
 ControlsDemo.start({
   id: 'close',

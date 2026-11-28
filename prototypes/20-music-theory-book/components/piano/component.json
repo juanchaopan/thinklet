@@ -1,0 +1,5 @@
+{
+  "needs": ["sound"],
+  "scripts": ["piano.js"],
+  "styles": []
+}

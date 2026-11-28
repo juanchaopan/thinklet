@@ -1,0 +1,9 @@
+{
+  "needs": [
+    "stage-glass"
+  ],
+  "scripts": [
+    "close.js"
+  ],
+  "styles": []
+}

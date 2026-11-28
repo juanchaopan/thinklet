@@ -1,0 +1,118 @@
+<title>声音 sound</title>
+<style>
+/* One column of numbered test buttons, each with its own result line, a pad that makes the press sound, and a report box at the bottom the user can copy. */
+:root { --canvas: #f7f4ef; --surface: #fff; --line: #ebe6dc; --ink: #161a2b; --soft: #4b5168; --ok: #1f7a4d; --bad: #b3261e; --violet: #6d3cf0; --font: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; --mono: ui-monospace, Consolas, monospace; color-scheme: light; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font: 16px/1.6 var(--font); }
+.wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 26px; }
+h1 code { font-size: 20px; }
+p { margin: 0; color: var(--soft); }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #e8efff; color: #2f6bff; }
+.test { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; }
+button { font: inherit; font-weight: 700; min-height: 48px; border-radius: 12px; border: 0; background: var(--violet); color: #fff; cursor: pointer; }
+button:active { transform: scale(.98); }
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pad button { background: #efe8ff; color: #4b23c9; }
+.pad button[disabled] { opacity: .4; cursor: default; }
+.res { font: 14px/1.5 var(--mono); color: var(--soft); white-space: pre-wrap; word-break: break-word; }
+.res.ok { color: var(--ok); }
+.res.bad { color: var(--bad); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--soft); white-space: nowrap; }
+textarea { width: 100%; box-sizing: border-box; min-height: 160px; font: 13px/1.5 var(--mono); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+</style>
+
+<div class="wrap">
+  <span class="tagline">组件原型 · 不画东西的组件</span>
+  <h1>声音 <code>sound</code></h1>
+  <p>所有组件共用的音效库，和它下面的音频输出：整页只有一个音频引擎，手机上每次点按都让它保持能出声。要发声的组件在自己的 <code>component.json</code> 里写 <code>"needs": ["sound"]</code>，直接调用它；钢琴组件也通过它的音频引擎出声。</p>
+
+  <div class="test">
+    <table>
+      <tr><th>音效</th><td><code>tap()</code>：按下东西时短短一声木头似的“嘟”，现场合成，不用采样<br><code>pressable(el)</code>：el 里面凡是显示小手、没有禁用的东西，手指一按下就发 <code>tap()</code></td></tr>
+      <tr><th>音频输出</th><td><code>context()</code> 整页唯一的音频引擎；<code>unlock()</code> 在每次点按、点击、按键时自动运行，恢复音频引擎，并循环播放一段无声的录音，让 iPhone 的静音键不挡住网页音频</td></tr>
+      <tr><th>状态</th><td><code>watch(fn)</code>、<code>status()</code> → 音频引擎和无声录音的状态</td></tr>
+    </table>
+  </div>
+
+  <p>请按顺序点下面的按钮，每点一个说一下有没有听到声音。最后把最下面框里的文字整段复制给我。手机侧面的静音键开着、关着各试一次更好。</p>
+  <div class="test"><button type="button" id="t1">1. 网页音频：嘀一声</button><div class="res" id="r1">还没测</div></div>
+  <div class="test"><button type="button" id="t2">2. 媒体播放：嘀一声</button><div class="res" id="r2">还没测</div></div>
+  <div class="test">
+    <p>3. 按下面的格子：能按的格子每按一下“嘟”一声，禁用的格子不出声。</p>
+    <div class="pad" id="pad"><button type="button">按</button><button type="button">按</button><button type="button" disabled>禁用</button></div>
+    <div class="res" id="r3">还没测</div>
+  </div>
+  <div class="test"><div class="res" id="state">还没加载</div></div>
+
+  <textarea id="report" readonly aria-label="检查结果"></textarea>
+</div>
+
+<script src="../../engine/registry.js"></script>
+<script>
+/* The sound component's own check page. It loads the component by its
+   manifest, as a lecture does. Each test isolates one link of the
+   chain: Web Audio output through the component's context, media-element
+   output, and the press sound from pressable(). The report collects
+   everything. */
+(function () {
+  var lines = [], taps = 0;
+  function note(id, text, good) {
+    var el = document.getElementById(id);
+    el.textContent = text; el.className = 'res ' + (good === true ? 'ok' : good === false ? 'bad' : '');
+    lines.push(id + ': ' + text);
+    report();
+  }
+  function report() {
+    var s = window.Sound ? Sound.status() : null;
+    var head = [
+      'UA: ' + navigator.userAgent,
+      '音频引擎: ' + (s ? s.engine : '组件还没加载') + '；无声录音: ' + (s ? s.media : '—'),
+      'audioSession: ' + (navigator.audioSession ? navigator.audioSession.type : '没有'),
+      '页面地址: ' + location.protocol + '//' + location.host + location.pathname,
+      '在框架里: ' + (window.top !== window.self)
+    ];
+    document.getElementById('report').value = head.concat(lines).join('\n');
+  }
+  function beepWav() {
+    var rate = 22050, n = rate / 2, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+    v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(2 * Math.PI * 660 * i / rate) * 9000 * Math.min(1, (n - i) / 2000), true);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  LessonComponents.load(['sound'], '../').then(function () {
+    Sound.watch(function (s) { document.getElementById('state').textContent = '音频引擎：' + s.engine + '；无声录音：' + s.media; report(); });
+    var pad = document.getElementById('pad');
+    Sound.pressable(pad);
+    pad.addEventListener('pointerdown', function (e) {
+      var b = e.target.closest('button'); if (!b || b.disabled) return;
+      taps++;
+      note('r3', '按了 ' + taps + ' 下（音频引擎 ' + Sound.status().engine + '）。每下都听到“嘟”了吗？');
+    });
+  }, function (e) { note('state', '组件没有加载出来：' + e.message, false); });
+
+  document.getElementById('t1').addEventListener('click', function () {
+    var c = window.Sound && Sound.context();
+    if (!c) { note('r1', '这个浏览器没有 Web Audio，或组件还没加载', false); return; }
+    var o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = 880; g.gain.setValueAtTime(.3, c.currentTime); g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .6);
+    o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + .65);
+    setTimeout(function () { note('r1', '已发出（音频引擎状态 ' + c.state + '）。听到了吗？', c.state === 'running' ? null : false); }, 300);
+  });
+
+  document.getElementById('t2').addEventListener('click', function () {
+    try {
+      var a = new Audio(URL.createObjectURL(beepWav()));
+      a.setAttribute('playsinline', '');
+      a.play().then(function () { note('r2', '已发出。听到了吗？'); }).catch(function (e) { note('r2', '播放被拒绝：' + e.name + ' ' + e.message, false); });
+    } catch (e) { note('r2', '出错：' + e.message, false); }
+  });
+
+  report();
+})();
+</script>

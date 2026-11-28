@@ -1,10 +1,9 @@
 <title>小题切换 part-switch</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
-<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+<link rel="stylesheet" href="../../engine/demo-kit.css">
 
 <main class="wrap">
-  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>小题切换 <code>part-switch</code></h1>
   <p class="lede">讲题顶上一条玻璃，按流程分出的几段各一个短标签：读题、(a)、(b)、(c)……当前这段垫着一块紫色，换段时紫色滑过去。孩子还不能去的段变暗、按不了。孩子按另一段就发出 <code>parts.pick</code>，由播放器跳过去。只有一段或没有分段时它不出现。</p>
 
@@ -18,16 +17,15 @@
       <tr><th>指令</th><td><code>parts.set {items, current}</code>：换当前段，或哪几段能去</td></tr>
       <tr><th>事件</th><td><code>parts.pick {index}</code>：孩子按了另一段</td></tr>
     </table>
-    <p class="note">像 (a) 这样的标签用衬线斜体。左右方向键在能按的段之间移动。玻璃和缓急来自控件共用部分 <code>controls-kit/controls-kit.js</code>（<code>StageTheme</code>）；颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">像 (a) 这样的标签用衬线斜体，这款字体写在它自己的 <code>component.json</code> 里。左右方向键在能按的段之间移动。玻璃、缓急和按下的声音来自 <code>stage-glass</code> 组件（它的 <code>component.json</code> 在 <code>needs</code> 里写着）。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../controls-kit/controls-kit.js"></script>
-<script src="part-switch.js"></script>
-<script src="../controls-kit/demo-kit.js"></script>
+<script src="../../engine/loading.js"></script>
+<script src="../../engine/demo-kit.js"></script>
 <script>
 (function () {
   var PARTS = ['读题', '(a)', '(b)', '(c)'];

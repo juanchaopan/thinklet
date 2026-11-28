@@ -1,9 +1,9 @@
 <title>重播 replay</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+<link rel="stylesheet" href="../../engine/demo-kit.css">
 
 <main class="wrap">
-  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>重播 <code>replay</code></h1>
   <p class="lede">讲题右下角的圆形按钮，一个绕圈的箭头。讲题一开始它不在；孩子把整道题听完，播放器让它出现，站在下一幕原来的位置。孩子按它发出 <code>restart.press</code>，由播放器从头再讲一遍。</p>
 
@@ -17,23 +17,22 @@
       <tr><th>指令</th><td><code>restart.set {shown}</code>：在不在</td></tr>
       <tr><th>事件</th><td><code>restart.press</code>：孩子按了它</td></tr>
     </table>
-    <p class="note">它是控件共用部分 <code>controls-kit/controls-kit.js</code> 里的圆形图标按钮（<code>StageTheme.button</code>），出现和离开的动作也在那里；它自己只写图标和读屏文字“从头再讲一遍”。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">它是 <code>stage-glass</code> 组件的圆形图标按钮（<code>StageGlass.button</code>），出现和离开的动作也在那里；它自己只写图标和读屏文字“从头再讲一遍”。它的 <code>component.json</code> 在 <code>needs</code> 里写着 <code>stage-glass</code>。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../controls-kit/controls-kit.js"></script>
-<script src="replay.js"></script>
-<script src="../controls-kit/demo-kit.js"></script>
+<script src="../../engine/loading.js"></script>
+<script src="../../engine/demo-kit.js"></script>
 <script>
 ControlsDemo.start({
   id: 'replay',
   place: 'bottom',
   end: true,
   ready: function (c) { c.call('restart.set', { shown: true }); },
-  note: '它一开始不在；这一页打开时发一次 restart.set {shown: true}，让它像讲完时那样出现。',
+  note: '它一开始不在；这一页搭好时发一次 restart.set {shown: true}，让它像讲完时那样出现。',
   commands: [
     { key: 'hide', label: '从头再来（不在了）', code: 'restart.set {shown: false}', run: function (c) { c.call('restart.set', { shown: false }); } },
     { key: 'show', label: '讲完了（出现）', code: 'restart.set {shown: true}', run: function (c) { c.call('restart.set', { shown: true }); } }

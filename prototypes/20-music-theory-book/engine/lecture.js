@@ -8,6 +8,12 @@
    steps (do, together, await, exit, enter). The theme's constants are set
    on the stage, so every component draws in them.
 
+   LectureEngine.componentsOf(workflow, item) names the components an
+   item puts on stage; the page loads those (LessonComponents.load) and
+   what they preload before the engine starts. Whatever those components
+   need, such as a sound or an instrument, they use themselves; the
+   engine makes no sound.
+
    Nothing in here knows a workflow, a scene, a parameter or a component.
    What it does know is the engine's own vocabulary: the step kinds; the
    `narrate` interface it speaks through (speech is skipped when a scene
@@ -31,11 +37,16 @@ var LectureEngine = (function () {
 
   function still() { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
   function isRef(v) { return typeof v === 'string' && v.charAt(0) === '$'; }
+  // A placeholder's component: the item's choice, else the workflow's.
+  function componentOf(wf, item, name) {
+    var c = (wf.controls || {})[name] || {};
+    return (item.components || {})[name] || c.component || null;
+  }
 
   function Engine(opts) {
     var self = this, onTrace = opts.onTrace || function () {};
     this.opts = opts;
-    this.wf = opts.workflow; this.item = opts.item; this.stage = opts.stage; this.sound = opts.sound;
+    this.wf = opts.workflow; this.item = opts.item; this.stage = opts.stage;
     this.trace = function (kind, text) { if (!self.destroyed) onTrace(kind, text); };
     this.inst = {}; this.keys = {}; this.slots = {}; this.snap = {}; this.done = {}; this.origin = {}; this.left = {};
     this.token = null; this.finished = false; this.destroyed = false; this.cursor = null;
@@ -45,6 +56,13 @@ var LectureEngine = (function () {
     this.plan = this.expand();
     this.build();
   }
+
+  // Every component an item puts on stage, each once.
+  Engine.componentsOf = function (wf, item) {
+    var out = [];
+    Object.keys(wf.controls || {}).forEach(function (n) { var id = componentOf(wf, item, n); if (id && out.indexOf(id) < 0) out.push(id); });
+    return out;
+  };
 
   /* ---------- reading the files ---------- */
 
@@ -68,11 +86,7 @@ var LectureEngine = (function () {
   Engine.prototype.ref = function (v, scope) { return P.ref(v, scope || this.base); };
   Engine.prototype.val = function (v, scope) { return isRef(v) ? this.ref(v, scope).value : v; };
 
-  // A placeholder's component: the item's choice, else the workflow's.
-  Engine.prototype.componentOf = function (name) {
-    var c = this.wf.controls[name] || {};
-    return (this.item.components || {})[name] || c.component || null;
-  };
+  Engine.prototype.componentOf = function (name) { return componentOf(this.wf, this.item, name); };
   // A placeholder's inputs in a scope. With references none of which
   // resolve, the placeholder has nothing to show there and is not on stage.
   Engine.prototype.inputsOf = function (name, scope) {
@@ -96,7 +110,8 @@ var LectureEngine = (function () {
       var c = controls[n], id = self.componentOf(n);
       if (!id) return;
       var d = LessonComponents.get(id);
-      if (!d) { out.push('占位 ' + n + ' 的组件 ' + id + ' 不存在'); return; }
+      if (!d) { out.push('占位 ' + n + ' 的组件 ' + id + ' 没有加载'); return; }
+      if (!d.create) { out.push('占位 ' + n + ' 的组件 ' + id + ' 不在舞台上画东西，不能放进占位'); return; }
       arr(c.needs).forEach(function (i) { if (d.interfaces.indexOf(i) < 0) out.push('组件 ' + id + ' 没有实现占位 ' + n + ' 要的接口 ' + i); });
       if (d.interfaces.indexOf('narrate') >= 0) talk = true;
     });
@@ -196,7 +211,6 @@ var LectureEngine = (function () {
         if (st.await) { self.waitedOn[st.await.control] = true; scan(st.await.right); arr(st.await.wrong).forEach(function (w) { scan(w.steps); }); }
       });
     })([].concat.apply([], Object.keys(this.wf.scenes).map(function (k) { return self.wf.scenes[k].steps || []; })));
-    this.frame.addEventListener('pointerdown', function (ev) { self.onPress(ev); }, true);
   };
 
   // Mounts each placeholder's component for a scene: drawn again when its
@@ -218,8 +232,8 @@ var LectureEngine = (function () {
     host.innerHTML = '';
     if (!id) return;
     var def = LessonComponents.get(id), extra = {};
-    if (def.interfaces.indexOf('narrate') >= 0) extra = { lines: this.opts.lines, portrait: this.opts.portrait };
-    var a = def.create(host, Object.assign({}, input, extra), { sound: this.sound, moveMs: StageLayout.MOVE_MS, swap: function (fn) { return self.crossfade(n, fn); } });
+    if (def.interfaces.indexOf('narrate') >= 0) extra = { lines: this.opts.lines };
+    var a = def.create(host, Object.assign({}, input, extra), { moveMs: StageLayout.MOVE_MS, swap: function (fn) { return self.crossfade(n, fn); } });
     a.binding = id; a.interfaces = def.interfaces; a.inputs = input;
     a.on(function (ev) { self.onEvent(n, ev); });
     this.inst[n] = a;
@@ -285,13 +299,6 @@ var LectureEngine = (function () {
       if (t && typeof t === 'object') { var r = P.ref(t.item, scope); out[k] = { control: t.control, item: r.path || r.value }; }
     });
     return out;
-  };
-
-  // A touch on anything that shows the pointing hand gives a soft press sound.
-  Engine.prototype.onPress = function (ev) {
-    var t = ev.target;
-    if (t.closest('[disabled]')) return;
-    if (getComputedStyle(t).cursor === 'pointer' && this.sound && this.sound.tap) this.sound.tap();
   };
 
   // Asks the browser for the full screen; the tap that starts the lecture

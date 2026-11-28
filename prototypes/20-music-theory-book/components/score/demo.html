@@ -1,9 +1,7 @@
 <title>乐谱组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&display=swap">
-<link rel="stylesheet" href="score.css">
 <style>
-/* Layout: a lit stage holds the score paper (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the score emits. Then one exam-style grid per notation need. The score's own look comes from score.css; this stylesheet only lays out the demo around it. */
+/* Layout: a lit stage holds the score paper (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the score emits. Then one exam-style grid per notation need. The score's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -16,7 +14,6 @@
   --violet: #6d3cf0;
   --boundary: #2f6bff;
   --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
-  --serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
   --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
   /* The player's warm-light stage: only the background behind the components. */
   --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
@@ -148,77 +145,85 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
           <tr><td>外观</td><td>纸、墨色、标亮的光都由乐谱自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ink-strong</code>、<code>--th-accent</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
           <tr><td>指令</td><td><code>spotlight(小节)</code> 聚光、其余变淡；<code>highlight(音)</code> 标亮；<code>label(音, 文字)</code> 贴标签；<code>slots(音)</code> 在音下放作答框，并告诉作答组件框的位置；<code>count(音)</code> 一个一个数；<code>caption(音, 文字)</code> 在音上方弹出说明；<code>play(范围)</code> 播放；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>noteTap</code>（第几个音、第几小节、音名、音高、装饰音）；<code>blankTap</code>；<code>countStep</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”（单独的模块，只管把音高弹出来），乐谱不知道用的是钢琴还是别的乐器；作答框里填什么由作答组件管；颜色来自主题。</td></tr>
+          <tr><td>依赖</td><td>音符在钢琴组件（piano）上弹响，按下时的触感声由声音组件（sound）发出，两个都写在乐谱的 <code>component.json</code> 里，打开这一页时一起加载。乐谱只把音高交给弹它的乐器，不知道是钢琴还是别的乐器；作答框里填什么由作答组件管；颜色来自主题。</td></tr>
           <tr><td>谁决定排版</td><td>几张短谱排成一行还是一格一格，由流程决定；乐谱组件只管自己这一张：先按宽度换行，一个小节也放不下时整张缩小到刚好放下。</td></tr>
           <tr><td>出现在哪里</td><td>直接画在讲题和练习的画面上。</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。原型只带了每隔三个半音一个采样，中间的音由相邻采样变调得到。</p>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。钢琴组件只带了每隔三个半音一个采样，中间的音由相邻采样变调得到。</p>
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="score.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
-   Assembly: this page plays the role of the player. It sets the
-   theme's constants on the page, then builds the scores, wires their
-   events to a caption and a log, and shows how the sound is doing;
-   the score never calls anything here directly.
+   Assembly: this page plays the role of the player. Behind the loading
+   screen it loads the score with everything its manifest names (abcjs,
+   its fonts, the piano and sound components), preloads the piano's
+   samples and sets the theme's constants on the page; on 开始 it builds
+   the scores, wires their events to a caption and a log, and shows how
+   the piano is doing. The score never calls anything here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
-  var lede = document.querySelector('.lede');
-  var stateEl = document.getElementById('sound-state');
-  var PHASE = { idle: '还没启用，点一下谱或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function () {
-    var s = SoundSource.status();
-    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+  var NAME = 'score';
+
+  PlayerLoading.need(function (progress) {
+    var parts = LessonComponents.load([NAME], '../').then(function () { return LessonComponents.preload([NAME], progress); });
+    var theme = ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); });
+    return Promise.all([parts, theme]);
   });
+  PlayerLoading.onStart(start);
 
-  if (!window.ABCJS) { lede.textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
-  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
-  document.body.setAttribute('data-boundary', 'on');
-
-  var boundaryBtn = document.getElementById('toggle-boundary');
-  boundaryBtn.addEventListener('click', function () {
-    var on = document.body.getAttribute('data-boundary') !== 'on';
-    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
-    boundaryBtn.setAttribute('aria-pressed', String(on));
-  });
-
-  var logEl = document.getElementById('log');
-  var t0 = performance.now();
-  function log(ev) {
-    var line = document.createElement('div');
-    var t = ((performance.now() - t0) / 1000).toFixed(1);
-    var data = Object.assign({}, ev); delete data.type;
-    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
-    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
-  }
-  function nameBubble(score, ev) {
-    if (ev.type === 'noteTap') score.caption(ev.index, '<b>' + ev.name + '</b><span>' + ev.en + '</span>');
-  }
-
-  // The scores are built only once the theme's constants are on the page,
-  // so their first frame already has its colours.
   function start() {
+    var stateEl = document.getElementById('sound-state');
+    var PHASE = { idle: '钢琴采样还没下载', loading: '正在下载钢琴采样', ready: '就绪', failed: '没有声音' };
+    Piano.watch(function (s) {
+      stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+    });
+
+    document.body.setAttribute('data-boundary', 'on');
+    var boundaryBtn = document.getElementById('toggle-boundary');
+    boundaryBtn.addEventListener('click', function () {
+      var on = document.body.getAttribute('data-boundary') !== 'on';
+      document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+      boundaryBtn.setAttribute('aria-pressed', String(on));
+    });
+
+    var logEl = document.getElementById('log');
+    var t0 = performance.now();
+    function log(ev) {
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type;
+      line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    }
+    function nameBubble(score, ev) {
+      if (ev.type === 'noteTap') score.caption(ev.index, '<b>' + ev.name + '</b><span>' + ev.en + '</span>');
+    }
+    // A score as the lecture places it: a press on it sounds, its notes
+    // play on the piano.
+    function score(host, options) {
+      Sound.pressable(host);
+      return new Score(host, Object.assign({ sound: Piano }, options));
+    }
+
     var MAIN = 'X:1\nM:3/4\nL:1/8\nK:D\nd2 c2 B2 | A3 G F2 | E2 ^D2 =E2 | D6 |]';
     document.getElementById('abc-main').textContent = MAIN;
-
     var main;
-    main = new Score(document.getElementById('main-score'), { abc: MAIN, playable: true, sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
+    main = score(document.getElementById('main-score'), { abc: MAIN, playable: true, onEvent: function (ev) { log(ev); nameBubble(main, ev); } });
 
     var minis = [];
     function mini(containerId, items) {
       var holder = document.getElementById(containerId);
       items.forEach(function (it) {
         var cell = document.createElement('div'); holder.appendChild(cell);
-        var s; s = new Score(cell, { abc: it.abc, compact: true, caption: it.caption, sound: SoundSource, onEvent: function (ev) { nameBubble(s, ev); } });
+        var s; s = score(cell, { abc: it.abc, compact: true, caption: it.caption, onEvent: function (ev) { nameBubble(s, ev); } });
         minis.push(s);
       });
     }
@@ -255,7 +260,7 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
     ]);
 
     var TRIO = 'X:1\nM:3/4\nL:1/8\nQ:"Andantino" 1/4=88\n%%barnumbers 1\n%%score V {RH LH}\nV:V clef=treble name="Violin" snm="Vln."\nV:RH clef=treble name="Piano" snm="Pno."\nV:LH clef=bass\nK:Eb\n[V:V] !p!B2 !<(!c2 d2!<)! | !f!e4 .d.c | !>!B2 A2 G2 | !>(!F4!>)! E2 |]\n[V:RH] [EG]2 [EG]2 [EG]2 | [EA]4 [FA]2 | [EG]2 [DF]2 [CE]2 | [B,D]4 [B,E]2 |]\n[V:LH] !ped!E,2 B,,2 G,,2 !ped-up! | C,4 B,,2 | E,2 B,,2 C,2 | B,,4 E,,2 |]';
-    var trio; trio = new Score(document.getElementById('trio-score'), { abc: TRIO, playable: true, sound: SoundSource, onEvent: function (ev) { nameBubble(trio, ev); } });
+    var trio; trio = score(document.getElementById('trio-score'), { abc: TRIO, playable: true, onEvent: function (ev) { nameBubble(trio, ev); } });
     var trioSpot = false;
     document.getElementById('trio-spot').addEventListener('click', function () {
       trioSpot = !trioSpot; this.setAttribute('aria-pressed', String(trioSpot)); trio.spotlight(trioSpot ? 3 : null);
@@ -280,12 +285,5 @@ pre { margin: 8px 0 0; padding: 12px; background: var(--canvas); border-radius: 
       rt = setTimeout(function () { [main, trio].concat(minis).forEach(function (s) { s.stop(); s.build(); s.render(); }); }, 180);
     });
   }
-
-  ThemeConstants.load(THEME).then(function (theme) {
-    ThemeConstants.apply(document.documentElement, theme);
-    start();
-  }, function () {
-    lede.textContent = '主题没有加载出来，请刷新页面再试。';
-  });
 })();
 </script>

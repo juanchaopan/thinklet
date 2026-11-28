@@ -3,10 +3,11 @@
 // Chromium. The whole prototype folder is served and the page sits at its
 // own path in it (components/beat-grid/demo.html opens as
 // /components/beat-grid/demo.html), so a page reaches the engine, the
-// assets and the content (../../engine/sound.js, ../../content/themes/...)
-// by the same relative paths as when it is published. When the page shows
-// the loading screen, it waits for 开始 and taps it, as a child would;
-// `loading` reports how long that took and what the screen showed.
+// other components and the content (../../engine/registry.js,
+// ../piano/component.json, ../../content/themes/...) by the same relative
+// paths as when it is published. When the page shows the loading screen,
+// it waits for 开始 and taps it, as a child would; `loading` reports how
+// long that took and what the screen showed.
 // Usage as a module: openPage(page path in the prototype folder, width,
 // height, scale, { start }).
 import { createRequire } from 'node:module';

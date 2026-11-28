@@ -1,8 +1,8 @@
 /* ============================================================
-   Question title (stage theme). A glass plaque with the question's
+   Question title. A glass plaque (stage-glass) with the question's
    number in a ring and its title. It can unfold the question's text
    under the title, Chinese first and the paper's English under it in a
-   smaller italic; the player unfolds it in the scenes the workflow marks
+   smaller italic; the engine unfolds it in the scenes the workflow marks
    (reading the question) and folds it away after, the plaque's height
    gliding both ways.
    Inputs: no, title, text, gloss.
@@ -23,11 +23,10 @@
 
   function Title(host, input) {
     LessonComponents.Base.call(this);
-    StageTheme.inject();
+    StageGlass.ui(host);
     if (!document.getElementById('st-qt-style')) { var s = document.createElement('style'); s.id = 'st-qt-style'; s.textContent = CSS; document.head.appendChild(s); }
-    var i = input || {}, e = StageTheme.esc;
+    var i = input || {}, e = StageGlass.esc;
     this.st = { open: false };
-    host.classList.add('st-ui');
     var root = document.createElement('div');
     root.className = 'st-qt st-glass';
     root.innerHTML = '<div class="st-qt-head">' + (i.no !== undefined && i.no !== '' ? '<span class="st-no">' + e(i.no) + '</span>' : '') + '<h2 class="st-qt-name" style="margin:0">' + e(i.title) + '</h2></div>' +
@@ -45,7 +44,7 @@
     this.st.open = on; this.drawn = true;
     var r = this.root, m = this.more;
     if (this.anim) { this.anim.cancel(); this.anim = null; }
-    if (!animated || StageTheme.still()) { m.hidden = !on; return; }
+    if (!animated || StageGlass.still()) { m.hidden = !on; return; }
     var w0 = r.offsetWidth, h0 = r.offsetHeight;
     m.hidden = false;
     if (!on) m.hidden = true;
@@ -65,7 +64,7 @@
   Title.prototype.setState = function (s) { this.open(!!(s && s.open), false); };
 
   LessonComponents.register('question-title', {
-    theme: 'stage', interfaces: ['title'],
+    interfaces: ['title'],
     create: function (host, input) { return new Title(host, input); }
   });
 })();

@@ -1,0 +1,107 @@
+<title>钢琴 piano</title>
+<style>
+/* One column of numbered test buttons, each with its own result line, and a report box at the bottom the user can copy. */
+:root { --canvas: #f7f4ef; --surface: #fff; --line: #ebe6dc; --ink: #161a2b; --soft: #4b5168; --ok: #1f7a4d; --bad: #b3261e; --violet: #6d3cf0; --font: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; --mono: ui-monospace, Consolas, monospace; color-scheme: light; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font: 16px/1.6 var(--font); }
+.wrap { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 26px; }
+h1 code { font-size: 20px; }
+p { margin: 0; color: var(--soft); }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: #e8efff; color: #2f6bff; }
+.test { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; }
+button { font: inherit; font-weight: 700; min-height: 48px; border-radius: 12px; border: 0; background: var(--violet); color: #fff; cursor: pointer; }
+button:active { transform: scale(.98); }
+.bar { height: 10px; border-radius: 5px; background: #ebe6dc; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--violet); transition: width .2s; }
+.res { font: 14px/1.5 var(--mono); color: var(--soft); white-space: pre-wrap; word-break: break-word; }
+.res.ok { color: var(--ok); }
+.res.bad { color: var(--bad); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--soft); white-space: nowrap; }
+textarea { width: 100%; box-sizing: border-box; min-height: 160px; font: 13px/1.5 var(--mono); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+</style>
+
+<div class="wrap">
+  <span class="tagline">组件原型 · 不画东西的组件</span>
+  <h1>钢琴 <code>piano</code></h1>
+  <p>用钢琴采样弹出 MIDI 音高，不知道谱、键盘或拍尺。要让音符发声的组件（谱、拍尺、选项、键盘……）在 <code>component.json</code> 里写 <code>"needs": ["piano"]</code>，音符就弹在它上面。它自己要 <code>sound</code> 组件的音频引擎。采样是它自己的：同一个文件夹里的 <code>piano.json</code>，C2 到 C7 共 21 个音。</p>
+
+  <div class="test">
+    <table>
+      <tr><th>预先加载</th><td><code>preload(progress)</code>：讲题开始前在加载页里下载并解码全部采样，所以第一个音也准时</td></tr>
+      <tr><th>弹</th><td><code>play(midi, 延后秒数, 时长, 力度)</code> → 一个声部，<code>stop()</code> 让它停（已经在响的淡出，还没开始的不响）。每个组件只停自己弹的音</td></tr>
+      <tr><th>状态</th><td><code>watch(fn)</code>、<code>status()</code> → 阶段（idle、loading、ready、failed）、正在响的声部数、音频引擎的状态</td></tr>
+    </table>
+  </div>
+
+  <p>请按顺序点下面的按钮，每点一个说一下有没有听到声音。最后把最下面框里的文字整段复制给我。</p>
+  <div class="test"><button type="button" id="t1">1. 加载钢琴采样</button><div class="bar"><i id="fill"></i></div><div class="res" id="r1">还没测</div></div>
+  <div class="test"><button type="button" id="t2">2. 弹 C–E–G</button><div class="res" id="r2">还没测</div></div>
+  <div class="test"><button type="button" id="t3">3. 弹一长串音，一秒后全停</button><div class="res" id="r3">还没测</div></div>
+  <div class="test"><div class="res" id="state">还没加载</div></div>
+
+  <textarea id="report" readonly aria-label="检查结果"></textarea>
+</div>
+
+<script src="../../engine/registry.js"></script>
+<script>
+/* The piano component's own check page. It loads the component by its
+   manifest (which brings the sound component too), as a lecture does,
+   then preloads its samples on request, plays a chord and stops a long
+   run of notes, so every link — download, decoding, scheduling, stopping
+   — is seen on its own. The report collects everything. */
+(function () {
+  var lines = [];
+  function note(id, text, good) {
+    var el = document.getElementById(id);
+    el.textContent = text; el.className = 'res ' + (good === true ? 'ok' : good === false ? 'bad' : '');
+    lines.push(id + ': ' + text);
+    report();
+  }
+  function report() {
+    var s = window.Piano ? Piano.status() : null;
+    var head = [
+      'UA: ' + navigator.userAgent,
+      '钢琴: ' + (s ? s.phase + (s.detail ? '（' + s.detail + '）' : '') + '，正在响 ' + s.voices + ' 个声部' : '组件还没加载'),
+      '音频引擎: ' + (s ? s.engine : '—') + '；无声录音: ' + (s ? s.media : '—'),
+      '页面地址: ' + location.protocol + '//' + location.host + location.pathname
+    ];
+    document.getElementById('report').value = head.concat(lines).join('\n');
+  }
+
+  var ready = LessonComponents.load(['piano'], '../').then(function () {
+    Piano.watch(function (s) { document.getElementById('state').textContent = '钢琴：' + s.phase + (s.detail ? '（' + s.detail + '）' : '') + '；正在响 ' + s.voices + ' 个声部；音频引擎：' + s.engine; report(); });
+  }, function (e) { note('state', '组件没有加载出来：' + e.message, false); throw e; });
+
+  document.getElementById('t1').addEventListener('click', function () {
+    var t0 = performance.now();
+    note('r1', '正在加载…');
+    ready.then(function () {
+      return Piano.preload(function (f, text) { if (f !== null && f !== undefined) document.getElementById('fill').style.width = Math.round(f * 100) + '%'; if (text) document.getElementById('r1').textContent = text; });
+    }).then(function () {
+      document.getElementById('fill').style.width = '100%';
+      note('r1', '加载成功：' + Piano.status().detail + '，用了 ' + Math.round(performance.now() - t0) + ' 毫秒', true);
+    }, function (e) { note('r1', '加载失败：' + (e && e.message || e), false); });
+  });
+
+  document.getElementById('t2').addEventListener('click', function () {
+    if (!window.Piano || Piano.status().phase !== 'ready') { note('r2', '先点第 1 个按钮加载采样', false); return; }
+    [60, 64, 67].forEach(function (m, k) { Piano.play(m, k * .4, .9, .8); });
+    setTimeout(function () { note('r2', '已弹出（音频引擎 ' + Piano.status().engine + '）。听到 C–E–G 了吗？', Piano.status().engine === 'running' ? true : false); }, 200);
+  });
+
+  document.getElementById('t3').addEventListener('click', function () {
+    if (!window.Piano || Piano.status().phase !== 'ready') { note('r3', '先点第 1 个按钮加载采样', false); return; }
+    var voices = [];
+    for (var i = 0; i < 16; i++) voices.push(Piano.play(60 + (i % 8), i * .25, .3, .7));
+    setTimeout(function () {
+      var during = Piano.status().voices;
+      voices.forEach(function (v) { v.stop(); });
+      setTimeout(function () { note('r3', '一秒时有 ' + during + ' 个声部排着，全停以后剩 ' + Piano.status().voices + ' 个。声音是在一秒左右停的吗？', Piano.status().voices === 0); }, 300);
+    }, 1000);
+  });
+
+  report();
+})();
+</script>

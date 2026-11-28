@@ -1,9 +1,9 @@
 <title>下一幕 scene-next</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+<link rel="stylesheet" href="../../engine/demo-kit.css">
 
 <main class="wrap">
-  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <span class="tagline">组件原型 · 讲题控件 · 建在 stage-glass 上</span>
   <h1>下一幕 <code>scene-next</code></h1>
   <p class="lede">讲题右下角的圆形按钮，一个朝前的尖角。一幕讲完、等孩子往下走时，它变成紫色，外面一圈光一呼一吸；等孩子作答时它按不了；后面什么都没有了，它就不在。孩子按它发出 <code>forward.press</code>，由播放器走到下一幕。</p>
 
@@ -17,16 +17,15 @@
       <tr><th>指令</th><td><code>forward.set {enabled, ready, shown}</code>：能不能按、是否发光等孩子、在不在</td></tr>
       <tr><th>事件</th><td><code>forward.press</code>：孩子按了它</td></tr>
     </table>
-    <p class="note">它是控件共用部分 <code>controls-kit/controls-kit.js</code> 里的圆形图标按钮（<code>StageTheme.button</code>），发光的样子和出现、离开的动作也在那里；它自己只写图标和读屏文字“下一幕”。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+    <p class="note">它是 <code>stage-glass</code> 组件的圆形图标按钮（<code>StageGlass.button</code>），发光的样子（<code>st-ready</code>）和出现、离开的动作也在那里；它自己只写图标和读屏文字“下一幕”。它的 <code>component.json</code> 在 <code>needs</code> 里写着 <code>stage-glass</code>。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
   </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
 <script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../controls-kit/controls-kit.js"></script>
-<script src="scene-next.js"></script>
-<script src="../controls-kit/demo-kit.js"></script>
+<script src="../../engine/loading.js"></script>
+<script src="../../engine/demo-kit.js"></script>
 <script>
 ControlsDemo.start({
   id: 'scene-next',

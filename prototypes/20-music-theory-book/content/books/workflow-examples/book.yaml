@@ -1,7 +1,0 @@
-title: 流程示例
-grades: { from: 3, to: 6, teaching: 5 }
-# Not a book children get: items that show a workflow running a kind of
-# part no real item of a book uses yet, so the workflow is tried on it.
-units:
-  - lecture: count-demo
-    practices: []

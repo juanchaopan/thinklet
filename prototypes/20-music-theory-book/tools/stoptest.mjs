@@ -1,12 +1,13 @@
 // Presses a component's play button, presses it again mid-way, and checks
-// that the sound source has nothing left sounding or queued; then starts
-// two components at once, stops one, and checks the other keeps playing.
+// that the piano has nothing left sounding or queued; then starts two
+// components at once, stops one, and checks the other keeps playing.
+// Works on any demo page whose components play on the piano component.
 // Usage: node stoptest.mjs <fragment.html> <play-button selector> [width]
 import { openPage } from './serve.mjs';
 
 const [, , file, selector, width = '390'] = process.argv;
 const { page, errors, close } = await openPage(file, width);
-const voices = () => page.evaluate(() => SoundSource.status().voices);
+const voices = () => page.evaluate(() => Piano.status().voices);
 const buttons = await page.$$(selector);
 if (buttons.length === 0) { console.log(`no play button matches ${selector}`); await close(); process.exit(1); }
 

@@ -1,0 +1,9 @@
+{
+  "needs": [
+    "sound"
+  ],
+  "scripts": [
+    "stage-glass.js"
+  ],
+  "styles": []
+}

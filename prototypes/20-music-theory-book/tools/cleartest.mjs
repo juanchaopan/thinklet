@@ -1,6 +1,6 @@
 // Checks that a tapped note stops being lit: by tapping blank paper, and by
 // waiting for the fade. Also reports the paper heights inside each gallery
-// and the sound source's state after the taps.
+// and the page's line on the piano the notes play on, after the taps.
 // Usage: node cleartest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 

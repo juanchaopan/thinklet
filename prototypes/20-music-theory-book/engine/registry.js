@@ -1,18 +1,40 @@
 /* ============================================================
-   Component registry. Every component registers here under its id with
-   the theme it belongs to, the capability interfaces it implements and a
-   factory; the lecture player finds components only through it, so the
-   player holds no code for any particular component.
+   Component registry and loader. A component is one folder,
+   components/<name>/, that holds everything it needs and a manifest,
+   component.json:
 
-   register(id, { theme, interfaces, create(host, input, env) })
-   create returns an instance with:
+     { "needs":   names of the components it uses,
+       "scripts": its scripts in order (a full URL for an outside library),
+       "styles":  its stylesheets (a full URL for an outside font) }
+
+   load(names, base) reads the manifests of those components and of every
+   component they need, and puts the needed ones' styles and scripts on
+   the page before their own, each file once. So a component folder
+   copied into another system works there as it is, given the components
+   it names in `needs`. A manifest, script or own stylesheet that fails
+   to load fails the load and is forgotten, so loading again (the loading
+   screen's 再试一次) tries it afresh; an outside stylesheet (a font)
+   that fails only leaves its text in the system font.
+
+   Each component's script registers it here under its name:
+
+     register(name, { interfaces, fluid, create(host, input, env), preload })
+
+   A component drawn on the stage has `create`, which returns an
+   instance with:
      call(name, value, ctx, extra)  an interface command, e.g. 'point.spotlight'
      on(fn)                         interface events, { name, ... }
      getState(), setState(state)    what it shows now, and set straight to it
      stop()                         stop sounds and anything moving
+   A component that draws nothing (a sound, an instrument) has no
+   `create`; the components that need it call it directly. One with
+   `preload(progress)` downloads what it needs before an item starts;
+   preload(names, progress) runs that for those components and all they
+   need. The engine finds components only through here, so it holds no
+   code for any particular one.
    ============================================================ */
 var LessonComponents = (function () {
-  var defs = {};
+  var defs = {}, manifests = {}, reading = {}, files = {};
 
   function Base() { this.listeners = []; }
   Base.prototype.on = function (fn) { this.listeners.push(fn); };
@@ -21,20 +43,103 @@ var LessonComponents = (function () {
   Base.prototype.getState = function () { return {}; };
   Base.prototype.setState = function () {};
 
+  function arr(x) { return x === undefined || x === null ? [] : [].concat(x); }
+  function outside(url) { return /^[a-z]+:/i.test(url); }
+  function absolute(url, folder) { return outside(url) ? url : new URL(url, folder).href; }
+  // Keeps a promise under a key while it can still succeed.
+  function remember(cache, key, p) {
+    cache[key] = p;
+    p.catch(function () { if (cache[key] === p) delete cache[key]; });
+    return p;
+  }
+
+  // Reads one manifest and, before it settles, every manifest it needs.
+  function read(name, base) {
+    if (reading[name]) return reading[name];
+    var folder = new URL(base + name + '/', location.href).href;
+    return remember(reading, name, fetch(folder + 'component.json').then(function (r) {
+      if (!r.ok) throw new Error('组件 ' + name + ' 没有 component.json（' + r.status + '）');
+      return r.json();
+    }).then(function (m) {
+      manifests[name] = { folder: folder, needs: arr(m.needs), scripts: arr(m.scripts), styles: arr(m.styles) };
+      return Promise.all(manifests[name].needs.map(function (n) { return read(n, base); }));
+    }));
+  }
+
+  // The components named and all they need, each after what it needs.
+  function order(names) {
+    var out = [], seen = {};
+    (function visit(list) {
+      list.forEach(function (n) {
+        if (seen[n]) return;
+        seen[n] = true;
+        visit((manifests[n] || {}).needs || []);
+        out.push(n);
+      });
+    })(arr(names));
+    return out;
+  }
+
+  function style(url, optional) {
+    if (files[url]) return files[url];
+    return remember(files, url, new Promise(function (res, rej) {
+      var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = url;
+      l.onload = function () { res(); };
+      l.onerror = function () { l.remove(); if (optional) res(); else rej(new Error('没有加载出来：' + url)); };
+      document.head.appendChild(l);
+    }));
+  }
+  function script(url) {
+    if (files[url]) return files[url];
+    return remember(files, url, new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = url; s.async = false;
+      s.onload = function () { res(); };
+      s.onerror = function () { s.remove(); rej(new Error('没有加载出来：' + url)); };
+      document.head.appendChild(s);
+    }));
+  }
+
+  // Styles go on together; scripts run one after another in the order
+  // the components and their manifests give.
+  function load(names, base) {
+    base = base || 'components/';
+    return Promise.all(arr(names).map(function (n) { return read(n, base); })).then(function () {
+      var list = order(names), styles = [], scripts = [];
+      list.forEach(function (n) {
+        var m = manifests[n];
+        m.styles.forEach(function (u) { styles.push(style(absolute(u, m.folder), outside(u))); });
+        m.scripts.forEach(function (u) { scripts.push(absolute(u, m.folder)); });
+      });
+      return Promise.all(styles.concat(scripts.reduce(function (p, u) { return p.then(function () { return script(u); }); }, Promise.resolve()))).then(function () { return list; });
+    });
+  }
+
+  // Runs the preload of each of those components and all they need;
+  // progress(fraction 0..1 or null when unknown, text) adds them up.
+  function preload(names, progress) {
+    var tell = progress || function () {}, list = order(names).filter(function (n) { return defs[n] && defs[n].preload; });
+    if (!list.length) return Promise.resolve();
+    var parts = list.map(function () { return 0; });
+    return Promise.all(list.map(function (n, i) {
+      return defs[n].preload(function (f, text) {
+        if (f === null || f === undefined) { tell(null, text); return; }
+        parts[i] = f / list.length;
+        tell(parts.reduce(function (a, b) { return a + b; }, 0), text);
+      });
+    }));
+  }
+
   return {
     Base: Base,
     register: function (id, def) { defs[id] = Object.assign({ id: id, interfaces: [] }, def); },
     get: function (id) { return defs[id] || null; },
     ids: function () { return Object.keys(defs); },
+    needsOf: function (id) { return (manifests[id] || {}).needs || []; },
+    load: load,
+    preload: preload,
     util: {
       sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
-      arr: function (x) { return x === undefined || x === null ? [] : [].concat(x); },
-      // The note indices a value names: {notes: [..]}, or a list of those.
-      notesOf: function notesOf(v) {
-        if (!v) return [];
-        if (Array.isArray(v)) return v.reduce(function (a, g) { return a.concat(notesOf(g)); }, []);
-        return [].concat(v.notes || []);
-      },
+      arr: arr,
       clone: function (x) { return JSON.parse(JSON.stringify(x === undefined ? null : x)); }
     }
   };

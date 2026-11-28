@@ -1,16 +1,20 @@
 /* ============================================================
-   Demo kit: what every control's demo page shares, playing the player
-   on that page. It is not a component and the lecture never loads it.
+   Demo kit: the bench every control's demo page shares, playing the
+   player on that page. It belongs to the engine; the lecture never
+   loads it.
 
    ControlsDemo.start(options) fills the page's <div id="demo"> with a
    mock lecture stage holding the control where the workflow puts it, the
    same stage at phone width, a row of buttons that send the control the
-   player's commands, and a log of the events the control emits. Before
-   building it sets the theme's constants (content/themes/etude.yaml) on
-   the page. When the page loads the engine's loading screen
-   (engine/sound.js), the theme and the page's own tasks are prepared
-   behind it and the controls are built on 开始, the tap that lets phones
-   play sound; otherwise they are built as soon as both are ready.
+   player's commands, and a log of the events the control emits.
+
+   The page loads the engine's loading screen (engine/loading.js,
+   PlayerLoading). Behind it the kit sets the theme's constants
+   (content/themes/etude.yaml) on the page and loads the control the way
+   the lecture does, LessonComponents.load([id], '../'), which brings in
+   its files and every component its manifest needs; then it runs the
+   preloads of all of them and the page's own tasks. The two copies of
+   the control are built on 开始, the tap that lets phones play sound.
 
    options:
      id        the control's component id
@@ -18,7 +22,9 @@
      end       true to stand at the row's end (right) instead of its start
      grow      true to take the row's free width
      input     its input, or a function returning it when it is built
-     need      loading tasks, task(progress) returning a promise
+     need      the page's loading tasks, task(progress) returning a
+               promise; each runs once the control is loaded, so it may
+               use what the control's scripts define
      ready     fn(control) after each copy is built
      commands  [{ key, label, code, run(control) }], run on both copies
      note      a sentence above the command buttons
@@ -29,6 +35,7 @@
    ============================================================ */
 var ControlsDemo = (function () {
   var THEME = '../../content/themes/etude.yaml';
+  var COMPONENTS = '../';
   var ROWS = '<div class="row top"></div><div class="row head"></div><div class="middle">这一幕的组件（示意）</div><div class="row bottom"></div>';
 
   function esc(t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -38,6 +45,7 @@ var ControlsDemo = (function () {
   }
 
   function start(o) {
+    if (!window.PlayerLoading) throw new Error('ControlsDemo 需要载入画面 engine/loading.js');
     var root = document.getElementById('demo');
     root.classList.add('demo-live');
     root.innerHTML =
@@ -104,15 +112,24 @@ var ControlsDemo = (function () {
     boundary.addEventListener('click', function () { setBoundary(document.body.getAttribute('data-boundary') !== 'on'); });
     setBoundary(true);
 
-    var needs = o.need || [];
-    if (window.PlayerLoading) {
-      PlayerLoading.need(function (progress) { return theme().then(function () { progress(1, '主题'); }); });
-      needs.forEach(function (t) { PlayerLoading.need(t); });
-      PlayerLoading.onStart(function () { try { buildAll(); } catch (err) { fail(err); } });
-    } else {
-      Promise.all([theme()].concat(needs.map(function (t) { return t(function () {}); }))).then(buildAll).catch(fail);
+    // The control's files, and the components it needs, load once; the
+    // page's own tasks wait for them.
+    var loaded = null;
+    function load() {
+      if (!loaded) loaded = LessonComponents.load([o.id], COMPONENTS);
+      return loaded;
     }
+    PlayerLoading.need(function (progress) {
+      return Promise.all([theme(), load()]).then(function () {
+        if (!LessonComponents.get(o.id)) throw new Error('组件 ' + o.id + ' 没有登记');
+        return LessonComponents.preload([o.id], progress);
+      }).then(function () { progress(1, '主题和组件'); });
+    });
+    (o.need || []).forEach(function (t) {
+      PlayerLoading.need(function (progress) { return load().then(function () { return t(progress); }); });
+    });
+    PlayerLoading.onStart(function () { try { buildAll(); } catch (err) { fail(err); } });
   }
 
-  return { start: start, THEME: THEME };
+  return { start: start, THEME: THEME, COMPONENTS: COMPONENTS };
 })();

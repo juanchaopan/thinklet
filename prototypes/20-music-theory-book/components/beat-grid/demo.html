@@ -1,9 +1,7 @@
 <title>节拍格组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
-<link rel="stylesheet" href="beat-grid.css">
 <style>
-/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. The grid's own look comes from beat-grid.css; this stylesheet only lays out the demo around it. */
+/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. The grid's own files, fonts and the components it needs come from its component.json; this stylesheet only lays out the demo around it. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -42,6 +40,7 @@ p { margin: 0; }
 .stage > * { position: relative; z-index: 1; }
 .stage-head { color: var(--stage-ink); }
 .stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+/* The meters in the question use the serif the beat grid's manifest loads. */
 .stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
 
 /* Dashed outline that marks exactly what the component is on this demo page. */
@@ -131,7 +130,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
           <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色，形状和大小都由节拍格自己定；颜色全部取自主题常量（纸、墨、强调色、错误色、木头、气泡、光和影），自己不写死任何颜色。换主题只换颜色，放在哪里都是同一个样子。</td></tr>
           <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个；颜色来自播放器设在画面上的主题常量。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
+          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；音符在钢琴组件（piano）上弹响，和乐谱、键盘弹的是同一架钢琴；按下时的触感声由声音组件（sound）发出。这些都写在节拍格的 <code>component.json</code> 里，打开这一页时一起加载。颜色来自播放器设在画面上的主题常量。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里一般不出现，因为它本身就是提示；要出现时只显示，不作答。</td></tr>
         </tbody>
@@ -141,26 +140,35 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="beat-grid.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
-   Assembly: this page plays the role of the player. It applies the
-   theme file to the document before any grid is built, wires the
-   grid's events to a caption and a log, and shows how the sound is
-   doing; the grid never calls anything here directly.
+   Assembly: this page plays the role of the player. Behind the loading
+   screen it loads the beat grid with everything its manifest names
+   (abcjs, its fonts, the piano and sound components), preloads the
+   piano's samples and applies the theme file to the document; on 开始
+   it builds the grids, wires their events to a caption and a log, and
+   shows how the piano is doing. The grid never calls anything here
+   directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
+  var NAME = 'beat-grid';
+
+  PlayerLoading.need(function (progress) {
+    var parts = LessonComponents.load([NAME], '../').then(function () { return LessonComponents.preload([NAME], progress); });
+    var theme = ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); });
+    return Promise.all([parts, theme]);
+  });
+  PlayerLoading.onStart(start);
 
   function start() {
     var stateEl = document.getElementById('sound-state');
-    var PHASE = { idle: '还没启用，点一下音符或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-    SoundSource.watch(function () {
-      var s = SoundSource.status();
+    var PHASE = { idle: '钢琴采样还没下载', loading: '正在下载钢琴采样', ready: '就绪', failed: '没有声音' };
+    Piano.watch(function (s) {
       stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
     });
 
@@ -182,10 +190,16 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
         g.caption(ev.index, '<b>' + ev.name + '</b>' + (extra ? '<span>' + extra + '</span>' : ''));
       } else if (ev.type === 'beatTap') g.captionBeat(ev.beat, '<b>beat ' + ev.beat + '</b><span>of ' + ev.of + '</span>');
     }
+    // A grid as the lecture places it: a press on it sounds, its notes
+    // play on the piano.
+    function grid(host, options) {
+      Sound.pressable(host);
+      return new BeatGrid(host, Object.assign({ sound: Piano }, options));
+    }
 
     var BAR = 'X:1\nL:1/16\nK:C clef=bass\nG,2A,2 B,2z2 D3C B,2|';
     var main;
-    main = new BeatGrid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, sound: SoundSource, onEvent: function (ev) {
+    main = grid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, onEvent: function (ev) {
       log(ev); bubble(main, ev);
       if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(4, '<b>' + ev.total + '</b><span>semiquavers</span>'); }, 300);
     } });
@@ -219,12 +233,12 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     var others = [];
     [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
       var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
-      var g; g = new BeatGrid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      var g; g = grid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, onEvent: function (ev) { bubble(g, ev); } });
       others.push(g);
     });
     [['2/4'], ['3/4'], ['7/8', [2, 2, 3]]].forEach(function (mt, i) {
       var cell = document.createElement('div'); document.getElementById('g-three').appendChild(cell);
-      var g; g = new BeatGrid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      var g; g = grid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', onEvent: function (ev) { bubble(g, ev); } });
       others.push(g);
     });
 
@@ -241,14 +255,9 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       clearTimeout(rt);
       rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
     });
+    // The grids measure their glyphs, so they are laid out again once the
+    // manifest's fonts have arrived.
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
   }
-
-  // A theme that fails to load is reported, and the grids are still built
-  // so the page stays usable while the problem is fixed.
-  ThemeConstants.load(THEME)
-    .then(function (t) { ThemeConstants.apply(document.documentElement, t); })
-    .catch(function (e) { console.error('主题没有加载：' + e.message); })
-    .then(start);
 })();
 </script>

@@ -1,8 +1,7 @@
 <title>结论栈组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
 <style>
-/* Layout: a lit stage shaped like a lecture screen: the conclusion board (the component, outlined with a dashed boundary) in a tall column on the left, a stand-in for the act's component in the middle (where conclusions fly from), a mock subtitle under them. Then the same board as a short strip at phone width, a panel that sends the workflow's commands and logs the events, and the interface table. The component's own look is its stylesheet, conclusion-stack.css, linked after this block. */
+/* Layout: a lit stage shaped like a lecture screen: the conclusion board (the component, outlined with a dashed boundary) in a tall column on the left, a stand-in for the act's component in the middle (where conclusions fly from), a mock subtitle under them. Then the same board as a short strip at phone width, a panel that sends the workflow's commands and logs the events, and the interface table. The component's own look, its fonts and the components it needs come from its component.json. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -36,6 +35,7 @@ table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
 code { font-family: var(--mono); font-size: 12px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
 /* ---------- Stage (the player's, not the stack's) ---------- */
 .stage { position: relative; border-radius: 28px; background: var(--stage); padding: 20px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: 380px auto; gap: 18px; min-width: 0; isolation: isolate; }
@@ -51,11 +51,6 @@ code { font-family: var(--mono); font-size: 12px; }
 @media (max-width: 680px) { .stage { grid-template-columns: 1fr; grid-template-rows: 300px 160px auto; } .subtitle { grid-column: auto; } }
 body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 12px; }
 body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -10px; right: 8px; z-index: 30; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
-</style>
-<link rel="stylesheet" href="conclusion-stack.css">
-<style>
-/* ---------- Page only ---------- */
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 
 <main class="wrap">
@@ -103,22 +98,23 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
       <tr><th>动作</th><td>手指、滚轮、拖动一比一地转，松手按甩的快慢停到最近的一条；推一条时转盘 0.52 秒转到它，它从得出它的地方 0.8 秒飞过来，不带来处时在原地 0.52 秒长出来；缓急曲线是主题的那一种</td></tr>
       <tr><th>操作</th><td>能点的纸条鼠标放上去是手指、微微亮起；移动超过 6 像素就是转，不算点；点一条：转到它，发出 <code>itemTap</code>；转到边上看不见的点不到；键盘上下（左右）方向键转一格，回车相当于点</td></tr>
       <tr><th>谁决定排版</th><td>结论板的大小由播放器给；转的方向和纸条的大小由组件按给它的地方自己定</td></tr>
-      <tr><th>声音</th><td>不发声</td></tr>
+      <tr><th>声音</th><td>不弹音符，所以不用钢琴组件；按下一条时的触感声由声音组件（sound）发出，写在结论栈的 <code>component.json</code> 里，打开这一页时一起加载</td></tr>
     </table>
   </section>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="conclusion-stack.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
-   Assembly: plays the player on this page. Opens through the loading
-   screen, which also reads the etude theme and sets its constants on
-   the page, puts one stack in the wide board and one in the phone strip,
-   sends the workflow's commands from the panel and logs the events.
+   Assembly: plays the player on this page. Behind the loading screen it
+   loads the conclusion stack with everything its manifest names (abcjs,
+   its fonts, the sound component), reads the etude theme and sets its
+   constants on the page; on 开始 it puts one stack in the wide board and
+   one in the phone strip. The panel sends the workflow's commands and
+   the events are logged.
    ============================================================ */
 (function () {
   var ITEMS = {
@@ -131,6 +127,7 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
   };
   var ORDER = ['m', 'g', 'i1', 'i2', 'i3', 'a'];
   var THEME = '../../content/themes/etude.yaml';
+  var NAME = 'conclusion-stack';
   var logEl = document.getElementById('log'), stacks = {};
   window.tlEvents = [];
   function log(where, ev) {
@@ -140,18 +137,26 @@ body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: 
     window.tlEvents.push(Object.assign({ where: where }, ev));
   }
   function note(text) { var d = document.createElement('div'); d.textContent = text; logEl.appendChild(d); }
+
   PlayerLoading.need(function (progress) {
-    return ThemeConstants.load(THEME).then(function (theme) {
-      ThemeConstants.check(theme).forEach(note);
-      ThemeConstants.apply(document.documentElement, theme);
-      progress(1, '主题准备好了');
+    var parts = LessonComponents.load([NAME], '../').then(function () { return LessonComponents.preload([NAME], progress); });
+    var theme = ThemeConstants.load(THEME).then(function (t) {
+      ThemeConstants.check(t).forEach(note);
+      ThemeConstants.apply(document.documentElement, t);
     });
+    return Promise.all([parts, theme]);
   });
+  // A stack as the lecture places it: a press on it sounds.
+  function stack(host, options) {
+    Sound.pressable(host);
+    return new ConclusionStack(host, options);
+  }
   PlayerLoading.onStart(function () {
-    stacks.wide = new ConclusionStack(document.getElementById('board-wide'), { items: ITEMS, onEvent: function (ev) { log('电脑', ev); } });
-    stacks.phone = new ConclusionStack(document.getElementById('board-phone'), { items: ITEMS, onEvent: function (ev) { log('手机', ev); } });
+    stacks.wide = stack(document.getElementById('board-wide'), { items: ITEMS, onEvent: function (ev) { log('电脑', ev); } });
+    stacks.phone = stack(document.getElementById('board-phone'), { items: ITEMS, onEvent: function (ev) { log('手机', ev); } });
     window.tlStacks = stacks;
   });
+
   function next(s) { return ORDER.filter(function (id) { return s.order.indexOf(id) < 0; })[0]; }
   function each(fn) { Object.keys(stacks).forEach(function (k) { fn(stacks[k], k); }); }
   var CMD = {

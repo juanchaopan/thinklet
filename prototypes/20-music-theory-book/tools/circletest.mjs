@@ -3,8 +3,8 @@
 // its name, the hub and the paper outside; checks lights fade and blank
 // taps clear; shows every key and counts the accidentals drawn in the hub;
 // turns the dial and taps the key at the top; runs every command; and
-// checks that labels do not overlap, the stave stays inside the hub and
-// the page does not scroll sideways.
+// checks that labels do not overlap, the stave stays inside the hub, the
+// page does not scroll sideways and the piano is ready.
 // Usage: node circletest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 
@@ -145,6 +145,6 @@ const mini = await page.$eval('#mini-dial', (h) => ({ pairs: h.querySelectorAll(
 console.log(`small dial ${mini.w} wide: paired positions ${mini.pairs}, paired counts ${mini.counts}`);
 
 const scroll = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
-console.log(`page width ${scroll.sw} for a ${scroll.iw} wide window; sound ${await page.evaluate(() => SoundSource.status().phase)}`);
+console.log(`page width ${scroll.sw} for a ${scroll.iw} wide window; piano ${await page.evaluate(() => Piano.status().phase)}`);
 if (errors.length) console.log('errors:', errors.join(' | '));
 await close();

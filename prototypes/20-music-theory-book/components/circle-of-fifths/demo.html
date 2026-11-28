@@ -1,9 +1,7 @@
 <title>五度圈组件</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
-<link rel="stylesheet" href="circle-of-fifths.css">
 <style>
-/* Layout: a lit stage holds the circle of fifths (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the dial emits. Then a small dial set to seven sharps and flats, laid out by the workflow, and the interface table. The component's own look is in circle-of-fifths.css; this page sets the theme's constants it draws with. */
+/* Layout: a lit stage holds the circle of fifths (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the dial emits. Then a small dial set to seven sharps and flats, laid out by the workflow, and the interface table. The component's own look and fonts come with it (its component.json); this page sets the theme's constants it draws with. */
 :root {
   /* Page chrome (thinklet look.md). */
   --canvas: #f7f4ef;
@@ -127,43 +125,52 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
       <table>
         <thead><tr><th>方向</th><th>内容</th></tr></thead>
         <tbody>
-          <tr><td>输入</td><td>选中的调（大写是大调，比如 <code>Eb</code>；小写是小调，比如 <code>c</code>、<code>f#</code>）；范围：6 或 7 个升降号（默认 6）；谱号：treble、bass、alto、tenor；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应，不给提示）；是否有播放按钮；小号；下面的名称（原文）。</td></tr>
+          <tr><td>输入</td><td>选中的调（大写是大调，比如 <code>Eb</code>；小写是小调，比如 <code>c</code>、<code>f#</code>）；范围：6 或 7 个升降号（默认 6）；谱号：treble、bass、alto、tenor；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应，不给提示）；是否有播放按钮；小号；下面的名称（原文）；音符在哪件乐器上响（<code>sound</code>）。</td></tr>
           <tr><td>外观</td><td>纸、木框、象牙色的两圈、黄铜圈住的小圆牌、标亮的紫光、深色的说明气泡，都由五度圈自己画，不从外面的样式继承；画风和其他组件一样。用到的每一种颜色都是主题常量（<code>--th-paper-a</code>、<code>--th-wood-b</code>、<code>--th-accent</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。调名里的升降号、中间谱上的调号，都用乐谱库画出来的字形，和乐谱组件里的一模一样。</td></tr>
           <tr><td>指令</td><td><code>select(调)</code> 选中一个调：亮起来，中间换成它的调号；<code>highlight(调…)</code> 只亮起来；<code>show(调)</code> 只换中间的调号；<code>walk(从, {direction, steps, follow})</code> 往升号一边（顺时针）或降号一边（逆时针）一步一步走，每步发声，新加的升降号在谱上是紫色的，<code>follow</code> 时转盘跟着转，让走到的调停在最上面；<code>pair(调)</code> 把这个调和它的关系大小调一起框出来；<code>sides()</code> 沿着转盘外沿画两道箭头，标出升号一边和降号一边；<code>mask(…)</code> 遮住大调名、小调名、木框上的个数、中间的调号，或者指定的几个调；<code>reveal(…)</code> 写出来；<code>label({调: 文字})</code> 在调名左边贴 A、B、C；<code>spotlight(调…)</code>；<code>caption(调, 文字)</code> 在这个调旁边弹出说明；<code>rotate(调)</code> 把这个调转到最上面，调名始终是正的；<code>clef(谱号)</code>；<code>play()</code> 从 C（小调从 a）走到选中的调；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
           <tr><td>事件</td><td><code>keyTap</code>（调、大调还是小调、调名、升号还是降号、几个、哪几个、关系大小调、调名是否遮着）；<code>hubTap</code>（中间显示的是哪个调）；<code>blankTap</code>；<code>walkStep</code>（走到第几步、一共几步、走到的调、这一步加上或去掉的升降号）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
-          <tr><td>依赖</td><td>发声交给“音源”，和乐谱、键盘、音级梯用的是同一个；颜色来自主题；五度圈不知道乐谱、键盘和作答组件的存在。</td></tr>
+          <tr><td>依赖</td><td>音符在 <code>piano</code> 组件上响：五度圈的 <code>component.json</code> 写明需要它（还有乐谱库 abcjs），加载五度圈时先加载它，开始前下载好钢琴采样，再由播放器作为 <code>sound</code> 交给五度圈。乐谱、键盘、音级梯用的也是它；颜色来自主题；五度圈不知道乐谱、键盘和作答组件的存在。</td></tr>
           <tr><td>谁决定排版</td><td>转盘放在谱的旁边还是下面、用大号还是小号，由流程决定；五度圈在给它的宽度里画一个尽量大的正圆，大号最宽 460，小号最宽 280。</td></tr>
           <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习“认调号”时可以遮住调名和个数，只留中间的调号，答案交给作答组件。</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。打开页面时的加载页是播放器的，和其他组件的原型共用。</p>
   </section>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
 <script src="../../engine/theme.js"></script>
-<script src="../../engine/sound.js"></script>
-<script src="circle-of-fifths.js"></script>
+<script src="../../engine/loading.js"></script>
 <script>
 /* ============================================================
-   Assembly: this page plays the role of the player. It sets the
-   theme's constants on the page, then builds the dials, wires their
-   events to a caption and a log, and shows how the sound is doing;
-   the dial never calls anything here directly.
+   Assembly: this page plays the role of the player. Behind the loading
+   screen it loads the circle of fifths component with everything its
+   component.json needs, lets the piano download its samples and sets
+   the theme's constants on the page; on 开始 it builds the dials, wires
+   their events to a caption and a log, and shows how the piano is
+   doing. The dial never calls anything here directly.
    ============================================================ */
 (function () {
   var THEME = '../../content/themes/etude.yaml';
-  var lede = document.querySelector('.lede');
+  var COMPONENT = 'circle-of-fifths';
   var stateEl = document.getElementById('sound-state');
-  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
-  SoundSource.watch(function () {
-    var s = SoundSource.status();
+  var PHASE = { idle: '还没加载', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  function showSound(s) {
     stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
-  });
+  }
 
-  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+  PlayerLoading.need(function (progress) {
+    var theme = ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); });
+    var parts = LessonComponents.load([COMPONENT], '../').then(function () {
+      Piano.watch(showSound);
+      return LessonComponents.preload([COMPONENT], progress);
+    });
+    return Promise.all([theme, parts]);
+  });
+  PlayerLoading.onStart(start);
+
   document.body.setAttribute('data-boundary', 'on');
   window.tlEvents = [];
   var logEl = document.getElementById('log');
@@ -192,10 +199,13 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     boundaryBtn.setAttribute('aria-pressed', String(on));
   });
 
-  // Everything that draws waits for the theme: the dials read its constants.
+  // The dials are built on 开始, once the component is loaded, the
+  // piano's samples are ready and the theme's constants are on the page,
+  // so their first frame already has its colours and its first note
+  // plays on time.
   function start() {
     var main;
-    main = new CircleOfFifths(document.getElementById('main-dial'), { key: 'C', playable: true, sound: SoundSource, onEvent: function (ev) {
+    main = new CircleOfFifths(document.getElementById('main-dial'), { key: 'C', playable: true, sound: Piano, onEvent: function (ev) {
       log(ev); nameBubble(main, ev);
     } });
 
@@ -235,7 +245,7 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     });
 
     var mini;
-    mini = new CircleOfFifths(document.getElementById('mini-dial'), { key: 'C#', span: 7, clef: 'bass', compact: true, playable: true, caption: 'span: 7 sharps and flats', sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(mini, ev); } });
+    mini = new CircleOfFifths(document.getElementById('mini-dial'), { key: 'C#', span: 7, clef: 'bass', compact: true, playable: true, caption: 'span: 7 sharps and flats', sound: Piano, onEvent: function (ev) { log(ev); nameBubble(mini, ev); } });
     window.tlMain = main; window.tlMini = mini;
 
     var all = function () { return [main, mini]; };
@@ -247,12 +257,5 @@ td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; b
     });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (d) { d.build(); }); });
   }
-
-  ThemeConstants.load(THEME).then(function (theme) {
-    ThemeConstants.apply(document.documentElement, theme);
-    start();
-  }, function () {
-    lede.textContent = '主题没有加载出来，请刷新页面再试。';
-  });
 })();
 </script>

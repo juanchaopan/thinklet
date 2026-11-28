@@ -1,7 +1,8 @@
 /* ============================================================
-   Score (etude): its capability interfaces. Turns interface calls into
-   the score's own commands and its events into interface events, and
-   keeps what it shows as state. Notes in a highlight or a label are
+   Score: its capability interfaces. Turns interface calls into the
+   score's own commands and its events into interface events, and keeps
+   what it shows as state. Its notes play on the piano component, and a
+   press on it sounds (sound). Notes in a highlight or a label are
    counted within a bar: the bar the value names, else the bar last put
    in the spotlight. The score's drawing scales with the width it is
    given (fluid), so it is not drawn again when it moves to a wider or
@@ -9,11 +10,18 @@
    ============================================================ */
 (function () {
   var U = LessonComponents.util;
-  function ScoreI(host, input, env) {
+  // The note indices a value names: {notes: [..]}, or a list of those.
+  function notesOf(v) {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.reduce(function (a, g) { return a.concat(notesOf(g)); }, []);
+    return [].concat(v.notes || []);
+  }
+  function ScoreI(host, input) {
     LessonComponents.Base.call(this);
     var self = this;
     this.host = host;
-    this.c = new Score(host, Object.assign({ mode: 'lecture', sound: env.sound, onEvent: function (ev) { self.emit({ name: 'point.tap', raw: ev }); } }, input));
+    Sound.pressable(host);
+    this.c = new Score(host, Object.assign({ mode: 'lecture', sound: Piano, onEvent: function (ev) { self.emit({ name: 'point.tap', raw: ev }); } }, input));
     this.st = { spot: null, hl: null, labels: [] };
   }
   ScoreI.prototype = Object.create(LessonComponents.Base.prototype);
@@ -21,7 +29,7 @@
   ScoreI.prototype.indices = function (v) {
     var bar = (v && v.bar) || this.st.spot || 1;
     var inBar = this.c.notesOfBar(bar);
-    return U.notesOf(v).map(function (i) { return inBar[i] && inBar[i].index; }).filter(function (i) { return i !== undefined; });
+    return notesOf(v).map(function (i) { return inBar[i] && inBar[i].index; }).filter(function (i) { return i !== undefined; });
   };
   ScoreI.prototype.call = function (name, v) {
     var self = this;
@@ -45,5 +53,5 @@
     (s.labels || []).forEach(function (l) { self.c.label(l[0], l[1]); });
     this.st = { spot: s.spot || null, hl: s.hl || null, labels: (s.labels || []).slice() };
   };
-  LessonComponents.register('score', { theme: 'etude', fluid: true, interfaces: ['point', 'play', 'positions'], create: function (h, i, e) { return new ScoreI(h, i, e); } });
+  LessonComponents.register('score', { fluid: true, interfaces: ['point', 'play', 'positions'], create: function (h, i) { return new ScoreI(h, i); } });
 })();

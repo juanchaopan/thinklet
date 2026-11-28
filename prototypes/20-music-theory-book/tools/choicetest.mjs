@@ -6,11 +6,11 @@
 // and empty, and checks each box stands under its bar; checks that tiles
 // in a choice are one size, staves stay inside their tiles, bubbles cover
 // no option and nothing leaves the choice; that set() draws a state with
-// nothing moving, now or a moment later; that a snippet option sounds in
-// a lecture and not in practice, and stop silences it; that one tap
-// after a rebuild raises one event; and that the page does not scroll
-// sideways. Every tap first scrolls its target into view, so a tap never
-// lands off screen.
+// nothing moving, now or a moment later; that a snippet option sounds on
+// the piano in a lecture and not in practice, and stop silences it; that
+// one tap after a rebuild raises one event; and that the page does not
+// scroll sideways. Every tap first scrolls its target into view, so a tap
+// never lands off screen.
 // Usage: node choicetest.mjs <fragment.html> [width]
 import { openPage } from './serve.mjs';
 
@@ -123,15 +123,16 @@ const align = await page.evaluate(() => {
 });
 say(`box 2 taps -> ${seq.map(String).join(' > ')}; a tap 26 px right of box 3 -> box ${nearEv.index + 1}; boxes off their bar centres by ${align.join(', ')} px`);
 
-// Sound: snippet option in a lecture sounds; stop silences; practice is silent.
-await page.evaluate(() => { window.__notes = []; const p = SoundSource.play; SoundSource.play = function (m, d, dur) { window.__notes.push([m, +(d || 0).toFixed(3), +dur.toFixed(3)]); return p.apply(this, arguments); }; });
+// Sound: a snippet option in a lecture sounds on the piano the page hands
+// the choice; stop silences it; practice is silent.
+await page.evaluate(() => { window.__notes = []; const p = Piano.play; Piano.play = function (m, d, dur) { window.__notes.push([m, +(d || 0).toFixed(3), +dur.toFixed(3)]); return p.apply(this, arguments); }; });
 await tapAt(opt('#g-snip', 'd5'), .5, .3);
 const notes = await page.evaluate(() => window.__notes.splice(0));
 await page.waitForTimeout(150);
-const during = await page.evaluate(() => SoundSource.status().voices);
+const during = await page.evaluate(() => Piano.status().voices);
 await page.evaluate(() => window.tlChoices.snip.stop());
 await page.waitForTimeout(120);
-say(`lecture snippet E–B♭ sounds ${JSON.stringify(notes)}; voices ${during} while sounding, ${await page.evaluate(() => SoundSource.status().voices)} after stop`);
+say(`lecture snippet E–B♭ sounds ${JSON.stringify(notes)}; voices ${during} while sounding, ${await page.evaluate(() => Piano.status().voices)} after stop`);
 await page.evaluate(() => { window.tlChoices.snip.o.mode = 'practice'; window.tlChoices.snip.build(); });
 const kept = (await state('snip')).selected;
 await tapAt(opt('#g-snip', 'p5'), .5, .3);

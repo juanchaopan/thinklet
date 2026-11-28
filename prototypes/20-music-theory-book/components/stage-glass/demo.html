@@ -1,0 +1,93 @@
+<title>舞台玻璃 stage-glass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../../engine/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · 讲题控件共用的样子 · 自己不上舞台</span>
+  <h1>舞台玻璃 <code>stage-glass</code></h1>
+  <p class="lede">讲题控件共用的样子和零件：关闭、换题、小题切换、题目标题、上一幕、字幕、下一幕、重播都在自己的 <code>component.json</code> 里写着需要它，只添上自己独有的部分。样子照字幕条：在任何舞台上都看得清的深色玻璃，暖白的字，紫色的光，圆形图标按钮上不写字。它自己不画在舞台上，这一页把它的零件一样一样摆出来。</p>
+
+  <section class="bench" id="bench" aria-label="玻璃的零件"></section>
+
+  <section class="panel">
+    <h2>出现和离开</h2>
+    <p class="note">控件出现时从小一点长出来，离开时先淡掉再让出位置（<code>StageGlass.show</code>）；系统要求减少动效时直接出现、直接消失。用下面两个按钮看零件里最后那个圆按钮。</p>
+    <div class="toolbar">
+      <button type="button" class="btn" data-cmd="hide">让它离开<code>show(el, false, true)</code></button>
+      <button type="button" class="btn" data-cmd="show">让它回来<code>show(el, true, true)</code></button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的类名和函数</h2>
+    <table>
+      <tr><th>类名</th><td><code>st-ui</code>：控件的根，带上样子的简称（<code>--st-*</code>）和字体；<code>st-glass</code>：玻璃面；<code>st-btn</code>：圆形图标按钮，<code>disabled</code> 时变暗，加 <code>st-ready</code> 是等孩子按（紫色，外面一圈光一呼一吸）；<code>st-pop</code> 和 <code>st-row</code>：从控件掉下来的列表和它的一行，<code>aria-current="true"</code> 的一行标亮；<code>st-no</code>：圈起来的数字，放在玻璃上；<code>st-enter</code>：正在出现</td></tr>
+      <tr><th>函数</th><td><code>StageGlass.ui(host)</code>：让 host 成为这种控件，带上样子，里面能按的东西按下时发出按键声（<code>sound</code> 组件）；<code>icon(name)</code>：一个图标，<code>close</code>、<code>prev</code>、<code>next</code>、<code>replay</code>、<code>list</code>、<code>down</code>；<code>esc(text)</code>：能放进 HTML 的文字；<code>still()</code>：系统是否要求减少动效；<code>show(el, on, animated)</code>：让元素看得见地出现或离开；<code>button(name, opts)</code>：登记一个圆形图标按钮组件（<code>IconButton</code>），它只有一个按下事件和一个 <code>.set {enabled, ready, shown}</code> 指令；<code>inject()</code>：把样子放到页面上</td></tr>
+      <tr><th>颜色</th><td>都取自主题常量 <code>--th-glass</code>、<code>--th-glass-hi</code>、<code>--th-glass-ink</code>、<code>--th-glass-accent</code>、<code>--th-button</code>、<code>--th-button-hi</code>、<code>--th-light</code>；<code>--st-*</code> 是它给这些常量起的简称。这一页用的是 <code>content/themes/etude.yaml</code></td></tr>
+      <tr><th>需要</th><td><code>sound</code>（它的 <code>component.json</code>），按键声从那里来</td></tr>
+    </table>
+    <p class="note">这一页先显示引擎的载入画面，在那里用 <code>LessonComponents.load(['stage-glass'], '../')</code> 载入它和它需要的组件、读好主题；按“开始”后摆出零件。按下零件里的按钮会听到按键声。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/loading.js"></script>
+<script>
+(function () {
+  var THEME = '../../content/themes/etude.yaml';
+  var ICONS = ['close', 'prev', 'next', 'replay', 'list', 'down'];
+  var ROWS = [{ no: '1', title: '判断拍号' }, { no: '2', title: '数音程' }, { no: '3', title: '写出音阶' }, { no: '12', title: '旋律填空' }];
+
+  PlayerLoading.need(function (progress) {
+    return Promise.all([
+      ThemeConstants.load(THEME).then(function (t) { ThemeConstants.apply(document.documentElement, t); }),
+      LessonComponents.load(['stage-glass'], '../')
+    ]).then(function () { progress(1, '主题和样子'); });
+  });
+  PlayerLoading.onStart(build);
+
+  function specimen(inner, caption) {
+    return '<div class="specimen">' + inner + '<small>' + StageGlass.esc(caption) + '</small></div>';
+  }
+  function group(title, inner) {
+    return '<div><h3>' + StageGlass.esc(title) + '</h3><div class="specimens">' + inner + '</div></div>';
+  }
+  function button(icon, extra, label) {
+    return '<button type="button" class="st-btn st-glass ' + (extra.cls || '') + '"' + (extra.disabled ? ' disabled' : '') + (extra.id ? ' id="' + extra.id + '"' : '') + ' aria-label="' + StageGlass.esc(label) + '">' + StageGlass.icon(icon) + '</button>';
+  }
+
+  function build() {
+    var bench = document.getElementById('bench');
+    StageGlass.ui(bench);
+    bench.innerHTML =
+      group('玻璃面 st-glass',
+        specimen('<div class="st-glass face">字幕条和每个控件的面：深色玻璃，暖白的字，放在亮的舞台上也看得清。</div>', '.st-glass')) +
+      group('圆形图标按钮 st-btn',
+        specimen(button('next', {}, '平常'), '平常') +
+        specimen(button('next', { disabled: true }, '按不了'), '[disabled]') +
+        specimen(button('next', { cls: 'st-ready' }, '等孩子按'), '.st-ready')) +
+      group('每个图标 icon(name)',
+        ICONS.map(function (n) { return specimen(button(n, {}, n), n); }).join('')) +
+      group('圈起来的数字 st-no',
+        specimen('<div class="st-glass chip">' + ['1', '2', '12'].map(function (n) { return '<span class="st-no">' + n + '</span>'; }).join('') + '</div>', '放在玻璃上')) +
+      group('掉下来的列表 st-pop 和 st-row',
+        specimen('<div class="st-pop st-glass" role="listbox" aria-label="题目">' + ROWS.map(function (r, i) {
+          return '<button type="button" class="st-row" role="option"' + (i === 0 ? ' aria-current="true"' : '') + '><span class="st-no">' + StageGlass.esc(r.no) + '</span><span>' + StageGlass.esc(r.title) + '</span></button>';
+        }).join('') + '</div>', '按一行，它标亮')) +
+      group('出现和离开 st-enter',
+        specimen(button('replay', { id: 'mover' }, '会出现和离开的按钮'), 'show(el, on, true)'));
+
+    var pop = bench.querySelector('.st-pop');
+    pop.addEventListener('click', function (e) {
+      var row = e.target.closest('.st-row'); if (!row) return;
+      Array.prototype.forEach.call(pop.querySelectorAll('.st-row'), function (r) { if (r === row) r.setAttribute('aria-current', 'true'); else r.removeAttribute('aria-current'); });
+    });
+    var mover = document.getElementById('mover');
+    document.querySelector('[data-cmd="hide"]').addEventListener('click', function () { StageGlass.show(mover, false, true); });
+    document.querySelector('[data-cmd="show"]').addEventListener('click', function () { StageGlass.show(mover, true, true); });
+    window.demo = { bench: bench, mover: mover, built: true };
+  }
+})();
+</script>
