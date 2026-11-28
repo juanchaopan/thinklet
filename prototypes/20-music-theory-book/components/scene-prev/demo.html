@@ -1,0 +1,41 @@
+<title>上一幕 scene-prev</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <h1>上一幕 <code>scene-prev</code></h1>
+  <p class="lede">讲题左下角的圆形按钮，一个朝回的尖角。流程允许孩子往回的地方，播放器让它能按；孩子按它就发出 <code>back.press</code>，由播放器退回上一幕。讲题刚开始时没有上一幕，它按不了。</p>
+
+  <div id="demo"></div>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td>无</td></tr>
+      <tr><th>能力接口</th><td>往回 <code>back</code></td></tr>
+      <tr><th>指令</th><td><code>back.set {enabled}</code>：能不能按</td></tr>
+      <tr><th>事件</th><td><code>back.press</code>：孩子按了它</td></tr>
+    </table>
+    <p class="note">它是控件共用部分 <code>controls-kit/controls-kit.js</code> 里的圆形图标按钮（<code>StageTheme.button</code>），自己只写图标和读屏文字“上一幕”。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../controls-kit/controls-kit.js"></script>
+<script src="scene-prev.js"></script>
+<script src="../controls-kit/demo-kit.js"></script>
+<script>
+ControlsDemo.start({
+  id: 'scene-prev',
+  place: 'bottom',
+  ready: function (c) { c.call('back.set', { enabled: false }); },
+  note: '这一页打开时和讲题开头一样，它按不了。',
+  commands: [
+    { key: 'enable', label: '能往回了', code: 'back.set {enabled: true}', run: function (c) { c.call('back.set', { enabled: true }); } },
+    { key: 'disable', label: '不能往回', code: 'back.set {enabled: false}', run: function (c) { c.call('back.set', { enabled: false }); } }
+  ]
+});
+</script>

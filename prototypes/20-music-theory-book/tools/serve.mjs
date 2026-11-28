@@ -1,13 +1,12 @@
 // Serves a prototype page over local HTTP the way the artifact host does
 // (the page is a fragment wrapped in a document) and opens it in
-// Chromium. The whole prototype folder is served, and the page at its own
-// path in it (components/c3-beat-grid.html opens as
-// /components/c3-beat-grid.html), so a page reaches the engine and the
-// content (../engine/theme.js, ../content/themes/...) by the same
-// relative paths as when it is published; sound.js and piano.json, which
-// are published at the root, are found in components/. When the page
-// shows the loading screen, it waits for 开始 and taps it, as a child
-// would; `loading` reports how long that took and what the screen showed.
+// Chromium. The whole prototype folder is served and the page sits at its
+// own path in it (components/beat-grid/demo.html opens as
+// /components/beat-grid/demo.html), so a page reaches the engine, the
+// assets and the content (../../engine/sound.js, ../../content/themes/...)
+// by the same relative paths as when it is published. When the page shows
+// the loading screen, it waits for 开始 and taps it, as a child would;
+// `loading` reports how long that took and what the screen showed.
 // Usage as a module: openPage(page path in the prototype folder, width,
 // height, scale, { start }).
 import { createRequire } from 'node:module';
@@ -23,11 +22,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { js: 'text/javascript', json: 'application/json', html: 'text/html; charset=utf-8', css: 'text/css', yaml: 'text/yaml; charset=utf-8', mp3: 'audio/mpeg', webp: 'image/webp', png: 'image/png' };
 
 function resolve(path) {
-  const direct = normalize(join(root, path));
-  if (!direct.startsWith(root)) return null;
-  if (existsSync(direct)) return direct;
-  const fallback = join(root, 'components', path);
-  return existsSync(fallback) ? fallback : null;
+  const f = normalize(join(root, path));
+  return f.startsWith(root) && existsSync(f) ? f : null;
 }
 
 export async function openPage(file, width, height = 900, scale = 1, { start = true } = {}) {

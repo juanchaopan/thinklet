@@ -1,0 +1,254 @@
+<title>音级梯组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<link rel="stylesheet" href="scale-ladder.css">
+<style>
+/* The scale ladder's demo and debugging page. Layout: a lit stage holds the scale ladder (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the ladder emits. Then three small ladders side by side, laid out by the workflow, and the interface table. The ladder's own look is scale-ladder.css; this sheet is only the page around it. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the ladder) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-sl { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 22px; }
+body[data-boundary="on"] .tl-sl::before { content: "音级梯组件"; position: absolute; top: -18px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+body[data-boundary="on"] .tl-sl-compact::before { content: "音级梯"; }
+
+/* ---------- Three small ladders side by side (layout chosen by the workflow) ---------- */
+.mini-stage { border-radius: 24px; padding: 28px 10px 18px; background: var(--stage); position: relative; overflow: hidden; }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; max-width: 520px; margin: 0 auto; align-items: start; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 4 / 10 · 显示类 · 直接画在画面上</span>
+    <h1>音级梯</h1>
+    <p class="lede">讲音阶、音级名称、和弦级数时用。蓝色虚线框住的就是一个音级梯组件：一张暖色的纸、纸上的木梯、每一级横档上挂着的象牙色音名牌，左边是罗马数字，右边是音级名称。横档之间的距离按半音算，所以 <i>semitone</i> 的两级挨得近，<i>tone</i> 的离得远，和声小调的 6–7 级一眼就能看出更宽。画风和乐谱、键盘、节拍格一样：纸和木头的材质、衬线字、标亮的紫光、深色的说明气泡、右上角的紫色播放按钮。它的样子由自己画，用到的颜色全部取自主题常量：换一个主题只换颜色，大小和行为不变。这一页用的是 etude 主题。框外面的暖光背景、标题、几架梯子怎么排、下面的指令按钮，都不属于它。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q"><i>E♭ major</i> 的 <i>dominant</i> 是哪个音？</p></div>
+    <div id="main-ladder"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给音级梯的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给音级梯的指令；记录框列出音级梯发出的事件。点一级横档：音名牌按下去、发声、旁边弹出音名和名称，两秒后自己淡掉；点梯子上下的空处马上清掉。换调和换小调形式时，横档滑到新的位置，变了的音名重新写一遍。播放时再按一下右上角的按钮，声音马上停下。</p>
+    <div class="chips">
+      <button class="chip" type="button" data-cmd="steps">标 tone 和 semitone</button>
+      <button class="chip" type="button" data-cmd="count">从 1 级数到 5 级</button>
+      <button class="chip" type="button" data-cmd="mask">遮住 3、6 级的音名</button>
+      <button class="chip" type="button" data-cmd="reveal">写出 3、6 级</button>
+      <button class="chip" type="button" data-cmd="chordV">和弦 V</button>
+      <button class="chip" type="button" data-cmd="chordIb">和弦 Ib</button>
+      <button class="chip" type="button" data-cmd="label">贴 A、B、C</button>
+      <button class="chip" type="button" data-cmd="spot">聚光 5–8 级</button>
+      <button class="chip" type="button" data-cmd="minor">换成 C harmonic minor</button>
+      <button class="chip" type="button" data-cmd="major">换回 E♭ major</button>
+      <button class="chip" type="button" data-cmd="play">上行弹一遍</button>
+      <button class="chip" type="button" data-cmd="down">下行弹一遍</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
+    </div>
+    <div class="log" id="log" aria-live="polite" aria-label="音级梯发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
+  </section>
+
+  <section class="panel">
+    <h2>三架小梯子并排：A minor 的三种形式</h2>
+    <p class="what">讲小调音阶时用。三架一样大的梯子由流程排成一行，横档按同样的半音距离画，所以第 1 级和第 8 级对齐，和声小调升高的第 7 级、旋律小调升高的第 6、7 级一眼就能看出高了一截。小梯子只挂音名牌，不写罗马数字和音级名称。按右上角播放：旋律小调上行时 6、7 级升高，到顶以后这两级滑下来，再弹下行。</p>
+    <div class="mini-stage"><div class="trio" id="trio"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>主音（比如 E♭）；音阶：major、natural minor、harmonic minor、melodic minor；画哪几级（默认 1–8）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应，不给提示）；是否有播放按钮；小梯子（只挂音名牌，不写罗马数字和音级名称）；下面的名称（原文）。</td></tr>
+          <tr><td>外观</td><td>纸、木梯、象牙色的音名牌、标亮的紫光、深色的说明气泡，都由音级梯自己画，不从外面的样式继承；画风和其他组件一样。用到的每一种颜色都是主题常量（<code>--th-paper-a</code>、<code>--th-wood-b</code>、<code>--th-ivory</code>、<code>--th-accent</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。升降号用乐谱库画出来的字形，和乐谱组件里的一模一样。</td></tr>
+          <tr><td>指令</td><td><code>highlight(级)</code> 一直亮着；<code>label({级: 文字})</code> 在音名牌左边贴 A、B、C；<code>steps()</code> 在相邻两级之间标 T、S，和声小调的 6–7 级标 T+S，标法和键盘一样；<code>count(从, 到)</code> 一级一级地数，每级发声，数字写在梯子右边；<code>mask(部分, 级)</code> 遮住音名、罗马数字或音级名称；<code>reveal(部分, 级)</code> 写出来；<code>chord(级, {inversion})</code> 标出这一级上的三和弦（root、3rd、5th），先分解再一起弹，转位时罗马数字加 b 或 c、低音那个音的标记填满颜色、下面多一道线；<code>key({主音, 音阶})</code> 换调或换形式，横档滑到新位置；<code>spotlight(级)</code>；<code>caption(级, 文字)</code> 在横档旁边弹出说明；<code>play({direction})</code> 上行、下行或上行再下行；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。左边一栏一次只放一种标记：标 T、S 会换掉和弦的标记，标和弦也会换掉 T、S。</td></tr>
+          <tr><td>事件</td><td><code>rungTap</code>（第几级、音名、音级名称、罗马数字、音高、音名是否遮着）；<code>blankTap</code>；<code>countStep</code>（数到第几、一共几级）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”，和乐谱、键盘用的是同一个；音级梯不知道乐谱、键盘和作答组件的存在。</td></tr>
+          <tr><td>谁决定排版</td><td>一架大梯子放在谱的旁边还是下面，几架小梯子怎么并排，由流程决定；音级梯只管自己这一架，在给它的宽度里居中，高度按半音的个数定。和弦的音超出画出的几级时，标在低八度的同一个音上；要往上叠着看，流程就多画几级。</td></tr>
+          <tr><td>出现在哪里</td><td>讲题里直接画在画面上。它把音名和名称都写出来了，本身就是提示，练习里一般不出现。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="scale-ladder.js"></script>
+<script>
+/* ============================================================
+   Assembly: this page plays the role of the player. It sets the
+   theme's constants on the page, then builds the ladders, wires their
+   events to a caption and a log, and shows how the sound is doing;
+   the ladder never calls anything here directly.
+   ============================================================ */
+(function () {
+  var THEME = '../../content/themes/etude.yaml';
+  var lede = document.querySelector('.lede');
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function () {
+    var s = SoundSource.status();
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+  });
+
+  if (!window.ABCJS) { lede.textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
+  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+  document.body.setAttribute('data-boundary', 'on');
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function log(ev) {
+    window.tlEvents.push(ev);
+    var line = document.createElement('div');
+    var t = ((performance.now() - t0) / 1000).toFixed(1);
+    var data = Object.assign({}, ev); delete data.type;
+    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  }
+  function nameBubble(ladder, ev) {
+    if (ev.type !== 'rungTap' || ev.hidden) return;
+    var g = ladder.info[ev.degree];
+    ladder.caption(ev.degree, '<b>' + ScaleLadder.nameHtml(g.letter, g.acc, 20) + '</b><span>' + ev.technical + ' · ' + ev.numeral + '</span>');
+  }
+
+  // The ladders are built only once the theme's constants are on the
+  // page, so their first frame already has its colours.
+  function start() {
+    var main;
+    main = new ScaleLadder(document.getElementById('main-ladder'), { tonic: 'Eb', scale: 'major', playable: true, sound: SoundSource, onEvent: function (ev) {
+      log(ev); nameBubble(main, ev);
+    } });
+
+    var commands = {
+      steps: function () { main.steps(); },
+      count: function () { main.count(1, 5); },
+      mask: function () { main.mask('name', [3, 6]); },
+      reveal: function () { main.reveal('name', [3, 6]); },
+      chordV: function () { main.chord(5); },
+      chordIb: function () { main.chord(1, { inversion: 1 }); },
+      label: function () { main.label({ 2: 'A', 5: 'B', 7: 'C' }); },
+      spot: function () { main.spotlight([5, 6, 7, 8]); },
+      minor: function () { main.key({ tonic: 'C', scale: 'harmonic minor' }); },
+      major: function () { main.key({ tonic: 'Eb', scale: 'major' }); },
+      play: function () { main.play({ direction: 'up' }); },
+      down: function () { main.play({ direction: 'down' }); },
+      stop: function () { main.stop(); },
+      clear: function () { main.clear(); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+
+    var modeBtn = document.getElementById('mode');
+    modeBtn.addEventListener('click', function () {
+      var practice = main.o.mode !== 'practice';
+      main.o.mode = practice ? 'practice' : 'lecture';
+      modeBtn.setAttribute('aria-pressed', String(practice));
+      modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+      main.build();
+      log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+    });
+
+    var trio = [];
+    ['natural minor', 'harmonic minor', 'melodic minor'].forEach(function (form) {
+      var cell = document.createElement('div'); document.getElementById('trio').appendChild(cell);
+      var l; l = new ScaleLadder(cell, { tonic: 'A', scale: form, compact: true, playable: true, caption: form, sound: SoundSource, onEvent: function (ev) { log(ev); nameBubble(l, ev); } });
+      l.steps();
+      trio.push(l);
+    });
+
+    var all = function () { return [main].concat(trio); };
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(function () { all().forEach(function (l) { l.build(); }); }, 180);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (l) { l.build(); }); });
+  }
+
+  ThemeConstants.load(THEME).then(function (theme) {
+    ThemeConstants.apply(document.documentElement, theme);
+    start();
+  }, function () {
+    lede.textContent = '主题没有加载出来，请刷新页面再试。';
+  });
+})();
+</script>

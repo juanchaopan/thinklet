@@ -1,0 +1,254 @@
+<title>节拍格组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<link rel="stylesheet" href="beat-grid.css">
+<style>
+/* Layout: a lit stage holds one beat grid (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the grid emits. Then two grids stacked by the workflow, a row of three small grids, and the interface table. The page applies a theme file to the document before any grid is built; the grid takes its colours from those theme constants. The grid's own look comes from beat-grid.css; this stylesheet only lays out the demo around it. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the beat grid) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-bg { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 20px; }
+body[data-boundary="on"] .tl-bg::before { content: "节拍格组件"; position: absolute; top: -18px; left: 10px; z-index: 6; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
+
+/* ---------- Grids laid out by the workflow ---------- */
+.stack { display: grid; gap: 22px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); grid-auto-rows: 1fr; gap: 26px 18px; padding-top: 8px; }
+.gallery > .tl-bg, .stack > .tl-bg { height: 100%; }
+.mini-stage { border-radius: 24px; padding: 24px 20px 20px; background: var(--stage); position: relative; overflow: hidden; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 3 / 10 · 显示类 · 直接画在画面上</span>
+    <h1>节拍格</h1>
+    <p class="lede">讲节奏时用。蓝色虚线框住的就是一个节拍格组件：一张纸条，上面是一条线上的音符和休止符，每个音占的宽度和它的时值成正比；下面的色条是每个音占多长；最下面的木尺按拍号分成一拍一拍。它的形状和大小由自己定，颜色全部取自主题常量，不随外面变。框外面的暖光背景、标题、几个节拍格怎么排、下面的指令按钮，都不属于它。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q">这一小节应该是哪个拍号？<i>2/4</i>、<i>3/4</i> 还是 <i>7/8</i>？</p></div>
+    <div id="main-grid"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给节拍格的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给节拍格的指令；记录框列出节拍格发出的事件。点一个音：它亮起、发声、上方弹出时值的名称，两秒后自己淡掉；点木尺上的一拍，那一拍亮起；点纸的空白处马上清掉。换拍号时，木尺重新分拍：多出来的音标成红色，缺的时值用红色虚线框出。窄屏上按拍换行，音符不缩小。播放时再按一下右上角的按钮，声音和拍点马上停下。</p>
+    <div class="chips">
+      <button class="chip" type="button" data-cmd="m24">试 2/4</button>
+      <button class="chip" type="button" data-cmd="m34">试 3/4</button>
+      <button class="chip" type="button" data-cmd="m78">试 7/8（2+2+3）</button>
+      <button class="chip" type="button" data-cmd="unknown">拍号打问号</button>
+      <button class="chip" type="button" data-cmd="sub">细分到 semiquaver</button>
+      <button class="chip" type="button" data-cmd="count">数：dotted quaver 是几个 semiquaver</button>
+      <button class="chip" type="button" data-cmd="label">标 A、B、C</button>
+      <button class="chip" type="button" data-cmd="spot">聚光第 3 拍</button>
+      <button class="chip" type="button" data-cmd="play">播放（带拍点）</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
+    </div>
+    <div class="log" id="log" aria-live="polite" aria-label="节拍格发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
+  </section>
+
+  <section class="panel">
+    <h2>上下两个节拍格：三连音改写成复拍子</h2>
+    <p class="what">考点 2 讲单拍子和复拍子互换时用。流程把同一段音的两种写法上下排好：<i>3/4</i> 里的 <i>triplet</i> 和 <i>9/8</i> 里的三个 <i>quaver</i> 占的长度一样，一拍对一拍。两个节拍格一样宽，拍子自然对齐。</p>
+    <div class="mini-stage"><div class="stack" id="g-pair"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>一行三个小节拍格：同一小节配三个拍号</h2>
+    <p class="what">流程也可以把三个选项并排放：同一小节配上 <i>2/4</i>、<i>3/4</i>、<i>7/8</i>，哪个正好装满一眼就看出来。三个一样大（窄屏上排成一列）。</p>
+    <div class="mini-stage"><div class="gallery" id="g-three"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>一小节的 ABC 谱（和乐谱组件同一种写法，音高只用来发声）；拍号和拍的分组（可以不给，也可以是问号）；模式：讲题（点了发声、弹出名称）或练习（只显示流程标好的东西，点了没有反应，不给提示）；速度；有没有播放按钮；下面的名称（原文）。</td></tr>
+          <tr><td>外观</td><td>纸条、音符、色条、木尺、标亮的光、超出和缺少时的红色，形状和大小都由节拍格自己定；颜色全部取自主题常量（纸、墨、强调色、错误色、木头、气泡、光和影），自己不写死任何颜色。换主题只换颜色，放在哪里都是同一个样子。</td></tr>
+          <tr><td>指令</td><td><code>meter(拍号, 分组)</code> 换拍号，木尺重新分拍；<code>subdivide(单位)</code> 在木尺上画细分刻度；<code>count(单位, 从第几个音, 到第几个音)</code> 一格一格地数；<code>highlight(音)</code> 一直亮着；<code>label(音, 文字)</code> 贴标记；<code>spotlight(拍或音的范围)</code> 聚光；<code>caption(音, 文字)</code> 弹出说明；<code>play()</code> 播放，可以带拍点；<code>stop()</code> 停下，已经排好的音和拍点也马上停；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>tileTap</code>（第几个、是不是休止符、时值名称、实际时值、连音、占几拍）；<code>beatTap</code>（第几拍）；<code>blankTap</code>；<code>countStep</code>（第几格、总数）；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>音符和休止符的字形借用 abcjs 画出来的形状；发声交给“音源”，和乐谱、键盘用的是同一个；颜色来自播放器设在画面上的主题常量。节拍格不知道乐谱、键盘、作答组件的存在。</td></tr>
+          <tr><td>谁决定排版</td><td>一个大节拍格，还是上下、左右几个，由流程决定；节拍格占满给它的宽度，宽度不够时按拍换行。</td></tr>
+          <tr><td>出现在哪里</td><td>讲题里直接画在画面上。练习里一般不出现，因为它本身就是提示；要出现时只显示，不作答。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="beat-grid.js"></script>
+<script>
+/* ============================================================
+   Assembly: this page plays the role of the player. It applies the
+   theme file to the document before any grid is built, wires the
+   grid's events to a caption and a log, and shows how the sound is
+   doing; the grid never calls anything here directly.
+   ============================================================ */
+(function () {
+  var THEME = '../../content/themes/etude.yaml';
+
+  function start() {
+    var stateEl = document.getElementById('sound-state');
+    var PHASE = { idle: '还没启用，点一下音符或按钮就启用', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+    SoundSource.watch(function () {
+      var s = SoundSource.status();
+      stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+    });
+
+    document.body.setAttribute('data-boundary', 'on');
+    window.tlEvents = [];
+    var logEl = document.getElementById('log');
+    var t0 = performance.now();
+    function log(ev) {
+      window.tlEvents.push(ev);
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type;
+      line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    }
+    function bubble(g, ev) {
+      if (ev.type === 'tileTap') {
+        var extra = ev.tuplet ? ev.tuplet + '-tuplet' : (ev.beats ? (ev.beats === 1 ? '1 beat' : ev.beats + ' beats') : '');
+        g.caption(ev.index, '<b>' + ev.name + '</b>' + (extra ? '<span>' + extra + '</span>' : ''));
+      } else if (ev.type === 'beatTap') g.captionBeat(ev.beat, '<b>beat ' + ev.beat + '</b><span>of ' + ev.of + '</span>');
+    }
+
+    var BAR = 'X:1\nL:1/16\nK:C clef=bass\nG,2A,2 B,2z2 D3C B,2|';
+    var main;
+    main = new BeatGrid(document.getElementById('main-grid'), { abc: BAR, meter: '?', playable: true, sound: SoundSource, onEvent: function (ev) {
+      log(ev); bubble(main, ev);
+      if (ev.type === 'countStep' && ev.n === ev.total) setTimeout(function () { main.caption(4, '<b>' + ev.total + '</b><span>semiquavers</span>'); }, 300);
+    } });
+
+    var commands = {
+      m24: function () { main.meter('2/4'); },
+      m34: function () { main.meter('3/4'); },
+      m78: function () { main.meter('7/8', [2, 2, 3]); },
+      unknown: function () { main.meter('?'); },
+      sub: function () { main.subdivide('1/16'); },
+      count: function () { main.clear(); main.count('1/16', 4, 4); },
+      label: function () { main.label(0, 'A'); main.label(3, 'B'); main.label(4, 'C'); },
+      spot: function () { if (!main.known()) main.meter('7/8', [2, 2, 3]); main.spotlight({ beats: [3, 3] }); },
+      play: function () { main.play(); },
+      clear: function () { main.clear(); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+
+    var modeBtn = document.getElementById('mode');
+    modeBtn.addEventListener('click', function () {
+      var practice = main.o.mode !== 'practice';
+      main.o.mode = practice ? 'practice' : 'lecture';
+      main.build();
+      modeBtn.setAttribute('aria-pressed', String(practice));
+      modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+      log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+    });
+
+    var others = [];
+    [{ abc: 'X:1\nL:1/8\nK:F\n(3FGA B2 (3cde|', meter: '3/4', caption: '(a)' }, { abc: 'X:1\nL:1/8\nK:F\nFGA B3 cde|', meter: '9/8', caption: '(b)' }].forEach(function (d) {
+      var cell = document.createElement('div'); document.getElementById('g-pair').appendChild(cell);
+      var g; g = new BeatGrid(cell, { abc: d.abc, meter: d.meter, caption: d.caption, playable: true, sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      others.push(g);
+    });
+    [['2/4'], ['3/4'], ['7/8', [2, 2, 3]]].forEach(function (mt, i) {
+      var cell = document.createElement('div'); document.getElementById('g-three').appendChild(cell);
+      var g; g = new BeatGrid(cell, { abc: BAR, meter: mt[0], group: mt[1], compact: true, caption: '(' + 'abc'[i] + ')', sound: SoundSource, onEvent: function (ev) { bubble(g, ev); } });
+      others.push(g);
+    });
+
+    var boundaryBtn = document.getElementById('toggle-boundary');
+    boundaryBtn.addEventListener('click', function () {
+      var on = document.body.getAttribute('data-boundary') !== 'on';
+      document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+      boundaryBtn.setAttribute('aria-pressed', String(on));
+    });
+
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(function () { [main].concat(others).forEach(function (g) { g.build(); }); }, 180);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { [main].concat(others).forEach(function (g) { g.build(); }); });
+  }
+
+  // A theme that fails to load is reported, and the grids are still built
+  // so the page stays usable while the problem is fixed.
+  ThemeConstants.load(THEME)
+    .then(function (t) { ThemeConstants.apply(document.documentElement, t); })
+    .catch(function (e) { console.error('主题没有加载：' + e.message); })
+    .then(start);
+})();
+</script>

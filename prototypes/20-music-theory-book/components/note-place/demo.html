@@ -1,0 +1,346 @@
+<title>在谱上放音符</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<link rel="stylesheet" href="note-place.css">
+<style>
+/* Layout: a lit stage shaped like a practice screen: the question's instruction on top (the player's), four short staves in a grid (one component each, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the components emit. Then other looks of the same component (several answers on one stave, a key with many sharps at phone width), a lecture played through at phone width with sound, and the interface table. The component's own look is in note-place.css; this page sets the theme's constants it draws with. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+/* The player's screen does not let the browser shift the scroll position when a component changes height. */
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+h3 { font-size: 15px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the component) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { display: grid; gap: 4px; color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.stage-head .rubric { font: italic 500 20px/1.3 "Cormorant Garamond", serif; }
+/* How the workflow lays out the four short staves of one question: two by two, one column on a phone. */
+.np-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 30px 22px; }
+/* The subtitle line is another component; this is only a mock of where it goes. */
+.subtitle { min-height: 3.2em; padding: 10px 16px; border-radius: 14px; background: rgba(42, 33, 24, .82); color: #fff8ec; font-size: 15px; line-height: 1.5; }
+.subtitle small { display: block; font-size: 11px; color: rgba(255, 248, 236, .6); }
+.submit-mock { justify-self: end; font: 700 14px/1 var(--font); color: rgba(70, 48, 26, .6); border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 999px; padding: 12px 18px; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-np { outline: 1.5px dashed var(--boundary); outline-offset: 8px; border-radius: 14px; }
+body[data-boundary="on"] .tl-np::before { content: "在谱上放音符组件"; position: absolute; top: -20px; left: 10px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.gallery { display: grid; gap: 18px; }
+.mini-stage { border-radius: 24px; padding: 26px clamp(14px, 3vw, 28px) 22px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 14px; min-width: 0; }
+.mini-stage .q { color: var(--stage-ink); font-weight: 800; }
+.mini-stage .rubric { color: var(--stage-ink); font: italic 500 19px/1.3 "Cormorant Garamond", serif; }
+.mini-stage.phone { width: 100%; max-width: 390px; justify-self: center; box-sizing: border-box; }
+.mini-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.chip-group { display: grid; gap: 6px; }
+.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 10 / 10 · 作答类 · 直接画在画面上，一小题一张短谱</span>
+    <h1>在谱上放音符</h1>
+    <p class="lede">考卷上“在给定音上方写出音程”这类要在五线谱上写一个音的题，都用它答。蓝色虚线框住的就是一个组件：一张短谱（谱号、调号和给定的音，和乐谱组件画得一模一样），谱下面一盘象牙色的按键，是重降、降、还原、升、重升，还有一个乌木色的键用来擦掉。孩子在谱上点一下，音符就落在那一高度的线或间上；按住上下拖，音符跟着一格一格地走，手指下的线或间会亮一条淡紫色，超出五线的地方自己加上加线。再按升降键，记号写在音符前面；再按一次同一个键就去掉。用电脑时上下方向键移动音符，键盘上的 # b n x 写记号，退格键擦掉。流程可以替孩子写、从给定音往上一格一格数给孩子看、亮起音符、弹出说明、交卷后锁住、核对，还能在错的音旁边用紫色画出对的音。讲题里放音符会发出钢琴声，练习里不发声。组件不知道答案，答案在题目文件里，由流程告诉它画对错。它的样子由自己画，用到的颜色全部取自主题常量：换一个主题只换颜色，大小和行为不变。这一页用的是 etude 主题。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q">练习 · 写出音程</p><p class="rubric">Write the named intervals above these notes.</p></div>
+    <div class="np-grid">
+      <div id="np-a"></div>
+      <div id="np-b"></div>
+      <div id="np-c"></div>
+      <div id="np-d"></div>
+    </div>
+    <div class="submit-mock">「提交」按钮（播放器的，不属于组件）</div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给 (a) 的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件发给 (a) 那张谱的指令；记录框列出四张谱发出的事件。直接在谱上点、拖，再按下面的键，就是孩子在作答。用电脑键盘时，Tab 进到谱上，上下方向键移动音符，# 或 s 写升号（再按变重升），b 或 f 写降号（再按变重降），n 写还原号，x 写重升，退格键擦掉。</p>
+    <div class="chip-group"><span>讲题里用</span><div class="chips">
+      <button class="chip" type="button" data-cmd="lit">亮起给定音</button>
+      <button class="chip" type="button" data-cmd="count">从 F 往上数到 D</button>
+      <button class="chip" type="button" data-cmd="write">替孩子写上 D</button>
+      <button class="chip" type="button" data-cmd="press">替孩子按一下 ♯ 键</button>
+      <button class="chip" type="button" data-cmd="label">在答案上方贴 X</button>
+      <button class="chip" type="button" data-cmd="caption">在答案下弹出说明</button>
+      <button class="chip" type="button" data-cmd="uncaption">收起说明</button>
+    </div></div>
+    <div class="chip-group"><span>交卷和核对（四张谱一起）</span><div class="chips">
+      <button class="chip" type="button" data-cmd="lock" aria-pressed="false">锁住（交卷后）</button>
+      <button class="chip" type="button" data-cmd="check">核对孩子写的</button>
+      <button class="chip" type="button" data-cmd="reveal">在错的旁边画出对的音</button>
+    </div></div>
+    <div class="chip-group"><span>其他</span><div class="chips">
+      <button class="chip" type="button" data-cmd="set">直接摆成讲完的样子</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+    </div></div>
+    <div class="log" id="log" aria-live="polite" aria-label="组件发出的事件"></div>
+  </section>
+
+  <section class="panel">
+    <h2>同一个组件的几种样子</h2>
+    <p class="what">都是同一个组件，只是题目文件给的谱号、调号、给定音和要写几个音不一样。每个下面的「核对」按钮模拟流程交卷后核对；事件也记在上面的记录框里。</p>
+    <div class="gallery">
+      <div class="mini-stage">
+        <h3>一张谱上写几个音（中音谱号，没有调号）：有几个答案时，谱下的紫色短线表示按键作用在哪个音上，点哪一列就写在哪一列</h3>
+        <p class="rubric">Write these notes of D major.</p>
+        <div id="g-multi"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="multi" data-act="check">核对</button><button class="chip" type="button" data-g="multi" data-act="reveal">画出对的音</button><button class="chip" type="button" data-g="multi" data-act="clear">清除</button></div>
+      </div>
+      <div class="mini-stage phone">
+        <h3>手机宽度，五个升号的调号：谱自己缩小到放得下</h3>
+        <p class="rubric">Write the named interval above this note.</p>
+        <div id="g-sharps"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="sharps" data-act="check">核对</button><button class="chip" type="button" data-g="sharps" data-act="reveal">画出对的音</button><button class="chip" type="button" data-g="sharps" data-act="clear">清除</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>放一遍：讲题里写出 E♭ 上方的小六度（手机宽度，有声音）</h2>
+    <p class="what">讲题可以这样教：先亮起给定音，从它往上一格一格数六个音名，数到的每一格都响一声；在数到的 C 上写下音符，说明 E♭ 到 C 是大六度，小六度要再小一个半音，于是按下降号键；最后弹一遍这个音程并核对。下面按讲题的节奏自动走一遍。</p>
+    <div class="toolbar"><button class="chip" type="button" id="run-btn">从头放一遍</button></div>
+    <div class="mini-stage phone" id="run-stage">
+      <p class="rubric">Write a minor 6th above this note.</p>
+      <div id="run-np"></div>
+      <div class="subtitle"><small>字幕（示意）</small><span id="run-sub">点「从头放一遍」。</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>谱号（高音、低音、中音、次中音）；调号；一列一列的音：给定的音（照谱上写的样子，如 <code>Eb4</code>），或要孩子写的答案（有编号，可以带一行写在它下面的字）；小题号如 (a)；谱下面的名称，如 <i>minor 6th</i>；能放到哪里（最低和最高，默认上下各三条加线）；有哪几个升降键（默认重降、降、还原、升、重升）；模式：讲题（放音符时发声）或练习（不发声）。</td></tr>
+          <tr><td>外观</td><td>短谱由乐谱库画，谱号、调号、给定音、加线和乐谱组件一模一样；孩子写的音也用同一个全音符字形，深色墨水。纸、按键托盘、紫色的亮起和“对”、砖红的“错”、深色气泡，都由组件自己画，不从外面的样式继承。用到的每一种颜色都是主题常量（<code>--th-sheet-a</code>、<code>--th-ivory</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。</td></tr>
+          <tr><td>排法</td><td>组件自己定：谱先按宽度排，调号很长、一行放不下时整张谱缩小到刚好放下；每两列之间尽量留出一个升降号加一个符头的地方，但谱不会小到手指点不准（一张谱上答案很多、屏幕又窄时会挤一些）；上下留出能放到的最高、最低处的地方。答案写在给定音的右边，每个答案右边再留一个位置，用来画对的音。几张短谱怎么排（两行两列，或手机上一列）由流程定。</td></tr>
+          <tr><td>动作</td><td>点谱：音符落到最近的线或间上（弹出来，0.3 秒），加线一条一条长出来；按住拖：音符跟着手指一格一格走，手指下的线或间亮一条淡紫色，松手时落定。按升降键：记号在音符前写出来，这个键保持按下的样子；再按一次去掉。没有音符时按升降键，这一列闪一下砖红的虚线框。数音：一个淡紫色的音从给定音往上一格一格走，每一格留下一个小点，旁边的数字跟着变，讲题里每一格响一声。核对：音符变紫、正上方弹出紫色的勾，或变成砖红、弹出叉；画出对的音时，紫色的音出现在右边。锁住：按键托盘慢慢收起来。</td></tr>
+          <tr><td>指令</td><td><code>focus(答案)</code> 让按键作用在这个答案上；<code>write({答案: 音})</code> 替孩子写好；<code>press(答案, 记号)</code> 在讲题里按一下升降键给孩子看；<code>count(答案, 到哪个音)</code> 从给定音一格一格数上去，音为空时收起；<code>highlight(列…)</code>；<code>label({答案: 字母})</code>；<code>caption(答案, 文字)</code>，答案为空时收起；<code>check({答案: 对/错})</code>；<code>reveal({答案: 对的音})</code> 在旁边画出对的音；<code>lock(是/否)</code>；<code>play(答案)</code> 讲题里弹出给定音、答案，再一起弹；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code>；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>notePlace</code>（哪个答案；在第几线第几间；照谱上写的音，如 <code>C4</code>；算上调号以后实际的音，如 <code>C#4</code>；英文名；音高；怎么放的：点、拖或键盘）；<code>accidentalPress</code>（哪个记号、哪个答案、写上了没有、写完以后的音）；<code>noteErase</code>；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>谱由乐谱库（abcjs）画；发声交给“音源”，组件不知道用的是钢琴还是别的乐器；颜色来自主题。哪个是答案由题目文件给，流程拿事件里“实际的音”和题目文件比，组件只画出对错。</td></tr>
+          <tr><td>声音</td><td>讲题里，音符落定、数音的每一格、<code>play</code> 都用钢琴发声；练习里不发声，免得孩子靠听来找音。</td></tr>
+          <tr><td>出现在哪里</td><td>练习里是作答的组件，直接画在画面上，一小题一张短谱。讲题里也可以用：一格一格数给孩子看，替孩子写出答案，或者让孩子自己试。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。打开页面时的加载页是播放器的，和其他组件的原型共用。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="note-place.js"></script>
+<script>
+/* ============================================================
+   Assembly: this page plays the role of the player, the workflow and
+   the question file. It sets the theme's constants on the page, then
+   lays out one short stave per small question, wires the events to a
+   log and checks answers against the question file; the components
+   call nothing here directly.
+   ============================================================ */
+(function () {
+  var THEME = '../../content/themes/etude.yaml';
+  var lede = document.querySelector('.lede');
+  if (!window.ABCJS) { lede.textContent = '乐谱库没有加载出来，请刷新页面再试。'; return; }
+  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+  document.body.setAttribute('data-boundary', 'on');
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function logger(name) {
+    return function (ev) {
+      ev = Object.assign({ from: name }, ev);
+      window.tlEvents.push(ev);
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type; delete data.from;
+      line.innerHTML = '<span class="t">' + t + 's [' + name + ']</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    };
+  }
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  // Everything that draws waits for the theme: the staves read its constants.
+  function start() {
+    // The question files would hold: adapted examples, not copied exam
+    // items. What is right lives in the question file too; here it is in
+    // ANSWER (the note as it sounds; a letter alone for any octave), read
+    // only by this page acting as the workflow. REVEAL is the right note as
+    // the workflow would show it.
+    var Q = {
+      a: { tag: '(a)', clef: 'treble', key: 'C', columns: [{ given: 'F4' }, { id: 'n' }], name: 'major 6th' },
+      b: { tag: '(b)', clef: 'bass', key: 'G', columns: [{ given: 'A2' }, { id: 'n' }], name: 'augmented 4th' },
+      c: { tag: '(c)', clef: 'treble', key: 'Bb', columns: [{ given: 'G4' }, { id: 'n' }], name: 'compound minor 3rd' },
+      d: { tag: '(d)', clef: 'bass', key: 'C', columns: [{ given: 'E2' }, { id: 'n' }], name: 'diminished 7th' },
+      multi: { clef: 'alto', key: 'C', columns: [{ id: 's', under: 'subdominant' }, { id: 'd', under: 'dominant' }, { id: 'l', under: 'leading note' }], name: 'D major' },
+      sharps: { tag: '(e)', clef: 'treble', key: 'B', columns: [{ given: 'G4' }, { id: 'n' }], name: 'diminished 5th' },
+      run: { clef: 'treble', key: 'C', columns: [{ given: 'Eb4' }, { id: 'n' }], name: 'minor 6th', mode: 'lecture', sound: SoundSource }
+    };
+    var ANSWER = { a: { n: 'D5' }, b: { n: 'D#3' }, c: { n: 'Bb5' }, d: { n: 'Db3' }, multi: { s: 'G', d: 'A', l: 'C#' }, sharps: { n: 'D5' }, run: { n: 'Cb5' } };
+    var REVEAL = { a: { n: 'D5' }, b: { n: 'D#3' }, c: { n: 'B5' }, d: { n: 'Db3' }, multi: { s: 'G3', d: 'A3', l: 'C#4' }, sharps: { n: 'Dn5' }, run: { n: 'Cb5' } };
+
+    var comps = {};
+    function make(name, hostId) {
+      var c = new NotePlace(document.getElementById(hostId), Object.assign({ onEvent: logger(name) }, Q[name]));
+      comps[name] = c;
+      return c;
+    }
+    // A verdict on what the child wrote, the way a practice workflow checks
+    // it after the answer is handed in: the note as it sounds against the
+    // question file.
+    function judge(name) {
+      var c = comps[name], a = ANSWER[name], map = {};
+      Object.keys(a).forEach(function (id) {
+        var got = c.info(id);
+        map[id] = !!got && (/\d$/.test(a[id]) ? got.sounding === a[id] : got.sounding.replace(/-?\d$/, '') === a[id]);
+      });
+      c.lock(true);
+      c.check(map);
+      return map;
+    }
+    function revealWrong(name, map) {
+      var c = comps[name], out = {};
+      Object.keys(map).forEach(function (id) { if (!map[id]) out[id] = REVEAL[name][id]; });
+      c.reveal(out);
+    }
+
+    ['a', 'b', 'c', 'd'].forEach(function (n) { make(n, 'np-' + n); });
+    make('multi', 'g-multi');
+    make('sharps', 'g-sharps');
+    var run = make('run', 'run-np');
+    var A = comps.a;
+
+    var lockBtn = document.querySelector('[data-cmd="lock"]');
+    var verdicts = {};
+    var MAIN = ['a', 'b', 'c', 'd'];
+    var commands = {
+      lit: function () { A.highlight(['given0']); },
+      count: function () { A.count('n', 'D5'); },
+      write: function () { A.write({ n: 'D5' }); },
+      press: function () { A.press('n', 'sharp'); },
+      label: function () { A.label({ n: 'X' }); },
+      caption: function () { A.caption('n', NotePlace.inline('F → D: six letters, nine semitones')); },
+      uncaption: function () { A.caption(null); },
+      lock: function () { var on = !A.locked; MAIN.forEach(function (n) { comps[n].lock(on); }); lockBtn.setAttribute('aria-pressed', String(on)); },
+      check: function () { MAIN.forEach(function (n) { verdicts[n] = judge(n); }); lockBtn.setAttribute('aria-pressed', 'true'); },
+      reveal: function () { MAIN.forEach(function (n) { if (!verdicts[n]) verdicts[n] = judge(n); revealWrong(n, verdicts[n]); }); lockBtn.setAttribute('aria-pressed', 'true'); },
+      set: function () { A.set({ notes: { n: 'D5' }, checks: { n: true }, highlight: ['given0'], locked: true }); lockBtn.setAttribute('aria-pressed', 'true'); },
+      stop: function () { A.stop(); },
+      clear: function () { MAIN.forEach(function (n) { comps[n].clear(); }); verdicts = {}; lockBtn.setAttribute('aria-pressed', 'false'); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+    var gverdicts = {};
+    document.querySelectorAll('[data-g]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var name = b.getAttribute('data-g'), act = b.getAttribute('data-act'), c = comps[name];
+        if (act === 'check') gverdicts[name] = judge(name);
+        else if (act === 'reveal') { if (!gverdicts[name]) gverdicts[name] = judge(name); revealWrong(name, gverdicts[name]); }
+        else { c.clear(); delete gverdicts[name]; }
+      });
+    });
+
+    // A lecture played through: the given note lit, the six letters counted
+    // up with a sound on each, the note written on C, the flat pressed, the
+    // interval played and confirmed (the count taken away first, so the
+    // seal stands alone).
+    var runSub = document.getElementById('run-sub'), runTimers = [];
+    var RUN = [
+      { at: 300, say: '给定的音是 E♭。小六度，先数六个音名。', go: function () { run.highlight(['given0']); } },
+      { at: 2400, say: 'E、F、G、A、B、C，数到第六个，是 C。', go: function () { run.count('n', 'C5'); } },
+      { at: 6000, say: '在 C 上写下音符。', go: function () { run.highlight([]); run.write({ n: 'C5' }); } },
+      { at: 7800, say: 'E♭ 到 C 是大六度，小六度要再小一个半音，所以 C 要降下来。', go: function () { run.caption('n', NotePlace.inline('E♭ → C♭: minor 6th')); } },
+      { at: 10600, say: '按下降号键。', go: function () { run.press('n', 'flat'); } },
+      { at: 12200, say: '听一听：E♭，C♭，再一起。', go: function () { run.caption(null); run.count('n', null); run.play('n'); } },
+      { at: 16000, say: '对，E♭ 上方的小六度是 C♭。', go: function () { run.lock(true); run.check({ n: true }); } }
+    ];
+    document.getElementById('run-btn').addEventListener('click', function () {
+      runTimers.forEach(clearTimeout); runTimers = [];
+      run.clear(); runSub.textContent = '';
+      RUN.forEach(function (s) { runTimers.push(setTimeout(function () { s.go(); if (s.say) runSub.textContent = s.say; }, s.at)); });
+    });
+
+    window.tlComps = comps; window.tlAnswer = ANSWER; window.tlJudge = judge;
+
+    // A rebuild redraws every component at its new width; what is written
+    // and every mark are state, so they come back.
+    var rebuild = function () { Object.keys(comps).forEach(function (k) { comps[k].build(); }); };
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(rebuild, 180);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebuild);
+  }
+
+  ThemeConstants.load(THEME).then(function (theme) {
+    ThemeConstants.apply(document.documentElement, theme);
+    start();
+  }, function () {
+    lede.textContent = '主题没有加载出来，请刷新页面再试。';
+  });
+})();
+</script>

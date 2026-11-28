@@ -1,13 +1,13 @@
-// Screenshots each part of the note-placing prototype at one width: the
-// main stage empty, while dragging, after the child answers, after
-// workflow commands and after a check with the right notes shown; every
-// look in the gallery after answering and a check; the lecture run while
-// counting, while its caption shows and at its end.
-// Usage: node npshots.mjs <width> <out-dir>
-import { openPage } from '../tools/serve.mjs';
+// Screenshots each part of the note-placing component's demo page at one
+// width: the main stage empty, while dragging, after the child answers,
+// after workflow commands and after a check with the right notes shown;
+// every look in the gallery after answering and a check; the lecture run
+// while counting, while its caption shows and at its end.
+// Usage: node noteshots.mjs <width> <out-dir>
+import { openPage } from './serve.mjs';
 
 const [, , width = '390', out = '.'] = process.argv;
-const { page, errors, close } = await openPage('proto/c10-note-place.html', width, 1000, 2);
+const { page, errors, close } = await openPage('components/note-place/demo.html', width, 1000, 2);
 const hostOf = { a: 'np-a', b: 'np-b', c: 'np-c', d: 'np-d', multi: 'g-multi', sharps: 'g-sharps' };
 const shot = async (sel, name) => { const el = await page.$(sel); await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(150); await el.screenshot({ path: `${out}/${name}-${width}.png` }); };
 const show = async (name) => { const el = await page.$('#' + hostOf[name] + ' .tl-np-svgbox'); await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(60); };

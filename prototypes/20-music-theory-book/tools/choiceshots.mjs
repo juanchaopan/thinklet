@@ -1,11 +1,11 @@
-// Screenshots each part of the choice prototype at one width: the main
+// Screenshots each part of the choice's demo page at one width: the main
 // stage before and after picks and commands, every look in the gallery
 // after a pick and a check, and the lecture run at its end.
-// Usage: node chshots.mjs <width> <out-dir>
-import { openPage } from '../tools/serve.mjs';
+// Usage: node choiceshots.mjs <width> <out-dir>
+import { openPage } from './serve.mjs';
 
 const [, , width = '390', out = '.'] = process.argv;
-const { page, errors, close } = await openPage('proto/c8-choice.html', width, 1000, 2);
+const { page, errors, close } = await openPage('components/choice/demo.html', width, 1000, 2);
 const shot = async (sel, name) => { const el = await page.$(sel); await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(150); await el.screenshot({ path: `${out}/${name}-${width}.png` }); };
 const tapOpt = async (host, id) => { const el = await page.$(`${host} .tl-ch-opt[data-id="${id}"]`); await el.scrollIntoViewIfNeeded(); const b = await el.boundingBox(); await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); };
 

@@ -1,17 +1,17 @@
-// Checks the fill-in prototype at one width: layout of every look (boxes
-// and keys inside the component, keys one size, boxes under the score not
-// overlapping and how far they sit from their chords, seals and letters
-// on a box's corners clear of every other box), taps on the middle and
-// edges of every box and key and in the gaps between keys, writing with
-// the keys (auto-advance, full boxes, delete, next), typing on a
-// keyboard, lock and unlock, check seals, caption room, the type and stop
-// commands, set drawing with nothing replayed, rebuild keeping what is
-// written with one event per tap, and no horizontal page scroll.
+// Checks the fill-in on its demo page at one width: layout of every look
+// (boxes and keys inside the component, keys one size, boxes under the
+// score not overlapping and how far they sit from their chords, seals and
+// letters on a box's corners clear of every other box), taps on the
+// middle and edges of every box and key and in the gaps between keys,
+// writing with the keys (auto-advance, full boxes, delete, next), typing
+// on a keyboard, lock and unlock, check seals, caption room, the type and
+// stop commands, set drawing with nothing replayed, rebuild keeping what
+// is written with one event per tap, and no horizontal page scroll.
 // Usage: node filltest.mjs <width>
 import { openPage } from './serve.mjs';
 
 const width = process.argv[2] || '390';
-const { page, errors, close } = await openPage('proto/c9-fill.html', width, 900, 1);
+const { page, errors, close } = await openPage('components/fill/demo.html', width, 900, 1);
 const fails = [];
 const ok = (cond, what) => { if (!cond) fails.push(what); };
 const wait = (ms) => page.waitForTimeout(ms);

@@ -1,8 +1,7 @@
 // Serves a lecture prototype from the prototype folder over local HTTP, the
-// way the artifact host does (the page is a fragment wrapped in a document;
-// sound.js and piano.json are published at the root from components/), and
-// opens it in Chromium. When the loading screen shows, it waits for 开始 and
-// taps it, as a child would.
+// way the artifact host does (the page is a fragment wrapped in a document,
+// every other file at its own path), and opens it in Chromium. When the
+// loading screen shows, it waits for 开始 and taps it, as a child would.
 // Usage as a module: openLecture(page file, width, height).
 import { createRequire } from 'node:module';
 import { readFileSync, existsSync } from 'node:fs';
@@ -17,11 +16,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const TYPES = { js: 'text/javascript', json: 'application/json', html: 'text/html; charset=utf-8', css: 'text/css', yaml: 'text/yaml; charset=utf-8', mp3: 'audio/mpeg', webp: 'image/webp' };
 
 function resolve(path) {
-  const direct = normalize(join(root, path));
-  if (!direct.startsWith(root)) return null;
-  if (existsSync(direct)) return direct;
-  const fallback = join(root, 'components', path);
-  return existsSync(fallback) ? fallback : null;
+  const f = normalize(join(root, path));
+  return f.startsWith(root) && existsSync(f) ? f : null;
 }
 
 export async function openLecture(file, width, height = 900, { start = true, scale = 1 } = {}) {

@@ -1,0 +1,50 @@
+/* The look every control's demo page shares: the page itself, a mock
+   lecture stage (lit frame) with rows where the workflow puts controls,
+   the same stage at phone width, the command buttons, the event log and
+   the interface table. The stage is the player's, not the controls'. */
+:root {
+  --canvas: #f7f4ef; --surface: #ffffff; --line: #ebe6dc; --ink: #161a2b; --ink-soft: #4b5168; --ink-muted: #6a6e7e; --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --lit: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  color-scheme: light;
+}
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 28px max(16px, env(safe-area-inset-right, 0px)) 64px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 22px; }
+.demo-live { display: contents; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+h1 code { font-size: 18px; font-weight: 600; color: var(--ink-muted); }
+h2 { font-size: 19px; font-weight: 800; margin: 0; }
+h3 { font-size: 15px; font-weight: 800; margin: 0; color: var(--ink-soft); }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 72ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.toolbar:empty { display: none; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 4px 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; display: inline-flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 2px 8px; text-align: left; }
+.btn:hover { border-color: #d6cfc2; background: #fcfaf6; }
+.btn code { font-weight: 400; color: var(--ink-muted); }
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.5; min-height: 80px; max-height: 220px; overflow: auto; background: #faf8f4; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.log:empty::before { content: "还没有事件。在舞台上按它，或者用上面的按钮发指令。"; font-family: var(--font); color: var(--ink-muted); }
+.log .err { color: #b3261e; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; width: 6em; }
+code { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.note { color: var(--ink-soft); font-size: 14px; }
+
+/* ---------- The mock stage ---------- */
+.stage { position: relative; border-radius: 26px; background: var(--lit); display: grid; grid-template-rows: auto auto minmax(140px, 1fr) auto; min-height: 460px; min-width: 0; box-shadow: 0 20px 50px -24px rgba(40, 24, 10, .5); }
+.phone { width: 100%; max-width: 380px; margin: 0 auto; min-height: 560px; }
+.row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+.row.head { justify-content: center; padding-top: 0; }
+.row.bottom { gap: 12px; padding: 10px 14px 14px; }
+.row.end { justify-content: flex-end; }
+.phone .row { gap: 8px; padding: 8px; }
+.ctl { position: relative; flex: 0 1 auto; display: flex; min-width: 0; }
+.ctl.grow { flex: 1 1 auto; }
+.ctl:has(> [hidden]) { display: none; }
+.middle { display: grid; place-items: center; margin: 0 16px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; }
+body[data-boundary="on"] .ctl { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 16px; }
+body[data-boundary="on"] .ctl::before { content: attr(data-ctl); position: absolute; top: -12px; left: 4px; z-index: 50; font: 700 10px/1 var(--font); color: #fff; background: var(--boundary); padding: 2px 5px; border-radius: 5px; white-space: nowrap; }

@@ -1,0 +1,351 @@
+<title>按键填空组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Caveat:wght@600&display=swap">
+<style>
+/* Layout: a lit stage shaped like a practice screen: a stand-in score on top (not part of this prototype), the fill-in under it (the component, outlined with a dashed boundary). Under it a plain "workflow simulator" panel sends commands and logs the events the fill-in emits. Then the other looks of the same component (a time signature, chords named under a score, a phone-width question), a lecture played through at phone width, and the interface table. The component's own look is its stylesheet, fill.css, linked between the stage rules and the rest of the page's rules. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+/* The player's screen does not let the browser shift the scroll position when a component changes height. */
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+h3 { font-size: 15px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the fill-in) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head .q { color: var(--stage-ink); font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+/* A stand-in for the score component above the fill-in: drawn by this page, not part of the prototype. */
+.stand-in { position: relative; box-sizing: border-box; min-width: 0; overflow: hidden; border-radius: 10px; padding: 22px 12px 4px; background: linear-gradient(180deg, #fffdf7, #f6ecd9); box-shadow: inset 0 0 0 1px rgba(122, 88, 54, .14), 0 14px 26px -16px rgba(60, 38, 16, .45); color: #241a12; }
+.stand-in::after { content: "乐谱组件（示意，不属于填空组件）"; position: absolute; top: 6px; right: 10px; font: 600 11px/1 var(--font); color: rgba(70, 48, 26, .5); }
+.stand-in svg { display: block; overflow: visible; }
+.stand-in text { font-family: "Cormorant Garamond", serif; font-style: italic; }
+/* The subtitle line is another component; this is only a mock of where it goes. */
+.subtitle { min-height: 3.2em; padding: 10px 16px; border-radius: 14px; background: rgba(42, 33, 24, .82); color: #fff8ec; font-size: 15px; line-height: 1.5; }
+.subtitle small { display: block; font-size: 11px; color: rgba(255, 248, 236, .6); }
+.submit-mock { justify-self: end; font: 700 14px/1 var(--font); color: rgba(70, 48, 26, .6); border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 999px; padding: 12px 18px; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-fi { outline: 1.5px dashed var(--boundary); outline-offset: 8px; border-radius: 10px; }
+body[data-boundary="on"] .tl-fi::before { content: "按键填空组件"; position: absolute; top: -20px; left: 10px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+</style>
+<link rel="stylesheet" href="fill.css">
+<style>
+/* ---------- Layouts chosen by the workflow ---------- */
+.gallery { display: grid; gap: 18px; }
+.mini-stage { border-radius: 24px; padding: 26px clamp(14px, 3vw, 28px) 22px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 14px; min-width: 0; }
+.mini-stage .q { color: var(--stage-ink); font-weight: 800; }
+.mini-stage.phone { width: 100%; max-width: 390px; justify-self: center; box-sizing: border-box; }
+.mini-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.chip-group { display: grid; gap: 6px; }
+.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 9 / 10 · 作答类 · 直接画在画面上，放在谱或题干下面</span>
+    <h1>按键填空</h1>
+    <p class="lede">考卷上“在横线上写一个数、写一个和弦”的题都用它答。蓝色虚线框住的就是按键填空组件：上面是这一小题的句子（原题的英文），句子里嵌着象牙色的小格子；下面一排象牙色的按键，按键是哪些由题目定，比如 0 到 9，或者 I、II、IV、V。孩子点一个格子，再按键，字就用深色墨水的手写体一笔写进格子里，像在考卷上用笔写；乌木色的键是删掉一个和跳到下一格。用电脑时也可以直接用键盘打字。格子可以嵌在句子里，可以上下叠成拍号的两个数，也可以排成谱下面的一排，每个格子对着谱上的一个和弦或小节。流程可以替孩子写（讲题里一个键一个键地按给孩子看）、亮起某个格子、贴上 A、B、在格子下面弹出说明、交卷后锁住（按键收起来），以及核对：对的带紫色的圈和勾，错的变成砖红的虚线边和叉。组件不知道答案，答案在题目文件里，由流程告诉它画对错。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q">练习 · 看谱作答</p></div>
+    <div class="stand-in" id="main-score"></div>
+    <div id="main-fill"></div>
+    <div class="submit-mock">「提交」按钮（播放器的，不属于填空组件）</div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给填空组件的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件发给填空组件的指令；记录框列出组件发出的事件。直接点格子和按键就是孩子在作答：点一个格子，再按数字；一个格子写满了，会自己跳到下一个空着的格子。用电脑键盘时，Tab 进到格子里，直接打数字，退格键删掉，回车跳到下一格，左右方向键在格子之间移动。</p>
+    <div class="chip-group"><span>讲题里用</span><div class="chips">
+      <button class="chip" type="button" data-cmd="label">贴上 A B</button>
+      <button class="chip" type="button" data-cmd="lit">亮起第一个格子</button>
+      <button class="chip" type="button" data-cmd="spot">聚光第二个格子</button>
+      <button class="chip" type="button" data-cmd="caption">在第一个格子下弹出说明</button>
+      <button class="chip" type="button" data-cmd="uncaption">收起说明</button>
+      <button class="chip" type="button" data-cmd="fill">替孩子写上 3</button>
+      <button class="chip" type="button" data-cmd="type">一个键一个键地按出 1</button>
+    </div></div>
+    <div class="chip-group"><span>交卷和核对</span><div class="chips">
+      <button class="chip" type="button" data-cmd="lock" aria-pressed="false">锁住（交卷后）</button>
+      <button class="chip" type="button" data-cmd="check">核对孩子写的</button>
+    </div></div>
+    <div class="chip-group"><span>其他</span><div class="chips">
+      <button class="chip" type="button" data-cmd="set">直接摆成讲完的样子</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+    </div></div>
+    <div class="log" id="log" aria-live="polite" aria-label="填空组件发出的事件"></div>
+  </section>
+
+  <section class="panel">
+    <h2>同一个组件的几种样子</h2>
+    <p class="what">都是同一个填空组件，只是题目文件给的句子、格子和按键不一样，组件自己决定怎么排。每个下面的「核对」按钮模拟流程交卷后核对；事件也记在上面的记录框里。</p>
+    <div class="gallery">
+      <div class="mini-stage">
+        <h3>拍号：两个格子上下叠</h3>
+        <div class="stand-in" id="meter-score"></div>
+        <div id="g-meter"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="meter" data-act="check">核对</button><button class="chip" type="button" data-g="meter" data-act="clear">清除</button></div>
+      </div>
+      <div class="mini-stage">
+        <h3>谱下面一排格子：写出每个和弦（按键是 I、II、IV、V 和转位的 b、c）</h3>
+        <div class="stand-in" id="chord-score"></div>
+        <div id="g-chord"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="chord" data-act="check">核对</button><button class="chip" type="button" data-g="chord" data-act="caption">在第 2 个格子下弹出说明</button><button class="chip" type="button" data-g="chord" data-act="clear">清除</button></div>
+      </div>
+      <div class="mini-stage phone">
+        <h3>手机宽度：按键一行放不下，就平均分成几行</h3>
+        <div id="g-count"></div>
+        <div class="mini-tools"><button class="chip" type="button" data-g="count" data-act="check">核对</button><button class="chip" type="button" data-g="count" data-act="clear">清除</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>放一遍：讲题里替孩子写出答案（手机宽度）</h2>
+    <p class="what">讲题的最后一幕可以把答案写进格子里：先亮起格子，说怎么数，弹出说明，再一个键一个键地按出答案，按到的键发紫光，最后核对。下面按讲题的节奏自动走一遍。</p>
+    <div class="toolbar"><button class="chip" type="button" id="run-btn">从头放一遍</button></div>
+    <div class="mini-stage phone" id="run-stage">
+      <p class="q">E♭ 到 C 有几个半音？</p>
+      <div id="run-fill"></div>
+      <div class="subtitle"><small>字幕（示意）</small><span id="run-sub">点「从头放一遍」。</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>样子：句子里嵌格子（<code>line</code>）或谱下一排格子（<code>row</code>）。句子：一串片段，文字、术语（斜体）、一个格子，或上下叠的两个格子（拍号）；可以带小题号如 (a)。谱下一排：上面一句题干，加几个格子。每个格子有编号、最多写几个字、读屏用的名称。按键：题目给的一组（比如 0–9，或 I、II、IV、V、b、c），组件自己加上删除键，有几个格子时再加“下一格”。</td></tr>
+          <tr><td>外观</td><td>句子用衬线字，格子是象牙色、微微凹进去；孩子写的字用深色墨水的手写体；按键是象牙色的键放在凹下去的托盘里，删除和下一格是乌木色的键，键上的数字一样高；亮起和“对”用强调色（紫色），“错”用砖红，说明放在深色气泡里。组件不写死任何颜色，全部取主题常量（<code>--th-…</code>，这一页用 <code>etude</code> 主题）；换一个主题，颜色跟着变，大小和动作不变。文字里的升降号用乐谱库的字形。</td></tr>
+          <tr><td>排法</td><td>组件自己定：句子按词换行，格子和它前面的词、后面的标点不分开，上下两行的格子之间留出角上印章和字母的地方；按键一样大，一行放得下就排成一行，放不下就平均分成几行。谱下一排格子按流程给的位置摆，每个格子对着谱上的一个和弦或小节；两个位置挨得太近时，格子往两边让开，不叠在一起，角上的印章也碰不到旁边的格子。</td></tr>
+          <tr><td>动作</td><td>点格子：格子轻轻按下，边上亮起淡紫色，里面出现闪动的光标。按键：键往下沉一点再弹起，字从左往右一笔写出来（0.3 秒）；删掉的字 0.18 秒淡掉；格子写满后光标跳到下一个空格子；写不下了，格子边上闪一下砖红的虚线。讲题里流程按的键发紫光。核对：紫圈或砖红虚线边出现，角上的印章弹出来。弹出说明：先在句子下面让出地方（0.52 秒，起步很轻），气泡再弹出，下面的按键慢慢往下让；收起时气泡先淡掉，地方再慢慢合上。锁住：按键托盘慢慢收起来，光标消失。</td></tr>
+          <tr><td>指令</td><td><code>focus(格子)</code> 让按键写进这个格子；<code>fill({格子: 字})</code> 替孩子写好；<code>type(格子, 字)</code> 一个键一个键地按出来给孩子看；<code>highlight(格子…)</code>；<code>spotlight(格子…)</code>；<code>label({格子: 字母})</code>；<code>caption(格子, 文字)</code>，格子为空时收起；<code>check({格子: 对/错})</code> 画出对错；<code>lock(是/否)</code> 交卷后锁住；<code>place(位置…)</code> 谱下一排格子摆在谱上哪几处；<code>set(状态)</code> 直接摆成某一幕结束时的样子，不放动画；<code>stop()</code> 停下正在按的键；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>fieldTap</code>（哪个格子、第几个、里面写了什么）；<code>keyPress</code>（按了哪个键、写进哪个格子、这个格子现在写了什么、全部格子写了什么、有没有写进去）；<code>blankTap</code>。</td></tr>
+          <tr><td>依赖</td><td>不用别的组件，也不用服务。颜色来自主题常量，由播放器（这一页由页面自己）设在外层。谱下一排格子对着谱上哪几处，由流程从乐谱组件拿到位置再交给它，两个组件互不知道。哪个是答案由题目文件给，组件只画出来；写的是不是一个合法的数或和弦，也由流程按题目文件判断。</td></tr>
+          <tr><td>声音</td><td>不发声。按键不用琴声，免得和题目里的音混在一起。</td></tr>
+          <tr><td>出现在哪里</td><td>练习里是作答的组件，直接画在画面上，放在谱或题干下面。讲题里也可以用：最后一幕替孩子写出答案，或者让孩子自己写。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">打开页面时的加载页是播放器的，和其他组件的原型共用（会下载钢琴采样，这个组件本身不发声）。手写体：Caveat（Google Fonts，SIL OFL）。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="fill.js"></script>
+<script>
+/* ============================================================
+   Assembly: this page plays the role of the player, the workflow and
+   the question file. It sets the etude theme's constants on the page,
+   as the player sets them on the stage, and only then draws stand-ins
+   for the score above a fill-in, hands the fill-in the places of the
+   chords under a score and wires the events to a log; the fill-in calls
+   nothing here directly.
+   ============================================================ */
+function assemble() {
+  document.body.setAttribute('data-boundary', 'on');
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function logger(name) {
+    return function (ev) {
+      ev = Object.assign({ from: name }, ev);
+      window.tlEvents.push(ev);
+      var line = document.createElement('div');
+      var t = ((performance.now() - t0) / 1000).toFixed(1);
+      var data = Object.assign({}, ev); delete data.type; delete data.from;
+      line.innerHTML = '<span class="t">' + t + 's [' + name + ']</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+      logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+    };
+  }
+
+  // Stand-in for the score component: drawn at the width it is given,
+  // and able to say where the centre of each note is on screen, the way
+  // the score reports where its answer boxes go.
+  function standIn(el, abc) {
+    ABCJS.renderAbc(el, abc, { add_classes: true, responsive: 'resize', staffwidth: 640, paddingleft: 0, paddingright: 0, paddingtop: 6, paddingbottom: 0 });
+    el.querySelector('svg').style.maxHeight = '150px';
+    return {
+      notes: function () {
+        return [].map.call(el.querySelectorAll('.abcjs-note'), function (n) { var b = n.getBoundingClientRect(); return b.left + b.width / 2; });
+      }
+    };
+  }
+
+  // The questions files would hold: adapted examples, not copied exam
+  // items. What is right lives in the question file too; here it is in
+  // ANSWER, read only by this page acting as the workflow.
+  var Q = {
+    main: { shape: 'line', tag: '(a)', prompt: [
+      { text: 'The highest note is in bar ' }, { field: { id: 'high', size: 2, name: 'bar of the highest note' } },
+      { text: ', and the lowest note is in bar ' }, { field: { id: 'low', size: 2, name: 'bar of the lowest note' } }, { text: '.' }
+    ] },
+    meter: { shape: 'line', tag: '(b)', prompt: [
+      { text: 'Add the time signature: ' }, { stack: [{ id: 'top', size: 2, name: 'top number' }, { id: 'bottom', size: 2, name: 'bottom number' }] }
+    ] },
+    chord: { shape: 'row', tag: '(c)', prompt: [{ text: 'Name each chord: ' }, { term: 'I' }, { text: ', ' }, { term: 'II' }, { text: ', ' }, { term: 'IV' }, { text: ' or ' }, { term: 'V' }, { text: ', with ' }, { term: 'b' }, { text: ' or ' }, { term: 'c' }, { text: ' for an inversion.' }],
+      fields: [{ id: 'c1', size: 3, name: 'chord 1' }, { id: 'c2', size: 3, name: 'chord 2' }, { id: 'c3', size: 3, name: 'chord 3' }, { id: 'c4', size: 3, name: 'chord 4' }],
+      keys: ['I', 'II', 'IV', 'V', 'b', 'c'] },
+    count: { shape: 'line', tag: '(d)', prompt: [{ text: 'A dotted crotchet lasts as long as ' }, { field: { id: 'n', size: 2, name: 'number of demisemiquavers' } }, { text: ' demisemiquavers.' }] },
+    run: { shape: 'line', prompt: [{ text: 'From ' }, { term: 'E♭' }, { text: ' up to ' }, { term: 'C' }, { text: ' there are ' }, { field: { id: 'n', size: 2, name: 'number of semitones' } }, { text: ' semitones.' }] }
+  };
+  var ANSWER = { main: { high: '3', low: '1' }, meter: { top: '3', bottom: '4' }, chord: { c1: 'IV', c2: 'Ic', c3: 'V', c4: 'I' }, count: { n: '12' }, run: { n: '9' } };
+
+  var fills = {};
+  function make(name, hostId) {
+    var f = new Fill(document.getElementById(hostId), Object.assign({ onEvent: logger(name) }, Q[name]));
+    fills[name] = f;
+    return f;
+  }
+  // A verdict on what the child wrote, the way a practice workflow checks
+  // it after the answer is handed in.
+  function judge(name) {
+    var f = fills[name], a = ANSWER[name], map = {};
+    Object.keys(a).forEach(function (k) { map[k] = f.text(k) === a[k]; });
+    f.lock(true);
+    f.check(map);
+  }
+
+  standIn(document.getElementById('main-score'), 'X:1\nM:3/4\nL:1/8\nK:F\nc2 A2 F2|G2 B2 d2|f4 e2|c6|]');
+  standIn(document.getElementById('meter-score'), 'X:1\nL:1/8\nK:D\nd2 cB A2|F2 G2 A2|B3 A F2|D6|]');
+  var chordScore = standIn(document.getElementById('chord-score'), 'X:1\n%%stretchlast 1\nM:2/2\nL:1/2\nK:C\n[FAc] [Gce]|[GBd] [ceg]|]');
+  var main = make('main', 'main-fill');
+  make('meter', 'g-meter');
+  var chord = make('chord', 'g-chord');
+  make('count', 'g-count');
+  var run = make('run', 'run-fill');
+  // The workflow hands the fill-in the places of the chords on the score,
+  // as pixels from the fill-in's own left edge.
+  function placeChords() {
+    var left = chord.host.getBoundingClientRect().left;
+    chord.place(chordScore.notes().map(function (x) { return x - left; }));
+  }
+  placeChords();
+
+  var LETTERS = { high: 'A', low: 'B' };
+  var lockBtn = document.querySelector('[data-cmd="lock"]');
+  var commands = {
+    label: function () { main.label(LETTERS); },
+    lit: function () { main.highlight(['high']); },
+    spot: function () { main.spotlight(['low']); },
+    caption: function () { main.caption('high', Fill.inline('the top F is in bar 3')); },
+    uncaption: function () { main.caption(null); },
+    fill: function () { main.fill({ high: '3' }); },
+    type: function () { main.type('low', '1'); },
+    lock: function () { main.lock(!main.locked); lockBtn.setAttribute('aria-pressed', String(main.locked)); },
+    check: function () { judge('main'); lockBtn.setAttribute('aria-pressed', 'true'); },
+    set: function () { main.set({ values: { high: '3', low: '1' }, checks: { high: true, low: true }, labels: LETTERS, locked: true }); lockBtn.setAttribute('aria-pressed', 'true'); },
+    stop: function () { main.stop(); },
+    clear: function () { main.clear(); lockBtn.setAttribute('aria-pressed', 'false'); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) {
+    b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+  });
+  document.querySelectorAll('[data-g]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var name = b.getAttribute('data-g'), act = b.getAttribute('data-act'), f = fills[name];
+      if (act === 'check') judge(name);
+      else if (act === 'caption') f.caption('c2', Fill.inline('G is in the bass: a second inversion'));
+      else f.clear();
+    });
+  });
+
+  // A lecture's last act played through: the box lit, the counting told,
+  // then the answer pressed key by key and confirmed.
+  var runSub = document.getElementById('run-sub'), runTimers = [];
+  var RUN = [
+    { at: 300, say: '从 E♭ 往上，一个半音一个半音地数到 C。', go: function () { run.highlight(['n']); } },
+    { at: 2600, say: 'E、F、F♯、G、G♯、A、B♭、B、C，一共九步。', go: function () { run.caption('n', Fill.inline('E♭ → C: 9 steps')); } },
+    { at: 5600, say: '所以这里填 9。', go: function () { run.caption(null); run.highlight([]); run.type('n', '9'); } },
+    { at: 7400, say: '对，E♭ 到 C 是九个半音。', go: function () { run.lock(true); run.check({ n: true }); } }
+  ];
+  document.getElementById('run-btn').addEventListener('click', function () {
+    runTimers.forEach(clearTimeout); runTimers = [];
+    run.clear(); runSub.textContent = '';
+    RUN.forEach(function (s) { runTimers.push(setTimeout(function () { s.go(); if (s.say) runSub.textContent = s.say; }, s.at)); });
+  });
+
+  window.tlFills = fills; window.tlAnswer = ANSWER; window.tlJudge = judge; window.tlPlaceChords = placeChords; window.tlChordNotes = chordScore.notes;
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  // A rebuild redraws every fill-in at its new width; what is written and
+  // every mark are state, so they come back. The boxes under the score
+  // are placed again from the score's new layout.
+  var rebuild = function () { Object.keys(fills).forEach(function (k) { fills[k].build(); }); placeChords(); };
+  var lastW = window.innerWidth, rt = null;
+  window.addEventListener('resize', function () {
+    if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+    clearTimeout(rt);
+    rt = setTimeout(rebuild, 180);
+  });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(rebuild);
+}
+
+// The theme file lives in content/themes at the prototype's root, two
+// folders above this page.
+ThemeConstants.load('../../content/themes/etude.yaml').then(function (theme) {
+  ThemeConstants.apply(document.documentElement, theme);
+  assemble();
+});
+</script>

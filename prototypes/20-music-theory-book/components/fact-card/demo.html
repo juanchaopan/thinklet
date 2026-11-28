@@ -1,0 +1,350 @@
+<title>知识卡组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<link rel="stylesheet" href="fact-card.css">
+<style>
+/* Layout: a lit stage holds one fact card (the component, outlined with a dashed boundary); under it a plain "workflow simulator" panel sends commands and logs the events the card emits. Then four small cards stacked by the workflow to compare ranges, a card the workflow opens in a pop-up, and the interface table. The component's own look is in fact-card.css; this page sets the theme's constants it draws with. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --line-strong: #d9d3c7;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's warm background behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  --stage-ink: #2a2118;
+  --vignette: rgba(80, 52, 24, .14);
+  color-scheme: light;
+}
+body { background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 68ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.panel .what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- Stage (owned by the player, not by the card) ---------- */
+.stage { position: relative; overflow: hidden; border-radius: 28px; background: var(--stage); padding: clamp(16px, 4vw, 40px); display: grid; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px var(--vignette); border-radius: inherit; z-index: 0; }
+.stage::before { content: ""; position: absolute; inset: -20%; pointer-events: none; z-index: 0; opacity: .5; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .4  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.stage > * { position: relative; z-index: 1; }
+.stage-head { color: var(--stage-ink); }
+.stage-head .q { font-size: clamp(18px, 2.6vw, 24px); font-weight: 800; letter-spacing: .01em; }
+.stage-head .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.15em; font-weight: 600; }
+.stack { display: grid; gap: 30px; padding-top: 10px; }
+
+/* Dashed outline that marks exactly what the component is on this demo page. */
+body[data-boundary="on"] .tl-fc { outline: 1.5px dashed var(--boundary); outline-offset: 6px; border-radius: 10px; }
+body[data-boundary="on"] .tl-fc::before { content: "知识卡组件"; position: absolute; top: -18px; left: 10px; z-index: 8; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; white-space: nowrap; }
+body[data-boundary="on"] .tl-fc-compact::before { content: "知识卡"; }
+
+/* ---------- Layouts chosen by the workflow ---------- */
+.mini-stage { border-radius: 24px; padding: 28px 12px 20px; background: var(--stage); position: relative; overflow: hidden; display: grid; gap: 16px; }
+.mini-stage .q { color: var(--stage-ink); font-weight: 800; text-align: center; }
+.mini-stage .q i { font-family: "Cormorant Garamond", "Times New Roman", serif; font-size: 1.12em; font-weight: 600; }
+.phrase { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 6px 10px; color: var(--stage-ink); font-size: 15px; }
+.term-btn { font: italic 600 22px/1 "Cormorant Garamond", serif; color: #2a2118; background: #fffaf1; border: 1px solid #e2d3b8; border-radius: 10px; min-height: 44px; padding: 0 14px; cursor: pointer; box-shadow: 0 6px 14px -8px rgba(60, 38, 16, .5); }
+.term-btn:focus { outline: none; }
+.term-btn:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+/* The pop-up sheet belongs to the player: it dims the question and holds the card the workflow puts in it. */
+.sheet { position: absolute; inset: 0; z-index: 10; display: grid; align-items: end; justify-items: center; padding: 12px; background: rgba(42, 33, 24, .34); backdrop-filter: blur(2px); animation: sheet-fade .25s both; }
+.sheet[hidden] { display: none; }
+.sheet-body { position: relative; width: 100%; max-width: 480px; padding: 34px 10px 12px; border-radius: 22px 22px 16px 16px; background: rgba(255, 250, 241, .6); box-shadow: 0 -10px 40px -10px rgba(42, 33, 24, .4); animation: sheet-up .38s cubic-bezier(.2, .9, .3, 1) both; }
+.sheet-close { position: absolute; top: 4px; right: 6px; width: 44px; height: 32px; border: 0; background: none; font-size: 22px; color: #6b5238; cursor: pointer; }
+.sheet-close:focus { outline: none; }
+.sheet-close:focus-visible { outline: 3px solid var(--violet); }
+.pop-stage { min-height: 420px; align-content: start; }
+@keyframes sheet-fade { from { opacity: 0; } }
+@keyframes sheet-up { from { transform: translateY(40%); opacity: 0; } }
+
+/* ---------- Workflow simulator (not part of the component) ---------- */
+.sim { display: grid; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+button.chip { font: inherit; font-size: 14px; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; transition: background-color .1s, transform .1s; }
+button.chip:hover { background: #f4f0fb; }
+button.chip:active { transform: scale(.97); }
+button.chip[aria-pressed="true"] { background: #f4f0fb; border-color: var(--violet); color: var(--violet); font-weight: 700; }
+button.chip:focus { outline: none; }
+button.chip:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.chip-group { display: grid; gap: 6px; }
+.chip-group > span { font-size: 12px; font-weight: 700; color: var(--ink-muted); }
+.log { font: 13px/1.6 var(--mono); background: #f4f0fb; color: #2b2452; border: 1px solid #e2d9fb; border-radius: 14px; padding: 12px 14px; min-height: 92px; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.log .t { color: #8a80b8; }
+.sound-state { font-size: 13px; color: var(--ink-muted); }
+.sound-state b { color: var(--ink); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+td code { font: 13px var(--mono); background: var(--canvas); padding: 1px 5px; border-radius: 6px; }
+.tablebox { overflow-x: auto; }
+.credit { font-size: 12px; color: var(--ink-muted); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <span class="tagline">组件 6 / 10 · 显示类 · 直接画在画面上，也可以由流程放进弹出层</span>
+    <h1>知识卡</h1>
+    <p class="lede">讲术语、装饰音、乐器和人声这些“要记住的知识”时用。蓝色虚线框住的就是一张知识卡：一张带纹理和折角的卡片，上面一行小字写类别（Italian term、Ornament、Woodwind），下面是斜体的大字名称，再往下一行一项：左边是项目名，右边是内容。内容有三种：文字；一小段谱（装饰音的记号和实际弹法、谱号），点了会响；音域条，一条从最低的 A 到最高的 C 的小键盘，亮出这个乐器能奏的音。几张卡上下排在一起时，音域条的刻度完全对齐，可以一格对一格地比。它的样子由自己画，用到的颜色全部取自主题常量：换一个主题只换颜色，大小和行为不变。这一页用的是 etude 主题。框外面的暖光背景、标题、卡片怎么排、下面的指令按钮，都不属于它。</p>
+    <div class="toolbar"><button class="chip" type="button" id="toggle-boundary" aria-pressed="true">显示组件边界</button></div>
+  </header>
+
+  <section class="stage" aria-label="题目画面">
+    <div class="stage-head"><p class="q" id="stage-q"><i>con dolore</i> 是什么意思？</p></div>
+    <div id="main-card"></div>
+  </section>
+
+  <section class="panel sim">
+    <h2>模拟流程：发给知识卡的指令</h2>
+    <p class="what">这些按钮不属于组件，是在模拟流程文件一步一步发给知识卡的指令；记录框列出知识卡发出的事件。点一行：这一行亮起来，有说明的弹出说明，两秒后自己淡掉；点到谱或音域条会响（装饰音按实际弹法响，音域条先响最低音再响最高音）；点卡片下边的空白处马上清掉。换卡时卡片翻过去再翻回来。播放时再按一下右上角的按钮，声音马上停下。</p>
+    <div class="chip-group"><span>换卡</span><div class="chips">
+      <button class="chip" type="button" data-cmd="showTerm">术语 con dolore</button>
+      <button class="chip" type="button" data-cmd="showOrnament">装饰音 upper mordent</button>
+      <button class="chip" type="button" data-cmd="showOboe">乐器 oboe</button>
+      <button class="chip" type="button" data-cmd="showClarinet">乐器 clarinet in B♭</button>
+    </div></div>
+    <div class="chip-group"><span>标记</span><div class="chips">
+      <button class="chip" type="button" data-cmd="highlight">亮起第一项</button>
+      <button class="chip" type="button" data-cmd="spot">聚光最后一项</button>
+      <button class="chip" type="button" data-cmd="label">给前两项贴 A、B</button>
+      <button class="chip" type="button" data-cmd="caption">在第一项下面弹出说明</button>
+      <button class="chip" type="button" data-cmd="checkFalse">核对“oboe 是单簧片”</button>
+      <button class="chip" type="button" data-cmd="checkTrue">核对“oboe 是木管”</button>
+      <button class="chip" type="button" data-cmd="fitIn">oboe 能不能奏 D4–E5</button>
+      <button class="chip" type="button" data-cmd="fitOut">oboe 能不能奏 G3–C5</button>
+    </div></div>
+    <div class="chip-group"><span>遮住和写出</span><div class="chips">
+      <button class="chip" type="button" data-cmd="maskHead">遮住名称（看弹法认装饰音）</button>
+      <button class="chip" type="button" data-cmd="maskMeaning">遮住意思</button>
+      <button class="chip" type="button" data-cmd="revealHead">写出名称</button>
+      <button class="chip" type="button" data-cmd="revealAll">全部写出来</button>
+    </div></div>
+    <div class="chip-group"><span>声音和其他</span><div class="chips">
+      <button class="chip" type="button" data-cmd="play">播放</button>
+      <button class="chip" type="button" data-cmd="stop">停</button>
+      <button class="chip" type="button" data-cmd="clear">清除</button>
+      <button class="chip" type="button" id="mode" aria-pressed="false">切到练习模式</button>
+    </div></div>
+    <div class="log" id="log" aria-live="polite" aria-label="知识卡发出的事件"></div>
+    <p class="sound-state" id="sound-state"></p>
+  </section>
+
+  <section class="panel">
+    <h2>小号卡片上下排：比音域</h2>
+    <p class="what">谱例题问“哪种乐器能用同样的音高奏这一段”时，流程把四张小号卡上下排在一起，每张只留音域一项，再让每张卡比一比这一段的音域（F2–D4）：虚线框是这一段，在乐器音域外面的部分是砖红色的斜纹，并写明太低还是太高。四条音域条的刻度一样，C2、C3、C4 上下对齐。</p>
+    <div class="mini-stage">
+      <p class="q">哪种乐器能用同样的音高奏 <i>F2–D4</i> 这一段？</p>
+      <div class="stack" id="compare"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>放进弹出层：谱例里点到一个术语</h2>
+    <p class="what">讲谱例时，孩子点到谱上的术语，流程把这张术语的知识卡放进弹出层。弹出层的暗底、滑上来的动作和关闭按钮是播放器的；卡片还是同一个组件，样子不变。下面的术语按钮代替谱上的术语。</p>
+    <div class="mini-stage pop-stage" id="pop-stage">
+      <p class="q">谱例第 1 小节写着：</p>
+      <div class="phrase"><button class="term-btn" type="button" data-term="dolce">dolce</button><button class="term-btn" type="button" data-term="sotto-voce">sotto voce</button><button class="term-btn" type="button" data-term="rit">poco rit.</button></div>
+      <div class="sheet" id="sheet" hidden><div class="sheet-body"><button class="sheet-close" type="button" id="sheet-close" aria-label="关闭">×</button><div id="pop-card"></div></div></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口（低耦合）</h2>
+    <div class="tablebox">
+      <table>
+        <thead><tr><th>方向</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td>输入</td><td>一叠卡片的内容（题目文件里写）：每张有编号、名称、类别，和若干项；每项有项目名、内容，内容是文字、一小段 ABC 谱，或音域（最低音和最高音），可以带一句点了才弹出的说明。显示哪一张；只显示哪几项（不给就全显示）；模式：讲题（点了发声、弹出说明）或练习（只显示流程标好的东西，点了没有反应）；速度；是否有播放按钮；小号；下面的名称（原文）。</td></tr>
+          <tr><td>外观</td><td>卡纸的纹理、折角、双线、小型大写的项目名、斜体的名称、标亮的紫光、深色的说明气泡、音域条的象牙和乌木琴键，都由知识卡自己画，不从外面的样式继承；画风和其他组件一样。用到的每一种颜色都是主题常量（<code>--th-paper-a</code>、<code>--th-ebony</code>、<code>--th-accent</code>、<code>--th-wrong</code> 等），由舞台或这一页按主题文件设好；换主题只换颜色，大小、字体和动画不变。谱、谱号、装饰音记号和名称里的升降号都用乐谱库画出来的字形。</td></tr>
+          <tr><td>指令</td><td><code>show(卡)</code> 翻到另一张（遮住的项换卡后仍遮着，其他标记清掉）；<code>highlight(项…)</code>；<code>spotlight(项…)</code>；<code>label({项: 文字})</code> 在项目名前面贴 A、B、C；<code>caption(项, 文字)</code> 在这一项下面弹出说明；<code>check(项, 说法, 对不对)</code> 把题目里的说法贴在这一项旁边，对的打紫色的勾，错的用砖红色划掉并打叉；<code>fit(项, 最低音, 最高音)</code> 在音域条上画出一段的音域，超出的部分是砖红色的斜纹，并写明在不在音域里；<code>mask(项… 或 'head')</code> 用纸条遮住；<code>reveal(…)</code> 纸条滑走、写出来；<code>play()</code> 按顺序响出卡上所有会响的项；<code>stop()</code> 停下，已经排好的音也马上停；<code>clear()</code>。</td></tr>
+          <tr><td>事件</td><td><code>rowTap</code>（哪张卡、哪一项、项目名、文字内容、音域的最低最高音、是否遮着）；<code>headTap</code>（哪张卡、名称、是否遮着）；<code>blankTap</code>；<code>playStart</code>、<code>playEnd</code>。</td></tr>
+          <tr><td>依赖</td><td>发声交给“音源”，和乐谱、键盘、音级梯、五度圈用的是同一个；颜色来自主题；知识卡不知道乐谱、选择题和别的组件的存在。说法对不对由题目文件给，知识卡只负责画出来；音域比得出来，由知识卡自己算。</td></tr>
+          <tr><td>谁决定排版</td><td>卡片放在哪里、几张上下排、放不放进弹出层、用大号还是小号，由流程决定；卡片占满给它的宽度，最宽 460。</td></tr>
+          <tr><td>出现在哪里</td><td>讲术语、装饰音、乐器的讲题里直接画在画面上；讲谱例时由流程放进弹出层，孩子点到谱上的术语才出现。练习里一般不出现，要用时流程先遮住会泄露答案的项（比如只留弹法、遮住名称）。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="credit">钢琴音色：FluidR3_GM（Frank Wen），由 gleitz/midi-js-soundfonts 转成 MP3，CC BY 3.0。</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="fact-card.js"></script>
+<script>
+/* ============================================================
+   Assembly: this page plays the role of the player and the question
+   file. It sets the theme's constants on the page, then holds the deck,
+   builds the cards, wires their events to a log, and shows how the
+   sound is doing; no card calls anything here directly.
+   ============================================================ */
+(function () {
+  var THEME = '../../content/themes/etude.yaml';
+  var lede = document.querySelector('.lede');
+  var stateEl = document.getElementById('sound-state');
+  var PHASE = { idle: '还没开始准备', loading: '正在加载钢琴采样', ready: '就绪', failed: '没有声音' };
+  SoundSource.watch(function () {
+    var s = SoundSource.status();
+    stateEl.innerHTML = '声音：<b>' + PHASE[s.phase] + '</b>' + (s.detail ? '，' + s.detail.replace(/</g, '&lt;') : '') + '（音频引擎：' + s.engine + '；静音片段：' + s.media + '）';
+  });
+
+  if (!window.jsyaml || !window.ThemeConstants) { lede.textContent = '主题没有加载出来，请刷新页面再试。'; return; }
+
+  // The deck a question file would hold: adapted examples, not copied
+  // exam items.
+  var deck = {
+    'con-dolore': { head: 'con dolore', tag: 'Italian term', rows: [
+      { field: 'meaning', label: 'Meaning', text: 'with grief, sorrowfully', note: 'dolore = grief, pain' },
+      { field: 'words', label: 'Word by word', text: 'con = with · dolore = grief' },
+      { field: 'family', label: 'Same family', text: 'dolente, doloroso: sorrowful' }
+    ] },
+    'upper-mordent': { head: 'upper mordent', tag: 'Ornament', rows: [
+      { field: 'sign', label: 'Sign', abc: 'L:1/4\n!uppermordent!c', note: 'tap to hear it played out' },
+      { field: 'played', label: 'Played', abc: 'L:1/16\ncdc2' },
+      { field: 'meaning', label: 'Meaning', text: 'main note, the note above, main note, quickly' }
+    ] },
+    oboe: { head: 'oboe', tag: 'Woodwind', rows: [
+      { field: 'family', label: 'Family', text: 'woodwind' },
+      { field: 'reed', label: 'Reed', text: 'double reed', note: 'two blades of cane vibrate together' },
+      { field: 'transposing', label: 'Transposing', text: 'no, sounds as written' },
+      { field: 'clef', label: 'Clef', text: 'treble', abc: 'K:C clef=treble\nx' },
+      { field: 'range', label: 'Range (sounding)', range: ['Bb3', 'A6'] }
+    ] },
+    clarinet: { head: 'clarinet in B♭', tag: 'Woodwind', rows: [
+      { field: 'family', label: 'Family', text: 'woodwind' },
+      { field: 'reed', label: 'Reed', text: 'single reed' },
+      { field: 'transposing', label: 'Transposing', text: 'yes, sounds a major 2nd lower than written', abc: 'L:1/2\n"^written"c "^sounds"_B', note: 'written C sounds B♭' },
+      { field: 'range', label: 'Range (sounding)', range: ['D3', 'Bb6'] }
+    ] },
+    flute: { head: 'flute', tag: 'Woodwind', rows: [{ field: 'range', label: 'Range (sounding)', range: ['C4', 'C7'] }] },
+    bassoon: { head: 'bassoon', tag: 'Woodwind', rows: [{ field: 'range', label: 'Range (sounding)', range: ['Bb1', 'E5'] }] },
+    trumpet: { head: 'trumpet in B♭', tag: 'Brass', rows: [{ field: 'range', label: 'Range (sounding)', range: ['E3', 'Bb5'] }] },
+    dolce: { head: 'dolce', tag: 'Italian term', rows: [{ field: 'meaning', label: 'Meaning', text: 'sweetly' }, { field: 'words', label: 'Related', text: 'dolcissimo: very sweetly' }] },
+    'sotto-voce': { head: 'sotto voce', tag: 'Italian term', rows: [{ field: 'meaning', label: 'Meaning', text: 'in an undertone, very quietly' }, { field: 'words', label: 'Word by word', text: 'sotto = under · voce = voice' }] },
+    rit: { head: 'poco rit.', tag: 'Italian term', rows: [{ field: 'meaning', label: 'Meaning', text: 'a little slower, gradually' }, { field: 'words', label: 'In full', text: 'poco ritardando' }] }
+  };
+
+  document.body.setAttribute('data-boundary', 'on');
+  window.tlEvents = [];
+  var logEl = document.getElementById('log');
+  var t0 = performance.now();
+  function log(ev) {
+    window.tlEvents.push(ev);
+    var line = document.createElement('div');
+    var t = ((performance.now() - t0) / 1000).toFixed(1);
+    var data = Object.assign({}, ev); delete data.type;
+    line.innerHTML = '<span class="t">' + t + 's</span> ' + ev.type + ' ' + JSON.stringify(data).replace(/</g, '&lt;');
+    logEl.appendChild(line); logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  var boundaryBtn = document.getElementById('toggle-boundary');
+  boundaryBtn.addEventListener('click', function () {
+    var on = document.body.getAttribute('data-boundary') !== 'on';
+    document.body.setAttribute('data-boundary', on ? 'on' : 'off');
+    boundaryBtn.setAttribute('aria-pressed', String(on));
+  });
+
+  // Everything that draws waits for the theme: the cards read its constants.
+  function start() {
+    var main = new FactCard(document.getElementById('main-card'), { entries: deck, entry: 'con-dolore', playable: true, sound: SoundSource, onEvent: log });
+    var QUESTION = { 'con-dolore': '<i>con dolore</i> 是什么意思？', 'upper-mordent': '括号里写出来的是哪种装饰音？', oboe: '<i>oboe</i> 是单簧片乐器吗？', clarinet: '<i>clarinet in B♭</i> 是移调乐器吗？' };
+    var qEl = document.getElementById('stage-q');
+    function showCard(id) { if (main.entryId !== id) main.show(id); qEl.innerHTML = QUESTION[id]; }
+    // A command for one card waits for the turn-over to finish.
+    function onCard(id, fn) { var turn = main.entryId !== id; showCard(id); setTimeout(fn, turn ? 700 : 0); }
+    var rowsNow = function () { return main.rowsShown().map(function (r) { return r.field; }); };
+
+    var commands = {
+      showTerm: function () { showCard('con-dolore'); },
+      showOrnament: function () { showCard('upper-mordent'); },
+      showOboe: function () { showCard('oboe'); },
+      showClarinet: function () { showCard('clarinet'); },
+      highlight: function () { main.highlight([rowsNow()[0]]); },
+      spot: function () { var f = rowsNow(); main.spotlight([f[f.length - 1]]); },
+      label: function () { var f = rowsNow(), m = {}; m[f[0]] = 'A'; m[f[1]] = 'B'; main.label(m); },
+      caption: function () { var r = main.rowsShown()[0]; main.caption(r.field, FactCard.inline(r.note || r.text || r.label, 17)); },
+      checkFalse: function () { onCard('oboe', function () { main.check('reed', 'single reed', false); }); },
+      checkTrue: function () { onCard('oboe', function () { main.check('family', 'woodwind', true); }); },
+      fitIn: function () { onCard('oboe', function () { main.fit('range', 'D4', 'E5'); }); },
+      fitOut: function () { onCard('oboe', function () { main.fit('range', 'G3', 'C5'); }); },
+      maskHead: function () { onCard('upper-mordent', function () { main.mask('head'); }); },
+      maskMeaning: function () { main.mask('meaning'); },
+      revealHead: function () { main.reveal('head'); },
+      revealAll: function () { main.reveal(); },
+      play: function () { main.play(); },
+      stop: function () { main.stop(); },
+      clear: function () { main.clear(); }
+    };
+    document.querySelectorAll('[data-cmd]').forEach(function (b) {
+      b.addEventListener('click', function () { commands[b.getAttribute('data-cmd')](); });
+    });
+
+    var modeBtn = document.getElementById('mode');
+    modeBtn.addEventListener('click', function () {
+      var practice = main.o.mode !== 'practice';
+      main.o.mode = practice ? 'practice' : 'lecture';
+      modeBtn.setAttribute('aria-pressed', String(practice));
+      modeBtn.textContent = practice ? '切回讲题模式' : '切到练习模式';
+      main.build();
+      log({ type: '(流程把模式设成 ' + main.o.mode + ')' });
+    });
+
+    // Four small cards stacked by the workflow, each keeping only its range
+    // and fitted against the part's range.
+    var compareHost = document.getElementById('compare'), compare = [];
+    ['flute', 'oboe', 'bassoon', 'trumpet'].forEach(function (id, i) {
+      var el = document.createElement('div'); el.id = 'cmp-' + id; compareHost.appendChild(el);
+      var c = new FactCard(el, { entries: deck, entry: id, fields: ['range'], compact: true, sound: SoundSource, onEvent: log });
+      c.label({ range: 'ABCD'.charAt(i) });
+      c.fit('range', 'F2', 'D4');
+      compare.push(c);
+    });
+
+    // The pop-up: the player's sheet holding a card the workflow fills.
+    var sheet = document.getElementById('sheet'), pop = null;
+    document.querySelectorAll('[data-term]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        sheet.hidden = false;
+        if (!pop) pop = new FactCard(document.getElementById('pop-card'), { entries: deck, entry: b.dataset.term, sound: SoundSource, onEvent: log });
+        else if (pop.entryId !== b.dataset.term) { pop.build(); pop.show(b.dataset.term); }
+        else pop.build();
+        pop.highlight(['meaning']);
+      });
+    });
+    document.getElementById('sheet-close').addEventListener('click', function () { sheet.hidden = true; if (pop) pop.stop(); });
+    window.tlMain = main; window.tlCompare = compare;
+    window.tlPop = function () { return pop; };
+
+    // A rebuild redraws a card at its new width; marks and masks are state, so they come back.
+    var all = function () { return [main].concat(compare); };
+    var lastW = window.innerWidth, rt = null;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; lastW = window.innerWidth;
+      clearTimeout(rt);
+      rt = setTimeout(function () { all().forEach(function (c) { c.build(); }); }, 180);
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { all().forEach(function (c) { c.build(); }); });
+  }
+
+  ThemeConstants.load(THEME).then(function (theme) {
+    ThemeConstants.apply(document.documentElement, theme);
+    start();
+  }, function () {
+    lede.textContent = '主题没有加载出来，请刷新页面再试。';
+  });
+})();
+</script>

@@ -1,12 +1,12 @@
-// Screenshots each part of the fill-in prototype at one width: the main
+// Screenshots each part of the fill-in's demo page at one width: the main
 // stage empty, while typing, after workflow commands and after a check;
 // every look in the gallery after typing and a check; the lecture run
 // while a key is pressed and at its end.
-// Usage: node fishots.mjs <width> <out-dir>
-import { openPage } from '../tools/serve.mjs';
+// Usage: node fillshots.mjs <width> <out-dir>
+import { openPage } from './serve.mjs';
 
 const [, , width = '390', out = '.'] = process.argv;
-const { page, errors, close } = await openPage('proto/c9-fill.html', width, 1000, 2);
+const { page, errors, close } = await openPage('components/fill/demo.html', width, 1000, 2);
 const shot = async (sel, name) => { const el = await page.$(sel); await el.scrollIntoViewIfNeeded(); await page.waitForTimeout(150); await el.screenshot({ path: `${out}/${name}-${width}.png` }); };
 const tap = async (sel) => { const el = await page.$(sel); await el.scrollIntoViewIfNeeded(); const b = await el.boundingBox(); await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); await page.waitForTimeout(60); };
 const key = (host, k) => tap(`${host} .tl-fi-key[data-key="${k}"]`);

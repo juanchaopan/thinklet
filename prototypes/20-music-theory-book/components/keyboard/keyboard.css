@@ -1,0 +1,105 @@
+/* ---------- Keyboard component: it defines its whole look here; every colour is a theme constant (--th-<name>) and nothing else comes from the page ---------- */
+.tl-kb {
+  /* Local names for the theme constants the keyboard draws with; alpha variants are mixed with transparent. */
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 22%, transparent);
+  --tl-light: var(--th-light);
+  --tl-dark: var(--th-dark);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-caption: var(--th-caption);
+  /* The near-black brown of shadows cast by the wooden case. */
+  --tl-soot: color-mix(in srgb, var(--th-shade) 55%, var(--th-dark));
+  /* Mahogany of the case: the theme's dark wood warmed with its red, lit at the top, darker towards the keys' bed. */
+  --tl-mahogany: color-mix(in srgb, var(--th-wood-ink) 85%, var(--th-wrong));
+  --tl-wood-top: color-mix(in srgb, var(--tl-mahogany) 85%, var(--th-wood-b));
+  --tl-wood-mid: color-mix(in srgb, var(--tl-mahogany) 81%, var(--th-dark));
+  --tl-wood-low: color-mix(in srgb, var(--tl-mahogany) 54%, var(--th-dark));
+  /* Red felt along the back of the keys, and the dark bed the keys sit in. */
+  --tl-felt-a: color-mix(in srgb, var(--th-wrong) 77%, var(--th-dark));
+  --tl-felt-b: color-mix(in srgb, var(--th-wrong) 47%, var(--th-dark));
+  --tl-bed: color-mix(in srgb, var(--tl-mahogany) 22%, var(--th-dark));
+  --tl-bed-lip: color-mix(in srgb, var(--tl-mahogany) 31%, var(--th-dark));
+  /* Ivory of the white keys, from its shaded edges to its lit face. */
+  --tl-ivory: var(--th-ivory);
+  --tl-ivory-top: color-mix(in srgb, var(--th-sheet-b) 93%, var(--th-shade));
+  --tl-ivory-face: color-mix(in srgb, var(--th-ivory) 50%, var(--th-sheet-b));
+  --tl-ivory-low: color-mix(in srgb, var(--th-sheet-b) 95%, var(--th-shade));
+  --tl-ivory-lip: color-mix(in srgb, var(--th-paper-b) 90%, var(--th-shade));
+  --tl-ivory-down-top: color-mix(in srgb, var(--th-sheet-b) 85%, var(--th-shade));
+  --tl-ivory-down-face: var(--th-sheet-b);
+  --tl-ivory-down-mid: color-mix(in srgb, var(--th-sheet-b) 96%, var(--th-shade));
+  --tl-ivory-down-low: color-mix(in srgb, var(--th-sheet-b) 90%, var(--th-shade));
+  --tl-ivory-down-lip: color-mix(in srgb, var(--th-paper-b) 85%, var(--th-shade));
+  /* Ebony of the black keys. */
+  --tl-ebony: var(--th-ebony);
+  --tl-ebony-top: color-mix(in srgb, var(--th-ebony) 67%, var(--th-dark));
+  --tl-ebony-deep: color-mix(in srgb, var(--th-ebony) 50%, var(--th-dark));
+  --tl-ebony-edge: color-mix(in srgb, var(--th-ebony) 93%, var(--th-light));
+  --tl-ebony-lip: color-mix(in srgb, var(--th-ebony) 97%, var(--th-light));
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+}
+.tl-case { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; border-radius: 20px; padding: 0 12px 14px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--th-light-warm) 20%, transparent), transparent 28%),
+    repeating-linear-gradient(91deg, color-mix(in srgb, var(--tl-dark) 7%, transparent) 0 2px, transparent 2px 7px, color-mix(in srgb, var(--th-light-warm) 4%, transparent) 7px 9px, transparent 9px 15px),
+    linear-gradient(180deg, var(--tl-wood-top) 0%, var(--tl-wood-mid) 55%, var(--tl-wood-low) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--th-light-warm) 35%, transparent), inset 0 -3px 8px color-mix(in srgb, var(--tl-dark) 45%, transparent), 0 2px 3px color-mix(in srgb, var(--tl-soot) 30%, transparent), 0 26px 50px -18px color-mix(in srgb, var(--tl-soot) 60%, transparent); }
+/* Rows start at the same left edge, so a wrapped keyboard reads as one instrument continuing on the next line. */
+.tl-rows { display: flex; flex-direction: column; align-items: flex-start; }
+.tl-row { position: relative; }
+.tl-lane { position: relative; }
+.tl-felt { height: 6px; border-radius: 2px 2px 0 0; background: linear-gradient(180deg, var(--tl-felt-a), var(--tl-felt-b)); box-shadow: 0 1px 2px color-mix(in srgb, var(--tl-dark) 55%, transparent); }
+.tl-keys { position: relative; background: var(--tl-bed); border-radius: 0 0 8px 8px; box-shadow: 0 3px 0 var(--tl-bed-lip), 0 6px 10px color-mix(in srgb, var(--tl-dark) 35%, transparent); }
+.tl-key { position: absolute; top: 0; padding: 0; margin: 0; border: 0; cursor: pointer; font: inherit; -webkit-tap-highlight-color: transparent; transition: transform .07s, background .18s, filter .4s, box-shadow .18s; }
+.tl-key:focus { outline: none; }
+.tl-white { border-radius: 0 0 7px 7px; z-index: 1;
+  background: linear-gradient(180deg, var(--tl-ivory-top) 0%, var(--tl-ivory) 9%, var(--tl-ivory-face) 82%, var(--tl-ivory-low) 100%);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--th-shade) 18%, transparent), inset 1px 0 0 color-mix(in srgb, var(--tl-light) 90%, transparent), inset 0 -6px 0 var(--tl-ivory-lip), inset 0 -7px 0 color-mix(in srgb, var(--tl-light) 60%, transparent); }
+.tl-black { border-radius: 0 0 5px 5px; z-index: 2;
+  background: linear-gradient(180deg, var(--tl-ebony-top) 0%, var(--tl-ebony) 6%, var(--tl-ebony-deep) 70%, var(--tl-ebony) 92%, var(--tl-ebony-edge) 100%);
+  box-shadow: inset 0 -7px 0 var(--tl-ebony-lip), inset 1px 0 1px color-mix(in srgb, var(--tl-light) 14%, transparent), inset -1px 0 1px color-mix(in srgb, var(--tl-light) 6%, transparent), 0 3px 4px color-mix(in srgb, var(--tl-dark) 55%, transparent), 2px 0 3px color-mix(in srgb, var(--tl-dark) 25%, transparent); }
+.tl-black::after { content: ""; position: absolute; left: 18%; right: 18%; top: 8%; height: 46%; border-radius: 3px; background: linear-gradient(180deg, color-mix(in srgb, var(--tl-light) 16%, transparent), transparent); pointer-events: none; }
+.tl-white.tl-down { transform: translateY(2px); background: linear-gradient(180deg, var(--tl-ivory-down-top) 0%, var(--tl-ivory-down-face) 12%, var(--tl-ivory-down-mid) 84%, var(--tl-ivory-down-low) 100%); box-shadow: inset -1px 0 0 color-mix(in srgb, var(--th-shade) 20%, transparent), inset 0 -3px 0 var(--tl-ivory-down-lip); }
+.tl-black.tl-down { transform: translateY(2px); box-shadow: inset 0 -3px 0 var(--tl-ebony-lip), 0 1px 2px color-mix(in srgb, var(--tl-dark) 55%, transparent); }
+.tl-white.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 30%, var(--tl-light)) 0%, color-mix(in srgb, var(--tl-glow) 16%, var(--tl-light)) 40%, color-mix(in srgb, var(--tl-glow) 38%, var(--tl-light)) 100%); box-shadow: inset 0 0 18px color-mix(in srgb, var(--tl-glow) 45%, transparent), inset 0 -6px 0 color-mix(in srgb, var(--tl-glow) 55%, var(--tl-light)); }
+.tl-black.tl-lit { background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 55%, var(--tl-dark)) 0%, var(--tl-glow) 85%, color-mix(in srgb, var(--tl-glow) 70%, var(--tl-light)) 100%); box-shadow: inset 0 -6px 0 color-mix(in srgb, var(--tl-glow) 60%, var(--tl-dark)), 0 0 16px 2px var(--tl-glow-soft), 0 0 4px var(--tl-glow); }
+.tl-key.tl-dim { filter: brightness(.42) saturate(.6); }
+.tl-kb.kbd .tl-key:focus-visible { box-shadow: inset 0 0 0 3px var(--tl-glow); }
+.tl-letter { position: absolute; left: 0; right: 0; bottom: 12px; text-align: center; font: 600 15px/1 var(--tl-serif); color: color-mix(in srgb, var(--th-shade) 55%, transparent); pointer-events: none; }
+.tl-letter sub { font-size: 11px; vertical-align: baseline; position: relative; top: 2px; margin-left: 1px; }
+.tl-black .tl-letter { color: color-mix(in srgb, var(--th-light-warm) 55%, transparent); bottom: 10px; font-size: 13px; }
+.tl-compact .tl-letter { font-size: 13px; bottom: 8px; }
+.tl-badge { position: absolute; left: 50%; width: 26px; height: 26px; margin-left: -13px; border-radius: 50%; display: grid; place-items: center; font: 600 16px/1 var(--tl-serif); color: var(--tl-light); pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-white .tl-badge { bottom: 34px; }
+.tl-black .tl-badge { bottom: 12px; width: 22px; height: 22px; margin-left: -11px; font-size: 14px; }
+/* Overlays positioned over the whole keyboard. */
+.tl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.tl-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.tl-arc { fill: none; stroke: color-mix(in srgb, var(--tl-glow) 55%, var(--tl-light)); stroke-width: 2.2; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--tl-glow)); stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw .55s cubic-bezier(.3, .8, .3, 1) forwards; }
+/* A one-letter step mark is a 22px disc, so marks of neighbouring semitones never touch, even with 40px keys. */
+.tl-step { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; font: italic 600 14px/1 var(--tl-serif); color: var(--tl-light); white-space: nowrap;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tl-soot) 50%, transparent), 0 0 12px var(--tl-glow-soft); animation: pop .4s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-step.wide { width: auto; padding: 0 6px; }
+.tl-count { position: absolute; transform: translate(-50%, -50%); font: 600 22px/1 var(--tl-serif); color: var(--th-light-warm); text-shadow: 0 0 10px var(--tl-glow), 0 0 2px var(--tl-glow); animation: rise .5s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-spot { position: absolute; pointer-events: none; border-radius: 12px; background: radial-gradient(70% 90% at 50% 0%, color-mix(in srgb, var(--tl-glow) 38%, transparent), transparent 75%); mix-blend-mode: screen; opacity: 0; transition: opacity .45s; }
+.tl-spot.on { opacity: 1; }
+.tl-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-bubble { position: absolute; z-index: 5; transform: translate(-50%, -100%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--tl-dark) 50%, transparent); animation: bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-bubble.out { opacity: 0; }
+.tl-bubble::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-bubble b { font: 600 20px/1 var(--tl-serif); letter-spacing: .02em; }
+.tl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
+.tl-play { position: absolute; top: 8px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px color-mix(in srgb, var(--th-light-warm) 35%, transparent); transition: transform .1s; }
+.tl-play:active { transform: scale(.94); }
+.tl-play:focus { outline: none; }
+.tl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
+.tl-play svg { width: 18px; height: 18px; fill: currentColor; }
+.tl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes rise { from { transform: translate(-50%, -20%); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
+@keyframes bubble { from { transform: translate(-50%, -80%) scale(.85); opacity: 0; } to { transform: translate(-50%, -100%) scale(1); opacity: 1; } }
+@keyframes ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }

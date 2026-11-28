@@ -1,0 +1,36 @@
+<title>关闭 close</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <h1>关闭 <code>close</code></h1>
+  <p class="lede">每道讲题左上角的圆形按钮，上面一个叉。孩子按它就离开讲题、回到书本那一页。它自己不做离开这件事，只发出 <code>leave.press</code>，由播放器接到“回到书本”上。外形照字幕条：深色玻璃、暖白的叉，按钮上不写字。</p>
+
+  <div id="demo"></div>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td>无</td></tr>
+      <tr><th>能力接口</th><td>离开 <code>leave</code></td></tr>
+      <tr><th>指令</th><td>无（流程不改它的样子）</td></tr>
+      <tr><th>事件</th><td><code>leave.press</code>：孩子按了它</td></tr>
+    </table>
+    <p class="note">它是控件共用部分 <code>controls-kit/controls-kit.js</code> 里的圆形图标按钮（<code>StageTheme.button</code>），自己只写图标和读屏文字“回到书本”。颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../controls-kit/controls-kit.js"></script>
+<script src="close.js"></script>
+<script src="../controls-kit/demo-kit.js"></script>
+<script>
+ControlsDemo.start({
+  id: 'close',
+  place: 'top',
+  note: '关闭没有指令。在舞台上点它，下面会记下它发出的事件。'
+});
+</script>

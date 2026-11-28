@@ -1,0 +1,49 @@
+<title>换题 question-menu</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <h1>换题 <code>question-menu</code></h1>
+  <p class="lede">讲题顶上的玻璃按钮，一个列表图标加一个小箭头。孩子按它，掉下这本书的题目列表，每道题前面是圈起来的题号，当前这道题标亮。选另一道题就发出 <code>questions.pick</code>，由播放器换题；点列表外面或按 Esc 收起。列表朝屏幕上有空的一边展开：按钮在右半边时贴着按钮的右边，否则贴着左边，而且不出屏幕；下面放不下所有题时列表自己滚动。</p>
+
+  <div id="demo"></div>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td><code>items</code>：这本书的题目 <code>[{id, no, title}]</code>（编号、第几题、标题）；<code>current</code>：当前题的编号</td></tr>
+      <tr><th>能力接口</th><td>题目 <code>questions</code></td></tr>
+      <tr><th>指令</th><td><code>questions.set {items, current}</code>：换题目列表或当前题</td></tr>
+      <tr><th>事件</th><td><code>questions.pick {id}</code>：孩子选了另一道题</td></tr>
+    </table>
+    <p class="note">只有一道题时按钮按不了。玻璃、弹出列表、题号圈和图标来自控件共用部分 <code>controls-kit/controls-kit.js</code>（<code>StageTheme</code>）；颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../controls-kit/controls-kit.js"></script>
+<script src="question-menu.js"></script>
+<script src="../controls-kit/demo-kit.js"></script>
+<script>
+(function () {
+  var BOOK = [{ id: 'q01', no: '1', title: '判断拍号' }, { id: 'q02', no: '2', title: '数音程' }, { id: 'q03', no: '3', title: '写出音阶' }];
+  var TITLES = ['判断拍号', '数音程', '写出音阶', '补上休止符', '移调', '认装饰音', '找出和弦', '写出终止式', '认乐器', '读术语', '改写节拍', '旋律填空'];
+  var LONG = TITLES.map(function (t, i) { return { id: 'q' + (i + 1), no: String(i + 1), title: t }; });
+
+  ControlsDemo.start({
+    id: 'question-menu',
+    place: 'top',
+    input: { items: BOOK, current: 'q01' },
+    note: '在舞台上按它，展开题目列表，再选一道题。',
+    commands: [
+      { key: 'second', label: '当前题换成第 2 题', code: "questions.set {current: 'q02'}", run: function (c) { c.call('questions.set', { current: 'q02' }); } },
+      { key: 'long', label: '换成 12 道题的书', code: 'questions.set {items, current}', run: function (c) { c.call('questions.set', { items: LONG, current: 'q1' }); } },
+      { key: 'single', label: '只有一道题（按不了）', code: 'questions.set {items, current}', run: function (c) { c.call('questions.set', { items: BOOK.slice(0, 1), current: 'q01' }); } },
+      { key: 'again', label: '从头再来', code: 'questions.set {items, current}', run: function (c) { c.call('questions.set', { items: BOOK, current: 'q01' }); } }
+    ]
+  });
+})();
+</script>

@@ -1,0 +1,129 @@
+/* ---------- Note-placing component: it defines its whole look here; every colour is a theme constant (--th-*) and nothing else comes from the page ---------- */
+/* The look follows the other lesson components: a short stave on cream paper, drawn by the score library, so its clef, key and given note look exactly like the score's; the note the child writes is the same engraved whole note in dark ink. Under the paper a sunken tray of ivory keys with the accidentals and an ebony key to rub the note out. Violet light for whatever the workflow lights, counts or confirms; brick red with a cross for what is wrong. */
+.tl-np {
+  --tl-paper-a: var(--th-sheet-a);
+  --tl-paper-b: var(--th-sheet-b);
+  --tl-paper-back: var(--th-paper-back);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  --tl-light: var(--th-light);
+  --tl-shade: var(--th-shade);
+  --tl-edge: var(--th-edge);
+  --tl-dark: var(--th-dark);
+  --tl-staff: color-mix(in srgb, var(--th-staff) 62%, transparent);
+  --tl-notes: var(--th-ink-strong);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-glow-ink: var(--th-accent-ink);
+  --tl-wrong: var(--th-wrong);
+  --tl-ivory: var(--th-ivory);
+  --tl-ebony: var(--th-ebony);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  /* The keys' material: the lip under an ivory key, the ink on an ebony key, the ebony key's sides. */
+  --tl-key-lip: color-mix(in srgb, var(--th-edge) 20%, var(--th-paper-back));
+  --tl-ebony-ink: color-mix(in srgb, var(--th-light-warm) 35%, var(--th-light));
+  --tl-ebony-top: color-mix(in srgb, var(--th-ebony) 90%, var(--th-paper-back));
+  --tl-ebony-low: color-mix(in srgb, var(--th-ebony) 70%, var(--th-dark));
+  --tl-ebony-lip: color-mix(in srgb, var(--th-ebony) 30%, var(--th-dark));
+  /* Paper grain: a theme colour shown through a noise mask, so the grain follows the theme too. */
+  --tl-grain: var(--th-edge);
+  --tl-grain-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  --tl-ease: cubic-bezier(.6, 0, .25, 1);
+  position: relative; min-width: 0; width: 100%; margin: 0 auto; color: var(--tl-ink);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none;
+}
+/* Drawing a state directly (a step back, a rebuild): nothing glides or pops. */
+.tl-np.tl-np-still, .tl-np.tl-np-still * { transition: none !important; animation: none !important; }
+.tl-np-paper { position: relative; border-radius: 14px; padding: 4px 10px; background: radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--tl-light) 90%, transparent), transparent 55%), linear-gradient(175deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--tl-light) 90%, transparent) inset, 0 2px 4px color-mix(in srgb, var(--tl-shade) 8%, transparent), 0 14px 30px -12px color-mix(in srgb, var(--tl-shade) 30%, transparent); transition: box-shadow .3s; }
+.tl-np-paper::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .55; mix-blend-mode: multiply; background: var(--tl-grain);
+  -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
+.tl-np.kbd .tl-np-paper:focus-within { box-shadow: 0 1px 0 color-mix(in srgb, var(--tl-light) 90%, transparent) inset, 0 14px 30px -12px color-mix(in srgb, var(--tl-shade) 30%, transparent), 0 0 0 3px var(--tl-glow); }
+/* The small question's number sits in the paper's top corner, over the clef's column, where no note ever goes. */
+.tl-np-tag { position: absolute; top: 8px; left: 12px; z-index: 2; font: italic 600 19px/1.2 var(--tl-serif); color: var(--tl-ink-soft); pointer-events: none; }
+/* The stave: a finger anywhere on it puts the answer note on the line or space at that height, and dragging moves it, so the page does not scroll from here. */
+.tl-np-svgbox { position: relative; touch-action: none; cursor: pointer; outline: none; }
+.tl-np-locked .tl-np-svgbox { cursor: default; touch-action: manipulation; }
+.tl-np-svgbox svg { display: block; overflow: visible; }
+/* The score library keeps its drawing in a box of the drawing's proportions; notes may go above and below it, into the room the stave box keeps. */
+.tl-np-svgbox .abcjs-container { display: block !important; overflow: visible !important; }
+.tl-np-svgbox .abcjs-staff, .tl-np-svgbox .abcjs-bar, .tl-np-svgbox .abcjs-ledger { fill: var(--tl-staff); stroke: var(--tl-staff); }
+.tl-np-svgbox .abcjs-note, .tl-np-svgbox .abcjs-staff-extra, .tl-np-svgbox .abcjs-clef, .tl-np-svgbox .abcjs-key-signature { fill: var(--tl-notes); transition: fill .3s; }
+.tl-np-svgbox .abcjs-note.tl-lit, .tl-np-svgbox .abcjs-note.tl-lit path { fill: var(--tl-glow); }
+.tl-np-svgbox .abcjs-note.tl-lit { filter: drop-shadow(0 0 2.5px var(--tl-glow-soft)); }
+/* The band of the line or space under the finger while a note is dragged. */
+.tl-np-band { fill: var(--tl-glow-soft); stroke: none; opacity: 0; transition: opacity .15s, y .06s; }
+.tl-np-band.on { opacity: .8; }
+.tl-np-ledger { fill: var(--tl-staff); stroke: none; transform-box: fill-box; transform-origin: center; transition: opacity .18s; }
+.tl-np-ledger.tl-np-grow { animation: tl-np-grow .2s var(--tl-ease) both; }
+.tl-np-ledger.tl-np-gone { opacity: 0; }
+/* A note glides from line to line; while a finger drags it, it follows quickly. */
+.tl-np-note { transition: transform .18s var(--tl-ease), opacity .2s; }
+.tl-np-col.tl-np-dragging .tl-np-note { transition-duration: .06s; }
+.tl-np-col.tl-np-empty .tl-np-note { opacity: 0; }
+.tl-np-body { fill: var(--tl-ink); stroke: none; transition: fill .3s; }
+.tl-np-pop { animation: tl-np-pop .3s cubic-bezier(.2, 1.5, .4, 1) both; transform-origin: 0 0; }
+/* The accidental's glyph keeps its own placement; the group around it is what is written in. */
+.tl-np-acc { transform-origin: 0 0; }
+.tl-np-acc.tl-np-write { animation: tl-np-write .26s cubic-bezier(.2, 1.3, .4, 1) both; }
+.tl-np-col.tl-lit .tl-np-body { fill: var(--tl-glow); filter: drop-shadow(0 0 2.5px var(--tl-glow-soft)); }
+.tl-np-col.tl-np-right .tl-np-body { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
+.tl-np-col.tl-np-wrong .tl-np-body { fill: var(--tl-wrong); }
+/* The right note shown beside a wrong one, in violet. */
+.tl-np-reveal .tl-np-body { fill: var(--tl-glow); filter: drop-shadow(0 0 3px var(--tl-glow-soft)); }
+.tl-np-reveal .tl-np-ledger { fill: color-mix(in srgb, var(--tl-glow) 70%, transparent); }
+/* Counting up from the given note: a violet note climbs one line or space at a time and leaves a dot on each. */
+.tl-np-ghost .tl-np-body { fill: var(--tl-glow); opacity: .5; }
+.tl-np-ghost { transition: transform .2s var(--tl-ease), opacity .3s; }
+.tl-np-dot { fill: var(--tl-glow); stroke: none; opacity: .6; transform-box: fill-box; transform-origin: center; }
+.tl-np-dot.tl-np-pop { transform-origin: center; }
+.tl-np-num { font: italic 600 8px/1 var(--tl-serif); fill: var(--tl-glow-ink); paint-order: stroke; stroke: color-mix(in srgb, var(--tl-paper-a) 90%, transparent); stroke-width: 2.2px; transform-box: fill-box; transform-origin: center; }
+/* A key that has no note to go on: the column flashes a dashed brick-red frame. */
+.tl-np-flash { fill: none; stroke: var(--tl-wrong); stroke-width: 1.1; stroke-dasharray: 3 2; opacity: .85; }
+.tl-np-ripple { fill: none; stroke: var(--tl-glow); stroke-width: 1.2; transform-box: fill-box; transform-origin: center; animation: tl-np-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+/* HTML marks over the paper: seals over a note, letters above their columns, and the caret under the column the keys act on. */
+.tl-np-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.tl-np-seal { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; display: grid; place-items: center; box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 90%, transparent); }
+.tl-np-seal svg { width: 13px; height: 13px; fill: none; stroke: var(--tl-light); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.tl-np-seal.tl-np-yes { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 60%, var(--tl-light)), var(--tl-glow)); }
+.tl-np-seal.tl-np-no { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-wrong) 60%, var(--tl-light)), var(--tl-wrong)); box-shadow: 0 4px 10px -2px color-mix(in srgb, var(--tl-wrong) 35%, transparent), 0 0 0 2px color-mix(in srgb, var(--tl-light) 90%, transparent); }
+.tl-np-badge { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; display: grid; place-items: center; font: 600 14px/1 var(--tl-serif); color: var(--tl-light);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); transition: top .18s var(--tl-ease); }
+.tl-np-overlay .tl-np-pop { animation-name: tl-np-pop-html; transform-origin: center; }
+.tl-np-caret { position: absolute; width: 18px; height: 4px; margin-left: -9px; border-radius: 2px; background: var(--tl-glow); box-shadow: 0 0 8px var(--tl-glow-soft); transition: left .3s var(--tl-ease), opacity .2s; }
+/* Words under each answer column, and the name under the whole stave, in the serif of the exam paper. */
+.tl-np-under { position: relative; height: 24px; }
+.tl-np-under span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; font: italic 500 16px/1.3 var(--tl-serif); color: var(--tl-ink); }
+.tl-np-name { text-align: center; margin-top: 8px; font: italic 600 19px/1.25 var(--tl-serif); color: var(--tl-ink); }
+/* The keys: ivory accidental keys in a sunken tray, an ebony key to rub the note out; the accidental the note carries stays pressed in. The tray folds away once the answer is handed in, so the space above it lives inside the folding part. */
+.tl-np-padwrap { overflow: hidden; padding: 0 2px; margin: 0 -2px; }
+.tl-np-pad { display: grid; grid-template-columns: repeat(var(--kc, 6), var(--kw, 48px)); justify-content: center; gap: 8px; margin: 14px 0 4px; padding: 10px; border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tl-paper-back) 50%, var(--tl-paper-b)), var(--tl-paper-back)); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tl-shade) 30%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 1px 0 color-mix(in srgb, var(--tl-light) 60%, transparent); }
+.tl-np-key { appearance: none; border: 0; margin: 0; padding: 0; width: var(--kw, 48px); height: 48px; border-radius: 9px; display: grid; place-items: center; cursor: pointer; color: var(--tl-ebony);
+  background: linear-gradient(180deg, var(--tl-ivory), color-mix(in srgb, var(--tl-paper-back) 20%, var(--tl-paper-b))); box-shadow: inset 0 1px 0 var(--tl-light), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 3px 0 var(--tl-key-lip), 0 7px 10px -6px var(--tl-paper-shadow);
+  transition: transform .08s, box-shadow .08s, color .2s; }
+.tl-np-key svg.tl-np-glyph { height: 26px; width: auto; fill: currentColor; overflow: visible; }
+.tl-np-key.tl-np-ebony { color: var(--tl-ebony-ink); background: linear-gradient(180deg, var(--tl-ebony-top), var(--tl-ebony-low)); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 14%, transparent), 0 3px 0 var(--tl-ebony-lip), 0 7px 10px -6px color-mix(in srgb, var(--tl-dark) 60%, transparent); }
+.tl-np-key.tl-np-ebony svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tl-np-key.tl-np-down { transform: translateY(2px); box-shadow: inset 0 1px 0 var(--tl-light), inset 0 0 0 1px color-mix(in srgb, var(--tl-edge) 16%, transparent), 0 1px 0 var(--tl-key-lip), 0 3px 6px -4px var(--tl-paper-shadow); }
+.tl-np-key.tl-np-ebony.tl-np-down { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 14%, transparent), 0 1px 0 var(--tl-ebony-lip), 0 3px 6px -4px color-mix(in srgb, var(--tl-dark) 60%, transparent); }
+/* The accidental the note carries: its key stays pressed in, with violet ink. */
+.tl-np-key.tl-np-on { color: var(--tl-glow-ink); transform: translateY(2px); background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 8%, var(--tl-light)), color-mix(in srgb, var(--tl-glow) 15%, var(--tl-light))); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tl-glow-ink) 25%, transparent), inset 0 0 0 1.5px color-mix(in srgb, var(--tl-glow) 70%, transparent), 0 1px 0 var(--tl-key-lip); }
+.tl-np-key.tl-np-flashkey { box-shadow: inset 0 1px 0 var(--tl-light), 0 0 0 2px var(--tl-glow), 0 0 18px var(--tl-glow-soft), 0 1px 0 var(--tl-key-lip); }
+.tl-np-key:focus { outline: none; }
+.tl-np.kbd .tl-np-key:focus-visible { outline: 2.5px solid var(--tl-glow); outline-offset: 3px; }
+/* Room the component makes under its stave for a bubble, so a bubble covers nothing. */
+.tl-np-room { position: relative; height: 0; }
+.tl-np-bubble { position: absolute; top: 6px; z-index: 6; max-width: calc(100% - 8px); box-sizing: border-box; padding: 7px 12px 8px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); font: italic 500 17px/1.25 var(--tl-serif); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--tl-dark) 50%, transparent); transition: opacity .2s; }
+.tl-np-bubble::after { content: ""; position: absolute; top: -5px; left: var(--ax, 50%); width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-np-layer { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+.tl-np-tap { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-np-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+.tl-np svg.tl-np-inline { fill: currentColor; }
+@keyframes tl-np-pop { from { transform: scale(.45); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-np-pop-html { from { transform: scale(.3); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-np-write { from { transform: translateX(-2px) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-np-grow { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes tl-np-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }

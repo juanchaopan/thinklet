@@ -1,16 +1,16 @@
-// Checks the note-placing prototype at one width: layout (inside the
-// page, the reachable range inside the stave box, columns apart, keys
-// one size), taps on every line and space, a drag, the accidental keys,
-// the keyboard, the key signature in what a note sounds like, lock,
-// verdicts and the right note shown beside a wrong one (marks clear of
-// each other), counting and stopping it, a state drawn with nothing
-// moving, a rebuild keeping state with one event per tap, sound only in
-// lectures, and no console errors.
+// Checks the note-placing component on its demo page at one width: layout
+// (inside the page, the reachable range inside the stave box, columns
+// apart, keys one size), taps on every line and space, a drag, the
+// accidental keys, the keyboard, the key signature in what a note sounds
+// like, lock, verdicts and the right note shown beside a wrong one (marks
+// clear of each other), counting and stopping it, a state drawn with
+// nothing moving, a rebuild keeping state with one event per tap, sound
+// only in lectures, and no console errors.
 // Usage: node notetest.mjs <width>
 import { openPage } from './serve.mjs';
 
 const [, , width = '390'] = process.argv;
-const { page, errors, close } = await openPage('proto/c10-note-place.html', width, 1000, 1);
+const { page, errors, close } = await openPage('components/note-place/demo.html', width, 1000, 1);
 const fails = [];
 const ok = (cond, what) => { if (!cond) fails.push(what); };
 const hostOf = { a: 'np-a', b: 'np-b', c: 'np-c', d: 'np-d', multi: 'g-multi', sharps: 'g-sharps', run: 'run-np' };

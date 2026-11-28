@@ -4,7 +4,3 @@ grades: { from: 4, to: 8, teaching: 6 }
 units:
   - lecture: time-signatures
     practices: []
-# Items that only show a workflow working for another kind of part; the
-# prototype lists them after the book's units, they are not in the book.
-examples:
-  - count-demo

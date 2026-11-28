@@ -1,0 +1,81 @@
+<title>字幕 narration</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <h1>字幕 <code>narration</code></h1>
+  <p class="lede">讲题底部的一条深色玻璃：老师的头像（不写名字），正在说的这一句字幕，一条孩子能拖的进度线，以及只管这一句的按钮：播放和暂停、竖着拖的语速。显示哪些按钮由流程文件写。头像外的光圈跟着录音的响度一明一暗。它从不自己换到下一句或下一幕，那是舞台上翻幕按钮的事。一句没放出来时它留在屏幕上等孩子按播放，绝不跳过。</p>
+
+  <div id="demo"></div>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td><code>buttons</code>：打开哪些按钮（<code>pause</code>、<code>rate</code>）；<code>lines</code>：台词和录音 <code>[{id, text, url, duration, env}]</code>，由 <code>NarrationBar.prepare</code> 在载入时量好长度和响度；<code>portrait</code>：老师头像；<code>rate</code>：语速；<code>muted</code>：静音</td></tr>
+      <tr><th>能力接口</th><td>旁白 <code>narrate</code></td></tr>
+      <tr><th>指令</th><td>方法调用：<code>say(id)</code> 说一句（说完时兑现）、<code>turn(on)</code> 轮到孩子、<code>flag(text)</code> 标签、<code>pause()</code>、<code>resume()</code>、<code>seek(f)</code>、<code>rate(r)</code>、<code>mute(on)</code>、<code>set({line, turn, flag})</code> 直接停在某句、<code>stop()</code>、<code>clear()</code>、<code>unlock()</code>、<code>whenRunning()</code></td></tr>
+      <tr><th>事件</th><td><code>narrate.lineStart</code>、<code>lineEnd</code>、<code>lineFail</code>、<code>lineRetry</code>、<code>replay</code>、<code>seek</code>、<code>pause</code>、<code>resume</code>、<code>rate</code></td></tr>
+    </table>
+    <p class="note">每句录音由一个 <code>&lt;audio&gt;</code> 播放，所以变速不变调，手机的静音键也不会让它没声。这一页先显示引擎的载入画面（<code>engine/sound.js</code>），按“开始”那一下让手机允许出声。玻璃、圆按钮和缓急来自控件共用部分 <code>controls-kit/controls-kit.js</code>（<code>StageTheme</code>）；颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="../controls-kit/controls-kit.js"></script>
+<script src="narration.js"></script>
+<script src="../controls-kit/demo-kit.js"></script>
+<script>
+(function () {
+  var PORTRAIT = '../../assets/teacher.webp';
+  var LINES = [
+    { id: 'l1', text: '这道题给了三小节节奏，(a)、(b)、(c)，每一小节都没有写拍号。', s: 3 },
+    { id: 'l2', text: '一共是六个八分音符那么长。', s: 2 },
+    { id: 'l3', text: '现在请你选：(a) 是哪个拍号？在它的框里打勾。', s: 3 }
+  ];
+  var prepared = [];
+
+  // A silent WAV as long as a line, so the bar plays real recordings
+  // without this page carrying any.
+  function silence(seconds) {
+    var rate = 8000, n = Math.round(rate * seconds), b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+    function s(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVE'); s(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+  function say(id) { return function (c) { c.turn(false); c.say(id); }; }
+
+  ControlsDemo.start({
+    id: 'narration',
+    place: 'bottom',
+    grow: true,
+    need: [function (progress) {
+      return NarrationBar.prepare(LINES.map(function (l) { return { id: l.id, text: l.text, url: silence(l.s) }; }), progress).then(function (lines) { prepared = lines; });
+    }],
+    input: function () { return { buttons: ['pause', 'rate'], lines: prepared, portrait: PORTRAIT }; },
+    ready: function (c) { c.unlock(); },
+    note: '录音在这里是和每句一样长的静音，只为看字幕和按钮怎么动。',
+    commands: [
+      { key: 'say1', label: '说第 1 句', code: "say('l1')", run: say('l1') },
+      { key: 'say2', label: '说第 2 句', code: "say('l2')", run: say('l2') },
+      { key: 'say3', label: '说第 3 句', code: "say('l3')", run: say('l3') },
+      { key: 'turn', label: '轮到你了', code: 'turn(true)', run: function (c) { c.turn(true); } },
+      { key: 'flag', label: '标上“讲完了”', code: "flag('讲完了')", run: function (c) { c.flag('讲完了'); } },
+      { key: 'pause', label: '暂停', code: 'pause()', run: function (c) { c.pause(); } },
+      { key: 'resume', label: '继续', code: 'resume()', run: function (c) { c.resume(); } },
+      { key: 'seek', label: '跳到这句一半', code: 'seek(0.5)', run: function (c) { c.seek(0.5); } },
+      { key: 'slow', label: '语速 0.8×', code: 'rate(0.8)', run: function (c) { c.rate(0.8); } },
+      { key: 'normal', label: '语速 1×', code: 'rate(1)', run: function (c) { c.rate(1); } },
+      { key: 'mute', label: '静音', code: 'mute(true)', run: function (c) { c.mute(true); } },
+      { key: 'unmute', label: '取消静音', code: 'mute(false)', run: function (c) { c.mute(false); } },
+      { key: 'set', label: '直接停在第 2 句，轮到你', code: "set({line: 'l2', turn: true})", run: function (c) { c.set({ line: 'l2', turn: true }); } },
+      { key: 'stop', label: '停下', code: 'stop()', run: function (c) { c.stop(); } },
+      { key: 'clear', label: '清空', code: 'clear()', run: function (c) { c.clear(); } }
+    ]
+  });
+})();
+</script>

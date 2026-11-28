@@ -1,0 +1,51 @@
+<title>小题切换 part-switch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<link rel="stylesheet" href="../controls-kit/demo-kit.css">
+
+<main class="wrap">
+  <span class="tagline">组件原型 · stage 主题 · 讲题控件</span>
+  <h1>小题切换 <code>part-switch</code></h1>
+  <p class="lede">讲题顶上一条玻璃，按流程分出的几段各一个短标签：读题、(a)、(b)、(c)……当前这段垫着一块紫色，换段时紫色滑过去。孩子还不能去的段变暗、按不了。孩子按另一段就发出 <code>parts.pick</code>，由播放器跳过去。只有一段或没有分段时它不出现。</p>
+
+  <div id="demo"></div>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td>和指令一样：<code>items</code>：流程分出的几段 <code>[{label, enabled}]</code>；<code>current</code>：当前第几段</td></tr>
+      <tr><th>能力接口</th><td>小题 <code>parts</code></td></tr>
+      <tr><th>指令</th><td><code>parts.set {items, current}</code>：换当前段，或哪几段能去</td></tr>
+      <tr><th>事件</th><td><code>parts.pick {index}</code>：孩子按了另一段</td></tr>
+    </table>
+    <p class="note">像 (a) 这样的标签用衬线斜体。左右方向键在能按的段之间移动。玻璃和缓急来自控件共用部分 <code>controls-kit/controls-kit.js</code>（<code>StageTheme</code>）；颜色都取自主题常量，这一页用的是 <code>content/themes/etude.yaml</code>。</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/registry.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../controls-kit/controls-kit.js"></script>
+<script src="part-switch.js"></script>
+<script src="../controls-kit/demo-kit.js"></script>
+<script>
+(function () {
+  var PARTS = ['读题', '(a)', '(b)', '(c)'];
+  // The parts up to `last` can be gone to; the rest wait.
+  function upTo(last) { return PARTS.map(function (l, i) { return { label: l, enabled: i <= last }; }); }
+
+  ControlsDemo.start({
+    id: 'part-switch',
+    place: 'top',
+    input: { items: upTo(PARTS.length), current: 0 },
+    note: '在舞台上按另一段，看它发出的事件；换不换过去由播放器决定，所以要用下面的指令让它换。',
+    commands: [
+      { key: 'hold', label: '到 (a)，等孩子作答（后面的按不了）', code: 'parts.set {current: 1, items}', run: function (c) { c.call('parts.set', { current: 1, items: upTo(1) }); } },
+      { key: 'partb', label: '到小题 (b)', code: 'parts.set {current: 2, items}', run: function (c) { c.call('parts.set', { current: 2, items: upTo(2) }); } },
+      { key: 'partc', label: '到小题 (c)', code: 'parts.set {current: 3, items}', run: function (c) { c.call('parts.set', { current: 3, items: upTo(3) }); } },
+      { key: 'single', label: '只有一段（不出现）', code: 'parts.set {items: [读题]}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(0).slice(0, 1) }); } },
+      { key: 'again', label: '从头再来', code: 'parts.set {current: 0, items}', run: function (c) { c.call('parts.set', { current: 0, items: upTo(PARTS.length) }); } }
+    ]
+  });
+})();
+</script>

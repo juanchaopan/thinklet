@@ -1,0 +1,120 @@
+/* ---------- Scale ladder component: it defines its whole look here; every colour is a theme constant (--th-<name>) and nothing else comes from the page ---------- */
+/* The look follows the other lesson components: warm paper, real materials (wood, ivory), ink in the serif, violet light for whatever is lit, dark bubbles, a violet play button in the top-right corner. */
+.tl-sl {
+  /* Local names for the theme constants the ladder draws with; alpha variants are mixed with transparent. */
+  --tl-paper-a: var(--th-paper-a);
+  --tl-paper-b: var(--th-paper-b);
+  --tl-paper-shadow: color-mix(in srgb, var(--th-shade) 45%, transparent);
+  --tl-ink: var(--th-ink);
+  --tl-ink-soft: var(--th-ink-soft);
+  --tl-glow: var(--th-accent);
+  --tl-glow-soft: color-mix(in srgb, var(--th-accent) 28%, transparent);
+  --tl-glow-ink: var(--th-accent-ink);
+  --tl-ivory: var(--th-ivory);
+  --tl-ivory-low: color-mix(in srgb, var(--th-paper-b) 80%, var(--th-ivory));
+  --tl-light: var(--th-light);
+  --tl-dark: var(--th-dark);
+  --tl-bubble-bg: var(--th-bubble);
+  --tl-bubble-ink: var(--th-bubble-ink);
+  --tl-caption: var(--th-caption);
+  /* Paper grain: a theme colour shown through a noise mask, so the grain follows the theme too. */
+  --tl-grain: var(--th-edge);
+  --tl-grain-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .07 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  /* Wood of the rails and dowels, from the dark edge to the lit middle. */
+  --tl-wood-dark: color-mix(in srgb, var(--th-wood-ink) 75%, var(--th-wood-b));
+  --tl-wood-low: color-mix(in srgb, var(--th-wood-ink) 70%, var(--th-wood-b));
+  --tl-wood-deep: color-mix(in srgb, var(--th-wood-ink) 63%, var(--th-wood-b));
+  --tl-wood-mid: color-mix(in srgb, var(--th-wood-b) 85%, var(--th-wood-ink));
+  --tl-wood-warm: color-mix(in srgb, var(--th-wood-b) 88%, var(--th-wood-ink));
+  --tl-wood-hi: color-mix(in srgb, var(--th-wood-a) 60%, var(--th-wood-b));
+  --tl-wood-top: var(--th-wood-a);
+  /* A lit dowel glows violet from top to bottom. */
+  --tl-glow-pale: color-mix(in srgb, var(--th-accent) 20%, var(--th-light));
+  --tl-glow-mid: color-mix(in srgb, var(--th-accent) 65%, var(--th-light));
+  --tl-glow-deep: color-mix(in srgb, var(--th-accent-ink) 75%, var(--th-accent));
+  --tl-serif: "Cormorant Garamond", "Times New Roman", "Songti SC", serif;
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+}
+.tl-sl-case { position: relative; border-radius: 16px; padding: 16px 12px; overflow: hidden; touch-action: manipulation; -webkit-tap-highlight-color: transparent; color: var(--tl-ink);
+  background: radial-gradient(80% 50% at 50% 0%, color-mix(in srgb, var(--tl-light) 75%, transparent), transparent 70%), linear-gradient(180deg, var(--tl-paper-a), var(--tl-paper-b));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tl-light) 90%, transparent), 0 2px 4px color-mix(in srgb, var(--th-shade) 8%, transparent), 0 18px 40px -12px var(--tl-paper-shadow); }
+.tl-sl-case::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .55; mix-blend-mode: multiply; border-radius: inherit; background: var(--tl-grain);
+  -webkit-mask-image: var(--tl-grain-mask); mask-image: var(--tl-grain-mask); }
+.tl-sl-narrow.tl-sl-playable .tl-sl-case, .tl-sl-compact.tl-sl-playable .tl-sl-case { padding-top: 62px; }
+.tl-sl-frame { position: relative; z-index: 1; margin: 0 auto; transition: height .6s cubic-bezier(.3, .9, .3, 1); }
+.tl-sl-rail { position: absolute; width: 9px; border-radius: 5px; transition: top .6s cubic-bezier(.3, .9, .3, 1), height .6s cubic-bezier(.3, .9, .3, 1);
+  background:
+    repeating-linear-gradient(180deg, color-mix(in srgb, var(--th-wood-ink) 16%, transparent) 0 3px, transparent 3px 11px, color-mix(in srgb, var(--th-light-warm) 10%, transparent) 11px 13px, transparent 13px 23px),
+    linear-gradient(90deg, var(--tl-wood-dark) 0%, var(--tl-wood-mid) 30%, var(--tl-wood-hi) 50%, var(--tl-wood-warm) 68%, var(--tl-wood-low) 100%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--th-wood-ink) 25%, transparent), 4px 6px 10px color-mix(in srgb, var(--th-shade) 30%, transparent); }
+.tl-sl-rung { position: absolute; left: 0; right: 0; padding: 0; margin: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: top .6s cubic-bezier(.3, .9, .3, 1), opacity .45s, filter .45s; }
+.tl-sl-rung:focus { outline: none; }
+.tl-sl.kbd .tl-sl-rung:focus-visible .tl-sl-card { box-shadow: 0 0 0 3px var(--tl-glow), 0 4px 8px -2px color-mix(in srgb, var(--th-shade) 40%, transparent); }
+.tl-sl-rung.tl-dim { opacity: .35; filter: saturate(.5); }
+.tl-sl-dowel { position: absolute; top: 50%; height: 7px; margin-top: -3.5px; border-radius: 4px; transition: box-shadow .3s, background .3s;
+  background: linear-gradient(180deg, var(--tl-wood-top) 0%, var(--tl-wood-warm) 45%, var(--tl-wood-deep) 100%); box-shadow: 0 3px 4px color-mix(in srgb, var(--th-shade) 35%, transparent); }
+/* Name cards are ivory plaques hung on the rungs. */
+.tl-sl-card { position: absolute; top: 0; height: 100%; transform: translateX(-50%); border-radius: 7px; display: flex; align-items: center; justify-content: center; white-space: nowrap; color: var(--tl-ink); z-index: 1;
+  background: linear-gradient(180deg, var(--tl-ivory) 0%, var(--tl-ivory-low) 100%);
+  box-shadow: inset 0 1px 0 var(--tl-light), inset 0 -2px 0 color-mix(in srgb, var(--th-edge) 22%, transparent), 0 0 0 1px color-mix(in srgb, var(--th-shade) 32%, transparent), 0 5px 9px -3px var(--tl-paper-shadow);
+  transition: transform .12s, box-shadow .3s, background .3s; }
+.tl-sl-tonic .tl-sl-card { box-shadow: inset 0 1px 0 var(--tl-light), inset 0 -2px 0 color-mix(in srgb, var(--th-edge) 22%, transparent), 0 0 0 1.5px var(--tl-ink-soft), 0 5px 9px -3px var(--tl-paper-shadow); }
+.tl-sl-rung.tl-down .tl-sl-card { transform: translateX(-50%) translateY(1px) scale(.96); }
+.tl-sl-rung.tl-lit .tl-sl-card { background: linear-gradient(180deg, color-mix(in srgb, var(--tl-glow) 14%, var(--tl-light)) 0%, color-mix(in srgb, var(--tl-glow) 30%, var(--tl-light)) 100%); box-shadow: 0 0 0 2px var(--tl-glow), 0 0 18px 4px var(--tl-glow-soft), 0 5px 9px -3px var(--tl-paper-shadow); }
+.tl-sl-rung.tl-lit .tl-sl-dowel { background: linear-gradient(180deg, var(--tl-glow-pale) 0%, var(--tl-glow-mid) 45%, var(--tl-glow-deep) 100%); box-shadow: 0 0 12px 2px var(--tl-glow-soft); }
+/* inline-block, not flex: the accidental glyph is placed with vertical-align, which flex items ignore. */
+.tl-sl-name { display: inline-block; white-space: nowrap; font: 600 var(--tl-name-size, 20px)/1 var(--tl-serif); letter-spacing: .01em; }
+.tl-sl-name svg { fill: currentColor; }
+.tl-sl-num { position: absolute; top: 0; height: 100%; display: flex; align-items: center; justify-content: flex-end; font: 600 17px/1 var(--tl-serif); color: var(--tl-ink-soft); letter-spacing: .03em; transition: color .3s, text-shadow .3s; }
+.tl-sl-tech { position: absolute; top: 0; height: 100%; display: flex; align-items: center; font: italic 500 18px/1 var(--tl-serif); color: var(--tl-ink); white-space: nowrap; overflow: hidden; }
+.tl-sl-narrow .tl-sl-num { font-size: 15px; }
+.tl-sl-narrow .tl-sl-tech { font-size: 16px; }
+.tl-sl-rung.tl-lit .tl-sl-num, .tl-sl-rung.tl-lit .tl-sl-tech { color: var(--tl-glow-ink); text-shadow: 0 0 12px var(--tl-glow-soft); }
+.tl-sl-ink { animation: tl-sl-ink .55s cubic-bezier(.2, .8, .3, 1) both; }
+/* A hidden answer is a dashed empty box with a question mark: missing by shape, not only by colour. */
+.tl-sl-q { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 80%; padding: 0 6px; border: 1.5px dashed currentColor; border-radius: 6px; font: italic 600 16px/1 var(--tl-serif); opacity: .7; }
+.tl-sl-card.tl-sl-masked { background: color-mix(in srgb, var(--tl-ivory) 55%, transparent); color: var(--tl-ink-soft); box-shadow: none; }
+.tl-sl-card.tl-sl-masked .tl-sl-q { min-width: 0; width: 100%; height: 100%; }
+.tl-sl-rung.tl-lit .tl-sl-card.tl-sl-masked { color: var(--tl-glow-ink); }
+/* Marks pinned to a rung move with it when the key or the form changes. Letters sit on the card's left edge; counts sit just outside the right rail. */
+.tl-sl-badge { position: absolute; top: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%; display: grid; place-items: center; font: 600 15px/1 var(--tl-serif); color: var(--tl-light); pointer-events: none; z-index: 2;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 4px 10px -2px var(--tl-glow-soft), 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent); animation: tl-sl-pop .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-sl-count { position: absolute; top: 50%; width: 20px; margin: -10px 0 0 -10px; text-align: center; font: 600 20px/1 var(--tl-serif); color: var(--tl-glow); text-shadow: 0 0 12px var(--tl-glow-soft); pointer-events: none; z-index: 2; animation: tl-sl-rise .5s cubic-bezier(.1, .9, .2, 1) both; }
+.tl-sl-tag { position: absolute; top: 50%; transform: translateY(-50%); font: italic 600 15px/1 var(--tl-serif); color: var(--tl-glow-ink); padding: 3px 7px 4px; border-radius: 9px; background: color-mix(in srgb, var(--tl-glow) 12%, var(--tl-light)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tl-glow) 45%, var(--tl-light)), 0 0 10px var(--tl-glow-soft); white-space: nowrap; pointer-events: none; animation: tl-sl-tag .45s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-sl-tag.tl-sl-bass { color: var(--tl-light); background: var(--tl-glow); }
+.tl-sl-tag.tl-sl-bass::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: -5px; height: 2px; border-radius: 1px; background: var(--tl-glow); }
+.tl-sl-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.tl-sl-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.tl-sl-brace { fill: none; stroke: color-mix(in srgb, var(--tl-glow) 70%, var(--tl-light)); stroke-width: 2; stroke-linecap: round; filter: drop-shadow(0 0 3px var(--tl-glow-soft)); stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: tl-sl-draw .5s cubic-bezier(.3, .8, .3, 1) forwards; }
+/* Step marks look like the keyboard's: a violet disc with T or S. They are centred on the midpoint between two rungs, and their pop animation keeps that centring. */
+.tl-sl-step { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; display: grid; place-items: center; font: italic 600 14px/1 var(--tl-serif); white-space: nowrap; color: var(--tl-light);
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tl-light) 85%, transparent), 0 0 12px var(--tl-glow-soft); animation: tl-sl-pop-centred .4s cubic-bezier(.2, 1.6, .4, 1) both; }
+.tl-sl-spot { position: absolute; pointer-events: none; border-radius: 40px; background: radial-gradient(50% 50% at 50% 50%, color-mix(in srgb, var(--tl-glow) 20%, transparent), transparent 75%); opacity: 0; transition: opacity .45s; }
+.tl-sl-spot.on { opacity: 1; }
+.tl-sl-ripple { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; border: 2px solid var(--tl-glow); animation: tl-sl-ripple .55s cubic-bezier(.1, .9, .2, 1) forwards; }
+/* The caption bubble sits beside the rung and points at it, so it never covers the rungs above or below. */
+.tl-sl-bubble { position: absolute; z-index: 5; transform: translateY(-50%); white-space: nowrap; padding: 6px 12px 7px; border-radius: 12px; background: var(--tl-bubble-bg); color: var(--tl-bubble-ink); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--tl-dark) 50%, transparent); animation: tl-sl-bubble .35s cubic-bezier(.2, 1.4, .4, 1) both; transition: opacity .5s; }
+.tl-sl-bubble.out { opacity: 0; }
+.tl-sl-bubble::after { content: ""; position: absolute; left: -5px; top: 50%; width: 10px; height: 10px; margin-top: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+.tl-sl-bubble b { display: inline-block; font: 600 20px/1 var(--tl-serif); letter-spacing: .02em; }
+.tl-sl-bubble b svg { fill: currentColor; }
+.tl-sl-bubble span { font: italic 500 16px/1 var(--tl-serif); opacity: .8; margin-left: 6px; }
+/* Top-right, as on every other component. Where the names reach that corner (narrow screens, small ladders) the paper gets a strip above the ladder for it. */
+.tl-sl-play { position: absolute; top: 10px; right: 10px; z-index: 5; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center; color: var(--tl-light); background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--tl-glow) 65%, var(--tl-light)), var(--tl-glow)); box-shadow: 0 8px 18px -6px var(--tl-glow), 0 0 0 3px color-mix(in srgb, var(--tl-light) 70%, transparent); transition: transform .1s; }
+.tl-sl-play:active { transform: scale(.94); }
+.tl-sl-play:focus { outline: none; }
+.tl-sl-play:focus-visible { outline: 3px solid var(--tl-glow); outline-offset: 3px; }
+.tl-sl-play svg { width: 18px; height: 18px; fill: currentColor; }
+.tl-sl-caption { text-align: center; font: italic 500 18px/1.2 var(--tl-serif); color: var(--tl-caption); margin-top: 10px; }
+.tl-sl-compact .tl-sl-case { padding-left: 4px; padding-right: 4px; padding-bottom: 10px; }
+.tl-sl-compact .tl-sl-play { top: 8px; right: 8px; }
+.tl-sl-compact .tl-sl-caption { font-size: 16px; }
+@keyframes tl-sl-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes tl-sl-pop-centred { from { transform: translate(-50%, -50%) scale(.4); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+@keyframes tl-sl-tag { from { transform: translateY(-50%) scale(.5); opacity: 0; } to { transform: translateY(-50%) scale(1); opacity: 1; } }
+@keyframes tl-sl-rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes tl-sl-ink { from { opacity: 0; filter: blur(4px); transform: scale(1.18); } to { opacity: 1; filter: none; transform: none; } }
+@keyframes tl-sl-bubble { from { transform: translate(-8px, -50%) scale(.85); opacity: 0; } to { transform: translate(0, -50%) scale(1); opacity: 1; } }
+@keyframes tl-sl-ripple { from { transform: scale(.4); opacity: .9; } to { transform: scale(2.2); opacity: 0; } }
+@keyframes tl-sl-draw { to { stroke-dashoffset: 0; } }

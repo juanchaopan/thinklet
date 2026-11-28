@@ -1,0 +1,173 @@
+<title>结论栈组件</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap">
+<style>
+/* Layout: a lit stage shaped like a lecture screen: the conclusion board (the component, outlined with a dashed boundary) in a tall column on the left, a stand-in for the act's component in the middle (where conclusions fly from), a mock subtitle under them. Then the same board as a short strip at phone width, a panel that sends the workflow's commands and logs the events, and the interface table. The component's own look is its stylesheet, conclusion-stack.css, linked after this block. */
+:root {
+  /* Page chrome (thinklet look.md). */
+  --canvas: #f7f4ef;
+  --surface: #ffffff;
+  --line: #ebe6dc;
+  --ink: #161a2b;
+  --ink-soft: #4b5168;
+  --ink-muted: #6a6e7e;
+  --violet: #6d3cf0;
+  --boundary: #2f6bff;
+  --font: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  /* The player's lit stage behind the components. */
+  --stage: radial-gradient(70% 60% at 18% 8%, rgba(255, 196, 150, .55), transparent 70%), radial-gradient(60% 55% at 88% 12%, rgba(196, 176, 255, .45), transparent 70%), radial-gradient(90% 70% at 50% 110%, rgba(255, 226, 190, .7), transparent 70%), #f6efe4;
+  color-scheme: light;
+}
+body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; overflow-anchor: none; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 30px; font-weight: 800; margin: 0; text-wrap: balance; }
+h2 { font-size: 19px; font-weight: 800; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--ink-soft); max-width: 70ch; }
+.tagline { justify-self: start; font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 3px 10px; border-radius: 999px; background: #efe8ff; color: #4b23c9; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: grid; gap: 14px; min-width: 0; }
+.what { color: var(--ink-soft); font-size: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+.btn[aria-pressed="true"] { background: #efe8ff; border-color: #cbbcff; color: #4b23c9; }
+.log { font-family: var(--mono); font-size: 12px; line-height: 1.5; min-height: 80px; max-height: 220px; overflow: auto; background: #faf8f4; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--ink-muted); font-weight: 700; white-space: nowrap; }
+code { font-family: var(--mono); font-size: 12px; }
+
+/* ---------- Stage (the player's, not the stack's) ---------- */
+.stage { position: relative; border-radius: 28px; background: var(--stage); padding: 20px; display: grid; grid-template-columns: 300px minmax(0, 1fr); grid-template-rows: 380px auto; gap: 18px; min-width: 0; isolation: isolate; }
+.stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 140px 20px rgba(80, 52, 24, .14); border-radius: inherit; }
+.stage > * { position: relative; min-width: 0; }
+/* The board: the place the player gives the stack, of a fixed size; it paints above the middle, so a conclusion flying from there passes over it. */
+.board { z-index: 2; height: 100%; }
+.act { z-index: 1; display: grid; place-items: center; }
+.act-slot { display: grid; place-items: center; width: min(100%, 420px); min-height: 150px; border: 1.5px dashed rgba(90, 60, 30, .3); border-radius: 18px; color: rgba(70, 48, 26, .6); font-size: 14px; text-align: center; padding: 16px; box-sizing: border-box; }
+.subtitle { grid-column: 1 / -1; min-height: 3.2em; padding: 10px 16px; border-radius: 18px; background: rgba(24, 18, 44, .86); color: #fbf8f3; font-size: 15px; line-height: 1.5; }
+.phone { width: 100%; max-width: 360px; margin: 0 auto; border-radius: 26px; background: var(--stage); padding: 10px 8px; display: grid; grid-template-rows: 112px 220px; gap: 10px; isolation: isolate; box-sizing: border-box; }
+.phone .board { height: 112px; }
+@media (max-width: 680px) { .stage { grid-template-columns: 1fr; grid-template-rows: 300px 160px auto; } .subtitle { grid-column: auto; } }
+body[data-boundary="on"] .tl-cs { outline: 1.5px dashed var(--boundary); outline-offset: 3px; border-radius: 12px; }
+body[data-boundary="on"] .tl-cs::before { content: "结论栈组件"; position: absolute; top: -10px; right: 8px; z-index: 30; font: 700 11px/1 var(--font); color: #fff; background: var(--boundary); padding: 3px 6px; border-radius: 6px; }
+</style>
+<link rel="stylesheet" href="conclusion-stack.css">
+<style>
+/* ---------- Page only ---------- */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+
+<main class="wrap">
+  <span class="tagline">组件原型 · etude 主题</span>
+  <h1>结论栈</h1>
+  <p class="lede">这次确认的是<b>结论栈组件</b>：讲题的结论板做成一个转盘。焦点上的那条结论在正中间、最大，前后的越远越小越淡，到边上淡出；手指滑、滚轮、按住鼠标拖都能转，松手停到最近的一条。点一条，组件发出“点了哪一条”的事件，由播放器决定回到得出它的那一幕。新结论从得出它的地方飞过来，转盘同时转到它。</p>
+  <div class="toolbar"><button type="button" class="btn" id="boundary" aria-pressed="true">显示组件边界</button></div>
+
+  <section class="stage" aria-label="讲题画面（示意）">
+    <div class="board" id="board-wide"></div>
+    <div class="act"><div class="act-slot" id="source">这一幕的组件（示意）<br>结论从这里飞到结论板</div></div>
+    <div class="subtitle" id="subtitle">字幕条（示意）</div>
+  </section>
+
+  <section class="panel">
+    <h2>手机上：顶上一条，左右转</h2>
+    <p class="what">同一个组件放进又宽又矮的地方，就横着转；结论板的大小由播放器给。</p>
+    <div class="phone"><div class="board" id="board-phone"></div><div class="act"><div class="act-slot" id="source-phone">这一幕的组件（示意）</div></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>模拟流程：发给结论栈的指令</h2>
+    <div class="toolbar">
+      <button type="button" class="btn" data-cmd="fly">推一条（从中间飞过来）</button>
+      <button type="button" class="btn" data-cmd="grow">推一条（原地长出来）</button>
+      <button type="button" class="btn" data-cmd="set2">直接摆成前两条</button>
+      <button type="button" class="btn" data-cmd="lit">亮起第 1 条</button>
+      <button type="button" class="btn" data-cmd="mask">遮住答案</button>
+      <button type="button" class="btn" data-cmd="reveal">揭晓答案</button>
+      <button type="button" class="btn" data-cmd="focus1">转到第 1 条</button>
+      <button type="button" class="btn" data-cmd="clear">清空</button>
+    </div>
+    <div class="log" id="log" aria-live="polite"></div>
+  </section>
+
+  <section class="panel">
+    <h2>它的接口</h2>
+    <table>
+      <tr><th>输入</th><td>这道讲题的全部结论：编号、内容片段（文字、术语、符号 <code>op</code>、ABC 谱、第二种语言的一行 <code>gloss</code>）、从哪几条得出（<code>from</code>）、是不是答案（<code>final</code>）；模式</td></tr>
+      <tr><th>指令</th><td><code>push(id, {from})</code> 推一条，可带它在屏幕上从哪里来；<code>pushMs</code> 推一条要多久停稳；<code>set(ids)</code> 直接摆成这几条（不放动画，转到最后一条）；<code>focus(id)</code> 转到某一条；<code>highlight</code>、<code>spotlight</code>、<code>mask</code>、<code>reveal</code>、<code>stop</code>、<code>clear</code></td></tr>
+      <tr><th>事件</th><td><code>itemTap</code>（点了哪一条：编号、第几步、是不是答案、文字、是否遮着）、<code>blankTap</code></td></tr>
+      <tr><th>能力接口</th><td>结论（推、摆成、点了哪一条）、指点（亮起）、遮住（遮住、揭开）、摆成</td></tr>
+      <tr><th>外观</th><td>暖色纸条带纹理，衬线体的字、术语斜体，中文用主题配的黑体；步骤编号是描线的圆圈，答案是紫圈、双线和 ∴ 印章；一条结论由前面哪几条得出，它的顶边上就挂着那几步编号的紫色小圆圈；一小段谱按画出来的内容裁边，谱线停在裁边处；所有颜色都取主题常量（<code>--th-…</code>），组件里不写死颜色，这一页用 <code>etude</code> 主题</td></tr>
+      <tr><th>排法</th><td>转盘：焦点上的一条在正中间原大，前后各条按离焦点的远近缩到 0.8、0.68、0.6，越远越淡，边上淡出；又高又窄的地方上下转，又宽又矮的地方（宽是高的 1.6 倍以上）左右转；竖着转时纸条最宽 300 像素，横着转时 230 像素</td></tr>
+      <tr><th>动作</th><td>手指、滚轮、拖动一比一地转，松手按甩的快慢停到最近的一条；推一条时转盘 0.52 秒转到它，它从得出它的地方 0.8 秒飞过来，不带来处时在原地 0.52 秒长出来；缓急曲线是主题的那一种</td></tr>
+      <tr><th>操作</th><td>能点的纸条鼠标放上去是手指、微微亮起；移动超过 6 像素就是转，不算点；点一条：转到它，发出 <code>itemTap</code>；转到边上看不见的点不到；键盘上下（左右）方向键转一格，回车相当于点</td></tr>
+      <tr><th>谁决定排版</th><td>结论板的大小由播放器给；转的方向和纸条的大小由组件按给它的地方自己定</td></tr>
+      <tr><th>声音</th><td>不发声</td></tr>
+    </table>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/abcjs@6.7.2/dist/abcjs-basic-min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="../../engine/theme.js"></script>
+<script src="../../engine/sound.js"></script>
+<script src="conclusion-stack.js"></script>
+<script>
+/* ============================================================
+   Assembly: plays the player on this page. Opens through the loading
+   screen, which also reads the etude theme and sets its constants on
+   the page, puts one stack in the wide board and one in the phone strip,
+   sends the workflow's commands from the panel and logs the events.
+   ============================================================ */
+(function () {
+  var ITEMS = {
+    m: { parts: [{ text: '一共 6 个八分音符' }] },
+    g: { parts: [{ text: '三个一组' }, { op: '→' }, { text: '复拍子' }] },
+    i1: { parts: [{ abc: 'M:3/4\nx' }, { text: '分组不对' }] },
+    i2: { parts: [{ abc: 'M:6/8\nx' }, { text: '长度、分组都对' }] },
+    i3: { parts: [{ abc: 'M:5/8\nx' }, { text: '放不下' }] },
+    a: { parts: [{ abc: 'M:6/8\nx' }, { text: '八分之六拍' }], from: ['m', 'g'], final: true }
+  };
+  var ORDER = ['m', 'g', 'i1', 'i2', 'i3', 'a'];
+  var THEME = '../../content/themes/etude.yaml';
+  var logEl = document.getElementById('log'), stacks = {};
+  window.tlEvents = [];
+  function log(where, ev) {
+    var d = document.createElement('div');
+    d.textContent = where + ' → ' + ev.type + (ev.id ? ' ' + ev.id + '（第 ' + ev.step + ' 步' + (ev.final ? '，答案' : '') + '）' : '');
+    logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight;
+    window.tlEvents.push(Object.assign({ where: where }, ev));
+  }
+  function note(text) { var d = document.createElement('div'); d.textContent = text; logEl.appendChild(d); }
+  PlayerLoading.need(function (progress) {
+    return ThemeConstants.load(THEME).then(function (theme) {
+      ThemeConstants.check(theme).forEach(note);
+      ThemeConstants.apply(document.documentElement, theme);
+      progress(1, '主题准备好了');
+    });
+  });
+  PlayerLoading.onStart(function () {
+    stacks.wide = new ConclusionStack(document.getElementById('board-wide'), { items: ITEMS, onEvent: function (ev) { log('电脑', ev); } });
+    stacks.phone = new ConclusionStack(document.getElementById('board-phone'), { items: ITEMS, onEvent: function (ev) { log('手机', ev); } });
+    window.tlStacks = stacks;
+  });
+  function next(s) { return ORDER.filter(function (id) { return s.order.indexOf(id) < 0; })[0]; }
+  function each(fn) { Object.keys(stacks).forEach(function (k) { fn(stacks[k], k); }); }
+  var CMD = {
+    fly: function () { each(function (s, k) { var id = next(s); if (id) s.push(id, { from: document.getElementById(k === 'wide' ? 'source' : 'source-phone').getBoundingClientRect() }); }); },
+    grow: function () { each(function (s) { var id = next(s); if (id) s.push(id); }); },
+    set2: function () { each(function (s) { s.set(ORDER.slice(0, 2)); }); },
+    lit: function () { each(function (s) { s.highlight(['m']); }); },
+    mask: function () { each(function (s) { s.mask(['a']); }); },
+    reveal: function () { each(function (s) { s.reveal(['a']); }); },
+    focus1: function () { each(function (s) { s.focus('m'); }); },
+    clear: function () { each(function (s) { s.clear(); }); }
+  };
+  document.querySelectorAll('[data-cmd]').forEach(function (b) { b.addEventListener('click', function () { CMD[b.getAttribute('data-cmd')](); }); });
+  window.tlCmd = CMD;
+  document.body.setAttribute('data-boundary', 'on');
+  var bb = document.getElementById('boundary');
+  bb.addEventListener('click', function () { var on = document.body.getAttribute('data-boundary') !== 'on'; document.body.setAttribute('data-boundary', on ? 'on' : 'off'); bb.setAttribute('aria-pressed', String(on)); });
+})();
+</script>

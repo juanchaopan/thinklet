@@ -1,6 +1,6 @@
 // Checks the conclusion stack (a wheel) the way a child and a workflow
-// would use it, on the component page, in its tall board and in its
-// phone strip:
+// would use it, on its demo page, in its tall board and in its phone
+// strip:
 // - the theme's constants reach the component: the page sets --th-* and
 //   a slip's ink is the theme's ink;
 // - a first conclusion pushed without a flight, with motion allowed,
@@ -19,12 +19,9 @@
 // - the strip turns sideways; the page never scrolls sideways; no errors.
 // Usage: node stacktest.mjs <width>
 import { openPage } from './serve.mjs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const [, , width = '1280'] = process.argv;
-const file = join(dirname(fileURLToPath(import.meta.url)), '..', 'components', 'c7-conclusion-stack.html');
-const { page, errors, close } = await openPage(file, width, 1000);
+const { page, errors, close } = await openPage('components/conclusion-stack/demo.html', width, 1000);
 const fails = [];
 const check = (ok, what) => { if (!ok) fails.push(what); };
 const events = (type, where) => page.evaluate(([t, w]) => window.tlEvents.filter((e) => e.type === t && (!w || e.where === w)), [type, where]);

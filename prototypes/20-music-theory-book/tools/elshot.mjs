@@ -1,15 +1,15 @@
-// Screenshots one element after clicking selectors, at a given width.
-// Usage: node elshot.mjs <fragment.html> <out.png> <width> <element> [click ...]
-import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
-const require = createRequire('C:/Users/juanc/AI Projects/thinklet/package.json');
-const { chromium } = require('@playwright/test');
+// Screenshots one element of a prototype page at 2x after clicking
+// selectors, at a given width. The page opens the way it is published
+// (the prototype folder served over local HTTP, the page at its own path,
+// the loading screen's 开始 tapped).
+// Usage: node elshot.mjs <page path in the prototype folder> <out.png> <width> <element> [click ...]
+import { openPage } from './serve.mjs';
+
 const [, , file, out, width, el, ...clicks] = process.argv;
-const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0">${readFileSync(file, 'utf8')}</body></html>`;
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: Number(width), height: 900 }, deviceScaleFactor: 2 });
-await page.setContent(html, { waitUntil: 'networkidle' });
-for (const c of clicks) { await page.click(c); await page.waitForTimeout(200); }
-await page.waitForTimeout(1500);
+const { page, errors, close } = await openPage(file, width, 900, 2);
+await page.waitForTimeout(500);
+for (const c of clicks) { await page.click(c); await page.waitForTimeout(250); }
+await page.waitForTimeout(600);
 await page.locator(el).first().screenshot({ path: out });
-await browser.close();
+if (errors.length) console.log('errors:', errors.join(' | '));
+await close();
